@@ -1,0 +1,86 @@
+import { createClient } from "@/lib/supabase/server";
+import { money } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+export default async function PackagesPage() {
+  const supabase = await createClient();
+  const [{ data: categories }, { data: packages }, { data: addons }] = await Promise.all([
+    supabase.from("package_categories").select("*").order("sort_order"),
+    supabase.from("packages").select("*").order("display_order"),
+    supabase.from("addons").select("*").order("display_order"),
+  ]);
+
+  return (
+    <div className="max-w-5xl">
+      <h1 className="mb-5 text-2xl font-bold">Packages & Add-Ons</h1>
+
+      {(categories ?? []).map((cat) => {
+        const pkgs = (packages ?? []).filter((p) => p.category_id === cat.id);
+        if (pkgs.length === 0) return null;
+        return (
+          <div key={cat.id} className="mb-6">
+            <h2 className="mb-2 rounded-t-lg bg-violet-700 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
+              {cat.name}
+            </h2>
+            <div className="overflow-hidden rounded-b-lg bg-white shadow">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+                  <tr>
+                    <th className="px-4 py-2">Package</th>
+                    <th className="px-4 py-2 text-right">Default Price</th>
+                    <th className="px-4 py-2 text-right">Included Hours</th>
+                    <th className="px-4 py-2 text-right">OT / hr</th>
+                    <th className="px-4 py-2 text-right">OT / half hr</th>
+                    <th className="px-4 py-2 text-right">Hourly Rate</th>
+                    <th className="px-4 py-2 text-right">Deposit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pkgs.map((p) => (
+                    <tr key={p.id} className="border-t border-zinc-100">
+                      <td className="px-4 py-2 font-medium">{p.name}</td>
+                      <td className="px-4 py-2 text-right">{money(p.default_price)}</td>
+                      <td className="px-4 py-2 text-right">{p.included_hours || "—"}</td>
+                      <td className="px-4 py-2 text-right">{money(p.overtime_hourly)}</td>
+                      <td className="px-4 py-2 text-right">{money(p.overtime_half_hourly)}</td>
+                      <td className="px-4 py-2 text-right">{p.is_hourly ? money(p.hourly_rate) : "—"}</td>
+                      <td className="px-4 py-2 text-right">{money(p.deposit_value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+
+      <h2 className="mb-2 rounded-t-lg bg-zinc-800 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
+        Add-Ons
+      </h2>
+      <div className="overflow-hidden rounded-b-lg bg-white shadow">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+            <tr>
+              <th className="px-4 py-2">Add-On</th>
+              <th className="px-4 py-2">Category</th>
+              <th className="px-4 py-2 text-right">Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(addons ?? []).map((a) => (
+              <tr key={a.id} className="border-t border-zinc-100">
+                <td className="px-4 py-2 font-medium">{a.name}</td>
+                <td className="px-4 py-2">{a.category ?? "—"}</td>
+                <td className="px-4 py-2 text-right">{money(a.default_price)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-xs text-zinc-400">
+        Beta 1: package/add-on editing happens in Supabase. CRUD UI lands in Beta 2.
+      </p>
+    </div>
+  );
+}
