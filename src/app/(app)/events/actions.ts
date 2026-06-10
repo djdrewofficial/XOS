@@ -196,6 +196,73 @@ export async function deleteEvent(eventId: string) {
   redirect("/events");
 }
 
+export async function addEventClient(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const clientId = clean(formData.get("client_id"));
+  if (!clientId) return;
+  const { count } = await supabase
+    .from("event_clients")
+    .select("id", { count: "exact", head: true })
+    .eq("event_id", eventId);
+  const isFirst = (count ?? 0) === 0;
+  const { error } = await supabase.from("event_clients").insert({
+    event_id: eventId,
+    client_id: clientId,
+    role: clean(formData.get("role")) ?? "Client",
+    is_primary: isFirst,
+  });
+  if (error) throw new Error(error.message);
+  if (isFirst) {
+    await supabase.from("events").update({ client_id: clientId }).eq("id", eventId);
+  }
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function removeEventClient(eventId: string, eventClientId: string) {
+  const supabase = await createClient();
+  const { data: links } = await supabase
+    .from("event_clients")
+    .select("id, client_id, is_primary")
+    .eq("event_id", eventId);
+  if ((links ?? []).length <= 1) {
+    throw new Error("An event must always have at least one client.");
+  }
+  const removed = (links ?? []).find((l) => l.id === eventClientId);
+  const { error } = await supabase.from("event_clients").delete().eq("id", eventClientId);
+  if (error) throw new Error(error.message);
+  if (removed?.is_primary) {
+    // promote the next client to primary / contract holder
+    const next = (links ?? []).find((l) => l.id !== eventClientId)!;
+    await supabase.from("event_clients").update({ is_primary: true }).eq("id", next.id);
+    await supabase.from("events").update({ client_id: next.client_id }).eq("id", eventId);
+  }
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function setPrimaryEventClient(eventId: string, eventClientId: string) {
+  const supabase = await createClient();
+  const { data: link } = await supabase
+    .from("event_clients")
+    .select("client_id")
+    .eq("id", eventClientId)
+    .single();
+  if (!link) return;
+  await supabase.from("event_clients").update({ is_primary: false }).eq("event_id", eventId);
+  await supabase.from("event_clients").update({ is_primary: true }).eq("id", eventClientId);
+  await supabase.from("events").update({ client_id: link.client_id }).eq("id", eventId);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function addClientNote(eventId: string, clientId: string, formData: FormData) {
+  const supabase = await createClient();
+  const body = clean(formData.get("body"));
+  if (!body) return;
+  const { error } = await supabase.from("client_notes").insert({ client_id: clientId, body });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath(`/clients/${clientId}`);
+}
+
 export async function addEventNote(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const body = clean(formData.get("body"));

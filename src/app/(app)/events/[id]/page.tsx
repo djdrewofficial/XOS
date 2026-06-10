@@ -2,7 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
-import { addPayment, addScheduledPayments, addEventNote, setEventStatus } from "../actions";
+import {
+  addPayment,
+  addScheduledPayments,
+  addEventNote,
+  setEventStatus,
+  addEventClient,
+  removeEventClient,
+  setPrimaryEventClient,
+  addClientNote,
+} from "../actions";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
 import Tabs from "@/components/Tabs";
@@ -36,6 +45,8 @@ export default async function EventDetailPage({
     { data: helperRuns },
     { data: staff },
     { data: employees },
+    { data: eventClients },
+    { data: allClients },
   ] = await Promise.all([
     supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
     supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
@@ -45,7 +56,23 @@ export default async function EventDetailPage({
     supabase.from("booking_helper_runs").select("helper_id").eq("event_id", id),
     supabase.from("event_staff").select("*, employee:employees(*)").eq("event_id", id),
     supabase.from("employees").select("*").eq("is_active", true).order("first_name"),
+    supabase
+      .from("event_clients")
+      .select("*, client:clients(*)")
+      .eq("event_id", id)
+      .order("is_primary", { ascending: false })
+      .order("created_at"),
+    supabase.from("clients").select("id, first_name, last_name").order("first_name"),
   ]);
+
+  const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
+  const { data: clientNotes } = linkedClientIds.length
+    ? await supabase
+        .from("client_notes")
+        .select("*")
+        .in("client_id", linkedClientIds)
+        .order("created_at", { ascending: false })
+    : { data: [] as { id: string; client_id: string; body: string; created_at: string }[] };
 
   const total = eventTotal(event);
   const paid = (payments ?? []).reduce((s: number, p: Payment) => s + Number(p.amount), 0);
@@ -59,52 +86,144 @@ export default async function EventDetailPage({
   const dt = (v: string | null | undefined) => v ?? "—";
 
   /* ---------- TAB: Client ---------- */
+  const linkedIds = new Set((eventClients ?? []).map((ec) => ec.client_id));
+  const addableClients = (allClients ?? []).filter((c) => !linkedIds.has(c.id));
+  const canRemove = (eventClients ?? []).length > 1;
+
   const clientTab = (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <div className="card p-5">
-        <h2 className="card-title">Client</h2>
-        {event.client ? (
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Name</dt>
-              <dd>
-                <Link href={`/clients/${event.client.id}`} className="text-violet-300 hover:underline">
-                  {event.client.first_name} {event.client.last_name}
-                </Link>
-              </dd>
+    <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-2">
+        {(eventClients ?? []).map((ec) => {
+          const c = ec.client as {
+            id: string;
+            first_name: string;
+            last_name: string;
+            cell_phone: string | null;
+            email: string | null;
+            mailing_address: string | null;
+          } | null;
+          if (!c) return null;
+          const notesForClient = (clientNotes ?? []).filter((n) => n.client_id === c.id);
+          return (
+            <div key={ec.id} className={`card p-5 ${ec.is_primary ? "ring-1 ring-violet-400/40" : ""}`}>
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-base font-bold text-white">
+                    <Link href={`/clients/${c.id}`} className="hover:text-violet-300 hover:underline">
+                      {c.first_name} {c.last_name}
+                    </Link>
+                  </h2>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-300">
+                      {ec.role}
+                    </span>
+                    {ec.is_primary && (
+                      <span className="rounded bg-gradient-to-r from-violet-600 to-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                        Primary
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2 text-xs">
+                  {!ec.is_primary && (
+                    <form action={setPrimaryEventClient.bind(null, id, ec.id)}>
+                      <button className="font-semibold text-violet-300 hover:underline">Make Primary</button>
+                    </form>
+                  )}
+                  {canRemove && !ec.is_primary && (
+                    <form action={removeEventClient.bind(null, id, ec.id)}>
+                      <button className="font-semibold text-red-400 hover:underline">Remove</button>
+                    </form>
+                  )}
+                </div>
+              </div>
+              <dl className="space-y-1.5 text-sm">
+                <div className="flex justify-between"><dt className="text-zinc-500">Cell</dt><dd>{dt(c.cell_phone)}</dd></div>
+                <div className="flex justify-between"><dt className="text-zinc-500">Email</dt><dd>{dt(c.email)}</dd></div>
+                <div className="flex justify-between"><dt className="text-zinc-500">Address</dt><dd>{dt(c.mailing_address)}</dd></div>
+              </dl>
+
+              <h3 className="label-xs mt-4">Client Notes</h3>
+              <form action={addClientNote.bind(null, id, c.id)} className="mb-2 flex gap-2">
+                <input name="body" placeholder={`Note about ${c.first_name}…`} className="input w-full py-1.5 text-xs" />
+                <button className="btn-ghost px-3 py-1 text-xs">Add</button>
+              </form>
+              <ul className="space-y-1.5">
+                {notesForClient.map((n) => (
+                  <li key={n.id} className="rounded-lg bg-white/[0.05] p-2 text-xs">
+                    <span className="text-zinc-300">{n.body}</span>
+                    <span className="ml-2 text-[10px] text-zinc-600">{new Date(n.created_at).toLocaleDateString()}</span>
+                  </li>
+                ))}
+                {notesForClient.length === 0 && (
+                  <li className="text-xs text-zinc-600">No notes yet — e.g. &quot;Mentioned she hates country music.&quot;</li>
+                )}
+              </ul>
             </div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Cell</dt><dd>{dt(event.client.cell_phone)}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Email</dt><dd>{dt(event.client.email)}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Address</dt><dd>{dt(event.client.mailing_address)}</dd></div>
-          </dl>
-        ) : (
-          <p className="text-sm text-zinc-500">No client linked — add one in Edit.</p>
+          );
+        })}
+        {(eventClients ?? []).length === 0 && (
+          <div className="card p-5">
+            <p className="text-sm text-zinc-500">No clients on this event yet — add one below.</p>
+          </div>
         )}
       </div>
-      <div className="card p-5">
-        <h2 className="card-title">Links</h2>
-        <ul className="space-y-2 text-sm">
-          {(
-            [
-              ["Google Drive Timeline", cf.gdrive_timeline],
-              ["Google Drive Folder", cf.gdrive_folder],
-              ["Vibo", cf.vibo_link],
-              ["Photo Booth Gallery", cf.photobooth_gallery],
-            ] as const
-          ).map(([label, url]) =>
-            url ? (
-              <li key={label}>
-                <a href={url} target="_blank" className="text-violet-300 hover:underline">
-                  {label} ↗
-                </a>
-              </li>
-            ) : (
-              <li key={label} className="text-zinc-600">
-                {label} — not set
-              </li>
-            )
-          )}
-        </ul>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="card p-5">
+          <h2 className="card-title">Add Client To Event</h2>
+          <form action={addEventClient.bind(null, id)} className="flex flex-wrap items-end gap-2">
+            <div className="min-w-44 flex-1">
+              <label className="label-xs">Client</label>
+              <select name="client_id" required className="input w-full">
+                <option value="">Select…</option>
+                {addableClients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-40">
+              <label className="label-xs">Role</label>
+              <input name="role" defaultValue="Client" list="client-roles" className="input w-full" />
+              <datalist id="client-roles">
+                {["Contract Holder", "Bride", "Groom", "Quinceañera", "Mother of the Bride", "Father of the Bride", "Planner", "Client"].map((r) => (
+                  <option key={r} value={r} />
+                ))}
+              </datalist>
+            </div>
+            <button className="btn-primary">Add</button>
+          </form>
+          <p className="mt-2 text-xs text-zinc-500">
+            Not in the list yet? <Link href="/clients/new" className="text-violet-300 hover:underline">Create a new client</Link> first.
+            The Primary client is the contract holder — there must always be at least one client on the event.
+          </p>
+        </div>
+
+        <div className="card p-5">
+          <h2 className="card-title">Links</h2>
+          <ul className="space-y-2 text-sm">
+            {(
+              [
+                ["Google Drive Timeline", cf.gdrive_timeline],
+                ["Google Drive Folder", cf.gdrive_folder],
+                ["Vibo", cf.vibo_link],
+                ["Photo Booth Gallery", cf.photobooth_gallery],
+              ] as const
+            ).map(([label, url]) =>
+              url ? (
+                <li key={label}>
+                  <a href={url} target="_blank" className="text-violet-300 hover:underline">
+                    {label} ↗
+                  </a>
+                </li>
+              ) : (
+                <li key={label} className="text-zinc-600">
+                  {label} — not set
+                </li>
+              )
+            )}
+          </ul>
+        </div>
       </div>
     </div>
   );
@@ -314,7 +433,7 @@ export default async function EventDetailPage({
 
       <Tabs
         tabs={[
-          { id: "client", label: "Client", content: clientTab },
+          { id: "client", label: "Client", badge: (eventClients ?? []).length, content: clientTab },
           { id: "details", label: "Details", content: detailsTab },
           { id: "booking", label: "Booking", content: bookingTab },
           { id: "financials", label: "Financials", badge: balance > 0 ? money(balance) : undefined, content: financialsTab },
