@@ -170,7 +170,7 @@ export default async function EventDetailPage({
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <div className="card p-5">
+        <div className="card max-w-xl p-5">
           <h2 className="card-title">Add Client To Event</h2>
           <form action={addEventClient.bind(null, id)} className="flex flex-wrap items-end gap-2">
             <div className="min-w-44 flex-1">
@@ -198,63 +198,92 @@ export default async function EventDetailPage({
             The Primary client is the contract holder — there must always be at least one client on the event.
           </p>
         </div>
-
-        <div className="card p-5">
-          <h2 className="card-title">Links</h2>
-          <ul className="space-y-2 text-sm">
-            {(
-              [
-                ["Google Drive Timeline", cf.gdrive_timeline],
-                ["Google Drive Folder", cf.gdrive_folder],
-                ["Vibo", cf.vibo_link],
-                ["Photo Booth Gallery", cf.photobooth_gallery],
-              ] as const
-            ).map(([label, url]) =>
-              url ? (
-                <li key={label}>
-                  <a href={url} target="_blank" className="text-violet-300 hover:underline">
-                    {label} ↗
-                  </a>
-                </li>
-              ) : (
-                <li key={label} className="text-zinc-600">
-                  {label} — not set
-                </li>
-              )
-            )}
-          </ul>
-        </div>
       </div>
     </div>
   );
 
   /* ---------- TAB: Details ---------- */
+  const venue = event.venue as
+    | (typeof event.venue & { setup_fee?: number; driving_notes?: string | null; notes?: string | null })
+    | null;
   const detailsTab = (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="grid gap-5 lg:grid-cols-3">
       <div className="card p-5">
         <h2 className="card-title">Event Details</h2>
         <dl className="space-y-2 text-sm">
+          <div className="flex justify-between"><dt className="text-zinc-500">Event Name</dt><dd className="font-semibold">{event.name || "—"}</dd></div>
           <div className="flex justify-between"><dt className="text-zinc-500">Event Type</dt><dd>{event.event_type?.name ?? "—"}</dd></div>
           <div className="flex justify-between"><dt className="text-zinc-500">Event Date</dt><dd className="font-semibold">{dt(event.event_date)}</dd></div>
           <div className="flex justify-between"><dt className="text-zinc-500">Setup Time</dt><dd>{dt(event.setup_time)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Start / End</dt><dd>{dt(event.start_time)} – {dt(event.end_time)}</dd></div>
+          <div className="flex justify-between"><dt className="text-zinc-500">Start Time</dt><dd>{dt(event.start_time)}</dd></div>
+          <div className="flex justify-between"><dt className="text-zinc-500">End Time</dt><dd>{dt(event.end_time)}</dd></div>
           <div className="flex justify-between"><dt className="text-zinc-500">Guest Count</dt><dd>{event.guest_count ?? "—"}</dd></div>
         </dl>
+        <Link href={`/events/${id}/edit`} className="btn-ghost mt-4 px-4 py-1.5 text-xs">
+          Edit Details
+        </Link>
       </div>
+
       <div className="card p-5">
-        <h2 className="card-title">Venue</h2>
-        {event.venue ? (
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="card-title mb-0">Venue</h2>
+          {venue && event.venue_id && (
+            <Link href={`/venues/${event.venue_id}`} className="text-xs font-semibold text-violet-300 hover:underline">
+              Open Venue Page →
+            </Link>
+          )}
+        </div>
+        {venue ? (
           <dl className="space-y-2 text-sm">
-            <div className="flex justify-between"><dt className="text-zinc-500">Venue</dt><dd className="font-semibold">{event.venue.name}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Address</dt><dd>{[event.venue.address, event.venue.city, event.venue.state].filter(Boolean).join(", ") || "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Travel Fee</dt><dd>{money(event.venue.travel_fee)}</dd></div>
-            {event.venue.load_in_details && (
-              <div><dt className="text-zinc-500">Load-In</dt><dd className="mt-1 text-zinc-300">{event.venue.load_in_details}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Venue</dt><dd className="font-semibold">{venue.name}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Address</dt><dd className="text-right">{[venue.address, venue.city, venue.state].filter(Boolean).join(", ") || "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Travel Fee</dt><dd>{money(venue.travel_fee)}</dd></div>
+            {venue.setup_fee != null && venue.setup_fee > 0 && (
+              <div className="flex justify-between"><dt className="text-zinc-500">Setup Fee</dt><dd>{money(venue.setup_fee)}</dd></div>
+            )}
+            {venue.load_in_details && (
+              <div><dt className="text-zinc-500">Load-In</dt><dd className="mt-1 text-zinc-300">{venue.load_in_details}</dd></div>
+            )}
+            {venue.driving_notes && (
+              <div><dt className="text-zinc-500">Driving Notes</dt><dd className="mt-1 text-zinc-300">{venue.driving_notes}</dd></div>
+            )}
+            {venue.notes && (
+              <div><dt className="text-zinc-500">Venue Notes</dt><dd className="mt-1 text-zinc-300">{venue.notes}</dd></div>
             )}
           </dl>
         ) : (
           <p className="text-sm text-zinc-500">No venue selected.</p>
         )}
+      </div>
+
+      <div className="card p-5">
+        <h2 className="card-title">Vibo & Files</h2>
+        <ul className="space-y-2.5 text-sm">
+          {(
+            [
+              ["Vibo Event", cf.vibo_link, "Music planning for this event"],
+              ["Google Drive Timeline", cf.gdrive_timeline, "Event timeline document"],
+              ["Google Drive Folder", cf.gdrive_folder, "All event files"],
+              ["Photo Booth Gallery", cf.photobooth_gallery, "Client gallery"],
+            ] as const
+          ).map(([label, url, hint]) =>
+            url ? (
+              <li key={label}>
+                <a href={url} target="_blank" className="font-semibold text-violet-300 hover:underline">
+                  {label} ↗
+                </a>
+                <div className="text-xs text-zinc-600">{hint}</div>
+              </li>
+            ) : (
+              <li key={label} className="text-zinc-600">
+                {label} — <Link href={`/events/${id}/edit`} className="text-violet-300/70 hover:underline">add link</Link>
+              </li>
+            )
+          )}
+        </ul>
+        <p className="mt-4 text-xs text-zinc-600">
+          Coming soon: XOS will create the Drive folder and Vibo event automatically when an event books.
+        </p>
       </div>
     </div>
   );

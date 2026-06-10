@@ -31,7 +31,7 @@ export default async function VenuesPage() {
             {(venues ?? []).map((v) => (
               <tr key={v.id} className="row hover:bg-white/[0.04]">
                 <td className="px-4 py-2 font-medium">
-                  {v.name}
+                  <a href={`/venues/${v.id}`} className="text-violet-300 hover:underline">{v.name}</a>
                   {v.is_one_time && (
                     <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase">one-time</span>
                   )}
