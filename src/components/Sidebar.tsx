@@ -4,18 +4,36 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-const NAV = [
-  { href: "/", label: "Dashboard" },
-  { href: "/events", label: "Events" },
-  { href: "/events/new", label: "Add Event" },
-  { href: "/clients", label: "Clients" },
-  { href: "/venues", label: "Venues" },
-  { href: "/packages", label: "Packages" },
-  { href: "/payments", label: "Payments" },
-  { href: "/employees", label: "Employees" },
-  { href: "/settings/helpers", label: "Booking Helpers" },
-  { href: "/settings/email", label: "Email" },
-  { href: "/settings/statuses", label: "Statuses" },
+const SECTIONS: { heading: string; items: { href: string; label: string; icon: string }[] }[] = [
+  {
+    heading: "Operations",
+    items: [
+      { href: "/", label: "Dashboard", icon: "◆" },
+      { href: "/events", label: "Events", icon: "▣" },
+      { href: "/events/new", label: "Add Event", icon: "+" },
+      { href: "/clients", label: "Clients", icon: "◉" },
+    ],
+  },
+  {
+    heading: "Directory",
+    items: [
+      { href: "/venues", label: "Venues", icon: "⌂" },
+      { href: "/packages", label: "Packages", icon: "❖" },
+      { href: "/employees", label: "Employees", icon: "✦" },
+    ],
+  },
+  {
+    heading: "Money",
+    items: [{ href: "/payments", label: "Payments", icon: "$" }],
+  },
+  {
+    heading: "Automation",
+    items: [
+      { href: "/settings/helpers", label: "Booking Helpers", icon: "⚡" },
+      { href: "/settings/email", label: "Email", icon: "✉" },
+      { href: "/settings/statuses", label: "Statuses", icon: "●" },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -29,42 +47,69 @@ export default function Sidebar() {
     router.refresh();
   }
 
+  function isActive(href: string) {
+    if (href === "/") return pathname === "/";
+    if (href === "/events") return pathname === "/events" || /^\/events\/(?!new)/.test(pathname);
+    return pathname.startsWith(href);
+  }
+
   return (
-    <aside className="flex w-56 shrink-0 flex-col bg-zinc-950 text-zinc-300">
-      <div className="px-5 py-5 text-2xl font-black tracking-tight text-white">
-        X<span className="text-violet-500">OS</span>
-        <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
-          beta 1
-        </span>
+    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-white/[0.06] bg-black/40 backdrop-blur-xl">
+      <div className="px-5 pt-6 pb-4">
+        <div className="text-[26px] font-black tracking-tight text-white">
+          X
+          <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+            OS
+          </span>
+        </div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-600">
+          Xpress Entertainment
+        </div>
       </div>
-      <nav className="flex-1 space-y-0.5 px-3">
-        {NAV.map((item) => {
-          const active =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href) &&
-                (item.href !== "/events" || pathname === "/events" || /^\/events\/(?!new)/.test(pathname));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                active
-                  ? "bg-violet-600 text-white"
-                  : "hover:bg-zinc-800 hover:text-white"
-              }`}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
+
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+        {SECTIONS.map((section) => (
+          <div key={section.heading}>
+            <div className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-600">
+              {section.heading}
+            </div>
+            <div className="space-y-0.5">
+              {section.items.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                      active
+                        ? "bg-gradient-to-r from-violet-600/90 to-fuchsia-600/70 text-white shadow-lg shadow-violet-900/30"
+                        : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    <span
+                      className={`w-4 text-center text-xs ${
+                        active ? "text-white" : "text-zinc-600 group-hover:text-violet-300"
+                      }`}
+                    >
+                      {item.icon}
+                    </span>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
-      <button
-        onClick={signOut}
-        className="m-3 rounded-md px-3 py-2 text-left text-sm font-medium text-zinc-400 hover:bg-zinc-800 hover:text-white"
-      >
-        Sign Out
-      </button>
+
+      <div className="border-t border-white/[0.06] p-3">
+        <button
+          onClick={signOut}
+          className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          ⏻ Sign Out
+        </button>
+      </div>
     </aside>
   );
 }

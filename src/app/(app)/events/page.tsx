@@ -49,7 +49,7 @@ export default async function EventsPage({
         <h1 className="text-2xl font-bold">Events List</h1>
         <Link
           href="/events/new"
-          className="rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+          className="btn-primary px-4 py-2"
         >
           Add Event
         </Link>
@@ -64,7 +64,7 @@ export default async function EventsPage({
           <Link
             key={f.label}
             href={f.href}
-            className="rounded-full border border-zinc-300 bg-white px-3 py-1 hover:border-violet-500"
+            className="btn-ghost rounded-full px-3 py-1"
           >
             {f.label}
           </Link>
@@ -82,9 +82,9 @@ export default async function EventsPage({
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-lg bg-white shadow">
+      <div className="card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Event Date</th>
               <th className="px-4 py-2">Event Name</th>
@@ -105,12 +105,12 @@ export default async function EventsPage({
               return (
                 <tr
                   key={e.id}
-                  className="border-t border-zinc-100"
+                  className="row"
                   style={{ backgroundColor: e.status ? `${e.status.color}40` : undefined }}
                 >
                   <td className="px-4 py-2 whitespace-nowrap">{e.event_date ?? "—"}</td>
                   <td className="px-4 py-2">
-                    <Link href={`/events/${e.id}`} className="font-medium text-violet-800 hover:underline">
+                    <Link href={`/events/${e.id}`} className="font-medium text-violet-300 hover:underline">
                       {e.name || "(unnamed)"}
                     </Link>
                   </td>

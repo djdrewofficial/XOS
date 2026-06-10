@@ -31,7 +31,7 @@ export default async function EditEventPage({
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Edit Event</h1>
         <form action={deleteEvent.bind(null, id)}>
-          <button className="rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800">
+          <button className="btn-danger">
             Delete Event
           </button>
         </form>

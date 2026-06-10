@@ -24,14 +24,14 @@ export default async function EmailPage() {
   const groups = [...new Set((templates ?? []).map((t) => t.group_name))];
 
   const input =
-    "w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none bg-white";
-  const label = "mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500";
+    "input w-full";
+  const label = "label-xs";
 
   return (
     <div className="max-w-5xl">
       <h1 className="mb-5 text-2xl font-bold">Email</h1>
 
-      <div className={`mb-6 rounded-lg p-4 text-sm shadow ${mailgunConfigured ? "bg-green-50 text-green-900" : "bg-amber-50 text-amber-900"}`}>
+      <div className={`card mb-6 p-4 text-sm ${mailgunConfigured ? "border-emerald-400/30 text-emerald-200" : "border-amber-400/30 text-amber-200"}`}>
         {mailgunConfigured ? (
           <>Mailgun is configured — queued emails send via <strong>{process.env.MAILGUN_DOMAIN}</strong>.</>
         ) : (
@@ -39,19 +39,19 @@ export default async function EmailPage() {
         )}
         {queuedCount > 0 && (
           <form action={sendQueuedEmails} className="mt-2">
-            <button className="rounded-md bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-violet-700">
+            <button className="btn-primary px-4 py-1.5">
               Send {queuedCount} Queued Email{queuedCount === 1 ? "" : "s"} Now
             </button>
           </form>
         )}
       </div>
 
-      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">Templates</h2>
+      <h2 className="card-title">Templates</h2>
       {groups.map((g) => (
         <div key={g} className="mb-4">
-          <h3 className="mb-1 rounded-t-lg bg-zinc-800 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-white">{g}</h3>
-          <div className="overflow-hidden rounded-b-lg bg-white shadow">
-            <ul className="divide-y divide-zinc-100">
+          <h3 className="mb-1 rounded-t-xl bg-white/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-white">{g}</h3>
+          <div className="card overflow-hidden rounded-t-none">
+            <ul className="divide-y divide-white/[0.06]">
               {(templates ?? []).filter((t) => t.group_name === g).map((t) => (
                 <li key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
                   <div>
@@ -59,7 +59,7 @@ export default async function EmailPage() {
                     <span className="ml-3 italic text-zinc-400">Subject: {t.subject}</span>
                   </div>
                   <form action={deleteTemplate.bind(null, t.id)}>
-                    <button className="text-xs font-semibold text-red-600 hover:underline">Delete</button>
+                    <button className="text-xs font-semibold text-red-400 hover:underline">Delete</button>
                   </form>
                 </li>
               ))}
@@ -68,8 +68,8 @@ export default async function EmailPage() {
         </div>
       ))}
 
-      <h2 className="mt-6 mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">Add Template</h2>
-      <form action={createTemplate} className="space-y-4 rounded-lg bg-white p-5 shadow">
+      <h2 className="card-title mt-6">Add Template</h2>
+      <form action={createTemplate} className="space-y-4 card p-5">
         <div className="grid gap-4 md:grid-cols-3">
           <div>
             <label className={label}>Group</label>
@@ -97,19 +97,19 @@ export default async function EmailPage() {
           <summary className="cursor-pointer font-semibold">Available merge tags</summary>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {MERGE_TAGS.map((t) => (
-              <code key={t} className="rounded bg-zinc-100 px-1.5 py-0.5">{t}</code>
+              <code key={t} className="rounded bg-white/10 px-1.5 py-0.5">{t}</code>
             ))}
           </div>
         </details>
-        <button className="rounded-md bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
+        <button className="btn-primary">
           Save Template
         </button>
       </form>
 
-      <h2 className="mt-8 mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">Send Log</h2>
-      <div className="overflow-hidden rounded-lg bg-white shadow">
+      <h2 className="card-title mt-8">Send Log</h2>
+      <div className="card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Queued</th>
               <th className="px-4 py-2">To</th>
@@ -119,7 +119,7 @@ export default async function EmailPage() {
           </thead>
           <tbody>
             {(log ?? []).map((m) => (
-              <tr key={m.id} className="border-t border-zinc-100">
+              <tr key={m.id} className="row">
                 <td className="px-4 py-2 whitespace-nowrap">{new Date(m.created_at).toLocaleString()}</td>
                 <td className="px-4 py-2">{m.to_address}</td>
                 <td className="px-4 py-2">{m.subject}</td>
@@ -127,10 +127,10 @@ export default async function EmailPage() {
                   <span
                     className={`rounded px-2 py-0.5 text-xs font-semibold ${
                       m.status === "sent" || m.status === "delivered"
-                        ? "bg-green-100 text-green-800"
+                        ? "bg-emerald-500/15 text-emerald-300"
                         : m.status === "failed"
-                        ? "bg-red-100 text-red-800"
-                        : "bg-amber-100 text-amber-800"
+                        ? "bg-red-500/15 text-red-300"
+                        : "bg-amber-500/15 text-amber-300"
                     }`}
                     title={m.error ?? undefined}
                   >

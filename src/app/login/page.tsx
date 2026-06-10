@@ -27,36 +27,41 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+    <div className="flex min-h-screen items-center justify-center">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-xl bg-white p-8 shadow-2xl"
+        className="card w-full max-w-sm p-8"
       >
-        <h1 className="mb-1 text-3xl font-black tracking-tight">
-          X<span className="text-violet-600">OS</span>
+        <h1 className="mb-1 text-4xl font-black tracking-tight text-white">
+          X
+          <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+            OS
+          </span>
         </h1>
-        <p className="mb-6 text-sm text-zinc-500">Xpress Entertainment back office</p>
-        <label className="mb-1 block text-sm font-medium">Email</label>
+        <p className="mb-8 text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-600">
+          Xpress Entertainment
+        </p>
+        <label className="label-xs">Email</label>
         <input
           type="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mb-4 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none"
+          className="input mb-4 w-full"
         />
-        <label className="mb-1 block text-sm font-medium">Password</label>
+        <label className="label-xs">Password</label>
         <input
           type="password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-4 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none"
+          className="input mb-5 w-full"
         />
-        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-violet-600 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+          className="btn-primary w-full disabled:opacity-50"
         >
           {loading ? "Signing in…" : "Log On"}
         </button>

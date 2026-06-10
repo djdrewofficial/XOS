@@ -35,10 +35,10 @@ export default async function ClientDetailPage({
         )}
       </h1>
 
-      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">Events</h2>
-      <div className="mb-6 overflow-hidden rounded-lg bg-white shadow">
+      <h2 className="card-title">Events</h2>
+      <div className="mb-6 card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Date</th>
               <th className="px-4 py-2">Event</th>
@@ -49,10 +49,10 @@ export default async function ClientDetailPage({
           </thead>
           <tbody>
             {(events ?? []).map((e: XEvent) => (
-              <tr key={e.id} className="border-t border-zinc-100 hover:bg-zinc-50">
+              <tr key={e.id} className="row hover:bg-white/[0.04]">
                 <td className="px-4 py-2">{e.event_date ?? "—"}</td>
                 <td className="px-4 py-2">
-                  <Link href={`/events/${e.id}`} className="text-violet-700 hover:underline">
+                  <Link href={`/events/${e.id}`} className="text-violet-300 hover:underline">
                     {e.name || "(unnamed)"}
                   </Link>
                 </td>
@@ -81,7 +81,7 @@ export default async function ClientDetailPage({
         </table>
       </div>
 
-      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">Edit Client</h2>
+      <h2 className="card-title">Edit Client</h2>
       <ClientForm client={client} action={updateClientRecord.bind(null, id)} />
     </div>
   );

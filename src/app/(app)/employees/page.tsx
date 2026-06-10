@@ -15,16 +15,16 @@ export default async function EmployeesPage() {
     .order("first_name");
 
   const input =
-    "w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none bg-white";
-  const label = "mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500";
+    "input w-full";
+  const label = "label-xs";
 
   return (
     <div className="max-w-4xl">
       <h1 className="mb-5 text-2xl font-bold">Employees</h1>
 
-      <div className="mb-6 overflow-hidden rounded-lg bg-white shadow">
+      <div className="mb-6 card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">Email</th>
@@ -35,14 +35,14 @@ export default async function EmployeesPage() {
           </thead>
           <tbody>
             {(employees ?? []).map((e) => (
-              <tr key={e.id} className={`border-t border-zinc-100 ${!e.is_active ? "opacity-40" : ""}`}>
+              <tr key={e.id} className={`row ${!e.is_active ? "opacity-40" : ""}`}>
                 <td className="px-4 py-2 font-medium">{e.first_name} {e.last_name}</td>
                 <td className="px-4 py-2">{e.email ?? "—"}</td>
                 <td className="px-4 py-2">{e.permission_tier.replace("_", " ")}</td>
                 <td className="px-4 py-2 text-right">{e.hourly_rate ? money(e.hourly_rate) : "—"}</td>
                 <td className="px-4 py-2 text-center">
                   <form action={toggleEmployee.bind(null, e.id, !e.is_active)}>
-                    <button className="text-xs font-semibold text-violet-700 hover:underline">
+                    <button className="text-xs font-semibold text-violet-300 hover:underline">
                       {e.is_active ? "Deactivate" : "Reactivate"}
                     </button>
                   </form>
@@ -58,8 +58,8 @@ export default async function EmployeesPage() {
         </table>
       </div>
 
-      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">Add Employee</h2>
-      <form action={createEmployee} className="grid gap-4 rounded-lg bg-white p-5 shadow md:grid-cols-3">
+      <h2 className="card-title">Add Employee</h2>
+      <form action={createEmployee} className="grid gap-4 card p-5 md:grid-cols-3">
         <div>
           <label className={label}>First Name</label>
           <input name="first_name" required className={input} />
@@ -89,7 +89,7 @@ export default async function EmployeesPage() {
           <input type="number" step="0.01" name="hourly_rate" className={input} />
         </div>
         <div className="md:col-span-3">
-          <button className="rounded-md bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
+          <button className="btn-primary">
             Add Employee
           </button>
         </div>

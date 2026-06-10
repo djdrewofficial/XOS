@@ -67,20 +67,23 @@ export default async function Dashboard() {
     .limit(8);
 
   const cards = [
-    { label: "Leads This Month", value: leads, bg: "bg-blue-900" },
-    { label: "Lost Sales This Month", value: lost, bg: "bg-red-700" },
-    { label: "Booked This Month", value: booked, bg: "bg-green-700" },
-    { label: "Inquiries This Month", value: inquiries ?? 0, bg: "bg-zinc-700" },
+    { label: "Leads This Month", value: leads, glow: "from-blue-500/25", accent: "text-blue-300" },
+    { label: "Lost Sales This Month", value: lost, glow: "from-red-500/25", accent: "text-red-300" },
+    { label: "Booked This Month", value: booked, glow: "from-emerald-500/25", accent: "text-emerald-300" },
+    { label: "Inquiries This Month", value: inquiries ?? 0, glow: "from-violet-500/25", accent: "text-violet-300" },
   ];
 
   return (
     <div>
-      <h1 className="mb-5 text-2xl font-bold">Dashboard</h1>
+      <h1 className="page-title mb-5">Dashboard</h1>
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {cards.map((c) => (
-          <div key={c.label} className={`rounded-lg ${c.bg} p-5 text-white shadow`}>
-            <div className="text-4xl font-black">{c.value}</div>
-            <div className="mt-1 text-sm opacity-80">{c.label}</div>
+          <div
+            key={c.label}
+            className={`card bg-gradient-to-br ${c.glow} to-transparent p-5`}
+          >
+            <div className={`text-4xl font-black ${c.accent}`}>{c.value}</div>
+            <div className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">{c.label}</div>
           </div>
         ))}
       </div>
@@ -88,9 +91,9 @@ export default async function Dashboard() {
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2">
           <h2 className="mb-3 text-lg font-semibold">Upcoming Events</h2>
-          <div className="overflow-hidden rounded-lg bg-white shadow">
+          <div className="card overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+              <thead className="table-head">
                 <tr>
                   <th className="px-4 py-2">Date</th>
                   <th className="px-4 py-2">Event</th>
@@ -102,10 +105,10 @@ export default async function Dashboard() {
               </thead>
               <tbody>
                 {(upcoming ?? []).map((e: XEvent) => (
-                  <tr key={e.id} className="border-t border-zinc-100 hover:bg-zinc-50">
+                  <tr key={e.id} className="row hover:bg-white/[0.04]">
                     <td className="px-4 py-2 whitespace-nowrap">{e.event_date}</td>
                     <td className="px-4 py-2">
-                      <Link href={`/events/${e.id}`} className="font-medium text-violet-700 hover:underline">
+                      <Link href={`/events/${e.id}`} className="font-medium text-violet-300 hover:underline">
                         {e.name || "(unnamed)"}
                       </Link>
                     </td>
@@ -140,18 +143,18 @@ export default async function Dashboard() {
 
         <div>
           <h2 className="mb-3 text-lg font-semibold">Recent Payments</h2>
-          <div className="rounded-lg bg-white p-4 shadow">
+          <div className="card p-4">
             {(recentPayments ?? []).length === 0 && (
               <p className="py-4 text-center text-sm text-zinc-400">No payments recorded.</p>
             )}
-            <ul className="divide-y divide-zinc-100">
+            <ul className="divide-y divide-white/[0.06]">
               {(recentPayments ?? []).map((p) => (
                 <li key={p.id} className="flex items-center justify-between py-2 text-sm">
-                  <span className="text-zinc-600">
+                  <span className="text-zinc-400">
                     {new Date(p.paid_at).toLocaleDateString()} ·{" "}
                     {(p.event as { name?: string } | null)?.name ?? "Unassigned"}
                   </span>
-                  <span className="font-semibold text-green-700">{money(p.amount)}</span>
+                  <span className="font-semibold text-emerald-400">{money(p.amount)}</span>
                 </li>
               ))}
             </ul>

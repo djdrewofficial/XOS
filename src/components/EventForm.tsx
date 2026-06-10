@@ -25,13 +25,13 @@ export default function EventForm({
   const cf = (event?.custom_fields ?? {}) as Record<string, string>;
 
   const input =
-    "w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none bg-white";
-  const label = "mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500";
+    "input w-full";
+  const label = "label-xs";
 
   return (
     <form action={action} className="space-y-6">
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h2 className="mb-4 border-b border-zinc-100 pb-2 text-sm font-bold uppercase tracking-wide text-violet-700">
+      <section className="card p-5">
+        <h2 className="card-title border-b border-white/10 pb-2">
           Details
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -80,8 +80,8 @@ export default function EventForm({
         </div>
       </section>
 
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h2 className="mb-4 border-b border-zinc-100 pb-2 text-sm font-bold uppercase tracking-wide text-violet-700">
+      <section className="card p-5">
+        <h2 className="card-title border-b border-white/10 pb-2">
           Booking
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -122,8 +122,8 @@ export default function EventForm({
         </div>
       </section>
 
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h2 className="mb-4 border-b border-zinc-100 pb-2 text-sm font-bold uppercase tracking-wide text-violet-700">
+      <section className="card p-5">
+        <h2 className="card-title border-b border-white/10 pb-2">
           Financials
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -163,8 +163,8 @@ export default function EventForm({
         </div>
       </section>
 
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h2 className="mb-4 border-b border-zinc-100 pb-2 text-sm font-bold uppercase tracking-wide text-violet-700">
+      <section className="card p-5">
+        <h2 className="card-title border-b border-white/10 pb-2">
           Venue
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -180,8 +180,8 @@ export default function EventForm({
         </div>
       </section>
 
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h2 className="mb-4 border-b border-zinc-100 pb-2 text-sm font-bold uppercase tracking-wide text-violet-700">
+      <section className="card p-5">
+        <h2 className="card-title border-b border-white/10 pb-2">
           Custom Fields
         </h2>
         <div className="grid gap-4 md:grid-cols-2">
@@ -204,8 +204,8 @@ export default function EventForm({
         </div>
       </section>
 
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h2 className="mb-4 border-b border-zinc-100 pb-2 text-sm font-bold uppercase tracking-wide text-violet-700">
+      <section className="card p-5">
+        <h2 className="card-title border-b border-white/10 pb-2">
           Internal Notes
         </h2>
         <textarea name="internal_notes" defaultValue={event?.internal_notes ?? ""} rows={3} className={input} />
@@ -213,7 +213,7 @@ export default function EventForm({
 
       <button
         type="submit"
-        className="rounded-md bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700"
+        className="btn-primary"
       >
         Save Event
       </button>

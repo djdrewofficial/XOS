@@ -21,7 +21,7 @@ export default async function ClientsPage({
         <h1 className="text-2xl font-bold">Clients</h1>
         <Link
           href="/clients/new"
-          className="rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+          className="btn-primary px-4 py-2"
         >
           Add Client
         </Link>
@@ -32,17 +32,17 @@ export default async function ClientsPage({
           name="q"
           defaultValue={q ?? ""}
           placeholder="Search clients…"
-          className="w-full rounded-md border border-zinc-300 bg-white px-4 py-2.5 text-sm focus:border-violet-500 focus:outline-none"
+          className="input w-full px-4 py-2.5"
         />
       </form>
 
-      <div className="overflow-hidden rounded-lg bg-white shadow">
-        <ul className="divide-y divide-zinc-100">
+      <div className="card overflow-hidden">
+        <ul className="divide-y divide-white/[0.06]">
           {(clients ?? []).map((c) => (
             <li key={c.id}>
               <Link
                 href={`/clients/${c.id}`}
-                className="flex items-center justify-between px-4 py-3 text-sm hover:bg-zinc-50"
+                className="flex items-center justify-between px-4 py-3 text-sm hover:bg-white/[0.04]"
               >
                 <span className="font-medium">
                   {c.first_name} {c.last_name}

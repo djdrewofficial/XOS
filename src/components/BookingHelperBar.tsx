@@ -37,7 +37,7 @@ export default function BookingHelperBar({
   if (visible.length === 0) return null;
 
   return (
-    <div className="mb-6 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm">
+    <div className="mb-6 card p-3">
       <div className="mb-2 text-xs font-bold uppercase tracking-wide text-zinc-400">
         Booking Helpers
       </div>

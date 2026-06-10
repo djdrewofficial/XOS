@@ -32,8 +32,8 @@ export default async function HelpersPage() {
   const templateNames = new Map((templates ?? []).map((t) => [t.id as string, t.name as string]));
 
   const input =
-    "w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none bg-white";
-  const label = "mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500";
+    "input w-full";
+  const label = "label-xs";
 
   return (
     <div className="max-w-5xl">
@@ -43,9 +43,9 @@ export default async function HelpersPage() {
         Conditions control when each button is visible.
       </p>
 
-      <div className="mb-8 overflow-hidden rounded-lg bg-white shadow">
+      <div className="mb-8 card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">#</th>
               <th className="px-4 py-2">Button</th>
@@ -56,7 +56,7 @@ export default async function HelpersPage() {
           </thead>
           <tbody>
             {(helpers ?? []).map((h) => (
-              <tr key={h.id} className={`border-t border-zinc-100 ${!h.is_active ? "opacity-40" : ""}`}>
+              <tr key={h.id} className={`row ${!h.is_active ? "opacity-40" : ""}`}>
                 <td className="px-4 py-2">{h.position}</td>
                 <td className="px-4 py-2">
                   <span
@@ -66,7 +66,7 @@ export default async function HelpersPage() {
                     {h.button_text}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-xs text-zinc-600">
+                <td className="px-4 py-2 text-xs text-zinc-400">
                   {(h.actions as HelperAction[]).map((a, i) => (
                     <div key={i}>• {describeAction(a, statusNames, templateNames)}</div>
                   ))}
@@ -81,12 +81,12 @@ export default async function HelpersPage() {
                 </td>
                 <td className="px-4 py-2 text-right text-xs">
                   <form action={toggleHelper.bind(null, h.id, !h.is_active)} className="inline">
-                    <button className="font-semibold text-violet-700 hover:underline">
+                    <button className="font-semibold text-violet-300 hover:underline">
                       {h.is_active ? "Disable" : "Enable"}
                     </button>
                   </form>
                   <form action={deleteHelper.bind(null, h.id)} className="ml-3 inline">
-                    <button className="font-semibold text-red-600 hover:underline">Delete</button>
+                    <button className="font-semibold text-red-400 hover:underline">Delete</button>
                   </form>
                 </td>
               </tr>
@@ -95,8 +95,8 @@ export default async function HelpersPage() {
         </table>
       </div>
 
-      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">Add Booking Helper</h2>
-      <form action={createHelper} className="space-y-5 rounded-lg bg-white p-5 shadow">
+      <h2 className="card-title">Add Booking Helper</h2>
+      <form action={createHelper} className="space-y-5 card p-5">
         <div className="grid gap-4 md:grid-cols-4">
           <div className="md:col-span-2">
             <label className={label}>Title</label>
@@ -168,7 +168,7 @@ export default async function HelpersPage() {
             {(statuses ?? []).map((s) => (
               <label
                 key={s.id}
-                className="flex cursor-pointer items-center gap-1.5 rounded border border-zinc-200 px-2 py-1 text-xs"
+                className="flex cursor-pointer items-center gap-1.5 rounded border border-white/10 px-2 py-1 text-xs"
               >
                 <input type="checkbox" name="visible_status_ids" value={s.id} />
                 <span className="rounded px-1.5 py-0.5 font-semibold" style={{ backgroundColor: s.color, color: s.text_color }}>
@@ -186,7 +186,7 @@ export default async function HelpersPage() {
           </label>
         </div>
 
-        <button className="rounded-md bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
+        <button className="btn-primary">
           Create Helper
         </button>
       </form>

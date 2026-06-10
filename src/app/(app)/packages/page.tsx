@@ -20,12 +20,12 @@ export default async function PackagesPage() {
         if (pkgs.length === 0) return null;
         return (
           <div key={cat.id} className="mb-6">
-            <h2 className="mb-2 rounded-t-lg bg-violet-700 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
+            <h2 className="mb-2 rounded-t-xl bg-gradient-to-r from-violet-600/70 to-fuchsia-600/50 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
               {cat.name}
             </h2>
-            <div className="overflow-hidden rounded-b-lg bg-white shadow">
+            <div className="card overflow-hidden rounded-t-none">
               <table className="w-full text-sm">
-                <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+                <thead className="table-head">
                   <tr>
                     <th className="px-4 py-2">Package</th>
                     <th className="px-4 py-2 text-right">Default Price</th>
@@ -38,7 +38,7 @@ export default async function PackagesPage() {
                 </thead>
                 <tbody>
                   {pkgs.map((p) => (
-                    <tr key={p.id} className="border-t border-zinc-100">
+                    <tr key={p.id} className="row">
                       <td className="px-4 py-2 font-medium">{p.name}</td>
                       <td className="px-4 py-2 text-right">{money(p.default_price)}</td>
                       <td className="px-4 py-2 text-right">{p.included_hours || "—"}</td>
@@ -55,12 +55,12 @@ export default async function PackagesPage() {
         );
       })}
 
-      <h2 className="mb-2 rounded-t-lg bg-zinc-800 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
+      <h2 className="mb-2 rounded-t-xl bg-white/10 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
         Add-Ons
       </h2>
-      <div className="overflow-hidden rounded-b-lg bg-white shadow">
+      <div className="card overflow-hidden rounded-t-none">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Add-On</th>
               <th className="px-4 py-2">Category</th>
@@ -69,7 +69,7 @@ export default async function PackagesPage() {
           </thead>
           <tbody>
             {(addons ?? []).map((a) => (
-              <tr key={a.id} className="border-t border-zinc-100">
+              <tr key={a.id} className="row">
                 <td className="px-4 py-2 font-medium">{a.name}</td>
                 <td className="px-4 py-2">{a.category ?? "—"}</td>
                 <td className="px-4 py-2 text-right">{money(a.default_price)}</td>

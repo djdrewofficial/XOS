@@ -19,9 +19,9 @@ export default async function StatusesPage() {
     <div className="max-w-4xl">
       <h1 className="mb-5 text-2xl font-bold">Event Statuses</h1>
 
-      <div className="mb-8 overflow-hidden rounded-lg bg-white shadow">
+      <div className="mb-8 card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">Color</th>
@@ -33,7 +33,7 @@ export default async function StatusesPage() {
           </thead>
           <tbody>
             {(statuses ?? []).map((s) => (
-              <tr key={s.id} className="border-t border-zinc-100">
+              <tr key={s.id} className="row">
                 <td className="px-4 py-2 font-medium">{s.name}</td>
                 <td className="px-4 py-2">
                   <span
@@ -43,7 +43,7 @@ export default async function StatusesPage() {
                     {s.color}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-center text-green-700">{flag(s.is_booked_group)}</td>
+                <td className="px-4 py-2 text-center text-emerald-400">{flag(s.is_booked_group)}</td>
                 <td className="px-4 py-2 text-center text-amber-600">{flag(s.is_pending_group)}</td>
                 <td className="px-4 py-2 text-center text-zinc-500">{flag(s.is_lost_sale_group)}</td>
                 <td className="px-4 py-2 text-center text-blue-700">{flag(s.is_leads_group)}</td>
@@ -53,16 +53,16 @@ export default async function StatusesPage() {
         </table>
       </div>
 
-      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">
+      <h2 className="card-title">
         Daily Scheduled Actions
       </h2>
       <p className="mb-3 text-sm text-zinc-500">
         Status rollovers run nightly (mirrors DJEP&apos;s 4:00 AM CT actions). Beta 1 lists the rules;
         the scheduled runner ships in Beta 2 (Supabase pg_cron or edge function).
       </p>
-      <div className="overflow-hidden rounded-lg bg-white shadow">
+      <div className="card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">When</th>
               <th className="px-4 py-2">And Status Is</th>
@@ -71,7 +71,7 @@ export default async function StatusesPage() {
           </thead>
           <tbody>
             {(actions ?? []).map((a) => (
-              <tr key={a.id} className="border-t border-zinc-100">
+              <tr key={a.id} className="row">
                 <td className="px-4 py-2">
                   {a.trigger_type === "event_date_passed" ? "Event date has passed" : "Contract due date has passed"}
                 </td>

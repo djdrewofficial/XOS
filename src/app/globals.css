@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #08070c;
+  --foreground: #e7e5f0;
 }
 
 @theme inline {
@@ -12,15 +12,80 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(124, 58, 237, 0.16), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(217, 70, 239, 0.08), transparent 60%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ---------- XOS component classes ---------- */
+
+.card {
+  @apply rounded-2xl border border-white/[0.07] bg-white/[0.035] shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm;
+}
+
+.card-title {
+  @apply mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-violet-300/90;
+}
+
+.input {
+  @apply rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 transition-colors focus:border-violet-400/60 focus:bg-white/[0.07] focus:outline-none;
+}
+.input option {
+  @apply bg-zinc-900 text-zinc-100;
+}
+
+.label-xs {
+  @apply mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-900/40 transition-all hover:from-violet-500 hover:to-fuchsia-500 hover:shadow-violet-800/50 disabled:opacity-50;
+}
+
+.btn-ghost {
+  @apply inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-zinc-300 transition-colors hover:border-violet-400/50 hover:text-white;
+}
+
+.btn-danger {
+  @apply inline-flex items-center justify-center rounded-lg bg-red-600/80 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500;
+}
+
+.table-head {
+  @apply bg-white/[0.04] text-left text-[10px] uppercase tracking-[0.14em] text-zinc-500;
+}
+
+.row {
+  @apply border-t border-white/[0.05];
+}
+
+.page-title {
+  @apply text-2xl font-bold tracking-tight text-white;
+}
+
+.chip {
+  @apply rounded-md px-2 py-0.5 text-xs font-bold;
+}
+
+/* status chips keep their DJEP colors (light backgrounds) — force dark text */
+.status-chip {
+  @apply rounded-md px-2.5 py-1 text-xs font-bold shadow-sm;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.45);
 }

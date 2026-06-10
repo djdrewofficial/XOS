@@ -9,16 +9,16 @@ export default async function VenuesPage() {
   const { data: venues } = await supabase.from("venues").select("*").order("name");
 
   const input =
-    "w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none bg-white";
-  const label = "mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500";
+    "input w-full";
+  const label = "label-xs";
 
   return (
     <div className="max-w-5xl">
       <h1 className="mb-5 text-2xl font-bold">Venues</h1>
 
-      <div className="mb-6 overflow-hidden rounded-lg bg-white shadow">
+      <div className="mb-6 card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Venue</th>
               <th className="px-4 py-2">Address</th>
@@ -29,11 +29,11 @@ export default async function VenuesPage() {
           </thead>
           <tbody>
             {(venues ?? []).map((v) => (
-              <tr key={v.id} className="border-t border-zinc-100 hover:bg-zinc-50">
+              <tr key={v.id} className="row hover:bg-white/[0.04]">
                 <td className="px-4 py-2 font-medium">
                   {v.name}
                   {v.is_one_time && (
-                    <span className="ml-2 rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] uppercase">one-time</span>
+                    <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase">one-time</span>
                   )}
                 </td>
                 <td className="px-4 py-2">
@@ -53,8 +53,8 @@ export default async function VenuesPage() {
         </table>
       </div>
 
-      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-violet-700">Add Venue</h2>
-      <form action={createVenue} className="grid gap-4 rounded-lg bg-white p-5 shadow md:grid-cols-3">
+      <h2 className="card-title">Add Venue</h2>
+      <form action={createVenue} className="grid gap-4 card p-5 md:grid-cols-3">
         <div>
           <label className={label}>Name</label>
           <input name="name" required className={input} />
@@ -94,7 +94,7 @@ export default async function VenuesPage() {
           <input name="notes" className={input} />
         </div>
         <div className="md:col-span-3">
-          <button className="rounded-md bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
+          <button className="btn-primary">
             Add Venue
           </button>
         </div>

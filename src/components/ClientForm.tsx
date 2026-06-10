@@ -8,11 +8,11 @@ export default function ClientForm({
   action: (formData: FormData) => Promise<void>;
 }) {
   const input =
-    "w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none bg-white";
-  const label = "mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500";
+    "input w-full";
+  const label = "label-xs";
 
   return (
-    <form action={action} className="space-y-4 rounded-lg bg-white p-5 shadow">
+    <form action={action} className="space-y-4 card p-5">
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <label className={label}>First Name</label>
@@ -43,7 +43,7 @@ export default function ClientForm({
         <label className={label}>Notes</label>
         <textarea name="notes" rows={3} defaultValue={client?.notes ?? ""} className={input} />
       </div>
-      <button className="rounded-md bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
+      <button className="btn-primary">
         Save Client
       </button>
     </form>

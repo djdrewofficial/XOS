@@ -39,14 +39,14 @@ export default async function PaymentsPage({
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Payments — {y}</h1>
         <div className="flex gap-2 text-sm">
-          <Link href={`/payments?year=${y - 1}`} className="rounded border border-zinc-300 bg-white px-3 py-1 hover:border-violet-500">← {y - 1}</Link>
-          <Link href={`/payments?year=${y + 1}`} className="rounded border border-zinc-300 bg-white px-3 py-1 hover:border-violet-500">{y + 1} →</Link>
+          <Link href={`/payments?year=${y - 1}`} className="btn-ghost px-3 py-1">← {y - 1}</Link>
+          <Link href={`/payments?year=${y + 1}`} className="btn-ghost px-3 py-1">{y + 1} →</Link>
         </div>
       </div>
 
       <div className="mb-6 grid grid-cols-3 gap-3 md:grid-cols-6">
         {months.map((m) => (
-          <div key={m.month} className="rounded-lg bg-white p-3 text-center shadow">
+          <div key={m.month} className="card p-3 text-center">
             <div className="text-xs uppercase text-zinc-400">{m.label.slice(0, 3)}</div>
             <div className="text-sm font-bold">{money(m.total)}</div>
             <div className="text-[10px] text-zinc-400">{m.count} payments</div>
@@ -58,9 +58,9 @@ export default async function PaymentsPage({
         <div className="text-3xl font-black">{money(yearTotal)}</div>
       </div>
 
-      <div className="overflow-hidden rounded-lg bg-white shadow">
+      <div className="card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Paid</th>
               <th className="px-4 py-2">Event</th>
@@ -71,11 +71,11 @@ export default async function PaymentsPage({
           </thead>
           <tbody>
             {(payments ?? []).map((p) => (
-              <tr key={p.id} className="border-t border-zinc-100">
+              <tr key={p.id} className="row">
                 <td className="px-4 py-2">{new Date(p.paid_at).toLocaleDateString()}</td>
                 <td className="px-4 py-2">
                   {p.event ? (
-                    <Link href={`/events/${(p.event as { id: string }).id}`} className="text-violet-700 hover:underline">
+                    <Link href={`/events/${(p.event as { id: string }).id}`} className="text-violet-300 hover:underline">
                       {(p.event as { name: string }).name || "(unnamed)"}
                     </Link>
                   ) : (
@@ -84,7 +84,7 @@ export default async function PaymentsPage({
                 </td>
                 <td className="px-4 py-2">{p.method}</td>
                 <td className="px-4 py-2">{p.status}</td>
-                <td className="px-4 py-2 text-right font-semibold text-green-700">{money(p.amount)}</td>
+                <td className="px-4 py-2 text-right font-semibold text-emerald-400">{money(p.amount)}</td>
               </tr>
             ))}
             {(payments ?? []).length === 0 && (
