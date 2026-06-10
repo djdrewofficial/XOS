@@ -218,6 +218,41 @@ export async function addEventClient(eventId: string, formData: FormData) {
   revalidatePath(`/events/${eventId}`);
 }
 
+export async function createClientAndAttach(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const firstName = clean(formData.get("first_name"));
+  if (!firstName) return;
+  const { data: newClient, error: clientError } = await supabase
+    .from("clients")
+    .insert({
+      first_name: firstName,
+      last_name: clean(formData.get("last_name")) ?? "",
+      cell_phone: clean(formData.get("cell_phone")),
+      email: clean(formData.get("email")),
+    })
+    .select("id")
+    .single();
+  if (clientError) throw new Error(clientError.message);
+
+  const { count } = await supabase
+    .from("event_clients")
+    .select("id", { count: "exact", head: true })
+    .eq("event_id", eventId);
+  const isFirst = (count ?? 0) === 0;
+
+  const { error } = await supabase.from("event_clients").insert({
+    event_id: eventId,
+    client_id: newClient.id,
+    role: clean(formData.get("role")) ?? "Client",
+    is_primary: isFirst,
+  });
+  if (error) throw new Error(error.message);
+  if (isFirst) {
+    await supabase.from("events").update({ client_id: newClient.id }).eq("id", eventId);
+  }
+  revalidatePath(`/events/${eventId}`);
+}
+
 export async function removeEventClient(eventId: string, eventClientId: string) {
   const supabase = await createClient();
   const { data: links } = await supabase

@@ -8,10 +8,12 @@ import {
   addEventNote,
   setEventStatus,
   addEventClient,
+  createClientAndAttach,
   removeEventClient,
   setPrimaryEventClient,
   addClientNote,
 } from "../actions";
+import ClientPicker from "@/components/ClientPicker";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
 import Tabs from "@/components/Tabs";
@@ -46,7 +48,6 @@ export default async function EventDetailPage({
     { data: staff },
     { data: employees },
     { data: eventClients },
-    { data: allClients },
   ] = await Promise.all([
     supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
     supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
@@ -62,7 +63,6 @@ export default async function EventDetailPage({
       .eq("event_id", id)
       .order("is_primary", { ascending: false })
       .order("created_at"),
-    supabase.from("clients").select("id, first_name, last_name").order("first_name"),
   ]);
 
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
@@ -86,8 +86,6 @@ export default async function EventDetailPage({
   const dt = (v: string | null | undefined) => v ?? "—";
 
   /* ---------- TAB: Client ---------- */
-  const linkedIds = new Set((eventClients ?? []).map((ec) => ec.client_id));
-  const addableClients = (allClients ?? []).filter((c) => !linkedIds.has(c.id));
   const canRemove = (eventClients ?? []).length > 1;
 
   const clientTab = (
@@ -172,29 +170,11 @@ export default async function EventDetailPage({
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="card max-w-xl p-5">
           <h2 className="card-title">Add Client To Event</h2>
-          <form action={addEventClient.bind(null, id)} className="flex flex-wrap items-end gap-2">
-            <div className="min-w-44 flex-1">
-              <label className="label-xs">Client</label>
-              <select name="client_id" required className="input w-full">
-                <option value="">Select…</option>
-                {addableClients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="min-w-40">
-              <label className="label-xs">Role</label>
-              <input name="role" defaultValue="Client" list="client-roles" className="input w-full" />
-              <datalist id="client-roles">
-                {["Contract Holder", "Bride", "Groom", "Quinceañera", "Mother of the Bride", "Father of the Bride", "Planner", "Client"].map((r) => (
-                  <option key={r} value={r} />
-                ))}
-              </datalist>
-            </div>
-            <button className="btn-primary">Add</button>
-          </form>
-          <p className="mt-2 text-xs text-zinc-500">
-            Not in the list yet? <Link href="/clients/new" className="text-violet-300 hover:underline">Create a new client</Link> first.
+          <ClientPicker
+            attachExisting={addEventClient.bind(null, id)}
+            createAndAttach={createClientAndAttach.bind(null, id)}
+          />
+          <p className="mt-3 text-xs text-zinc-500">
             The Primary client is the contract holder — there must always be at least one client on the event.
           </p>
         </div>
