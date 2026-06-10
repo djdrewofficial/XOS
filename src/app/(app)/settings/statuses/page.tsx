@@ -39,7 +39,8 @@ export default async function StatusesPage() {
       <h1 className="page-title mb-5">Event Statuses</h1>
 
       {/* ---------- editable status rows ---------- */}
-      <div className="card mb-3 overflow-hidden">
+      <div className="card mb-3 overflow-x-auto">
+        <div className="min-w-[1080px]">
         <div className="table-head flex items-center py-2">
           <span className="w-[15%] px-3">Status Name</span>
           <span className="w-[11%] px-3">Preview</span>
@@ -102,6 +103,7 @@ export default async function StatusesPage() {
             </form>
           );
         })}
+        </div>
       </div>
       <p className="mb-8 text-xs text-zinc-500">
         Group flags drive logic: <strong>Booked</strong> = financial calculations + availability, <strong>Leads</strong>/<strong>Lost Sale</strong> = dashboard stats, <strong>Pending</strong> = pending views. Statuses in use can&apos;t be deleted — uncheck Active instead.
