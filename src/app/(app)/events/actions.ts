@@ -142,6 +142,60 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
   revalidatePath(`/events/${eventId}`);
 }
 
+export async function runBookingHelper(eventId: string, helperId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("run_booking_helper", {
+    p_helper_id: helperId,
+    p_event_id: eventId,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+}
+
+export async function assignStaff(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const employeeId = clean(formData.get("employee_id"));
+  if (!employeeId) return;
+  const { error } = await supabase.from("event_staff").insert({
+    event_id: eventId,
+    employee_id: employeeId,
+    role: clean(formData.get("role")) ?? "DJ",
+    flat_wage: num(formData.get("flat_wage")),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function removeStaff(eventId: string, staffId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("event_staff").delete().eq("id", staffId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function markStaff(
+  eventId: string,
+  staffId: string,
+  field: "notified_at" | "confirmed_at" | "checked_in_at" | "checked_out_at"
+) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("event_staff")
+    .update({ [field]: new Date().toISOString() })
+    .eq("id", staffId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function deleteEvent(eventId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("events").delete().eq("id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/events");
+  redirect("/events");
+}
+
 export async function addEventNote(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const body = clean(formData.get("body"));

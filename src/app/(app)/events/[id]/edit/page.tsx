@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import EventForm from "@/components/EventForm";
-import { updateEvent } from "../../actions";
+import { updateEvent, deleteEvent } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,14 @@ export default async function EditEventPage({
 
   return (
     <div className="max-w-4xl">
-      <h1 className="mb-5 text-2xl font-bold">Edit Event</h1>
+      <div className="mb-5 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Edit Event</h1>
+        <form action={deleteEvent.bind(null, id)}>
+          <button className="rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800">
+            Delete Event
+          </button>
+        </form>
+      </div>
       <EventForm
         event={event}
         action={updateEvent.bind(null, id)}

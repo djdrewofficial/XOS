@@ -42,8 +42,31 @@ folder for the full specification.
    ```
    Open http://localhost:3000 and log in.
 
+## Beta 2 (current)
+
+- **Booking Helper engine** — runs as a Postgres function (`run_booking_helper`) so web and a
+  future mobile app share identical behavior. Helpers appear as colored buttons on the event
+  record, gated by visibility conditions (status whitelist, hide-if-payment, run-once). Actions:
+  set status, stamp dates (today / +N days), queue merge-tagged email to client, add note.
+  Manage at **Settings → Booking Helpers**; 5 starter helpers seeded.
+- **Merge tags** — `render_merge_tags()` in Postgres supports ~20 DJEP-style tags
+  (`<first_name>`, `<event_date_countdown>`, `<balance_due>`, …).
+- **Email** — templates with groups + merge tags; helper emails render and queue into an outbox
+  (`email_log`); "Send Queued" pushes via **Mailgun** once `MAILGUN_API_KEY`/`MAILGUN_DOMAIN`
+  are in `.env.local`. Send log with statuses on the Email page.
+- **Nightly status runner** — `run_daily_status_actions()` scheduled via pg_cron at 09:00 UTC
+  (mirrors DJEP's 4 AM rollover rules).
+- **Employees + staff assignment** — employee directory with permission tiers and hourly rates;
+  assign staff to events with role/wage, mark notified/confirmed/checked in/out.
+- Event delete.
+
+**Beta 2 setup:** run `supabase/migrations/00003_beta2_engine.sql` in the Supabase SQL Editor.
+If the pg_cron line errors, enable the `pg_cron` extension first (Database → Extensions), then re-run
+just the `cron.schedule(...)` line.
+
 ## Roadmap (from spec §7)
 
-Beta 2: booking-helper executor + buttons on the event record, Mailgun sending + email templates,
-daily-action runner (pg_cron), staff assignment UI, package/add-on CRUD, scheduled-payment pay-by-link,
-DJEP data import. Phase 2: check-in/out payroll, QR equipment, funnel analytics, full report suite.
+Beta 3: package/add-on CRUD + event add-ons, scheduled-payment pay-by-link (Stripe or current
+gateway), GHL webhook handoff, document templates + e-sign, income reports (Monthly Summary /
+Breakdown), DJEP data import, PWA manifest for phones. Phase 2: check-in/out payroll, QR
+equipment, funnel analytics, full report suite.

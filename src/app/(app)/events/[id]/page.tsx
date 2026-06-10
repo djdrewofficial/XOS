@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
 import { addPayment, addScheduledPayments, addEventNote, setEventStatus } from "../actions";
+import BookingHelperBar from "@/components/BookingHelperBar";
+import StaffSection from "@/components/StaffSection";
 
 export const dynamic = "force-dynamic";
 
@@ -24,13 +26,25 @@ export default async function EventDetailPage({
 
   if (!event) notFound();
 
-  const [{ data: schedule }, { data: payments }, { data: notes }, { data: statuses }] =
-    await Promise.all([
-      supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
-      supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
-      supabase.from("event_notes").select("*").eq("event_id", id).order("created_at", { ascending: false }),
-      supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
-    ]);
+  const [
+    { data: schedule },
+    { data: payments },
+    { data: notes },
+    { data: statuses },
+    { data: helpers },
+    { data: helperRuns },
+    { data: staff },
+    { data: employees },
+  ] = await Promise.all([
+    supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
+    supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
+    supabase.from("event_notes").select("*").eq("event_id", id).order("created_at", { ascending: false }),
+    supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
+    supabase.from("booking_helpers").select("*").eq("is_active", true).order("position"),
+    supabase.from("booking_helper_runs").select("helper_id").eq("event_id", id),
+    supabase.from("event_staff").select("*, employee:employees(*)").eq("event_id", id),
+    supabase.from("employees").select("*").eq("is_active", true).order("first_name"),
+  ]);
 
   const total = eventTotal(event);
   const paid = (payments ?? []).reduce((s: number, p: Payment) => s + Number(p.amount), 0);
@@ -73,7 +87,15 @@ export default async function EventDetailPage({
         </div>
       </div>
 
-      {/* quick status change — precursor to booking helpers */}
+      <BookingHelperBar
+        eventId={id}
+        statusId={event.status_id}
+        helpers={helpers ?? []}
+        ranHelperIds={(helperRuns ?? []).map((r) => r.helper_id)}
+        hasPayments={(payments ?? []).length > 0}
+      />
+
+      {/* quick status change */}
       <div className="mb-6 flex flex-wrap gap-1.5">
         {(statuses ?? []).map((s) => (
           <form key={s.id} action={setEventStatus.bind(null, id, s.id)}>
@@ -202,6 +224,10 @@ export default async function EventDetailPage({
             <div className="flex justify-between"><dt className="text-zinc-500">Contract Signed</dt><dd>{event.contract_signed_date ?? "—"}</dd></div>
           </dl>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <StaffSection eventId={id} staff={staff ?? []} employees={employees ?? []} />
       </div>
 
       {/* Payments log + notes */}
