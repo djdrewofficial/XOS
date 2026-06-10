@@ -158,7 +158,7 @@ export default function EventChip({
                   onClick={() => setTab(t)}
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
                     tab === t
-                      ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white"
+                      ? "bg-gradient-to-r from-brand to-brand-light text-white"
                       : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
                   }`}
                 >
@@ -200,7 +200,7 @@ export default function EventChip({
                       <div className={rowCls}><span className={dtCls}>Name</span><span className="font-semibold">{e.client.first_name} {e.client.last_name}</span></div>
                       <div className={rowCls}><span className={dtCls}>Cell</span><span>{e.client.cell_phone ?? "—"}</span></div>
                       <div className={rowCls}><span className={dtCls}>Email</span><span>{e.client.email ?? "—"}</span></div>
-                      <Link href={`/clients/${e.client.id}`} className="inline-block pt-1 text-xs font-semibold text-violet-300 hover:underline">
+                      <Link href={`/clients/${e.client.id}`} className="inline-block pt-1 text-xs font-semibold text-brand-lighter hover:underline">
                         View client profile →
                       </Link>
                     </>

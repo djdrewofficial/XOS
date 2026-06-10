@@ -83,11 +83,11 @@ export default async function StatusesPage() {
               </span>
               {GROUPS.map(([key]) => (
                 <span key={key} className="w-[7%] text-center">
-                  <input type="checkbox" name={key} defaultChecked={s[key]} className="size-4 accent-violet-500" />
+                  <input type="checkbox" name={key} defaultChecked={s[key]} className="size-4 accent-brand-light" />
                 </span>
               ))}
               <span className="w-[6%] text-center">
-                <input type="checkbox" name="is_active" defaultChecked={s.is_active} className="size-4 accent-violet-500" />
+                <input type="checkbox" name="is_active" defaultChecked={s.is_active} className="size-4 accent-brand-light" />
               </span>
               <span className="w-[6%] text-center text-xs text-zinc-500">{inUse > 0 ? inUse : "—"}</span>
               <span className="flex w-[10%] items-center justify-end gap-2 px-3">
@@ -130,11 +130,11 @@ export default async function StatusesPage() {
         </div>
         {GROUPS.map(([key, label]) => (
           <label key={key} className="flex items-center gap-1.5 pb-2 text-xs text-zinc-400">
-            <input type="checkbox" name={key} className="size-4 accent-violet-500" /> {label}
+            <input type="checkbox" name={key} className="size-4 accent-brand-light" /> {label}
           </label>
         ))}
         <label className="flex items-center gap-1.5 pb-2 text-xs text-zinc-400">
-          <input type="checkbox" name="is_active" defaultChecked className="size-4 accent-violet-500" /> Active
+          <input type="checkbox" name="is_active" defaultChecked className="size-4 accent-brand-light" /> Active
         </label>
         <button className="btn-primary">Add Status</button>
       </form>
@@ -185,7 +185,7 @@ export default async function StatusesPage() {
                   </td>
                   <td className="px-4 py-2.5 text-center">
                     <form action={toggleDailyAction.bind(null, a.id, !a.is_active)}>
-                      <button className="text-xs font-semibold text-violet-300 hover:underline">
+                      <button className="text-xs font-semibold text-brand-lighter hover:underline">
                         {a.is_active ? "✓ On — turn off" : "Off — turn on"}
                       </button>
                     </form>

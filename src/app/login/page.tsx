@@ -34,7 +34,7 @@ export default function LoginPage() {
       >
         <h1 className="mb-1 text-4xl font-black tracking-tight text-white">
           X
-          <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-brand-light to-brand-lighter bg-clip-text text-transparent">
             OS
           </span>
         </h1>

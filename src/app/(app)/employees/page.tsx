@@ -42,7 +42,7 @@ export default async function EmployeesPage() {
                 <td className="px-4 py-2 text-right">{e.hourly_rate ? money(e.hourly_rate) : "—"}</td>
                 <td className="px-4 py-2 text-center">
                   <form action={toggleEmployee.bind(null, e.id, !e.is_active)}>
-                    <button className="text-xs font-semibold text-violet-300 hover:underline">
+                    <button className="text-xs font-semibold text-brand-lighter hover:underline">
                       {e.is_active ? "Deactivate" : "Reactivate"}
                     </button>
                   </form>

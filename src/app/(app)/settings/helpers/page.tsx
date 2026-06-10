@@ -81,7 +81,7 @@ export default async function HelpersPage() {
                 </td>
                 <td className="px-4 py-2 text-right text-xs">
                   <form action={toggleHelper.bind(null, h.id, !h.is_active)} className="inline">
-                    <button className="font-semibold text-violet-300 hover:underline">
+                    <button className="font-semibold text-brand-lighter hover:underline">
                       {h.is_active ? "Disable" : "Enable"}
                     </button>
                   </form>

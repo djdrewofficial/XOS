@@ -113,7 +113,7 @@ export default async function Dashboard({
     { label: "Leads This Month", value: leads, glow: "from-blue-500/25", accent: "text-blue-300" },
     { label: "Lost Sales This Month", value: lost, glow: "from-red-500/25", accent: "text-red-300" },
     { label: "Booked This Month", value: booked, glow: "from-emerald-500/25", accent: "text-emerald-300" },
-    { label: "Inquiries This Month", value: inquiries, glow: "from-violet-500/25", accent: "text-violet-300" },
+    { label: "Inquiries This Month", value: inquiries, glow: "from-brand-light/25", accent: "text-brand-lighter" },
   ];
 
   return (
@@ -163,11 +163,11 @@ export default async function Dashboard({
                 key={cell.date}
                 className={`min-h-28 border-white/[0.05] p-1 ${i % 7 !== 0 ? "border-l" : ""} ${i >= 7 ? "border-t" : ""} ${
                   cell.inMonth ? "" : "bg-black/30"
-                } ${isToday ? "bg-violet-500/[0.12] ring-1 ring-inset ring-violet-400/50" : ""}`}
+                } ${isToday ? "bg-brand/25 ring-1 ring-inset ring-brand-light/50" : ""}`}
               >
                 <div
                   className={`mb-1 px-1 text-right text-xs font-semibold ${
-                    isToday ? "text-violet-300" : cell.inMonth ? "text-zinc-400" : "text-zinc-700"
+                    isToday ? "text-brand-lighter" : cell.inMonth ? "text-zinc-400" : "text-zinc-700"
                   }`}
                 >
                   {cell.dayNum}
@@ -269,7 +269,7 @@ async function UpcomingList({}: { supabasePromise: null }) {
           <tr key={e.id} className="row hover:bg-white/[0.04]">
             <td className="px-4 py-2 whitespace-nowrap">{e.event_date}</td>
             <td className="px-4 py-2">
-              <Link href={`/events/${e.id}`} className="font-medium text-violet-300 hover:underline">
+              <Link href={`/events/${e.id}`} className="font-medium text-brand-lighter hover:underline">
                 {e.name || "(unnamed)"}
               </Link>
             </td>

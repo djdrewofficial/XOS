@@ -58,7 +58,7 @@ export default function Sidebar() {
       <div className="px-5 pt-6 pb-4">
         <div className="text-[26px] font-black tracking-tight text-white">
           X
-          <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-brand-light to-brand-lighter bg-clip-text text-transparent">
             OS
           </span>
         </div>
@@ -82,13 +82,13 @@ export default function Sidebar() {
                     href={item.href}
                     className={`group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                       active
-                        ? "bg-gradient-to-r from-violet-600/90 to-fuchsia-600/70 text-white shadow-lg shadow-violet-900/30"
+                        ? "bg-gradient-to-r from-brand to-brand-light/80 text-white shadow-lg shadow-brand/40"
                         : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
                     <span
                       className={`w-4 text-center text-xs ${
-                        active ? "text-white" : "text-zinc-600 group-hover:text-violet-300"
+                        active ? "text-white" : "text-zinc-600 group-hover:text-brand-lighter"
                       }`}
                     >
                       {item.icon}

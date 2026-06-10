@@ -75,7 +75,7 @@ export default async function PaymentsPage({
                 <td className="px-4 py-2">{new Date(p.paid_at).toLocaleDateString()}</td>
                 <td className="px-4 py-2">
                   {p.event ? (
-                    <Link href={`/events/${(p.event as { id: string }).id}`} className="text-violet-300 hover:underline">
+                    <Link href={`/events/${(p.event as { id: string }).id}`} className="text-brand-lighter hover:underline">
                       {(p.event as { name: string }).name || "(unnamed)"}
                     </Link>
                   ) : (

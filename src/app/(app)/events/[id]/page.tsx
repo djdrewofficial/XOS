@@ -103,11 +103,11 @@ export default async function EventDetailPage({
           if (!c) return null;
           const notesForClient = (clientNotes ?? []).filter((n) => n.client_id === c.id);
           return (
-            <div key={ec.id} className={`card p-5 ${ec.is_primary ? "ring-1 ring-violet-400/40" : ""}`}>
+            <div key={ec.id} className={`card p-5 ${ec.is_primary ? "ring-1 ring-brand-light/40" : ""}`}>
               <div className="mb-3 flex items-start justify-between gap-2">
                 <div>
                   <h2 className="text-base font-bold text-white">
-                    <Link href={`/clients/${c.id}`} className="hover:text-violet-300 hover:underline">
+                    <Link href={`/clients/${c.id}`} className="hover:text-brand-lighter hover:underline">
                       {c.first_name} {c.last_name}
                     </Link>
                   </h2>
@@ -116,7 +116,7 @@ export default async function EventDetailPage({
                       {ec.role}
                     </span>
                     {ec.is_primary && (
-                      <span className="rounded bg-gradient-to-r from-violet-600 to-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                      <span className="rounded bg-gradient-to-r from-brand to-brand-light px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                         Primary
                       </span>
                     )}
@@ -125,7 +125,7 @@ export default async function EventDetailPage({
                 <div className="flex shrink-0 gap-2 text-xs">
                   {!ec.is_primary && (
                     <form action={setPrimaryEventClient.bind(null, id, ec.id)}>
-                      <button className="font-semibold text-violet-300 hover:underline">Make Primary</button>
+                      <button className="font-semibold text-brand-lighter hover:underline">Make Primary</button>
                     </form>
                   )}
                   {canRemove && !ec.is_primary && (
@@ -208,7 +208,7 @@ export default async function EventDetailPage({
         <div className="mb-3 flex items-center justify-between">
           <h2 className="card-title mb-0">Venue</h2>
           {venue && event.venue_id && (
-            <Link href={`/venues/${event.venue_id}`} className="text-xs font-semibold text-violet-300 hover:underline">
+            <Link href={`/venues/${event.venue_id}`} className="text-xs font-semibold text-brand-lighter hover:underline">
               Open Venue Page →
             </Link>
           )}
@@ -249,14 +249,14 @@ export default async function EventDetailPage({
           ).map(([label, url, hint]) =>
             url ? (
               <li key={label}>
-                <a href={url} target="_blank" className="font-semibold text-violet-300 hover:underline">
+                <a href={url} target="_blank" className="font-semibold text-brand-lighter hover:underline">
                   {label} ↗
                 </a>
                 <div className="text-xs text-zinc-600">{hint}</div>
               </li>
             ) : (
               <li key={label} className="text-zinc-600">
-                {label} — <Link href={`/events/${id}/edit`} className="text-violet-300/70 hover:underline">add link</Link>
+                {label} — <Link href={`/events/${id}/edit`} className="text-brand-lighter/70 hover:underline">add link</Link>
               </li>
             )
           )}
@@ -279,7 +279,7 @@ export default async function EventDetailPage({
               <button
                 type="submit"
                 className={`status-chip transition-transform hover:scale-105 ${
-                  s.id === event.status_id ? "ring-2 ring-violet-400 ring-offset-2 ring-offset-black" : "opacity-80"
+                  s.id === event.status_id ? "ring-2 ring-brand-light ring-offset-2 ring-offset-black" : "opacity-80"
                 }`}
                 style={{ backgroundColor: s.color, color: s.text_color }}
               >

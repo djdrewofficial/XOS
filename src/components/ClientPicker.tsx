@@ -74,9 +74,9 @@ export default function ClientPicker({
               <button
                 type="button"
                 onClick={() => setCreating(true)}
-                className="flex w-full items-center gap-2 border-b border-white/[0.06] px-3 py-2.5 text-left text-sm font-semibold text-white transition-colors hover:bg-violet-600/30"
+                className="flex w-full items-center gap-2 border-b border-white/[0.06] px-3 py-2.5 text-left text-sm font-semibold text-white transition-colors hover:bg-brand/50"
               >
-                <span className="rounded bg-gradient-to-r from-violet-600 to-fuchsia-600 px-1.5 py-0.5 text-[10px] font-bold uppercase">
+                <span className="rounded bg-gradient-to-r from-brand to-brand-light px-1.5 py-0.5 text-[10px] font-bold uppercase">
                   New
                 </span>
                 Create new client &quot;{query.trim()}&quot;
@@ -108,7 +108,7 @@ export default function ClientPicker({
       {selected && (
         <form action={attachExisting} className="space-y-3">
           <input type="hidden" name="client_id" value={selected.id} />
-          <div className="flex items-center justify-between rounded-lg border border-violet-400/40 bg-violet-500/10 px-3 py-2">
+          <div className="flex items-center justify-between rounded-lg border border-brand-light/40 bg-brand/30 px-3 py-2">
             <span className="text-sm font-semibold text-white">
               {selected.first_name} {selected.last_name}
               <span className="ml-2 text-xs font-normal text-zinc-400">{selected.email ?? selected.cell_phone ?? ""}</span>

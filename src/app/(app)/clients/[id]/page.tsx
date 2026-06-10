@@ -52,7 +52,7 @@ export default async function ClientDetailPage({
               <tr key={e.id} className="row hover:bg-white/[0.04]">
                 <td className="px-4 py-2">{e.event_date ?? "—"}</td>
                 <td className="px-4 py-2">
-                  <Link href={`/events/${e.id}`} className="text-violet-300 hover:underline">
+                  <Link href={`/events/${e.id}`} className="text-brand-lighter hover:underline">
                     {e.name || "(unnamed)"}
                   </Link>
                 </td>

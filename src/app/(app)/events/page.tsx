@@ -74,7 +74,7 @@ export default async function EventsPage({
           <Link
             key={s.id}
             href={`/events?view=all&status=${s.id}`}
-            className="rounded-full px-3 py-1 text-xs font-semibold hover:ring-2 hover:ring-violet-400"
+            className="rounded-full px-3 py-1 text-xs font-semibold hover:ring-2 hover:ring-brand-light"
             style={{ backgroundColor: s.color, color: s.text_color }}
           >
             {s.name}
@@ -110,7 +110,7 @@ export default async function EventsPage({
                 >
                   <td className="px-4 py-2 whitespace-nowrap">{e.event_date ?? "—"}</td>
                   <td className="px-4 py-2">
-                    <Link href={`/events/${e.id}`} className="font-medium text-violet-300 hover:underline">
+                    <Link href={`/events/${e.id}`} className="font-medium text-brand-lighter hover:underline">
                       {e.name || "(unnamed)"}
                     </Link>
                   </td>

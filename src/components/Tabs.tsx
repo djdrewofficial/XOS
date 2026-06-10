@@ -18,7 +18,7 @@ export default function Tabs({
             onClick={() => setActive(t.id)}
             className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
               active === t.id
-                ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-900/40"
+                ? "bg-gradient-to-r from-brand to-brand-light text-white shadow-lg shadow-brand/50"
                 : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
             }`}
           >
