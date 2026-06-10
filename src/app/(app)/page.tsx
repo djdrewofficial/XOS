@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { money, type XEvent } from "@/lib/types";
 import { holidaysForYear } from "@/lib/holidays";
+import EventChip from "@/components/EventChip";
 
 export const dynamic = "force-dynamic";
 
@@ -182,15 +183,13 @@ export default async function Dashboard({
                     const client = e.client as unknown as { first_name: string; last_name: string } | null;
                     const label = `${st?.name ?? ""} - ${client ? `${client.first_name} ${client.last_name}` : e.name || "Event"}`;
                     return (
-                      <Link
+                      <EventChip
                         key={e.id}
-                        href={`/events/${e.id}`}
-                        className="block truncate rounded px-1.5 py-0.5 text-[10px] font-semibold shadow-sm transition-transform hover:scale-[1.03]"
-                        style={{ backgroundColor: st?.color ?? "#97CC9A", color: st?.text_color ?? "#000" }}
-                        title={label}
-                      >
-                        {label}
-                      </Link>
+                        eventId={e.id}
+                        label={label}
+                        bg={st?.color ?? "#97CC9A"}
+                        fg={st?.text_color ?? "#000"}
+                      />
                     );
                   })}
                   {off.map((t) => {
