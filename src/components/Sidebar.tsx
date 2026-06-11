@@ -21,6 +21,7 @@ const SECTIONS: { heading: string; items: { href: string; label: string; icon: s
       { href: "/venues", label: "Venues", icon: "⌂" },
       { href: "/vendors", label: "Vendors", icon: "◈" },
       { href: "/packages", label: "Packages", icon: "❖" },
+      { href: "/equipment", label: "Equipment", icon: "▤" },
       { href: "/employees", label: "Employees", icon: "✦" },
     ],
   },

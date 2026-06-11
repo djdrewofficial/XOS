@@ -27,6 +27,12 @@ import {
   updateEventFinancials,
   addEventVendor,
   removeEventVendor,
+  addEventEquipment,
+  removeEventEquipment,
+  toggleEquipmentPacked,
+  markEquipment,
+  updateEquipmentNotes,
+  addLogisticsNote,
   deleteEvent,
 } from "../actions";
 import InlineEditCard from "@/components/InlineEditCard";
@@ -127,6 +133,17 @@ export default async function EventDetailPage({
         .eq("event_id", id)
         .order("created_at"),
       supabase.from("vendors").select("id, company_name, category").order("company_name"),
+    ]);
+
+  const [{ data: eventEquipment }, { data: equipmentItems }, { data: equipmentSystems }] =
+    await Promise.all([
+      supabase
+        .from("event_equipment")
+        .select("*, item:equipment_items(id, name, category, qr_code), system:equipment_systems(id, name, description, qr_code)")
+        .eq("event_id", id)
+        .order("created_at"),
+      supabase.from("equipment_items").select("id, name, category").eq("is_active", true).order("name"),
+      supabase.from("equipment_systems").select("id, name").eq("is_active", true).order("name"),
     ]);
 
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
@@ -969,6 +986,161 @@ export default async function EventDetailPage({
     </div>
   );
 
+  /* ---------- TAB: Logistics ---------- */
+  type EquipRow = {
+    id: string;
+    quantity: number;
+    notes: string | null;
+    packed: boolean;
+    checked_out_at: string | null;
+    checked_in_at: string | null;
+    item: { id: string; name: string; category: string | null; qr_code: string } | null;
+    system: { id: string; name: string; description: string | null; qr_code: string } | null;
+  };
+  const equipRows = (eventEquipment ?? []) as unknown as EquipRow[];
+  const packedCount = equipRows.filter((r) => r.packed).length;
+  const logisticsNotes = (notes ?? []).filter((n) => n.kind === "logistics");
+
+  const logisticsTab = (
+    <div className="space-y-5">
+      <div className="card p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="card-title mb-0">Equipment Checklist</h2>
+          <span className="text-xs font-bold text-zinc-500">
+            {packedCount}/{equipRows.length} packed
+          </span>
+        </div>
+
+        <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
+          {equipRows.map((r) => {
+            const name = r.item?.name ?? r.system?.name ?? "?";
+            const isSystem = !!r.system;
+            const qr = r.item?.qr_code ?? r.system?.qr_code ?? "";
+            return (
+              <li key={r.id} className="py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <form action={toggleEquipmentPacked.bind(null, id, r.id, !r.packed)}>
+                      <button
+                        title={r.packed ? "Packed — click to unpack" : "Mark as packed"}
+                        className={`flex size-6 items-center justify-center rounded-md border text-xs font-black transition-colors ${
+                          r.packed
+                            ? "border-emerald-500 bg-emerald-500 text-white"
+                            : "border-zinc-300 text-transparent hover:border-brand dark:border-white/20"
+                        }`}
+                      >
+                        ✓
+                      </button>
+                    </form>
+                    <div>
+                      <span className={`text-sm font-semibold ${r.packed ? "text-zinc-400 line-through dark:text-zinc-600" : ""}`}>
+                        {name}
+                        {r.quantity > 1 && <span className="ml-1 text-xs text-zinc-500">×{r.quantity}</span>}
+                      </span>
+                      <span className="ml-2 rounded bg-black/[0.07] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-700 dark:bg-white/10 dark:text-zinc-300">
+                        {isSystem ? "System" : r.item?.category ?? "Item"}
+                      </span>
+                      <span className="ml-2 text-[10px] text-zinc-500">{qr}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    {r.checked_out_at ? (
+                      <span className="rounded bg-amber-500/15 px-2 py-1 font-semibold text-amber-700 dark:text-amber-300">
+                        Out {new Date(r.checked_out_at).toLocaleDateString()}
+                      </span>
+                    ) : (
+                      <form action={markEquipment.bind(null, id, r.id, "checked_out_at")}>
+                        <button className="rounded bg-black/[0.06] px-2 py-1 font-semibold text-zinc-600 hover:bg-brand/20 dark:bg-white/[0.07] dark:text-zinc-400">
+                          Check Out
+                        </button>
+                      </form>
+                    )}
+                    {r.checked_in_at ? (
+                      <span className="rounded bg-emerald-500/15 px-2 py-1 font-semibold text-emerald-700 dark:text-emerald-300">
+                        In {new Date(r.checked_in_at).toLocaleDateString()}
+                      </span>
+                    ) : (
+                      <form action={markEquipment.bind(null, id, r.id, "checked_in_at")}>
+                        <button className="rounded bg-black/[0.06] px-2 py-1 font-semibold text-zinc-600 hover:bg-brand/20 dark:bg-white/[0.07] dark:text-zinc-400">
+                          Check In
+                        </button>
+                      </form>
+                    )}
+                    <form action={removeEventEquipment.bind(null, id, r.id)}>
+                      <button className="px-1 font-semibold text-red-600 hover:underline dark:text-red-400">✕</button>
+                    </form>
+                  </div>
+                </div>
+                <form action={updateEquipmentNotes.bind(null, id, r.id)} className="mt-1.5 flex gap-2 pl-9">
+                  <input
+                    name="notes"
+                    defaultValue={r.notes ?? ""}
+                    placeholder="Equipment note — e.g. bring backup needles, left fader sticky…"
+                    className="input w-full max-w-md py-1 text-xs"
+                  />
+                  <button className="btn-ghost px-2.5 py-0.5 text-[10px]">Save</button>
+                </form>
+              </li>
+            );
+          })}
+          {equipRows.length === 0 && (
+            <li className="py-4 text-sm text-zinc-500">Nothing assigned yet — build the load list below.</li>
+          )}
+        </ul>
+
+        <h3 className="label-xs mt-4">Assign Equipment</h3>
+        <form action={addEventEquipment.bind(null, id)} className="flex flex-wrap items-end gap-2">
+          <div className="min-w-52 flex-1">
+            <select name="equipment_ref" required className="input w-full">
+              <option value="">Select item or system…</option>
+              {(equipmentSystems ?? []).length > 0 && (
+                <optgroup label="Systems (racks & cases)">
+                  {(equipmentSystems ?? []).map((s) => (
+                    <option key={s.id} value={`system:${s.id}`}>📦 {s.name}</option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Items">
+                {(equipmentItems ?? []).map((i) => (
+                  <option key={i.id} value={`item:${i.id}`}>
+                    {i.name}
+                    {i.category ? ` — ${i.category}` : ""}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+          <input type="number" name="quantity" defaultValue={1} min={1} className="input w-16" title="Quantity" />
+          <input name="notes" placeholder="Note (optional)" className="input w-48" />
+          <button className="btn-primary px-4 py-2 text-xs">Add</button>
+        </form>
+        <p className="mt-2 text-xs text-zinc-500">
+          Manage gear and print QR codes in <Link href="/equipment" className="text-brand dark:text-brand-lighter hover:underline">Equipment</Link>.
+          Scanning a case&apos;s QR opens its check-in/out page.
+        </p>
+      </div>
+
+      <div className="card max-w-3xl p-5">
+        <h2 className="card-title">Logistics Notes</h2>
+        <form action={addLogisticsNote.bind(null, id)} className="mb-3 flex gap-2">
+          <input name="body" placeholder="e.g. Loading dock is on the north side, freight elevator code 4421…" className="input w-full" />
+          <button className="btn-primary px-5">Add</button>
+        </form>
+        <ul className="space-y-2 text-sm">
+          {logisticsNotes.map((n) => (
+            <li key={n.id} className="rounded-lg bg-black/[0.04] p-3 dark:bg-white/[0.05]">
+              <span className="text-zinc-700 dark:text-zinc-300">{n.body}</span>
+              <div className="mt-1 text-[11px] text-zinc-500">
+                {n.author_name ?? "unknown"} · {new Date(n.created_at).toLocaleString()}
+              </div>
+            </li>
+          ))}
+          {logisticsNotes.length === 0 && <li className="text-sm text-zinc-500">No logistics notes yet.</li>}
+        </ul>
+      </div>
+    </div>
+  );
+
   /* ---------- TAB: Staff ---------- */
   const staffTab = <StaffSection eventId={id} staff={staff ?? []} employees={employees ?? []} />;
 
@@ -1134,6 +1306,7 @@ export default async function EventDetailPage({
           { id: "financials", label: "Financials", badge: balance > 0 ? money(balance) : undefined, content: financialsTab },
           { id: "staff", label: "Staff", badge: (staff ?? []).length, content: staffTab },
           { id: "vendors", label: "Vendors", badge: vendorRows.length, content: vendorsTab },
+          { id: "logistics", label: "Logistics", badge: equipRows.length ? `${packedCount}/${equipRows.length}` : undefined, content: logisticsTab },
           { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />

@@ -234,6 +234,74 @@ export async function markStaff(
   revalidatePath(`/events/${eventId}`);
 }
 
+export async function addEventEquipment(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const ref = clean(formData.get("equipment_ref")); // "item:<id>" or "system:<id>"
+  if (!ref) return;
+  const [kind, refId] = ref.split(":");
+  const { error } = await supabase.from("event_equipment").insert({
+    event_id: eventId,
+    item_id: kind === "item" ? refId : null,
+    system_id: kind === "system" ? refId : null,
+    quantity: Math.max(1, Math.round(num(formData.get("quantity")) || 1)),
+    notes: clean(formData.get("notes")),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function removeEventEquipment(eventId: string, rowId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("event_equipment").delete().eq("id", rowId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function toggleEquipmentPacked(eventId: string, rowId: string, packed: boolean) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("event_equipment").update({ packed }).eq("id", rowId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function markEquipment(
+  eventId: string,
+  rowId: string,
+  field: "checked_out_at" | "checked_in_at"
+) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("event_equipment")
+    .update({ [field]: new Date().toISOString() })
+    .eq("id", rowId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function updateEquipmentNotes(eventId: string, rowId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("event_equipment")
+    .update({ notes: clean(formData.get("notes")) })
+    .eq("id", rowId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function addLogisticsNote(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const body = clean(formData.get("body"));
+  if (!body) return;
+  const { error } = await supabase.from("event_notes").insert({
+    event_id: eventId,
+    body,
+    kind: "logistics",
+    author_name: await actorName(supabase),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
 export async function addEventVendor(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const vendorId = clean(formData.get("vendor_id"));
