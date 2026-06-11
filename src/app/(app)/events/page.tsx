@@ -1,142 +1,120 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { money, eventTotal, type XEvent } from "@/lib/types";
+import EventsGrid, { type GridRow } from "@/components/EventsGrid";
 
 export const dynamic = "force-dynamic";
 
-export default async function EventsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ status?: string; view?: string }>;
-}) {
-  const { status, view } = await searchParams;
+export default async function EventsPage() {
   const supabase = await createClient();
 
-  const { data: statuses } = await supabase
-    .from("event_statuses")
-    .select("*")
-    .order("sort_order");
+  const [{ data: events }, { data: staff }, { data: vendors }, { data: addons }, { data: payments }] =
+    await Promise.all([
+      supabase
+        .from("events")
+        .select(
+          "*, client:clients(first_name, last_name, cell_phone, email), status:event_statuses(name, color, text_color), package:packages(name, default_price, deposit_value), venue:venues(name, city, state, setup_fee), event_type:event_types(name), salesperson:employees(first_name, last_name), inquiry_source:inquiry_sources(name)"
+        )
+        .order("event_date", { ascending: true })
+        .limit(1000),
+      supabase.from("event_staff").select("event_id, employee:employees(first_name, last_name)"),
+      supabase.from("event_vendors").select("event_id, vendor:vendors(company_name)"),
+      supabase.from("event_addons").select("event_id, quantity, price_override, addon:addons(name, default_price)"),
+      supabase.from("payments").select("event_id, amount"),
+    ]);
 
-  let q = supabase
-    .from("events")
-    .select(
-      "*, client:clients(*), status:event_statuses(*), venue:venues(*), package:packages(*), event_type:event_types(*), salesperson:employees(*)"
-    )
-    .order("event_date", { ascending: true });
+  const staffByEvent = new Map<string, string[]>();
+  (staff ?? []).forEach((s) => {
+    const emp = s.employee as unknown as { first_name: string; last_name: string } | null;
+    if (!emp) return;
+    if (!staffByEvent.has(s.event_id)) staffByEvent.set(s.event_id, []);
+    staffByEvent.get(s.event_id)!.push(`${emp.first_name} ${emp.last_name}`.trim());
+  });
 
-  const today = new Date().toISOString().slice(0, 10);
-  if (view === "past") q = q.lt("event_date", today);
-  else if (view !== "all") q = q.gte("event_date", today);
+  const vendorsByEvent = new Map<string, string[]>();
+  (vendors ?? []).forEach((v) => {
+    const ven = v.vendor as unknown as { company_name: string } | null;
+    if (!ven) return;
+    if (!vendorsByEvent.has(v.event_id)) vendorsByEvent.set(v.event_id, []);
+    vendorsByEvent.get(v.event_id)!.push(ven.company_name);
+  });
 
-  if (status) q = q.eq("status_id", status);
+  const addonsByEvent = new Map<string, { names: string[]; total: number }>();
+  (addons ?? []).forEach((a) => {
+    const ad = a.addon as unknown as { name: string; default_price: number } | null;
+    const entry = addonsByEvent.get(a.event_id) ?? { names: [], total: 0 };
+    if (ad) entry.names.push(a.quantity > 1 ? `${ad.name} ×${a.quantity}` : ad.name);
+    entry.total += (a.quantity ?? 1) * Number(a.price_override ?? ad?.default_price ?? 0);
+    addonsByEvent.set(a.event_id, entry);
+  });
 
-  const { data: events } = await q.limit(300);
-
-  // payments per event for balance due
-  const ids = (events ?? []).map((e) => e.id);
-  const { data: pays } = ids.length
-    ? await supabase.from("payments").select("event_id, amount").in("event_id", ids)
-    : { data: [] as { event_id: string; amount: number }[] };
   const paidByEvent = new Map<string, number>();
-  (pays ?? []).forEach((p) => {
-    if (p.event_id)
-      paidByEvent.set(p.event_id, (paidByEvent.get(p.event_id) ?? 0) + Number(p.amount));
+  (payments ?? []).forEach((p) => {
+    if (p.event_id) paidByEvent.set(p.event_id, (paidByEvent.get(p.event_id) ?? 0) + Number(p.amount));
+  });
+
+  const rows: GridRow[] = (events ?? []).map((e) => {
+    const client = e.client as unknown as { first_name: string; last_name: string; cell_phone: string | null; email: string | null } | null;
+    const status = e.status as unknown as { name: string; color: string; text_color: string } | null;
+    const pkg = e.package as unknown as { name: string; default_price: number } | null;
+    const venue = e.venue as unknown as { name: string; city: string | null; state: string | null; setup_fee: number } | null;
+    const sp = e.salesperson as unknown as { first_name: string; last_name: string } | null;
+    const addonInfo = addonsByEvent.get(e.id) ?? { names: [], total: 0 };
+
+    const total =
+      Number(e.package_price_override ?? pkg?.default_price ?? 0) +
+      addonInfo.total +
+      Number(e.overtime_fee) +
+      Number(e.travel_fee) +
+      Number(venue?.setup_fee ?? 0) -
+      Number(e.discount1_amount) -
+      Number(e.discount2_amount);
+    const paid = paidByEvent.get(e.id) ?? 0;
+
+    return {
+      id: e.id,
+      statusColor: status?.color ?? null,
+      statusFg: status?.text_color ?? null,
+      values: {
+        event_number: e.event_number ?? null,
+        event_date: e.event_date ?? null,
+        event_name: e.name || "(unnamed)",
+        event_type: (e.event_type as unknown as { name: string } | null)?.name ?? null,
+        client: client ? `${client.first_name} ${client.last_name}`.trim() : null,
+        client_cell: client?.cell_phone ?? null,
+        client_email: client?.email ?? null,
+        status: status?.name ?? null,
+        package: pkg?.name ?? null,
+        addons: addonInfo.names.join(", ") || null,
+        balance_due: Math.round((total - paid) * 100) / 100,
+        total_fee: Math.round(total * 100) / 100,
+        payments_received: Math.round(paid * 100) / 100,
+        venue: venue ? `${venue.name}${venue.city ? ` ${venue.city}, ${venue.state ?? ""}` : ""}`.trim() : null,
+        salesperson: sp ? `${sp.first_name} ${sp.last_name}`.trim() : null,
+        assigned_employees: (staffByEvent.get(e.id) ?? []).join(", ") || null,
+        assigned_vendors: (vendorsByEvent.get(e.id) ?? []).join(", ") || null,
+        inquiry_source: (e.inquiry_source as unknown as { name: string } | null)?.name ?? null,
+        guest_count: e.guest_count ?? null,
+        setup_time: e.setup_time ?? null,
+        start_time: e.start_time ?? null,
+        end_time: e.end_time ?? null,
+        booked_date: (e as unknown as { booked_date?: string | null }).booked_date ?? null,
+        contract_sent: e.contract_sent_date ?? null,
+        contract_due: e.contract_due_date ?? null,
+        initial_contact: e.initial_contact_date ?? null,
+        created: e.created_at?.slice(0, 10) ?? null,
+      },
+    };
   });
 
   return (
     <div>
       <div className="mb-5 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Events List</h1>
-        <Link
-          href="/events/new"
-          className="btn-primary px-4 py-2"
-        >
+        <h1 className="page-title">Events List</h1>
+        <Link href="/events/new" className="btn-primary px-4 py-2 text-sm">
           Add Event
         </Link>
       </div>
-
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-        {[
-          { label: "Upcoming", href: "/events" },
-          { label: "Past", href: "/events?view=past" },
-          { label: "All", href: "/events?view=all" },
-        ].map((f) => (
-          <Link
-            key={f.label}
-            href={f.href}
-            className="btn-ghost rounded-full px-3 py-1"
-          >
-            {f.label}
-          </Link>
-        ))}
-        <span className="mx-2 text-zinc-700 dark:text-zinc-300">|</span>
-        {(statuses ?? []).filter((s) => s.is_active).map((s) => (
-          <Link
-            key={s.id}
-            href={`/events?view=all&status=${s.id}`}
-            className="rounded-full px-3 py-1 text-xs font-semibold hover:ring-2 hover:ring-brand-light"
-            style={{ backgroundColor: s.color, color: s.text_color }}
-          >
-            {s.name}
-          </Link>
-        ))}
-      </div>
-
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="table-head">
-            <tr>
-              <th className="px-4 py-2">Event Date</th>
-              <th className="px-4 py-2">Event Name</th>
-              <th className="px-4 py-2">Type</th>
-              <th className="px-4 py-2">Client</th>
-              <th className="px-4 py-2">Cell</th>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2">Package</th>
-              <th className="px-4 py-2 text-right">Balance Due</th>
-              <th className="px-4 py-2 text-right">Total Fee</th>
-              <th className="px-4 py-2">Venue</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(events ?? []).map((e: XEvent) => {
-              const total = eventTotal(e);
-              const balance = total - (paidByEvent.get(e.id) ?? 0);
-              return (
-                <tr
-                  key={e.id}
-                  className="row"
-                  style={{ backgroundColor: e.status ? `${e.status.color}40` : undefined }}
-                >
-                  <td className="px-4 py-2 whitespace-nowrap">{e.event_date ?? "—"}</td>
-                  <td className="px-4 py-2">
-                    <Link href={`/events/${e.id}`} className="font-medium text-brand dark:text-brand-lighter hover:underline">
-                      {e.name || "(unnamed)"}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2">{e.event_type?.name ?? "—"}</td>
-                  <td className="px-4 py-2">
-                    {e.client ? `${e.client.first_name} ${e.client.last_name}` : "—"}
-                  </td>
-                  <td className="px-4 py-2 whitespace-nowrap">{e.client?.cell_phone ?? ""}</td>
-                  <td className="px-4 py-2 whitespace-nowrap font-semibold">{e.status?.name}</td>
-                  <td className="px-4 py-2">{e.package?.name ?? "—"}</td>
-                  <td className="px-4 py-2 text-right">{money(balance)}</td>
-                  <td className="px-4 py-2 text-right">{money(total)}</td>
-                  <td className="px-4 py-2">{e.venue?.name ?? "—"}</td>
-                </tr>
-              );
-            })}
-            {(events ?? []).length === 0 && (
-              <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-zinc-600 dark:text-zinc-400">
-                  No events match this filter.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <EventsGrid rows={rows} />
     </div>
   );
 }
