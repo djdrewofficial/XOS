@@ -1,8 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import StatusRow, { type Status } from "@/components/StatusRow";
 import {
   createStatus,
-  updateStatus,
-  deleteStatus,
   createDailyAction,
   toggleDailyAction,
   deleteDailyAction,
@@ -38,80 +37,28 @@ export default async function StatusesPage() {
     <div className="max-w-6xl">
       <h1 className="page-title mb-5">Event Statuses</h1>
 
-      {/* ---------- editable status rows ---------- */}
-      <div className="card mb-3 overflow-x-auto">
-        <div className="min-w-[1080px]">
-        <div className="table-head flex items-center py-2">
-          <span className="w-[15%] px-3">Status Name</span>
-          <span className="w-[11%] px-3">Preview</span>
-          <span className="w-[6%] px-2 text-center">BG</span>
-          <span className="w-[6%] px-2 text-center">Text</span>
-          <span className="w-[8%] px-2 text-center">Order</span>
-          {GROUPS.map(([key, label, hint]) => (
-            <span key={key} className="w-[7%] text-center" title={hint}>
-              {label}
-            </span>
-          ))}
-          <span className="w-[6%] text-center">Active</span>
-          <span className="w-[6%] text-center">In Use</span>
-          <span className="w-[10%] px-3 text-right">Save</span>
-        </div>
-        {(statuses ?? []).map((s) => {
-          const inUse = usage.get(s.id) ?? 0;
-          return (
-            <form
-              key={s.id}
-              action={updateStatus.bind(null, s.id)}
-              className={`row flex w-full items-center py-1.5 ${!s.is_active ? "opacity-50" : ""}`}
-            >
-              <span className="w-[15%] px-3">
-                <input name="name" defaultValue={s.name} className="input w-full py-1.5" />
-              </span>
-              <span className="w-[11%] overflow-hidden px-3 whitespace-nowrap">
-                <span className="status-chip" style={{ backgroundColor: s.color, color: s.text_color }}>
-                  {s.name}
-                </span>
-              </span>
-              <span className="w-[6%] px-2">
-                <input type="color" name="color" defaultValue={s.color} className="h-8 w-full cursor-pointer rounded border border-zinc-300 dark:border-white/10 bg-transparent" />
-              </span>
-              <span className="w-[6%] px-2">
-                <input type="color" name="text_color" defaultValue={s.text_color} className="h-8 w-full cursor-pointer rounded border border-zinc-300 dark:border-white/10 bg-transparent" />
-              </span>
-              <span className="w-[8%] px-2">
-                <input type="number" name="sort_order" defaultValue={s.sort_order} className="input w-full py-1.5 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
-              </span>
-              {GROUPS.map(([key]) => (
-                <span key={key} className="w-[7%] text-center">
-                  <input type="checkbox" name={key} defaultChecked={s[key]} className="size-4 accent-brand-light" />
-                </span>
-              ))}
-              <span className="w-[6%] text-center">
-                <input type="checkbox" name="is_active" defaultChecked={s.is_active} className="size-4 accent-brand-light" />
-              </span>
-              <span className="w-[6%] text-center text-xs text-zinc-500">{inUse > 0 ? inUse : "—"}</span>
-              <span className="flex w-[10%] items-center justify-end gap-2 px-3">
-                <button className="btn-ghost px-3 py-1 text-xs">Save</button>
-                {inUse === 0 ? (
-                  <button formAction={deleteStatus.bind(null, s.id)} className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">
-                    Delete
-                  </button>
-                ) : (
-                  <span className="text-xs text-zinc-400 dark:text-zinc-700" title="In use — deactivate instead">🔒</span>
-                )}
-              </span>
-            </form>
-          );
-        })}
-        </div>
-      </div>
-      <p className="mb-8 text-xs text-zinc-500">
-        Group flags drive logic: <strong>Booked</strong> = financial calculations + availability, <strong>Leads</strong>/<strong>Lost Sale</strong> = dashboard stats, <strong>Pending</strong> = pending views. Statuses in use can&apos;t be deleted — uncheck Active instead.
+      {/* ---------- compact status list (click a row to edit) ---------- */}
+      <p className="mb-3 text-sm text-zinc-500">
+        Click any status to edit its colors, order, and group flags. <strong>Booked</strong> drives financials + availability;
+        <strong> Leads</strong>/<strong>Lost Sale</strong> drive dashboard stats; <strong>Pending</strong> drives pending views.
       </p>
+      <div className="card mb-3 overflow-hidden">
+        {(statuses ?? []).map((s) => (
+          <StatusRow key={s.id} status={s as Status} inUse={usage.get(s.id) ?? 0} />
+        ))}
+        {(statuses ?? []).length === 0 && (
+          <p className="px-4 py-8 text-center text-sm text-zinc-500">No statuses yet — add one below.</p>
+        )}
+      </div>
+      <p className="mb-8 text-xs text-zinc-500">Statuses in use by events can&apos;t be deleted — uncheck Active instead.</p>
 
       {/* ---------- add status ---------- */}
-      <h2 className="card-title">Add Status</h2>
-      <form action={createStatus} className="card mb-10 flex flex-wrap items-end gap-3 p-4">
+      <details className="mb-10 group">
+        <summary className="card-title cursor-pointer select-none list-none">
+          <span className="text-brand dark:text-brand-lighter group-open:hidden">+ Add Status</span>
+          <span className="hidden text-zinc-500 group-open:inline">− Add Status</span>
+        </summary>
+      <form action={createStatus} className="card mt-2 flex flex-wrap items-end gap-3 p-4">
         <div className="min-w-44 flex-1">
           <label className="label-xs">Name</label>
           <input name="name" required className="input w-full" />
@@ -138,6 +85,7 @@ export default async function StatusesPage() {
         </label>
         <button className="btn-primary">Add Status</button>
       </form>
+      </details>
 
       {/* ---------- daily scheduled actions ---------- */}
       <div className="mb-2 flex items-center justify-between">
