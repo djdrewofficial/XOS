@@ -234,6 +234,32 @@ export async function markStaff(
   revalidatePath(`/events/${eventId}`);
 }
 
+export async function updateStaffDetails(eventId: string, staffId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("event_staff")
+    .update({
+      role: clean(formData.get("role")) ?? "DJ",
+      flat_wage: num(formData.get("flat_wage")),
+      start_time: clean(formData.get("start_time")),
+      end_time: clean(formData.get("end_time")),
+      notes: clean(formData.get("notes")),
+    })
+    .eq("id", staffId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function toggleStaffPortal(eventId: string, staffId: string, visible: boolean) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("event_staff")
+    .update({ portal_visible: visible })
+    .eq("id", staffId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
 export async function deleteEvent(eventId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("events").delete().eq("id", eventId);
