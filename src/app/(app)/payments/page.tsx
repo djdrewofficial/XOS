@@ -65,6 +65,7 @@ export default async function PaymentsPage({
               <th className="px-4 py-2">Paid</th>
               <th className="px-4 py-2">Event</th>
               <th className="px-4 py-2">Method</th>
+              <th className="px-4 py-2">Reason</th>
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2 text-right">Amount</th>
             </tr>
@@ -83,13 +84,14 @@ export default async function PaymentsPage({
                   )}
                 </td>
                 <td className="px-4 py-2">{p.method}</td>
+                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{(p as { reason?: string | null }).reason ?? "—"}</td>
                 <td className="px-4 py-2">{p.status}</td>
                 <td className="px-4 py-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">{money(p.amount)}</td>
               </tr>
             ))}
             {(payments ?? []).length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">No payments in {y}.</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">No payments in {y}.</td>
               </tr>
             )}
           </tbody>

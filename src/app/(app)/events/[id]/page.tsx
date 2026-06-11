@@ -77,6 +77,7 @@ export default async function EventDetailPage({
     { data: dateDefs },
     { data: customDates },
     { data: eventLogs },
+    { data: paySettings },
   ] = await Promise.all([
     supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
     supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
@@ -96,6 +97,7 @@ export default async function EventDetailPage({
     supabase.from("custom_date_definitions").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("event_custom_dates").select("*").eq("event_id", id),
     supabase.from("event_logs").select("*").eq("event_id", id).order("created_at", { ascending: false }).limit(100),
+    supabase.from("payment_settings").select("*").eq("id", true).maybeSingle(),
   ]);
 
   const [
@@ -173,6 +175,32 @@ export default async function EventDetailPage({
   const paid = (payments ?? []).reduce((s: number, p: Payment) => s + Number(p.amount), 0);
   const balance = total - paid;
   const cf = (event.custom_fields ?? {}) as Record<string, string>;
+
+  // payment-settings-driven add-payment defaults (configured in Settings → Payment Settings)
+  const ps = paySettings as {
+    payment_methods: string[];
+    payment_reasons: string[];
+    prefill_reasons: string[];
+    autofill_no_payments: string;
+    autofill_after_payments: string;
+  } | null;
+  const methodOptions =
+    ps?.payment_methods?.length ? ps.payment_methods : ["Cash", "Credit Card", "Zelle", "Other"];
+  const autofillMode = (payments ?? []).length === 0 ? ps?.autofill_no_payments : ps?.autofill_after_payments;
+  const scheduleRows = (schedule ?? []) as ScheduledPayment[];
+  const paidSoFarCount = (payments ?? []).length;
+  let autofillAmount: number | undefined;
+  if (autofillMode === "retainer_fee") {
+    autofillAmount = Number(scheduleRows[0]?.amount) || undefined;
+  } else if (autofillMode === "next_scheduled") {
+    autofillAmount = Number(scheduleRows[paidSoFarCount]?.amount) || (balance > 0 ? balance : undefined);
+  } else if (autofillMode === "balance_due") {
+    autofillAmount = balance > 0 ? balance : undefined;
+  }
+  const prefillReason = ps?.prefill_reasons?.[Math.min(paidSoFarCount, 2)] || "";
+  const reasonOptions = Array.from(
+    new Set([...(prefillReason ? [prefillReason] : []), ...(ps?.payment_reasons ?? [])])
+  );
 
   const addPaymentBound = addPayment.bind(null, id);
   const addScheduleBound = addScheduledPayments.bind(null, id);
@@ -748,10 +776,24 @@ export default async function EventDetailPage({
 
           <h3 className="label-xs mt-5">Payments Received</h3>
           <form action={addPaymentBound} className="mb-3 flex flex-wrap items-end gap-2">
-            <input type="number" step="0.01" name="amount" placeholder="Amount" required className="input w-28" />
-            <select name="method" className="input w-28">
-              {["card", "cash", "check", "zelle", "venmo", "ach", "other"].map((m) => (
+            <input
+              type="number"
+              step="0.01"
+              name="amount"
+              placeholder="Amount"
+              required
+              defaultValue={autofillAmount !== undefined ? autofillAmount.toFixed(2) : undefined}
+              className="input w-28"
+            />
+            <select name="method" className="input w-36">
+              {methodOptions.map((m) => (
                 <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <select name="reason" defaultValue={prefillReason} className="input w-40">
+              <option value="">— Reason —</option>
+              {reasonOptions.map((r) => (
+                <option key={r} value={r}>{r}</option>
               ))}
             </select>
             <input type="date" name="paid_at" className="input w-40" />
@@ -762,6 +804,9 @@ export default async function EventDetailPage({
               <li key={p.id} className="flex justify-between py-2">
                 <span className="text-zinc-600 dark:text-zinc-400">
                   {new Date(p.paid_at).toLocaleDateString()} · {p.method}
+                  {(p as Payment & { reason?: string | null }).reason
+                    ? ` · ${(p as Payment & { reason?: string | null }).reason}`
+                    : ""}
                   {p.notes ? ` · ${p.notes}` : ""}
                 </span>
                 <span className="font-semibold text-emerald-600 dark:text-emerald-400">{money(p.amount)}</span>

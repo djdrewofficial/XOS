@@ -224,6 +224,7 @@ export async function addPayment(eventId: string, formData: FormData) {
     event_id: eventId,
     amount: num(formData.get("amount")),
     method: clean(formData.get("method")) ?? "other",
+    reason: clean(formData.get("reason")),
     paid_at: clean(formData.get("paid_at")) ?? new Date().toISOString(),
     notes: clean(formData.get("notes")),
   });
