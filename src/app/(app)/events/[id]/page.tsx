@@ -24,6 +24,7 @@ import {
 } from "../actions";
 import ClientPicker from "@/components/ClientPicker";
 import BookingInfoEditor from "@/components/BookingInfoEditor";
+import AddonPicker from "@/components/AddonPicker";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
 import Tabs from "@/components/Tabs";
@@ -513,21 +514,7 @@ export default async function EventDetailPage({
           </div>
 
           <h3 className="label-xs mt-5">Add An Add-On</h3>
-          <form action={addEventAddon.bind(null, id)} className="flex flex-wrap items-end gap-2">
-            <div className="min-w-44 flex-1">
-              <select name="addon_id" required className="input w-full">
-                <option value="">Select add-on…</option>
-                {(addonCatalog ?? []).map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} — {money(a.default_price)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <input type="number" name="quantity" defaultValue={1} min={1} className="input w-16" title="Quantity" />
-            <input type="number" step="0.01" name="price_override" placeholder="$ override" className="input w-28" />
-            <button className="btn-primary px-4 py-2 text-xs">Add</button>
-          </form>
+          <AddonPicker catalog={addonCatalog ?? []} action={addEventAddon.bind(null, id)} />
         </div>
 
         <div className="card p-5">

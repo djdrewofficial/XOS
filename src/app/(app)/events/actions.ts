@@ -320,11 +320,18 @@ export async function addEventAddon(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const addonId = clean(formData.get("addon_id"));
   if (!addonId) return;
+  // only store an override when the price actually differs from the catalog default
+  let priceOverride: number | null = null;
+  if (clean(formData.get("price_override"))) {
+    const entered = num(formData.get("price_override"));
+    const { data: addon } = await supabase.from("addons").select("default_price").eq("id", addonId).single();
+    if (!addon || Number(addon.default_price) !== entered) priceOverride = entered;
+  }
   const { error } = await supabase.from("event_addons").insert({
     event_id: eventId,
     addon_id: addonId,
     quantity: Math.max(1, Math.round(num(formData.get("quantity")) || 1)),
-    price_override: clean(formData.get("price_override")) ? num(formData.get("price_override")) : null,
+    price_override: priceOverride,
   });
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
