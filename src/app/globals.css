@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
+  --background: #f5f4fa;
+  --foreground: #1c1a24;
+}
+
+.dark {
   --background: #08070c;
   --foreground: #e7e5f0;
 }
@@ -20,28 +27,35 @@
 
 body {
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.28), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.10), transparent 60%),
+    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.07), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.05), transparent 60%),
     var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-/* ---------- XOS component classes ---------- */
+.dark body {
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.28), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.1), transparent 60%),
+    var(--background);
+}
+
+/* ---------- XOS component classes (light default, dark via .dark) ---------- */
 
 .card {
-  @apply rounded-2xl border border-white/[0.07] bg-white/[0.035] shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm;
+  @apply rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-white/[0.07] dark:bg-white/[0.035] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] dark:backdrop-blur-sm;
 }
 
 .card-title {
-  @apply mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-brand-lighter/90;
+  @apply mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-brand dark:text-brand-lighter/90;
 }
 
 .input {
-  @apply rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 transition-colors focus:border-brand-light/70 focus:bg-white/[0.07] focus:outline-none;
+  @apply rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 transition-colors focus:border-brand focus:outline-none dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-brand-light/70 dark:focus:bg-white/[0.07];
 }
 .input option {
-  @apply bg-zinc-900 text-zinc-100;
+  @apply bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100;
 }
 
 .label-xs {
@@ -49,34 +63,33 @@ body {
 }
 
 .btn-primary {
-  @apply inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-brand to-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand/50 transition-all hover:brightness-115 hover:shadow-brand/60 disabled:opacity-50;
+  @apply inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-brand to-brand-light px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand/30 transition-all hover:brightness-110 hover:shadow-brand/40 disabled:opacity-50 dark:shadow-brand/50 dark:hover:brightness-115 dark:hover:shadow-brand/60;
 }
 
 .btn-ghost {
-  @apply inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-zinc-300 transition-colors hover:border-brand-light/60 hover:text-white;
+  @apply inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition-colors hover:border-brand hover:text-brand dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:border-brand-light/60 dark:hover:text-white;
 }
 
 .btn-danger {
-  @apply inline-flex items-center justify-center rounded-lg bg-red-600/80 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500;
+  @apply inline-flex items-center justify-center rounded-lg bg-red-600/90 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 dark:bg-red-600/80;
 }
 
 .table-head {
-  @apply bg-white/[0.04] text-left text-[10px] uppercase tracking-[0.14em] text-zinc-500;
+  @apply bg-zinc-50 text-left text-[10px] uppercase tracking-[0.14em] text-zinc-500 dark:bg-white/[0.04];
 }
 
 .row {
-  @apply border-t border-white/[0.05];
+  @apply border-t border-zinc-100 dark:border-white/[0.05];
 }
 
 .page-title {
-  @apply text-2xl font-bold tracking-tight text-white;
+  @apply text-2xl font-bold tracking-tight text-zinc-900 dark:text-white;
 }
 
 .chip {
   @apply rounded-md px-2 py-0.5 text-xs font-bold;
 }
 
-/* status chips keep their DJEP colors (light backgrounds) — force dark text */
 .status-chip {
   @apply rounded-md px-2.5 py-1 text-xs font-bold shadow-sm;
 }
@@ -89,8 +102,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.15);
   border-radius: 8px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(139, 111, 214, 0.55);

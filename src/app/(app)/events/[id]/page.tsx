@@ -163,13 +163,13 @@ export default async function EventDetailPage({
             <div key={ec.id} className={`card p-5 ${ec.is_primary ? "ring-1 ring-brand-light/40" : ""}`}>
               <div className="mb-3 flex items-start justify-between gap-2">
                 <div>
-                  <h2 className="text-base font-bold text-white">
-                    <Link href={`/clients/${c.id}`} className="hover:text-brand-lighter hover:underline">
+                  <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+                    <Link href={`/clients/${c.id}`} className="hover:text-brand dark:text-brand-lighter hover:underline">
                       {c.first_name} {c.last_name}
                     </Link>
                   </h2>
                   <div className="mt-0.5 flex items-center gap-1.5">
-                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-300">
+                    <span className="rounded bg-black/[0.07] dark:bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
                       {ec.role}
                     </span>
                     {ec.is_primary && (
@@ -182,12 +182,12 @@ export default async function EventDetailPage({
                 <div className="flex shrink-0 gap-2 text-xs">
                   {!ec.is_primary && (
                     <form action={setPrimaryEventClient.bind(null, id, ec.id)}>
-                      <button className="font-semibold text-brand-lighter hover:underline">Make Primary</button>
+                      <button className="font-semibold text-brand dark:text-brand-lighter hover:underline">Make Primary</button>
                     </form>
                   )}
                   {canRemove && !ec.is_primary && (
                     <form action={removeEventClient.bind(null, id, ec.id)}>
-                      <button className="font-semibold text-red-400 hover:underline">Remove</button>
+                      <button className="font-semibold text-red-600 dark:text-red-400 hover:underline">Remove</button>
                     </form>
                   )}
                 </div>
@@ -205,16 +205,16 @@ export default async function EventDetailPage({
               </form>
               <ul className="space-y-1.5">
                 {notesForClient.map((n) => (
-                  <li key={n.id} className="rounded-lg bg-white/[0.05] p-2 text-xs">
-                    <span className="text-zinc-300">{n.body}</span>
-                    <div className="mt-0.5 text-[10px] text-zinc-600">
+                  <li key={n.id} className="rounded-lg bg-black/[0.04] dark:bg-white/[0.05] p-2 text-xs">
+                    <span className="text-zinc-700 dark:text-zinc-300">{n.body}</span>
+                    <div className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-600">
                       {(n as { author_name?: string | null }).author_name ?? "unknown"} ·{" "}
                       {new Date(n.created_at).toLocaleString()}
                     </div>
                   </li>
                 ))}
                 {notesForClient.length === 0 && (
-                  <li className="text-xs text-zinc-600">No notes yet — e.g. &quot;Mentioned she hates country music.&quot;</li>
+                  <li className="text-xs text-zinc-400 dark:text-zinc-600">No notes yet — e.g. &quot;Mentioned she hates country music.&quot;</li>
                 )}
               </ul>
             </div>
@@ -268,7 +268,7 @@ export default async function EventDetailPage({
         <div className="mb-3 flex items-center justify-between">
           <h2 className="card-title mb-0">Venue</h2>
           {venue && event.venue_id && (
-            <Link href={`/venues/${event.venue_id}`} className="text-xs font-semibold text-brand-lighter hover:underline">
+            <Link href={`/venues/${event.venue_id}`} className="text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">
               Open Venue Page →
             </Link>
           )}
@@ -282,13 +282,13 @@ export default async function EventDetailPage({
               <div className="flex justify-between"><dt className="text-zinc-500">Setup Fee</dt><dd>{money(venue.setup_fee)}</dd></div>
             )}
             {venue.load_in_details && (
-              <div><dt className="text-zinc-500">Load-In</dt><dd className="mt-1 text-zinc-300">{venue.load_in_details}</dd></div>
+              <div><dt className="text-zinc-500">Load-In</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.load_in_details}</dd></div>
             )}
             {venue.driving_notes && (
-              <div><dt className="text-zinc-500">Driving Notes</dt><dd className="mt-1 text-zinc-300">{venue.driving_notes}</dd></div>
+              <div><dt className="text-zinc-500">Driving Notes</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.driving_notes}</dd></div>
             )}
             {venue.notes && (
-              <div><dt className="text-zinc-500">Venue Notes</dt><dd className="mt-1 text-zinc-300">{venue.notes}</dd></div>
+              <div><dt className="text-zinc-500">Venue Notes</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.notes}</dd></div>
             )}
           </dl>
         ) : (
@@ -309,19 +309,19 @@ export default async function EventDetailPage({
           ).map(([label, url, hint]) =>
             url ? (
               <li key={label}>
-                <a href={url} target="_blank" className="font-semibold text-brand-lighter hover:underline">
+                <a href={url} target="_blank" className="font-semibold text-brand dark:text-brand-lighter hover:underline">
                   {label} ↗
                 </a>
-                <div className="text-xs text-zinc-600">{hint}</div>
+                <div className="text-xs text-zinc-400 dark:text-zinc-600">{hint}</div>
               </li>
             ) : (
-              <li key={label} className="text-zinc-600">
-                {label} — <Link href={`/events/${id}/edit`} className="text-brand-lighter/70 hover:underline">add link</Link>
+              <li key={label} className="text-zinc-400 dark:text-zinc-600">
+                {label} — <Link href={`/events/${id}/edit`} className="text-brand/70 dark:text-brand dark:text-brand-lighter/70 hover:underline">add link</Link>
               </li>
             )
           )}
         </ul>
-        <p className="mt-4 text-xs text-zinc-600">
+        <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-600">
           Coming soon: XOS will create the Drive folder and Vibo event automatically when an event books.
         </p>
       </div>
@@ -342,7 +342,7 @@ export default async function EventDetailPage({
           <div className="mb-3 flex items-center justify-between">
             <h2 className="card-title mb-0">Booking Status</h2>
             {eventNumber && (
-              <span className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-300">
+              <span className="rounded-lg bg-black/[0.05] dark:bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-700 dark:text-zinc-300">
                 Event ID #{eventNumber}
               </span>
             )}
@@ -396,7 +396,7 @@ export default async function EventDetailPage({
             ))}
             <button className="btn-primary mt-1 px-5 py-2 text-xs">Save Dates</button>
           </form>
-          <form action={addCustomDateField.bind(null, id)} className="mt-4 flex gap-2 border-t border-white/[0.06] pt-3">
+          <form action={addCustomDateField.bind(null, id)} className="mt-4 flex gap-2 border-t border-zinc-200 dark:border-white/[0.06] pt-3">
             <input name="name" placeholder="New custom date field (global)…" className="input w-full py-1.5 text-xs" />
             <button className="btn-ghost px-3 py-1 text-xs">Add Field</button>
           </form>
@@ -411,39 +411,39 @@ export default async function EventDetailPage({
         </form>
         <ul className="space-y-2 text-sm">
           {contractNotes.map((n) => (
-            <li key={n.id} className="rounded-lg bg-white/[0.05] p-3">
-              <span className="text-zinc-300">{n.body}</span>
-              <div className="mt-1 text-[11px] text-zinc-600">
+            <li key={n.id} className="rounded-lg bg-black/[0.04] dark:bg-white/[0.05] p-3">
+              <span className="text-zinc-700 dark:text-zinc-300">{n.body}</span>
+              <div className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-600">
                 {n.author_name ?? "unknown"} · {new Date(n.created_at).toLocaleString()}
               </div>
             </li>
           ))}
-          {contractNotes.length === 0 && <li className="text-sm text-zinc-600">No contract notes yet.</li>}
+          {contractNotes.length === 0 && <li className="text-sm text-zinc-400 dark:text-zinc-600">No contract notes yet.</li>}
         </ul>
       </div>
 
       <details className="card overflow-hidden">
-        <summary className="cursor-pointer px-5 py-3.5 text-sm font-bold text-zinc-300 transition-colors hover:bg-white/[0.04] hover:text-white">
+        <summary className="cursor-pointer px-5 py-3.5 text-sm font-bold text-zinc-700 dark:text-zinc-300 transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04] hover:text-zinc-900 dark:hover:text-white">
           Event Log
-          <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-zinc-400">
+          <span className="ml-2 rounded-full bg-black/[0.07] dark:bg-white/10 px-2 py-0.5 text-[10px] font-bold text-zinc-600 dark:text-zinc-400">
             {(eventLogs ?? []).length}
           </span>
         </summary>
-        <div className="max-h-96 overflow-y-auto border-t border-white/[0.06]">
+        <div className="max-h-96 overflow-y-auto border-t border-zinc-200 dark:border-white/[0.06]">
           <table className="w-full text-sm">
             <tbody>
               {(eventLogs ?? []).map((l) => (
                 <tr key={l.id} className="row">
-                  <td className="px-5 py-2 whitespace-nowrap text-xs text-zinc-600">
+                  <td className="px-5 py-2 whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-600">
                     {new Date(l.created_at).toLocaleString()}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-xs font-semibold text-brand-lighter">{l.actor}</td>
-                  <td className="px-3 py-2 text-zinc-300">{l.action}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-xs font-semibold text-brand dark:text-brand-lighter">{l.actor}</td>
+                  <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">{l.action}</td>
                 </tr>
               ))}
               {(eventLogs ?? []).length === 0 && (
                 <tr>
-                  <td className="px-5 py-6 text-center text-sm text-zinc-600">
+                  <td className="px-5 py-6 text-center text-sm text-zinc-400 dark:text-zinc-600">
                     No changes logged yet — the log starts recording once migration 00005 is applied.
                   </td>
                 </tr>
@@ -483,12 +483,12 @@ export default async function EventDetailPage({
           <h2 className="card-title">Package &amp; Add-Ons</h2>
 
           {event.package ? (
-            <details className="mb-3 rounded-lg bg-white/[0.04]">
+            <details className="mb-3 rounded-lg bg-black/[0.03] dark:bg-white/[0.04]">
               <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-sm">
-                <span className="font-semibold text-white">{event.package.name}</span>
+                <span className="font-semibold text-zinc-900 dark:text-white">{event.package.name}</span>
                 <span className="font-semibold">{money(pkgPrice)}</span>
               </summary>
-              <div className="border-t border-white/[0.06] px-3 py-2.5 text-xs whitespace-pre-line text-zinc-400">
+              <div className="border-t border-zinc-200 dark:border-white/[0.06] px-3 py-2.5 text-xs whitespace-pre-line text-zinc-600 dark:text-zinc-400">
                 {pkgDescription || "No description on file — add one in Supabase (packages.description)."}
               </div>
             </details>
@@ -497,9 +497,9 @@ export default async function EventDetailPage({
           )}
 
           {addonRows.map((ea) => (
-            <details key={ea.id} className="mb-2 rounded-lg bg-white/[0.04]">
+            <details key={ea.id} className="mb-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.04]">
               <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-sm">
-                <span className="text-zinc-200">
+                <span className="text-zinc-800 dark:text-zinc-200">
                   {ea.addon?.name ?? "?"}{" "}
                   <span className="text-xs text-zinc-500">
                     ({ea.quantity} @ {money(ea.price_override ?? ea.addon?.default_price ?? 0)})
@@ -507,20 +507,20 @@ export default async function EventDetailPage({
                 </span>
                 <span className="font-semibold">{money(addonLine(ea))}</span>
               </summary>
-              <div className="border-t border-white/[0.06] px-3 py-2.5 text-xs">
-                <p className="mb-2 whitespace-pre-line text-zinc-400">
+              <div className="border-t border-zinc-200 dark:border-white/[0.06] px-3 py-2.5 text-xs">
+                <p className="mb-2 whitespace-pre-line text-zinc-600 dark:text-zinc-400">
                   {ea.addon?.description || "No description on file."}
                 </p>
                 <form action={removeEventAddon.bind(null, id, ea.id)}>
-                  <button className="font-semibold text-red-400 hover:underline">Remove Add-On</button>
+                  <button className="font-semibold text-red-600 dark:text-red-400 hover:underline">Remove Add-On</button>
                 </form>
               </div>
             </details>
           ))}
 
           <div className="row mt-3 flex justify-between pt-3 text-sm">
-            <span className="font-semibold text-zinc-300">Package &amp; Add-Ons Sub Total</span>
-            <span className="font-bold text-white">{money(pkgPrice + addonsTotal)}</span>
+            <span className="font-semibold text-zinc-700 dark:text-zinc-300">Package &amp; Add-Ons Sub Total</span>
+            <span className="font-bold text-zinc-900 dark:text-white">{money(pkgPrice + addonsTotal)}</span>
           </div>
 
           <h3 className="label-xs mt-5">Add An Add-On</h3>
@@ -532,13 +532,13 @@ export default async function EventDetailPage({
           <div className="divide-y divide-white/[0.05]">
             {event.package && (
               <div className={feeRow}>
-                <span className="text-zinc-400">{event.package.name}</span>
+                <span className="text-zinc-600 dark:text-zinc-400">{event.package.name}</span>
                 <span>{money(pkgPrice)}</span>
               </div>
             )}
             {addonRows.map((ea) => (
               <div key={ea.id} className={feeRow}>
-                <span className="text-zinc-400">
+                <span className="text-zinc-600 dark:text-zinc-400">
                   {ea.addon?.name} ({ea.quantity} @ {money(ea.price_override ?? ea.addon?.default_price ?? 0)})
                 </span>
                 <span>{money(addonLine(ea))}</span>
@@ -546,39 +546,39 @@ export default async function EventDetailPage({
             ))}
             {event.overtime_fee > 0 && (
               <div className={feeRow}>
-                <span className="text-zinc-400">Overtime</span>
+                <span className="text-zinc-600 dark:text-zinc-400">Overtime</span>
                 <span>{money(event.overtime_fee)}</span>
               </div>
             )}
             {event.travel_fee > 0 && (
               <div className={feeRow}>
-                <span className="text-zinc-400">Travel Fee</span>
+                <span className="text-zinc-600 dark:text-zinc-400">Travel Fee</span>
                 <span>{money(event.travel_fee)}</span>
               </div>
             )}
             {venueSetupFee > 0 && (
               <div className={feeRow}>
-                <span className="text-zinc-400">Venue Setup Fee ({event.venue?.name})</span>
+                <span className="text-zinc-600 dark:text-zinc-400">Venue Setup Fee ({event.venue?.name})</span>
                 <span>{money(venueSetupFee)}</span>
               </div>
             )}
             {event.discount1_amount > 0 && (
               <div className={feeRow}>
-                <span className="text-zinc-400">Discount{event.discount1_label ? ` — ${event.discount1_label}` : " 1"}</span>
-                <span className="text-emerald-400">−{money(event.discount1_amount)}</span>
+                <span className="text-zinc-600 dark:text-zinc-400">Discount{event.discount1_label ? ` — ${event.discount1_label}` : " 1"}</span>
+                <span className="text-emerald-600 dark:text-emerald-400">−{money(event.discount1_amount)}</span>
               </div>
             )}
             {event.discount2_amount > 0 && (
               <div className={feeRow}>
-                <span className="text-zinc-400">Discount{event.discount2_label ? ` — ${event.discount2_label}` : " 2"}</span>
-                <span className="text-emerald-400">−{money(event.discount2_amount)}</span>
+                <span className="text-zinc-600 dark:text-zinc-400">Discount{event.discount2_label ? ` — ${event.discount2_label}` : " 2"}</span>
+                <span className="text-emerald-600 dark:text-emerald-400">−{money(event.discount2_amount)}</span>
               </div>
             )}
           </div>
 
-          <div className="mt-2 flex justify-between rounded-lg bg-white/[0.06] px-3 py-2.5 text-sm">
-            <span className="font-bold text-white">TOTAL FEE</span>
-            <span className="font-black text-white">{money(total)}</span>
+          <div className="mt-2 flex justify-between rounded-lg bg-black/[0.05] dark:bg-white/[0.06] px-3 py-2.5 text-sm">
+            <span className="font-bold text-zinc-900 dark:text-white">TOTAL FEE</span>
+            <span className="font-black text-zinc-900 dark:text-white">{money(total)}</span>
           </div>
           <dl className="mt-2 space-y-1.5 text-sm">
             <div className="flex justify-between">
@@ -587,12 +587,12 @@ export default async function EventDetailPage({
             </div>
             <div className="flex justify-between">
               <dt className="text-zinc-500">Payments Received</dt>
-              <dd className="text-emerald-400">{money(paid)}</dd>
+              <dd className="text-emerald-600 dark:text-emerald-400">{money(paid)}</dd>
             </div>
           </dl>
           <div className="mt-2 flex justify-between rounded-lg bg-amber-400/10 px-3 py-2.5 text-sm">
-            <span className="font-bold text-amber-200">BALANCE DUE</span>
-            <span className="font-black text-amber-100">{money(balance)}</span>
+            <span className="font-bold text-amber-800 dark:text-amber-200">BALANCE DUE</span>
+            <span className="font-black text-amber-900 dark:text-amber-100">{money(balance)}</span>
           </div>
         </div>
       </div>
@@ -604,11 +604,11 @@ export default async function EventDetailPage({
           <ul className="mb-3 space-y-1.5 text-sm">
             {(schedule ?? []).map((sp: ScheduledPayment) => (
               <li key={sp.id} className="flex justify-between">
-                <span className="text-zinc-400">#{sp.seq} {sp.label} · due {sp.due_date ?? "—"}</span>
+                <span className="text-zinc-600 dark:text-zinc-400">#{sp.seq} {sp.label} · due {sp.due_date ?? "—"}</span>
                 <span className="font-semibold">{money(sp.amount)}</span>
               </li>
             ))}
-            {(schedule ?? []).length === 0 && <li className="text-zinc-600">No payment schedule yet — generate one below.</li>}
+            {(schedule ?? []).length === 0 && <li className="text-zinc-400 dark:text-zinc-600">No payment schedule yet — generate one below.</li>}
           </ul>
           <h3 className="label-xs">Generate Schedule</h3>
           <form action={addScheduleBound} className="flex flex-wrap items-end gap-2">
@@ -630,7 +630,7 @@ export default async function EventDetailPage({
             </div>
             <button className="btn-primary px-4 py-2 text-xs">Generate</button>
           </form>
-          <p className="mt-2 text-xs text-zinc-600">
+          <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-600">
             Package rules: splits of {paymentRules.splits.join(" / ")} ·{" "}
             {paymentRules.terms === "net_days_after"
               ? `Net ${paymentRules.days} — balance due ${paymentRules.days} days after the event`
@@ -649,14 +649,14 @@ export default async function EventDetailPage({
             <input type="date" name="paid_at" className="input w-40" />
             <button className="btn-ghost px-4 py-2 text-xs">Add Payment</button>
           </form>
-          <ul className="divide-y divide-white/[0.06] text-sm">
+          <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06] text-sm">
             {(payments ?? []).map((p: Payment) => (
               <li key={p.id} className="flex justify-between py-2">
-                <span className="text-zinc-400">
+                <span className="text-zinc-600 dark:text-zinc-400">
                   {new Date(p.paid_at).toLocaleDateString()} · {p.method}
                   {p.notes ? ` · ${p.notes}` : ""}
                 </span>
-                <span className="font-semibold text-emerald-400">{money(p.amount)}</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">{money(p.amount)}</span>
               </li>
             ))}
             {(payments ?? []).length === 0 && <li className="py-2 text-zinc-500">No payments yet.</li>}
@@ -667,12 +667,12 @@ export default async function EventDetailPage({
           <h2 className="card-title">Event Profitability</h2>
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between"><dt className="text-zinc-500">Total Fee</dt><dd>{money(total)}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Employee Wages</dt><dd className="text-red-300">−{money(wages)}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Related Expenses</dt><dd className="text-red-300">−{money(expensesTotal)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Employee Wages</dt><dd className="text-red-700 dark:text-red-300">−{money(wages)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Related Expenses</dt><dd className="text-red-700 dark:text-red-300">−{money(expensesTotal)}</dd></div>
             <div className="flex justify-between"><dt className="text-zinc-500">Tax</dt><dd>{money(0)}</dd></div>
             <div className="row flex justify-between pt-2">
-              <dt className="font-bold text-white">Net Profit</dt>
-              <dd className={`text-lg font-black ${netProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>{money(netProfit)}</dd>
+              <dt className="font-bold text-zinc-900 dark:text-white">Net Profit</dt>
+              <dd className={`text-lg font-black ${netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{money(netProfit)}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-zinc-500">Profit Ratio (Net Profit / Total Fee)</dt>
@@ -712,31 +712,31 @@ export default async function EventDetailPage({
               <button className="btn-primary px-5 py-2 text-xs">Add Expense</button>
             </div>
           </form>
-          <ul className="divide-y divide-white/[0.06] text-sm">
+          <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06] text-sm">
             {(expenses ?? []).map((x) => (
               <li key={x.id} className="flex items-center justify-between py-2">
-                <span className="text-zinc-400">
+                <span className="text-zinc-600 dark:text-zinc-400">
                   {x.expense_date} ·{" "}
-                  <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-300">
+                  <span className="rounded bg-black/[0.07] dark:bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-700 dark:text-zinc-300">
                     {(x.category as { name?: string } | null)?.name ?? "uncategorized"}
                   </span>{" "}
-                  {x.payee && <span className="text-zinc-300">{x.payee}</span>}
+                  {x.payee && <span className="text-zinc-700 dark:text-zinc-300">{x.payee}</span>}
                   {x.description && <span className="text-zinc-500"> — {x.description}</span>}
                 </span>
                 <span className="flex items-center gap-3">
-                  <span className="font-semibold text-red-300">{money(x.amount)}</span>
+                  <span className="font-semibold text-red-700 dark:text-red-300">{money(x.amount)}</span>
                   <form action={deleteExpense.bind(null, id, x.id)}>
-                    <button className="text-xs text-red-400 hover:underline">✕</button>
+                    <button className="text-xs text-red-600 dark:text-red-400 hover:underline">✕</button>
                   </form>
                 </span>
               </li>
             ))}
-            {(expenses ?? []).length === 0 && <li className="py-2 text-zinc-600">No expenses logged.</li>}
+            {(expenses ?? []).length === 0 && <li className="py-2 text-zinc-400 dark:text-zinc-600">No expenses logged.</li>}
           </ul>
           {expensesTotal > 0 && (
             <div className="row mt-2 flex justify-between pt-2 text-sm">
-              <span className="font-semibold text-zinc-300">Total Expenses</span>
-              <span className="font-bold text-red-300">{money(expensesTotal)}</span>
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Total Expenses</span>
+              <span className="font-bold text-red-700 dark:text-red-300">{money(expensesTotal)}</span>
             </div>
           )}
         </div>
@@ -757,13 +757,13 @@ export default async function EventDetailPage({
               <button className="btn-primary px-5 py-2 text-xs">Log Trip</button>
             </div>
           </form>
-          <ul className="divide-y divide-white/[0.06] text-sm">
+          <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06] text-sm">
             {(trips ?? []).map((t) => (
               <li key={t.id} className="flex items-center justify-between py-2">
-                <span className="text-zinc-400">
+                <span className="text-zinc-600 dark:text-zinc-400">
                   {t.trip_date}
                   {(t.vehicle as { name?: string } | null)?.name && (
-                    <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-300">
+                    <span className="ml-2 rounded bg-black/[0.07] dark:bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-700 dark:text-zinc-300">
                       {(t.vehicle as { name?: string }).name}
                     </span>
                   )}
@@ -772,16 +772,16 @@ export default async function EventDetailPage({
                 <span className="flex items-center gap-3">
                   <span className="font-semibold">{Number(t.miles).toFixed(1)} mi</span>
                   <form action={deleteTrip.bind(null, id, t.id)}>
-                    <button className="text-xs text-red-400 hover:underline">✕</button>
+                    <button className="text-xs text-red-600 dark:text-red-400 hover:underline">✕</button>
                   </form>
                 </span>
               </li>
             ))}
-            {(trips ?? []).length === 0 && <li className="py-2 text-zinc-600">No trips logged.</li>}
+            {(trips ?? []).length === 0 && <li className="py-2 text-zinc-400 dark:text-zinc-600">No trips logged.</li>}
           </ul>
           {totalMiles > 0 && (
             <div className="row mt-2 flex justify-between pt-2 text-sm">
-              <span className="font-semibold text-zinc-300">Total Miles</span>
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Total Miles</span>
               <span className="font-bold">{totalMiles.toFixed(1)} mi</span>
             </div>
           )}
@@ -802,13 +802,13 @@ export default async function EventDetailPage({
         <button className="btn-primary px-5">Add</button>
       </form>
       {event.internal_notes && (
-        <p className="mb-3 rounded-lg bg-amber-400/10 p-3 text-sm text-amber-100">{event.internal_notes}</p>
+        <p className="mb-3 rounded-lg bg-amber-400/10 p-3 text-sm text-amber-900 dark:text-amber-100">{event.internal_notes}</p>
       )}
       <ul className="space-y-2 text-sm">
         {internalNotes.map((n: { id: string; body: string; created_at: string; author_name?: string | null }) => (
-          <li key={n.id} className="rounded-lg bg-white/[0.05] p-3">
-            <span className="text-zinc-300">{n.body}</span>
-            <div className="mt-1 text-[11px] text-zinc-600">
+          <li key={n.id} className="rounded-lg bg-black/[0.04] dark:bg-white/[0.05] p-3">
+            <span className="text-zinc-700 dark:text-zinc-300">{n.body}</span>
+            <div className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-600">
               {n.author_name ?? "unknown"} · {new Date(n.created_at).toLocaleString()}
             </div>
           </li>
@@ -841,48 +841,48 @@ export default async function EventDetailPage({
   return (
     <div className="max-w-6xl">
       {/* ---------- STICKY HEADER ---------- */}
-      <div className="sticky top-0 z-30 -mx-6 -mt-6 mb-5 border-b border-white/[0.08] bg-[#0b0913]/90 px-6 pt-4 pb-3 backdrop-blur-xl">
+      <div className="sticky top-0 z-30 -mx-6 -mt-6 mb-5 border-b border-zinc-200 dark:border-white/[0.08] bg-white/85 dark:bg-[#0b0913]/90 px-6 pt-4 pb-3 backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             {/* calendar date badge */}
-            <div className="w-16 shrink-0 overflow-hidden rounded-xl border border-white/15 text-center shadow-lg">
+            <div className="w-16 shrink-0 overflow-hidden rounded-xl border border-zinc-300 dark:border-white/15 text-center shadow-lg">
               <div className="bg-gradient-to-r from-brand to-brand-light py-0.5 text-[10px] font-black tracking-widest text-white uppercase">
                 {dateObj ? dateObj.toLocaleString("en-US", { month: "short" }) : "TBD"}
               </div>
-              <div className="bg-white/[0.06] pt-0.5 text-[8px] font-bold tracking-widest text-zinc-500 uppercase">
+              <div className="bg-black/[0.05] dark:bg-white/[0.06] pt-0.5 text-[8px] font-bold tracking-widest text-zinc-500 uppercase">
                 {dateObj ? dateObj.toLocaleString("en-US", { weekday: "long" }) : "—"}
               </div>
-              <div className="bg-white/[0.06] text-xl leading-6 font-black text-white">
+              <div className="bg-black/[0.05] dark:bg-white/[0.06] text-xl leading-6 font-black text-zinc-900 dark:text-white">
                 {dateObj ? dateObj.getDate() : "?"}
               </div>
-              <div className="bg-white/[0.06] pb-1 text-[9px] font-bold text-zinc-500">
+              <div className="bg-black/[0.05] dark:bg-white/[0.06] pb-1 text-[9px] font-bold text-zinc-500">
                 {dateObj ? dateObj.getFullYear() : ""}
               </div>
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white">
+              <h1 className="text-lg font-bold text-zinc-900 dark:text-white">
                 {event.name || "(unnamed event)"}
-                {eventNumber && <span className="ml-2 text-xs font-semibold text-zinc-600">#{eventNumber}</span>}
+                {eventNumber && <span className="ml-2 text-xs font-semibold text-zinc-400 dark:text-zinc-600">#{eventNumber}</span>}
               </h1>
               <p className="text-xs text-zinc-500">
                 Event Date:{" "}
-                <span className="text-zinc-300">
+                <span className="text-zinc-700 dark:text-zinc-300">
                   {dateObj
                     ? dateObj.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
                     : "not set"}
                 </span>
               </p>
               <p className="text-xs text-zinc-500">
-                Client: <span className="text-zinc-300">{primaryClientName ?? "—"}</span>
+                Client: <span className="text-zinc-700 dark:text-zinc-300">{primaryClientName ?? "—"}</span>
                 {primaryOrg && (
                   <>
-                    {" "}· Organization: <span className="text-zinc-300">{primaryOrg}</span>
+                    {" "}· Organization: <span className="text-zinc-700 dark:text-zinc-300">{primaryOrg}</span>
                   </>
                 )}
               </p>
               <p className="text-xs text-zinc-500">
                 Venue:{" "}
-                <span className="text-zinc-300">
+                <span className="text-zinc-700 dark:text-zinc-300">
                   {event.venue ? `${event.venue.name}${event.venue.city ? ` - ${event.venue.city}, ${event.venue.state ?? ""}` : ""}` : "—"}
                 </span>
               </p>
@@ -897,7 +897,7 @@ export default async function EventDetailPage({
                 {event.status.name}
               </span>
             )}
-            <span className="hidden rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm font-bold text-white md:inline">
+            <span className="hidden rounded-lg border border-zinc-300 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-3 py-1.5 text-sm font-bold text-zinc-900 dark:text-white md:inline">
               {money(balance)} <span className="text-xs font-medium text-zinc-500">due</span>
             </span>
             <Link href={`/events/${id}/edit`} className="btn-primary px-4 py-2">
@@ -920,7 +920,7 @@ export default async function EventDetailPage({
         <div className="card p-4">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="card-title mb-0">Event Details</h2>
-            {eventNumber && <span className="text-[10px] font-bold text-zinc-600">EVENT ID: {eventNumber}</span>}
+            {eventNumber && <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-600">EVENT ID: {eventNumber}</span>}
           </div>
           <dl className="space-y-1 text-sm">
             <div className="flex justify-between"><dt className="text-zinc-500">Type:</dt><dd>{event.event_type?.name ?? "—"}</dd></div>
@@ -935,8 +935,8 @@ export default async function EventDetailPage({
           <dl className="space-y-1 text-sm">
             <div className="flex justify-between"><dt className="text-zinc-500">Package:</dt><dd className="truncate pl-3">{event.package?.name ?? "—"}</dd></div>
             <div className="flex justify-between"><dt className="text-zinc-500">Total Fee:</dt><dd className="font-semibold">{money(total)}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Payments Received:</dt><dd className="text-emerald-400">{money(paid)}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Outstanding Balance:</dt><dd className="font-bold text-white">{money(balance)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Payments Received:</dt><dd className="text-emerald-600 dark:text-emerald-400">{money(paid)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Outstanding Balance:</dt><dd className="font-bold text-zinc-900 dark:text-white">{money(balance)}</dd></div>
           </dl>
         </div>
 

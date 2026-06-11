@@ -42,7 +42,7 @@ export default async function EmployeesPage() {
                 <td className="px-4 py-2 text-right">{e.hourly_rate ? money(e.hourly_rate) : "—"}</td>
                 <td className="px-4 py-2 text-center">
                   <form action={toggleEmployee.bind(null, e.id, !e.is_active)}>
-                    <button className="text-xs font-semibold text-brand-lighter hover:underline">
+                    <button className="text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">
                       {e.is_active ? "Deactivate" : "Reactivate"}
                     </button>
                   </form>
@@ -51,7 +51,7 @@ export default async function EmployeesPage() {
             ))}
             {(employees ?? []).length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">No employees yet.</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">No employees yet.</td>
               </tr>
             )}
           </tbody>

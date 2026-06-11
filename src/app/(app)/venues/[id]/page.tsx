@@ -39,16 +39,16 @@ export default async function VenueDetailPage({
           <h1 className="page-title">{venue.name}</h1>
           <p className="mt-1 text-sm text-zinc-500">
             {[venue.address, venue.city, venue.state].filter(Boolean).join(", ") || "no address"}
-            {venue.is_one_time && <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase">one-time</span>}
+            {venue.is_one_time && <span className="ml-2 rounded bg-black/[0.07] dark:bg-white/10 px-1.5 py-0.5 text-[10px] uppercase">one-time</span>}
           </p>
         </div>
         <div className="flex gap-2 text-sm">
-          <span className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5">
-            <span className="font-bold text-white">{timesWorked}</span>{" "}
+          <span className="rounded-lg border border-zinc-300 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-3 py-1.5">
+            <span className="font-bold text-zinc-900 dark:text-white">{timesWorked}</span>{" "}
             <span className="text-zinc-500">events worked</span>
           </span>
-          <span className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5">
-            <span className="font-bold text-white">{upcoming}</span>{" "}
+          <span className="rounded-lg border border-zinc-300 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-3 py-1.5">
+            <span className="font-bold text-zinc-900 dark:text-white">{upcoming}</span>{" "}
             <span className="text-zinc-500">upcoming</span>
           </span>
         </div>
@@ -89,7 +89,7 @@ export default async function VenueDetailPage({
             </div>
             <div className="flex items-end gap-2 pb-2">
               <input type="checkbox" name="is_one_time" id="one_time" defaultChecked={venue.is_one_time} className="size-4 accent-brand-light" />
-              <label htmlFor="one_time" className="text-sm text-zinc-400">One-time venue</label>
+              <label htmlFor="one_time" className="text-sm text-zinc-600 dark:text-zinc-400">One-time venue</label>
             </div>
             <div className="col-span-2">
               <label className="label-xs">Load-In Details</label>
@@ -115,18 +115,18 @@ export default async function VenueDetailPage({
             <h2 className="card-title">Contacts</h2>
             <ul className="mb-3 space-y-2 text-sm">
               {(contacts ?? []).map((c) => (
-                <li key={c.id} className="flex items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2">
+                <li key={c.id} className="flex items-center justify-between rounded-lg bg-black/[0.03] dark:bg-white/[0.04] px-3 py-2">
                   <span>
                     <span className="font-semibold">{c.name}</span>
                     {c.role && <span className="ml-2 text-xs text-zinc-500">{c.role}</span>}
-                    <span className="ml-2 text-xs text-zinc-400">{[c.phone, c.email].filter(Boolean).join(" · ")}</span>
+                    <span className="ml-2 text-xs text-zinc-600 dark:text-zinc-400">{[c.phone, c.email].filter(Boolean).join(" · ")}</span>
                   </span>
                   <form action={removeVenueContact.bind(null, id, c.id)}>
-                    <button className="text-xs font-semibold text-red-400 hover:underline">Remove</button>
+                    <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Remove</button>
                   </form>
                 </li>
               ))}
-              {(contacts ?? []).length === 0 && <li className="text-xs text-zinc-600">No contacts yet.</li>}
+              {(contacts ?? []).length === 0 && <li className="text-xs text-zinc-400 dark:text-zinc-600">No contacts yet.</li>}
             </ul>
             <form action={addVenueContact.bind(null, id)} className="grid grid-cols-2 gap-2">
               <input name="name" placeholder="Name" required className="input" />
@@ -144,11 +144,11 @@ export default async function VenueDetailPage({
             <h2 className="card-title">Rooms</h2>
             <ul className="mb-3 flex flex-wrap gap-1.5">
               {(rooms ?? []).map((r) => (
-                <li key={r.id} className="rounded-lg bg-white/[0.07] px-2.5 py-1 text-xs font-semibold text-zinc-300">
+                <li key={r.id} className="rounded-lg bg-black/[0.06] dark:bg-white/[0.07] px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
                   {r.name}
                 </li>
               ))}
-              {(rooms ?? []).length === 0 && <li className="text-xs text-zinc-600">No rooms defined.</li>}
+              {(rooms ?? []).length === 0 && <li className="text-xs text-zinc-400 dark:text-zinc-600">No rooms defined.</li>}
             </ul>
             <form action={addVenueRoom.bind(null, id)} className="flex gap-2">
               <input name="name" placeholder="Room name" required className="input w-full" />
@@ -172,10 +172,10 @@ export default async function VenueDetailPage({
           </thead>
           <tbody>
             {(events ?? []).map((e: XEvent & { client: { first_name: string; last_name: string } | null }) => (
-              <tr key={e.id} className="row hover:bg-white/[0.04]">
+              <tr key={e.id} className="row hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
                 <td className="px-4 py-2 whitespace-nowrap">{e.event_date ?? "—"}</td>
                 <td className="px-4 py-2">
-                  <Link href={`/events/${e.id}`} className="font-medium text-brand-lighter hover:underline">
+                  <Link href={`/events/${e.id}`} className="font-medium text-brand dark:text-brand-lighter hover:underline">
                     {e.name || "(unnamed)"}
                   </Link>
                 </td>
@@ -199,7 +199,7 @@ export default async function VenueDetailPage({
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-zinc-600">
+      <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-600">
         Travel fee {money(venue.travel_fee)} · Setup fee {money(venue.setup_fee)}
         {venue.distance_miles ? ` · ${venue.distance_miles} mi from warehouse` : ""}
       </p>

@@ -47,13 +47,13 @@ export default async function PaymentsPage({
       <div className="mb-6 grid grid-cols-3 gap-3 md:grid-cols-6">
         {months.map((m) => (
           <div key={m.month} className="card p-3 text-center">
-            <div className="text-xs uppercase text-zinc-400">{m.label.slice(0, 3)}</div>
+            <div className="text-xs uppercase text-zinc-600 dark:text-zinc-400">{m.label.slice(0, 3)}</div>
             <div className="text-sm font-bold">{money(m.total)}</div>
-            <div className="text-[10px] text-zinc-400">{m.count} payments</div>
+            <div className="text-[10px] text-zinc-600 dark:text-zinc-400">{m.count} payments</div>
           </div>
         ))}
       </div>
-      <div className="mb-6 rounded-lg bg-green-700 p-4 text-white shadow">
+      <div className="mb-6 rounded-lg bg-green-700 p-4 text-zinc-900 dark:text-white shadow">
         <span className="text-sm uppercase tracking-wide opacity-80">Total {y} Payments Received</span>
         <div className="text-3xl font-black">{money(yearTotal)}</div>
       </div>
@@ -75,21 +75,21 @@ export default async function PaymentsPage({
                 <td className="px-4 py-2">{new Date(p.paid_at).toLocaleDateString()}</td>
                 <td className="px-4 py-2">
                   {p.event ? (
-                    <Link href={`/events/${(p.event as { id: string }).id}`} className="text-brand-lighter hover:underline">
+                    <Link href={`/events/${(p.event as { id: string }).id}`} className="text-brand dark:text-brand-lighter hover:underline">
                       {(p.event as { name: string }).name || "(unnamed)"}
                     </Link>
                   ) : (
-                    <span className="text-zinc-400">Unassigned</span>
+                    <span className="text-zinc-600 dark:text-zinc-400">Unassigned</span>
                   )}
                 </td>
                 <td className="px-4 py-2">{p.method}</td>
                 <td className="px-4 py-2">{p.status}</td>
-                <td className="px-4 py-2 text-right font-semibold text-emerald-400">{money(p.amount)}</td>
+                <td className="px-4 py-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">{money(p.amount)}</td>
               </tr>
             ))}
             {(payments ?? []).length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">No payments in {y}.</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">No payments in {y}.</td>
               </tr>
             )}
           </tbody>

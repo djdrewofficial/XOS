@@ -73,10 +73,10 @@ export default async function StatusesPage() {
                 </span>
               </span>
               <span className="w-[6%] px-2">
-                <input type="color" name="color" defaultValue={s.color} className="h-8 w-full cursor-pointer rounded border border-white/10 bg-transparent" />
+                <input type="color" name="color" defaultValue={s.color} className="h-8 w-full cursor-pointer rounded border border-zinc-300 dark:border-white/10 bg-transparent" />
               </span>
               <span className="w-[6%] px-2">
-                <input type="color" name="text_color" defaultValue={s.text_color} className="h-8 w-full cursor-pointer rounded border border-white/10 bg-transparent" />
+                <input type="color" name="text_color" defaultValue={s.text_color} className="h-8 w-full cursor-pointer rounded border border-zinc-300 dark:border-white/10 bg-transparent" />
               </span>
               <span className="w-[6%] px-2">
                 <input type="number" name="sort_order" defaultValue={s.sort_order} className="input w-full py-1.5 text-center" />
@@ -93,11 +93,11 @@ export default async function StatusesPage() {
               <span className="flex w-[10%] items-center justify-end gap-2 px-3">
                 <button className="btn-ghost px-3 py-1 text-xs">Save</button>
                 {inUse === 0 ? (
-                  <button formAction={deleteStatus.bind(null, s.id)} className="text-xs font-semibold text-red-400 hover:underline">
+                  <button formAction={deleteStatus.bind(null, s.id)} className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">
                     Delete
                   </button>
                 ) : (
-                  <span className="text-xs text-zinc-700" title="In use — deactivate instead">🔒</span>
+                  <span className="text-xs text-zinc-400 dark:text-zinc-700" title="In use — deactivate instead">🔒</span>
                 )}
               </span>
             </form>
@@ -118,22 +118,22 @@ export default async function StatusesPage() {
         </div>
         <div>
           <label className="label-xs">BG Color</label>
-          <input type="color" name="color" defaultValue="#97CC9A" className="h-9 w-16 cursor-pointer rounded border border-white/10 bg-transparent" />
+          <input type="color" name="color" defaultValue="#97CC9A" className="h-9 w-16 cursor-pointer rounded border border-zinc-300 dark:border-white/10 bg-transparent" />
         </div>
         <div>
           <label className="label-xs">Text Color</label>
-          <input type="color" name="text_color" defaultValue="#000000" className="h-9 w-16 cursor-pointer rounded border border-white/10 bg-transparent" />
+          <input type="color" name="text_color" defaultValue="#000000" className="h-9 w-16 cursor-pointer rounded border border-zinc-300 dark:border-white/10 bg-transparent" />
         </div>
         <div>
           <label className="label-xs">Order</label>
           <input type="number" name="sort_order" defaultValue={99} className="input w-20" />
         </div>
         {GROUPS.map(([key, label]) => (
-          <label key={key} className="flex items-center gap-1.5 pb-2 text-xs text-zinc-400">
+          <label key={key} className="flex items-center gap-1.5 pb-2 text-xs text-zinc-600 dark:text-zinc-400">
             <input type="checkbox" name={key} className="size-4 accent-brand-light" /> {label}
           </label>
         ))}
-        <label className="flex items-center gap-1.5 pb-2 text-xs text-zinc-400">
+        <label className="flex items-center gap-1.5 pb-2 text-xs text-zinc-600 dark:text-zinc-400">
           <input type="checkbox" name="is_active" defaultChecked className="size-4 accent-brand-light" /> Active
         </label>
         <button className="btn-primary">Add Status</button>
@@ -185,14 +185,14 @@ export default async function StatusesPage() {
                   </td>
                   <td className="px-4 py-2.5 text-center">
                     <form action={toggleDailyAction.bind(null, a.id, !a.is_active)}>
-                      <button className="text-xs font-semibold text-brand-lighter hover:underline">
+                      <button className="text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">
                         {a.is_active ? "✓ On — turn off" : "Off — turn on"}
                       </button>
                     </form>
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <form action={deleteDailyAction.bind(null, a.id)}>
-                      <button className="text-xs font-semibold text-red-400 hover:underline">Delete</button>
+                      <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Delete</button>
                     </form>
                   </td>
                 </tr>

@@ -69,7 +69,7 @@ export default async function EventsPage({
             {f.label}
           </Link>
         ))}
-        <span className="mx-2 text-zinc-300">|</span>
+        <span className="mx-2 text-zinc-700 dark:text-zinc-300">|</span>
         {(statuses ?? []).filter((s) => s.is_active).map((s) => (
           <Link
             key={s.id}
@@ -110,7 +110,7 @@ export default async function EventsPage({
                 >
                   <td className="px-4 py-2 whitespace-nowrap">{e.event_date ?? "—"}</td>
                   <td className="px-4 py-2">
-                    <Link href={`/events/${e.id}`} className="font-medium text-brand-lighter hover:underline">
+                    <Link href={`/events/${e.id}`} className="font-medium text-brand dark:text-brand-lighter hover:underline">
                       {e.name || "(unnamed)"}
                     </Link>
                   </td>
@@ -129,7 +129,7 @@ export default async function EventsPage({
             })}
             {(events ?? []).length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-zinc-400">
+                <td colSpan={10} className="px-4 py-10 text-center text-zinc-600 dark:text-zinc-400">
                   No events match this filter.
                 </td>
               </tr>

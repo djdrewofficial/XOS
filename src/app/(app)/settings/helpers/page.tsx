@@ -66,7 +66,7 @@ export default async function HelpersPage() {
                     {h.button_text}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-xs text-zinc-400">
+                <td className="px-4 py-2 text-xs text-zinc-600 dark:text-zinc-400">
                   {(h.actions as HelperAction[]).map((a, i) => (
                     <div key={i}>• {describeAction(a, statusNames, templateNames)}</div>
                   ))}
@@ -81,12 +81,12 @@ export default async function HelpersPage() {
                 </td>
                 <td className="px-4 py-2 text-right text-xs">
                   <form action={toggleHelper.bind(null, h.id, !h.is_active)} className="inline">
-                    <button className="font-semibold text-brand-lighter hover:underline">
+                    <button className="font-semibold text-brand dark:text-brand-lighter hover:underline">
                       {h.is_active ? "Disable" : "Enable"}
                     </button>
                   </form>
                   <form action={deleteHelper.bind(null, h.id)} className="ml-3 inline">
-                    <button className="font-semibold text-red-400 hover:underline">Delete</button>
+                    <button className="font-semibold text-red-600 dark:text-red-400 hover:underline">Delete</button>
                   </form>
                 </td>
               </tr>
@@ -168,7 +168,7 @@ export default async function HelpersPage() {
             {(statuses ?? []).map((s) => (
               <label
                 key={s.id}
-                className="flex cursor-pointer items-center gap-1.5 rounded border border-white/10 px-2 py-1 text-xs"
+                className="flex cursor-pointer items-center gap-1.5 rounded border border-zinc-300 dark:border-white/10 px-2 py-1 text-xs"
               >
                 <input type="checkbox" name="visible_status_ids" value={s.id} />
                 <span className="rounded px-1.5 py-0.5 font-semibold" style={{ backgroundColor: s.color, color: s.text_color }}>
@@ -177,7 +177,7 @@ export default async function HelpersPage() {
               </label>
             ))}
           </div>
-          <p className="mb-2 text-xs text-zinc-400">Leave all unchecked = visible for every status.</p>
+          <p className="mb-2 text-xs text-zinc-600 dark:text-zinc-400">Leave all unchecked = visible for every status.</p>
           <label className="mr-5 inline-flex items-center gap-2 text-sm">
             <input type="checkbox" name="hide_if_payment_made" /> Hide if a payment has been made
           </label>

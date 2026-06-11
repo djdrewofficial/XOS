@@ -29,11 +29,11 @@ export default async function VenuesPage() {
           </thead>
           <tbody>
             {(venues ?? []).map((v) => (
-              <tr key={v.id} className="row hover:bg-white/[0.04]">
+              <tr key={v.id} className="row hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
                 <td className="px-4 py-2 font-medium">
-                  <a href={`/venues/${v.id}`} className="text-brand-lighter hover:underline">{v.name}</a>
+                  <a href={`/venues/${v.id}`} className="text-brand dark:text-brand-lighter hover:underline">{v.name}</a>
                   {v.is_one_time && (
-                    <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase">one-time</span>
+                    <span className="ml-2 rounded bg-black/[0.07] dark:bg-white/10 px-1.5 py-0.5 text-[10px] uppercase">one-time</span>
                   )}
                 </td>
                 <td className="px-4 py-2">
@@ -46,7 +46,7 @@ export default async function VenuesPage() {
             ))}
             {(venues ?? []).length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">No venues yet.</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">No venues yet.</td>
               </tr>
             )}
           </tbody>

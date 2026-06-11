@@ -124,13 +124,13 @@ export default function EventChip({
           onClick={() => setOpen(false)}
         >
           <div
-            className="card w-full max-w-lg overflow-hidden bg-zinc-950/95"
+            className="card w-full max-w-lg overflow-hidden bg-white/95 dark:bg-zinc-950/95"
             onClick={(ev) => ev.stopPropagation()}
           >
             {/* header */}
-            <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] px-5 py-4">
+            <div className="flex items-start justify-between gap-3 border-b border-zinc-200 dark:border-white/[0.08] px-5 py-4">
               <div>
-                <h3 className="text-lg font-bold text-white">{e?.name || label}</h3>
+                <h3 className="text-lg font-bold text-zinc-900 dark:text-white">{e?.name || label}</h3>
                 <p className="text-xs text-zinc-500">
                   {e?.event_date ?? ""} · {e?.event_type?.name ?? ""} {e?.venue ? `· ${e.venue.name}` : ""}
                 </p>
@@ -143,7 +143,7 @@ export default function EventChip({
                 )}
                 <button
                   onClick={() => setOpen(false)}
-                  className="rounded-lg px-2 py-1 text-zinc-500 transition-colors hover:bg-white/10 hover:text-white"
+                  className="rounded-lg px-2 py-1 text-zinc-500 transition-colors hover:bg-black/10 dark:hover:bg-black/[0.07] dark:hover:bg-white/10 hover:text-zinc-900 dark:hover:text-white"
                 >
                   ✕
                 </button>
@@ -151,7 +151,7 @@ export default function EventChip({
             </div>
 
             {/* mini tabs */}
-            <div className="flex gap-1 border-b border-white/[0.08] px-3 py-2">
+            <div className="flex gap-1 border-b border-zinc-200 dark:border-white/[0.08] px-3 py-2">
               {TABS.map((t) => (
                 <button
                   key={t}
@@ -159,7 +159,7 @@ export default function EventChip({
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
                     tab === t
                       ? "bg-gradient-to-r from-brand to-brand-light text-white"
-                      : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+                      : "text-zinc-600 dark:text-zinc-400 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] hover:text-zinc-900 dark:hover:text-white"
                   }`}
                 >
                   {t}
@@ -180,13 +180,13 @@ export default function EventChip({
                   <div className={rowCls}><span className={dtCls}>Venue</span><span>{e.venue ? `${e.venue.name}${e.venue.city ? `, ${e.venue.city}` : ""}` : "—"}</span></div>
                   <div className={rowCls}><span className={dtCls}>Package</span><span>{e.package?.name ?? "—"}</span></div>
                   {e.internal_notes && (
-                    <p className="rounded-lg bg-amber-400/10 p-2 text-xs text-amber-100">{e.internal_notes}</p>
+                    <p className="rounded-lg bg-amber-400/10 p-2 text-xs text-amber-900 dark:text-amber-100">{e.internal_notes}</p>
                   )}
                   {data!.notes.length > 0 && (
                     <div className="pt-1">
                       <div className="label-xs">Recent Notes</div>
                       {data!.notes.map((n) => (
-                        <p key={n.id} className="mb-1 rounded-lg bg-white/[0.05] p-2 text-xs text-zinc-300">{n.body}</p>
+                        <p key={n.id} className="mb-1 rounded-lg bg-black/[0.04] dark:bg-white/[0.05] p-2 text-xs text-zinc-700 dark:text-zinc-300">{n.body}</p>
                       ))}
                     </div>
                   )}
@@ -200,7 +200,7 @@ export default function EventChip({
                       <div className={rowCls}><span className={dtCls}>Name</span><span className="font-semibold">{e.client.first_name} {e.client.last_name}</span></div>
                       <div className={rowCls}><span className={dtCls}>Cell</span><span>{e.client.cell_phone ?? "—"}</span></div>
                       <div className={rowCls}><span className={dtCls}>Email</span><span>{e.client.email ?? "—"}</span></div>
-                      <Link href={`/clients/${e.client.id}`} className="inline-block pt-1 text-xs font-semibold text-brand-lighter hover:underline">
+                      <Link href={`/clients/${e.client.id}`} className="inline-block pt-1 text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">
                         View client profile →
                       </Link>
                     </>
@@ -213,8 +213,8 @@ export default function EventChip({
               {!loading && e && tab === "Financials" && (
                 <div className="space-y-2">
                   <div className={rowCls}><span className={dtCls}>Total Fee</span><span className="font-semibold">{money(total)}</span></div>
-                  <div className={rowCls}><span className={dtCls}>Payments Received</span><span className="text-emerald-400">{money(paid)}</span></div>
-                  <div className={rowCls}><span className="font-semibold">Balance Due</span><span className="font-black text-white">{money(total - paid)}</span></div>
+                  <div className={rowCls}><span className={dtCls}>Payments Received</span><span className="text-emerald-600 dark:text-emerald-400">{money(paid)}</span></div>
+                  <div className={rowCls}><span className="font-semibold">Balance Due</span><span className="font-black text-zinc-900 dark:text-white">{money(total - paid)}</span></div>
                   {data!.schedule.length > 0 && (
                     <div className="pt-2">
                       <div className="label-xs">Payment Schedule</div>
@@ -232,7 +232,7 @@ export default function EventChip({
                       {data!.payments.map((p) => (
                         <div key={p.id} className={rowCls}>
                           <span className={dtCls}>{new Date(p.paid_at).toLocaleDateString()} · {p.method}</span>
-                          <span className="text-emerald-400">{money(p.amount)}</span>
+                          <span className="text-emerald-600 dark:text-emerald-400">{money(p.amount)}</span>
                         </div>
                       ))}
                     </div>
@@ -256,7 +256,7 @@ export default function EventChip({
             </div>
 
             {/* footer */}
-            <div className="flex justify-end gap-2 border-t border-white/[0.08] px-5 py-3">
+            <div className="flex justify-end gap-2 border-t border-zinc-200 dark:border-white/[0.08] px-5 py-3">
               <button onClick={() => setOpen(false)} className="btn-ghost px-4 py-2 text-xs">
                 Close
               </button>

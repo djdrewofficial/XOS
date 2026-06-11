@@ -31,7 +31,7 @@ export default async function EmailPage() {
     <div className="max-w-5xl">
       <h1 className="mb-5 text-2xl font-bold">Email</h1>
 
-      <div className={`card mb-6 p-4 text-sm ${mailgunConfigured ? "border-emerald-400/30 text-emerald-200" : "border-amber-400/30 text-amber-200"}`}>
+      <div className={`card mb-6 p-4 text-sm ${mailgunConfigured ? "border-emerald-400/30 text-emerald-200" : "border-amber-400/30 text-amber-800 dark:text-amber-200"}`}>
         {mailgunConfigured ? (
           <>Mailgun is configured — queued emails send via <strong>{process.env.MAILGUN_DOMAIN}</strong>.</>
         ) : (
@@ -49,17 +49,17 @@ export default async function EmailPage() {
       <h2 className="card-title">Templates</h2>
       {groups.map((g) => (
         <div key={g} className="mb-4">
-          <h3 className="mb-1 rounded-t-xl bg-white/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-white">{g}</h3>
+          <h3 className="mb-1 rounded-t-xl bg-black/[0.07] dark:bg-white/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-zinc-900 dark:text-white">{g}</h3>
           <div className="card overflow-hidden rounded-t-none">
-            <ul className="divide-y divide-white/[0.06]">
+            <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
               {(templates ?? []).filter((t) => t.group_name === g).map((t) => (
                 <li key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
                   <div>
                     <span className="font-medium">{t.name}</span>
-                    <span className="ml-3 italic text-zinc-400">Subject: {t.subject}</span>
+                    <span className="ml-3 italic text-zinc-600 dark:text-zinc-400">Subject: {t.subject}</span>
                   </div>
                   <form action={deleteTemplate.bind(null, t.id)}>
-                    <button className="text-xs font-semibold text-red-400 hover:underline">Delete</button>
+                    <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Delete</button>
                   </form>
                 </li>
               ))}
@@ -97,7 +97,7 @@ export default async function EmailPage() {
           <summary className="cursor-pointer font-semibold">Available merge tags</summary>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {MERGE_TAGS.map((t) => (
-              <code key={t} className="rounded bg-white/10 px-1.5 py-0.5">{t}</code>
+              <code key={t} className="rounded bg-black/[0.07] dark:bg-white/10 px-1.5 py-0.5">{t}</code>
             ))}
           </div>
         </details>
@@ -127,10 +127,10 @@ export default async function EmailPage() {
                   <span
                     className={`rounded px-2 py-0.5 text-xs font-semibold ${
                       m.status === "sent" || m.status === "delivered"
-                        ? "bg-emerald-500/15 text-emerald-300"
+                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                         : m.status === "failed"
-                        ? "bg-red-500/15 text-red-300"
-                        : "bg-amber-500/15 text-amber-300"
+                        ? "bg-red-500/15 text-red-700 dark:text-red-300"
+                        : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
                     }`}
                     title={m.error ?? undefined}
                   >
@@ -141,7 +141,7 @@ export default async function EmailPage() {
             ))}
             {(log ?? []).length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-zinc-400">
+                <td colSpan={4} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">
                   No emails yet — run a booking helper that sends one.
                 </td>
               </tr>

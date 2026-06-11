@@ -32,13 +32,13 @@ export default function LoginPage() {
         onSubmit={handleSubmit}
         className="card w-full max-w-sm p-8"
       >
-        <h1 className="mb-1 text-4xl font-black tracking-tight text-white">
+        <h1 className="mb-1 text-4xl font-black tracking-tight text-zinc-900 dark:text-white">
           X
           <span className="bg-gradient-to-r from-brand-light to-brand-lighter bg-clip-text text-transparent">
             OS
           </span>
         </h1>
-        <p className="mb-8 text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-600">
+        <p className="mb-8 text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 dark:text-zinc-600">
           Xpress Entertainment
         </p>
         <label className="label-xs">Email</label>
@@ -57,7 +57,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           className="input mb-5 w-full"
         />
-        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={loading}

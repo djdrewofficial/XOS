@@ -23,7 +23,7 @@ export default async function PackagesPage() {
         if (pkgs.length === 0) return null;
         return (
           <div key={cat.id} className="mb-6">
-            <h2 className="mb-2 rounded-t-xl bg-gradient-to-r from-violet-600/70 to-fuchsia-600/50 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
+            <h2 className="mb-2 rounded-t-xl bg-gradient-to-r from-violet-600/70 to-fuchsia-600/50 px-4 py-2 text-sm font-bold uppercase tracking-wide text-zinc-900 dark:text-white">
               {cat.name}
             </h2>
             <div className="card overflow-hidden rounded-t-none">
@@ -51,18 +51,18 @@ export default async function PackagesPage() {
                         <td className="px-4 py-2 text-right">{p.is_hourly ? money(p.hourly_rate) : "—"}</td>
                         <td className="px-4 py-2 text-right">{money(p.deposit_value)}</td>
                       </tr>
-                      <tr key={`${p.id}-rules`} className="bg-white/[0.02]">
+                      <tr key={`${p.id}-rules`} className="bg-black/[0.02] dark:bg-white/[0.02]">
                         <td colSpan={7} className="px-4 pt-1 pb-3">
                           <form
                             action={updatePackageFinancials.bind(null, p.id)}
                             className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs"
                           >
-                            <span className="font-bold uppercase tracking-wide text-zinc-600">
+                            <span className="font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-600">
                               Payment Rules
                             </span>
                             <span className="flex items-center gap-2.5">
                               {SPLIT_OPTIONS.map((n) => (
-                                <label key={n} className="flex items-center gap-1 text-zinc-400">
+                                <label key={n} className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
                                   <input
                                     type="checkbox"
                                     name="allowed_splits"
@@ -74,7 +74,7 @@ export default async function PackagesPage() {
                                 </label>
                               ))}
                             </span>
-                            <span className="flex items-center gap-1.5 text-zinc-400">
+                            <span className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
                               Balance due
                               <input
                                 type="number"
@@ -105,7 +105,7 @@ export default async function PackagesPage() {
         );
       })}
 
-      <h2 className="mb-2 rounded-t-xl bg-white/10 px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
+      <h2 className="mb-2 rounded-t-xl bg-black/[0.07] dark:bg-white/10 px-4 py-2 text-sm font-bold uppercase tracking-wide text-zinc-900 dark:text-white">
         Add-Ons
       </h2>
       <div className="card overflow-hidden rounded-t-none">
@@ -128,7 +128,7 @@ export default async function PackagesPage() {
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-xs text-zinc-400">
+      <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-400">
         Beta 1: package/add-on editing happens in Supabase. CRUD UI lands in Beta 2.
       </p>
     </div>

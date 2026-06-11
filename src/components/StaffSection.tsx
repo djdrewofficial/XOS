@@ -38,9 +38,9 @@ function StatusButton({
 }) {
   if (done && at) {
     return (
-      <div className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500/15 px-2 py-2 text-xs font-semibold text-emerald-300">
+      <div className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500/15 px-2 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
         ✓ {doneLabel}
-        <span className="font-normal text-emerald-400/70">
+        <span className="font-normal text-emerald-600 dark:text-emerald-400/70">
           {new Date(at).toLocaleDateString()}{" "}
           {new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
         </span>
@@ -49,7 +49,7 @@ function StatusButton({
   }
   return (
     <form action={action} className="contents">
-      <button className="rounded-lg bg-white/[0.07] px-2 py-2 text-xs font-semibold text-zinc-300 transition-colors hover:bg-brand/60 hover:text-white">
+      <button className="rounded-lg bg-black/[0.06] dark:bg-white/[0.07] px-2 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 transition-colors hover:bg-brand/60 hover:text-zinc-900 dark:hover:text-white">
         {pendingLabel}
       </button>
     </form>
@@ -66,7 +66,7 @@ export default function StaffSection({
   employees: Employee[];
 }) {
   const input =
-    "rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm focus:border-brand-light/70 focus:outline-none";
+    "rounded-md border border-zinc-300 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-3 py-2 text-sm focus:border-brand-light/70 focus:outline-none";
 
   return (
     <div className="space-y-5">
@@ -80,20 +80,20 @@ export default function StaffSection({
                   {(s.employee?.first_name?.[0] ?? "?")}{(s.employee?.last_name?.[0] ?? "")}
                 </div>
                 <div>
-                  <div className="font-bold text-white">
+                  <div className="font-bold text-zinc-900 dark:text-white">
                     {s.employee ? `${s.employee.first_name} ${s.employee.last_name}` : "(unknown)"}
                   </div>
                   <div className="text-xs text-zinc-500">
                     Position #{i + 1} {i === 0 ? "· Primary Employee" : "· Additional Employee"}
                   </div>
                   <div className="text-xs text-zinc-500">
-                    Role: <span className="text-zinc-300">{s.role}</span> · Wage:{" "}
-                    <span className="text-zinc-300">{money(s.flat_wage)}</span>
+                    Role: <span className="text-zinc-700 dark:text-zinc-300">{s.role}</span> · Wage:{" "}
+                    <span className="text-zinc-700 dark:text-zinc-300">{money(s.flat_wage)}</span>
                   </div>
                 </div>
               </div>
               <form action={removeStaff.bind(null, eventId, s.id)}>
-                <button className="text-xs font-semibold text-red-400 hover:underline">Remove</button>
+                <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Remove</button>
               </form>
             </div>
 
@@ -134,8 +134,8 @@ export default function StaffSection({
               <button
                 className={`w-full rounded-lg px-2 py-1.5 text-xs font-bold ${
                   s.portal_visible
-                    ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
-                    : "bg-zinc-700/50 text-zinc-400 hover:bg-zinc-700"
+                    ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/30"
+                    : "bg-zinc-200 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-700"
                 }`}
               >
                 Employee Portal: {s.portal_visible ? "Visible" : "Hidden"}

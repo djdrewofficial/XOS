@@ -37,22 +37,22 @@ export default async function ClientsPage({
       </form>
 
       <div className="card overflow-hidden">
-        <ul className="divide-y divide-white/[0.06]">
+        <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
           {(clients ?? []).map((c) => (
             <li key={c.id}>
               <Link
                 href={`/clients/${c.id}`}
-                className="flex items-center justify-between px-4 py-3 text-sm hover:bg-white/[0.04]"
+                className="flex items-center justify-between px-4 py-3 text-sm hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
               >
                 <span className="font-medium">
                   {c.first_name} {c.last_name}
                 </span>
-                <span className="text-zinc-400">{c.organization ?? c.email ?? c.cell_phone ?? ""}</span>
+                <span className="text-zinc-600 dark:text-zinc-400">{c.organization ?? c.email ?? c.cell_phone ?? ""}</span>
               </Link>
             </li>
           ))}
           {(clients ?? []).length === 0 && (
-            <li className="px-4 py-10 text-center text-sm text-zinc-400">No clients found.</li>
+            <li className="px-4 py-10 text-center text-sm text-zinc-600 dark:text-zinc-400">No clients found.</li>
           )}
         </ul>
       </div>

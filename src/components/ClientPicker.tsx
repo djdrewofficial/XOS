@@ -69,12 +69,12 @@ export default function ClientPicker({
             autoComplete="off"
           />
           {query.trim() && (
-            <div className="mt-2 overflow-hidden rounded-lg border border-white/10 bg-zinc-950/95">
+            <div className="mt-2 overflow-hidden rounded-lg border border-zinc-300 dark:border-white/10 bg-white/95 dark:bg-zinc-950/95">
               {/* create-new is the DEFAULT first option */}
               <button
                 type="button"
                 onClick={() => setCreating(true)}
-                className="flex w-full items-center gap-2 border-b border-white/[0.06] px-3 py-2.5 text-left text-sm font-semibold text-white transition-colors hover:bg-brand/50"
+                className="flex w-full items-center gap-2 border-b border-zinc-200 dark:border-white/[0.06] px-3 py-2.5 text-left text-sm font-semibold text-zinc-900 dark:text-white transition-colors hover:bg-brand/50"
               >
                 <span className="rounded bg-gradient-to-r from-brand to-brand-light px-1.5 py-0.5 text-[10px] font-bold uppercase">
                   New
@@ -88,16 +88,16 @@ export default function ClientPicker({
                     key={m.id}
                     type="button"
                     onClick={() => setSelected(m)}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-white/[0.07]"
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-black/[0.06] dark:hover:bg-white/[0.07]"
                   >
-                    <span className="font-medium text-zinc-200">
+                    <span className="font-medium text-zinc-800 dark:text-zinc-200">
                       {m.first_name} {m.last_name}
                     </span>
                     <span className="text-xs text-zinc-500">{m.email ?? m.cell_phone ?? ""}</span>
                   </button>
                 ))}
               {!searching && matches.length === 0 && (
-                <div className="px-3 py-2 text-xs text-zinc-600">No existing clients match.</div>
+                <div className="px-3 py-2 text-xs text-zinc-400 dark:text-zinc-600">No existing clients match.</div>
               )}
             </div>
           )}
@@ -109,11 +109,11 @@ export default function ClientPicker({
         <form action={attachExisting} className="space-y-3">
           <input type="hidden" name="client_id" value={selected.id} />
           <div className="flex items-center justify-between rounded-lg border border-brand-light/40 bg-brand/30 px-3 py-2">
-            <span className="text-sm font-semibold text-white">
+            <span className="text-sm font-semibold text-zinc-900 dark:text-white">
               {selected.first_name} {selected.last_name}
-              <span className="ml-2 text-xs font-normal text-zinc-400">{selected.email ?? selected.cell_phone ?? ""}</span>
+              <span className="ml-2 text-xs font-normal text-zinc-600 dark:text-zinc-400">{selected.email ?? selected.cell_phone ?? ""}</span>
             </span>
-            <button type="button" onClick={reset} className="text-xs text-zinc-400 hover:text-white">
+            <button type="button" onClick={reset} className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
               change
             </button>
           </div>

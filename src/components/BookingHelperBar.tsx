@@ -38,7 +38,7 @@ export default function BookingHelperBar({
 
   return (
     <div className="mb-6 card p-3">
-      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-zinc-400">
+      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
         Booking Helpers
       </div>
       <div className="flex flex-wrap gap-2">

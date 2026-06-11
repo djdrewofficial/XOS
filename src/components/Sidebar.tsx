@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const SECTIONS: { heading: string; items: { href: string; label: string; icon: string }[] }[] = [
   {
@@ -54,15 +55,15 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-white/[0.06] bg-black/40 backdrop-blur-xl">
+    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 dark:border-white/[0.06] bg-white/75 dark:bg-black/40 backdrop-blur-xl">
       <div className="px-5 pt-6 pb-4">
-        <div className="text-[26px] font-black tracking-tight text-white">
+        <div className="text-[26px] font-black tracking-tight text-zinc-900 dark:text-white">
           X
           <span className="bg-gradient-to-r from-brand-light to-brand-lighter bg-clip-text text-transparent">
             OS
           </span>
         </div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-600">
+        <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 dark:text-zinc-600">
           Xpress Entertainment
         </div>
       </div>
@@ -70,7 +71,7 @@ export default function Sidebar() {
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
         {SECTIONS.map((section) => (
           <div key={section.heading}>
-            <div className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-600">
+            <div className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-600">
               {section.heading}
             </div>
             <div className="space-y-0.5">
@@ -83,12 +84,12 @@ export default function Sidebar() {
                     className={`group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                       active
                         ? "bg-gradient-to-r from-brand to-brand-light/80 text-white shadow-lg shadow-brand/40"
-                        : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+                        : "text-zinc-600 dark:text-zinc-400 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] hover:text-zinc-900 dark:hover:text-white"
                     }`}
                   >
                     <span
                       className={`w-4 text-center text-xs ${
-                        active ? "text-white" : "text-zinc-600 group-hover:text-brand-lighter"
+                        active ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-600 group-hover:text-brand dark:text-brand-lighter"
                       }`}
                     >
                       {item.icon}
@@ -102,10 +103,11 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-white/[0.06] p-3">
+      <div className="border-t border-zinc-200 dark:border-white/[0.06] p-3">
+        <ThemeToggle />
         <button
           onClick={signOut}
-          className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-white"
+          className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.06] hover:text-zinc-900 dark:hover:text-white"
         >
           ⏻ Sign Out
         </button>

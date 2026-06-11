@@ -31,7 +31,7 @@ export default function EventForm({
   return (
     <form action={action} className="space-y-6">
       <section className="card p-5">
-        <h2 className="card-title border-b border-white/10 pb-2">
+        <h2 className="card-title border-b border-zinc-300 dark:border-white/10 pb-2">
           Details
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -81,7 +81,7 @@ export default function EventForm({
       </section>
 
       <section className="card p-5">
-        <h2 className="card-title border-b border-white/10 pb-2">
+        <h2 className="card-title border-b border-zinc-300 dark:border-white/10 pb-2">
           Booking
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -123,7 +123,7 @@ export default function EventForm({
       </section>
 
       <section className="card p-5">
-        <h2 className="card-title border-b border-white/10 pb-2">
+        <h2 className="card-title border-b border-zinc-300 dark:border-white/10 pb-2">
           Financials
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -164,7 +164,7 @@ export default function EventForm({
       </section>
 
       <section className="card p-5">
-        <h2 className="card-title border-b border-white/10 pb-2">
+        <h2 className="card-title border-b border-zinc-300 dark:border-white/10 pb-2">
           Venue
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
@@ -181,7 +181,7 @@ export default function EventForm({
       </section>
 
       <section className="card p-5">
-        <h2 className="card-title border-b border-white/10 pb-2">
+        <h2 className="card-title border-b border-zinc-300 dark:border-white/10 pb-2">
           Custom Fields
         </h2>
         <div className="grid gap-4 md:grid-cols-2">
@@ -205,7 +205,7 @@ export default function EventForm({
       </section>
 
       <section className="card p-5">
-        <h2 className="card-title border-b border-white/10 pb-2">
+        <h2 className="card-title border-b border-zinc-300 dark:border-white/10 pb-2">
           Internal Notes
         </h2>
         <textarea name="internal_notes" defaultValue={event?.internal_notes ?? ""} rows={3} className={input} />

@@ -49,10 +49,10 @@ export default async function ClientDetailPage({
           </thead>
           <tbody>
             {(events ?? []).map((e: XEvent) => (
-              <tr key={e.id} className="row hover:bg-white/[0.04]">
+              <tr key={e.id} className="row hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
                 <td className="px-4 py-2">{e.event_date ?? "—"}</td>
                 <td className="px-4 py-2">
-                  <Link href={`/events/${e.id}`} className="text-brand-lighter hover:underline">
+                  <Link href={`/events/${e.id}`} className="text-brand dark:text-brand-lighter hover:underline">
                     {e.name || "(unnamed)"}
                   </Link>
                 </td>
@@ -72,7 +72,7 @@ export default async function ClientDetailPage({
             ))}
             {(events ?? []).length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-zinc-400">
+                <td colSpan={5} className="px-4 py-6 text-center text-zinc-600 dark:text-zinc-400">
                   No events for this client.
                 </td>
               </tr>

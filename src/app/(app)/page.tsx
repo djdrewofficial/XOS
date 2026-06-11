@@ -110,10 +110,10 @@ export default async function Dashboard({
   const next = month === 11 ? `${year + 1}-01` : `${year}-${pad(month + 2)}`;
 
   const cards = [
-    { label: "Leads This Month", value: leads, glow: "from-blue-500/25", accent: "text-blue-300" },
-    { label: "Lost Sales This Month", value: lost, glow: "from-red-500/25", accent: "text-red-300" },
-    { label: "Booked This Month", value: booked, glow: "from-emerald-500/25", accent: "text-emerald-300" },
-    { label: "Inquiries This Month", value: inquiries, glow: "from-brand-light/25", accent: "text-brand-lighter" },
+    { label: "Leads This Month", value: leads, glow: "from-blue-500/25", accent: "text-blue-700 dark:text-blue-300" },
+    { label: "Lost Sales This Month", value: lost, glow: "from-red-500/25", accent: "text-red-700 dark:text-red-300" },
+    { label: "Booked This Month", value: booked, glow: "from-emerald-500/25", accent: "text-emerald-700 dark:text-emerald-300" },
+    { label: "Inquiries This Month", value: inquiries, glow: "from-brand-light/25", accent: "text-brand dark:text-brand-lighter" },
   ];
 
   return (
@@ -131,20 +131,20 @@ export default async function Dashboard({
 
       {/* ---------- CALENDAR ---------- */}
       <div className="card mb-6 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 dark:border-white/[0.06] px-4 py-3">
           <div className="flex items-center gap-1.5">
             <Link href={`/?m=${prev}`} className="btn-ghost px-3 py-1.5 text-xs">←</Link>
             <Link href={`/?m=${next}`} className="btn-ghost px-3 py-1.5 text-xs">→</Link>
             <Link href="/" className="btn-ghost px-3 py-1.5 text-xs">today</Link>
           </div>
-          <h2 className="text-lg font-bold text-white">{monthLabel}</h2>
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{monthLabel}</h2>
           <div className="text-xs text-zinc-500">
             {(monthEvents ?? []).filter((e) => e.event_date && e.event_date >= monthStart && e.event_date <= monthEnd).length}{" "}
             events this month
           </div>
         </div>
 
-        <div className="grid grid-cols-7 border-b border-white/[0.06] bg-white/[0.03]">
+        <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03]">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
             <div key={d} className="px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
               {d}
@@ -161,20 +161,20 @@ export default async function Dashboard({
             return (
               <div
                 key={cell.date}
-                className={`min-h-28 border-white/[0.05] p-1 ${i % 7 !== 0 ? "border-l" : ""} ${i >= 7 ? "border-t" : ""} ${
-                  cell.inMonth ? "" : "bg-black/30"
+                className={`min-h-28 border-zinc-100 dark:border-white/[0.05] p-1 ${i % 7 !== 0 ? "border-l" : ""} ${i >= 7 ? "border-t" : ""} ${
+                  cell.inMonth ? "" : "bg-zinc-100/80 dark:bg-black/30"
                 } ${isToday ? "bg-brand/25 ring-1 ring-inset ring-brand-light/50" : ""}`}
               >
                 <div
                   className={`mb-1 px-1 text-right text-xs font-semibold ${
-                    isToday ? "text-brand-lighter" : cell.inMonth ? "text-zinc-400" : "text-zinc-700"
+                    isToday ? "text-brand dark:text-brand-lighter" : cell.inMonth ? "text-zinc-600 dark:text-zinc-400" : "text-zinc-400 dark:text-zinc-700"
                   }`}
                 >
                   {cell.dayNum}
                 </div>
                 <div className="space-y-0.5">
                   {holiday && (
-                    <div className="truncate rounded bg-sky-700/70 px-1.5 py-0.5 text-[10px] font-semibold text-sky-100">
+                    <div className="truncate rounded bg-sky-700/70 px-1.5 py-0.5 text-[10px] font-semibold text-white dark:text-sky-100">
                       {holiday}
                     </div>
                   )}
@@ -197,7 +197,7 @@ export default async function Dashboard({
                     return (
                       <div
                         key={t.id}
-                        className="truncate rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-300"
+                        className="truncate rounded bg-zinc-300 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-700 dark:text-zinc-300"
                         title={`Time off: ${emp?.first_name} ${emp?.last_name}`}
                       >
                         Time Off - {emp?.first_name ?? "?"}
@@ -225,14 +225,14 @@ export default async function Dashboard({
             {(recentPayments ?? []).length === 0 && (
               <p className="py-3 text-center text-sm text-zinc-500">No payments recorded.</p>
             )}
-            <ul className="divide-y divide-white/[0.06]">
+            <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
               {(recentPayments ?? []).map((p) => (
                 <li key={p.id} className="flex items-center justify-between py-2 text-sm">
-                  <span className="text-zinc-400">
+                  <span className="text-zinc-600 dark:text-zinc-400">
                     {new Date(p.paid_at).toLocaleDateString()} ·{" "}
                     {(p.event as { name?: string } | null)?.name ?? "Unassigned"}
                   </span>
-                  <span className="font-semibold text-emerald-400">{money(p.amount)}</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{money(p.amount)}</span>
                 </li>
               ))}
             </ul>
@@ -266,10 +266,10 @@ async function UpcomingList({}: { supabasePromise: null }) {
       </thead>
       <tbody>
         {(upcoming ?? []).map((e: XEvent) => (
-          <tr key={e.id} className="row hover:bg-white/[0.04]">
+          <tr key={e.id} className="row hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
             <td className="px-4 py-2 whitespace-nowrap">{e.event_date}</td>
             <td className="px-4 py-2">
-              <Link href={`/events/${e.id}`} className="font-medium text-brand-lighter hover:underline">
+              <Link href={`/events/${e.id}`} className="font-medium text-brand dark:text-brand-lighter hover:underline">
                 {e.name || "(unnamed)"}
               </Link>
             </td>
