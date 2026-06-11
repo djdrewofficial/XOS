@@ -60,14 +60,12 @@ export default function Sidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 dark:border-white/[0.06] bg-white/75 dark:bg-black/40 backdrop-blur-xl">
       <div className="px-5 pt-6 pb-4">
-        <div className="text-[26px] font-black tracking-tight text-zinc-900 dark:text-white">
-          X
-          <span className="bg-gradient-to-r from-brand-light to-brand-lighter bg-clip-text text-transparent">
-            OS
-          </span>
-        </div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 dark:text-zinc-600">
-          Xpress Entertainment
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-light.png" alt="Xpress Entertainment" className="block w-40 dark:hidden" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-dark.png" alt="Xpress Entertainment" className="hidden w-40 dark:block" />
+        <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 dark:text-zinc-600">
+          XOS · Beta
         </div>
       </div>
 

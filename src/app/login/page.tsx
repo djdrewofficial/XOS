@@ -32,14 +32,12 @@ export default function LoginPage() {
         onSubmit={handleSubmit}
         className="card w-full max-w-sm p-8"
       >
-        <h1 className="mb-1 text-4xl font-black tracking-tight text-zinc-900 dark:text-white">
-          X
-          <span className="bg-gradient-to-r from-brand-light to-brand-lighter bg-clip-text text-transparent">
-            OS
-          </span>
-        </h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-light.png" alt="Xpress Entertainment" className="mb-2 block w-56 dark:hidden" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-dark.png" alt="Xpress Entertainment" className="mb-2 hidden w-56 dark:block" />
         <p className="mb-8 text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 dark:text-zinc-600">
-          Xpress Entertainment
+          XOS · Xpress Operating System
         </p>
         <label className="label-xs">Email</label>
         <input
