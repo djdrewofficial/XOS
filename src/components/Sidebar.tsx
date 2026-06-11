@@ -30,7 +30,7 @@ const SECTIONS: { heading: string; items: { href: string; label: string; icon: s
     items: [{ href: "/payments", label: "Payments", icon: "$" }],
   },
   {
-    heading: "Automation",
+    heading: "XOS Settings",
     items: [
       { href: "/settings/helpers", label: "Booking Helpers", icon: "⚡" },
       { href: "/settings/email", label: "Email", icon: "✉" },
