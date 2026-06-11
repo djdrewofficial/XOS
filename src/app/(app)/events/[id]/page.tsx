@@ -820,34 +820,90 @@ export default async function EventDetailPage({
     </div>
   );
 
+  /* ---------- header helpers ---------- */
+  const fmtTime = (t: string | null) => {
+    if (!t) return "—";
+    const [h, m] = t.split(":").map(Number);
+    const ampm = h >= 12 ? "PM" : "AM";
+    const hh = h % 12 === 0 ? 12 : h % 12;
+    return `${hh}:${String(m).padStart(2, "0")} ${ampm}`;
+  };
+  // parse date parts from the string to avoid timezone shifts
+  const dateParts = event.event_date ? event.event_date.split("-").map(Number) : null;
+  const dateObj = dateParts ? new Date(dateParts[0], dateParts[1] - 1, dateParts[2]) : null;
+  const primaryClient =
+    (eventClients ?? []).find((ec) => ec.is_primary)?.client ?? event.client ?? null;
+  const primaryClientName = primaryClient
+    ? `${(primaryClient as { first_name: string }).first_name} ${(primaryClient as { last_name: string }).last_name}`
+    : null;
+  const primaryOrg = (primaryClient as { organization?: string | null } | null)?.organization ?? null;
+
   return (
     <div className="max-w-6xl">
-      {/* Header */}
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">{event.name || "(unnamed event)"}</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {eventNumber ? `#${eventNumber} · ` : ""}
-            {event.event_date ?? "no date"} · {event.event_type?.name ?? "—"} ·{" "}
-            {event.client ? `${event.client.first_name} ${event.client.last_name}` : "no client"} ·{" "}
-            {event.venue?.name ?? "no venue"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {event.status && (
-            <span
-              className="status-chip px-3 py-1.5 text-sm"
-              style={{ backgroundColor: event.status.color, color: event.status.text_color }}
-            >
-              {event.status.name}
+      {/* ---------- STICKY HEADER ---------- */}
+      <div className="sticky top-0 z-30 -mx-6 -mt-6 mb-5 border-b border-white/[0.08] bg-[#0b0913]/90 px-6 pt-4 pb-3 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            {/* calendar date badge */}
+            <div className="w-16 shrink-0 overflow-hidden rounded-xl border border-white/15 text-center shadow-lg">
+              <div className="bg-gradient-to-r from-brand to-brand-light py-0.5 text-[10px] font-black tracking-widest text-white uppercase">
+                {dateObj ? dateObj.toLocaleString("en-US", { month: "short" }) : "TBD"}
+              </div>
+              <div className="bg-white/[0.06] pt-0.5 text-[8px] font-bold tracking-widest text-zinc-500 uppercase">
+                {dateObj ? dateObj.toLocaleString("en-US", { weekday: "long" }) : "—"}
+              </div>
+              <div className="bg-white/[0.06] text-xl leading-6 font-black text-white">
+                {dateObj ? dateObj.getDate() : "?"}
+              </div>
+              <div className="bg-white/[0.06] pb-1 text-[9px] font-bold text-zinc-500">
+                {dateObj ? dateObj.getFullYear() : ""}
+              </div>
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-white">
+                {event.name || "(unnamed event)"}
+                {eventNumber && <span className="ml-2 text-xs font-semibold text-zinc-600">#{eventNumber}</span>}
+              </h1>
+              <p className="text-xs text-zinc-500">
+                Event Date:{" "}
+                <span className="text-zinc-300">
+                  {dateObj
+                    ? dateObj.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+                    : "not set"}
+                </span>
+              </p>
+              <p className="text-xs text-zinc-500">
+                Client: <span className="text-zinc-300">{primaryClientName ?? "—"}</span>
+                {primaryOrg && (
+                  <>
+                    {" "}· Organization: <span className="text-zinc-300">{primaryOrg}</span>
+                  </>
+                )}
+              </p>
+              <p className="text-xs text-zinc-500">
+                Venue:{" "}
+                <span className="text-zinc-300">
+                  {event.venue ? `${event.venue.name}${event.venue.city ? ` - ${event.venue.city}, ${event.venue.state ?? ""}` : ""}` : "—"}
+                </span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {event.status && (
+              <span
+                className="status-chip px-3 py-1.5 text-sm"
+                style={{ backgroundColor: event.status.color, color: event.status.text_color }}
+              >
+                {event.status.name}
+              </span>
+            )}
+            <span className="hidden rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm font-bold text-white md:inline">
+              {money(balance)} <span className="text-xs font-medium text-zinc-500">due</span>
             </span>
-          )}
-          <span className="hidden rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm font-bold text-white md:inline">
-            {money(balance)} <span className="text-xs font-medium text-zinc-500">due</span>
-          </span>
-          <Link href={`/events/${id}/edit`} className="btn-primary px-4 py-2">
-            Edit
-          </Link>
+            <Link href={`/events/${id}/edit`} className="btn-primary px-4 py-2">
+              Edit
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -858,6 +914,48 @@ export default async function EventDetailPage({
         ranHelperIds={(helperRuns ?? []).map((r) => r.helper_id)}
         hasPayments={(payments ?? []).length > 0}
       />
+
+      {/* ---------- OVERVIEW PANELS ---------- */}
+      <div className="mb-5 grid gap-4 lg:grid-cols-3">
+        <div className="card p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="card-title mb-0">Event Details</h2>
+            {eventNumber && <span className="text-[10px] font-bold text-zinc-600">EVENT ID: {eventNumber}</span>}
+          </div>
+          <dl className="space-y-1 text-sm">
+            <div className="flex justify-between"><dt className="text-zinc-500">Type:</dt><dd>{event.event_type?.name ?? "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Name:</dt><dd className="truncate pl-3">{event.name || "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Setup:</dt><dd>{fmtTime(event.setup_time)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Times:</dt><dd>{fmtTime(event.start_time)} / {fmtTime(event.end_time)}</dd></div>
+          </dl>
+        </div>
+
+        <div className="card p-4">
+          <h2 className="card-title">Financials Overview</h2>
+          <dl className="space-y-1 text-sm">
+            <div className="flex justify-between"><dt className="text-zinc-500">Package:</dt><dd className="truncate pl-3">{event.package?.name ?? "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Total Fee:</dt><dd className="font-semibold">{money(total)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Payments Received:</dt><dd className="text-emerald-400">{money(paid)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Outstanding Balance:</dt><dd className="font-bold text-white">{money(balance)}</dd></div>
+          </dl>
+        </div>
+
+        <div className="card p-4">
+          <h2 className="card-title">Status Details</h2>
+          <dl className="space-y-1 text-sm">
+            <div className="flex justify-between"><dt className="text-zinc-500">Salesperson:</dt><dd>{event.salesperson ? `${event.salesperson.first_name} ${event.salesperson.last_name}` : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Inquiry Source:</dt><dd>{event.inquiry_source?.name ?? "—"}</dd></div>
+          </dl>
+          {event.status && (
+            <div
+              className="mt-3 rounded-lg py-1.5 text-center text-sm font-bold"
+              style={{ backgroundColor: event.status.color, color: event.status.text_color }}
+            >
+              {event.status.name}
+            </div>
+          )}
+        </div>
+      </div>
 
       <Tabs
         tabs={[
