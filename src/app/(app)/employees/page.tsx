@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
 import { createEmployee, toggleEmployee } from "./actions";
 import LiveFilter from "@/components/LiveFilter";
+import SaveButton from "@/components/SaveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -134,7 +135,7 @@ export default async function EmployeesPage() {
           <input type="number" step="0.01" name="hourly_rate" className="input w-full" />
         </div>
         <div className="md:col-span-3">
-          <button className="btn-primary">Add Employee</button>
+          <SaveButton savedLabel="Added">Add Employee</SaveButton>
         </div>
       </form>
     </div>

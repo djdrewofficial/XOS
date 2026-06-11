@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import VenuesDirectory from "@/components/VenuesDirectory";
+import SaveButton from "@/components/SaveButton";
 import { createVenue, createVenueCategory, toggleVenueCategory } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +63,7 @@ export default async function VenuesPage() {
           <label className="label-xs">New Category</label>
           <input name="name" required className="input w-full" placeholder="e.g. Rooftop" />
         </div>
-        <button className="btn-primary">Add Category</button>
+        <SaveButton savedLabel="Added">Add Category</SaveButton>
       </form>
     </div>
   );

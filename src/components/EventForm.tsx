@@ -1,4 +1,5 @@
 import type { XEvent } from "@/lib/types";
+import SaveButton from "@/components/SaveButton";
 
 type Option = { id: string; name: string };
 type ClientOption = { id: string; first_name: string; last_name: string };
@@ -211,12 +212,9 @@ export default function EventForm({
         <textarea name="internal_notes" defaultValue={event?.internal_notes ?? ""} rows={3} className={input} />
       </section>
 
-      <button
-        type="submit"
-        className="btn-primary"
-      >
+      <SaveButton>
         Save Event
-      </button>
+      </SaveButton>
     </form>
   );
 }

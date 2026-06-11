@@ -1,4 +1,5 @@
 import type { Client } from "@/lib/types";
+import SaveButton from "@/components/SaveButton";
 
 export default function ClientForm({
   client,
@@ -43,9 +44,9 @@ export default function ClientForm({
         <label className={label}>Notes</label>
         <textarea name="notes" rows={3} defaultValue={client?.notes ?? ""} className={input} />
       </div>
-      <button className="btn-primary">
+      <SaveButton>
         Save Client
-      </button>
+      </SaveButton>
     </form>
   );
 }

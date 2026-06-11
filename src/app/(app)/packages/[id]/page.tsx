@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
 import Tabs from "@/components/Tabs";
+import SaveButton from "@/components/SaveButton";
 import {
   updatePackageGeneral,
   updatePackageFinancials,
@@ -113,7 +114,7 @@ export default async function PackageDetailPage({
               Active
             </label>
           </div>
-          <button className="btn-primary">Save</button>
+          <SaveButton>Save</SaveButton>
         </form>
       </div>
 
@@ -226,7 +227,7 @@ export default async function PackageDetailPage({
               </select>
             </div>
 
-            <button className="btn-primary">Save Financials</button>
+            <SaveButton>Save Financials</SaveButton>
           </form>
         </div>
 
@@ -272,7 +273,7 @@ export default async function PackageDetailPage({
               <input type="number" step="0.01" name="price" required className="input w-full" />
             </div>
             <div className="flex items-end">
-              <button className="btn-primary w-full py-2 text-xs">Add Range</button>
+              <SaveButton className="btn-primary w-full py-2 text-xs" savedLabel="Added">Add Range</SaveButton>
             </div>
           </form>
         </div>
@@ -319,7 +320,7 @@ export default async function PackageDetailPage({
           {(items ?? []).length === 0 && <p className="text-sm text-zinc-500">No standalone items yet.</p>}
         </div>
       </div>
-      <button className="btn-primary mt-4">Save Assigned Equipment</button>
+      <SaveButton className="btn-primary mt-4">Save Assigned Equipment</SaveButton>
     </form>
   );
 
@@ -348,7 +349,7 @@ export default async function PackageDetailPage({
         ))}
         {(addons ?? []).length === 0 && <p className="text-sm text-zinc-500">No add-ons defined yet.</p>}
       </div>
-      <button className="btn-primary mt-4">Save Assigned Add-Ons</button>
+      <SaveButton className="btn-primary mt-4">Save Assigned Add-Ons</SaveButton>
     </form>
   );
 

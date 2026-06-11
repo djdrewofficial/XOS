@@ -6,6 +6,7 @@ import {
   toggleStaffPortal,
 } from "@/app/(app)/events/actions";
 import { money, type Employee } from "@/lib/types";
+import SaveButton from "@/components/SaveButton";
 
 type Staff = {
   id: string;
@@ -212,7 +213,7 @@ export default function StaffSection({
             <label className="label-xs">Wage ($)</label>
             <input type="number" step="0.01" name="flat_wage" defaultValue={0} className={`${input} w-24`} />
           </div>
-          <button className="btn-primary">Assign</button>
+          <SaveButton savedLabel="Done">Assign</SaveButton>
         </form>
       </div>
     </div>

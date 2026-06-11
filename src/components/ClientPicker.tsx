@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import SaveButton from "@/components/SaveButton";
 
 type Match = { id: string; first_name: string; last_name: string; email: string | null; cell_phone: string | null };
 
@@ -122,7 +123,7 @@ export default function ClientPicker({
               <label className="label-xs">Role On This Event</label>
               <input name="role" defaultValue="Client" list="picker-roles" className="input w-full" />
             </div>
-            <button className="btn-primary">Add To Event</button>
+            <SaveButton savedLabel="Added">Add To Event</SaveButton>
           </div>
         </form>
       )}
@@ -159,7 +160,7 @@ export default function ClientPicker({
               <label className="label-xs">Role On This Event</label>
               <input name="role" defaultValue="Contract Holder" list="picker-roles" className="input w-full" />
             </div>
-            <button className="btn-primary">Create &amp; Add</button>
+            <SaveButton savedLabel="Added">Create &amp; Add</SaveButton>
             <button type="button" onClick={reset} className="btn-ghost px-4 py-2.5 text-xs">
               Cancel
             </button>

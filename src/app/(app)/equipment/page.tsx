@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LiveFilter from "@/components/LiveFilter";
+import SaveButton from "@/components/SaveButton";
 import {
   createEquipmentItem,
   createEquipmentSystem,
@@ -111,7 +112,7 @@ export default async function EquipmentPage() {
           <div className="label-xs">New System</div>
           <input name="name" required placeholder="Name (e.g. FOH Rack)" className="input w-full" />
           <input name="description" placeholder="Description" className="input w-full" />
-          <button className="btn-primary py-2 text-xs">Add System</button>
+          <SaveButton className="btn-primary py-2 text-xs" savedLabel="Added">Add System</SaveButton>
         </form>
       </div>
 
@@ -189,7 +190,7 @@ export default async function EquipmentPage() {
             ))}
           </select>
         </div>
-        <button className="btn-primary">Add Item</button>
+        <SaveButton savedLabel="Added">Add Item</SaveButton>
       </form>
 
       {/* ---------- STORAGE LOCATIONS ---------- */}
@@ -226,7 +227,7 @@ export default async function EquipmentPage() {
           <label className="label-xs">Notes</label>
           <input name="notes" className="input w-full" placeholder="e.g. back room, behind the trailer" />
         </div>
-        <button className="btn-primary">Add Location</button>
+        <SaveButton savedLabel="Added">Add Location</SaveButton>
       </form>
     </div>
   );

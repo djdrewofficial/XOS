@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
 import LiveFilter from "@/components/LiveFilter";
+import SaveButton from "@/components/SaveButton";
 import {
   createPackage,
   createPackageCategory,
@@ -126,7 +127,7 @@ export default async function PackagesPage() {
               <label className="label-xs">Default Price ($)</label>
               <input type="number" step="0.01" name="default_price" defaultValue={0} className="input w-full" />
             </div>
-            <button className="btn-primary w-full py-2 text-xs">Create &amp; Open Editor</button>
+            <SaveButton className="btn-primary w-full py-2 text-xs" savedLabel="Added">Create &amp; Open Editor</SaveButton>
           </form>
         </details>
       </div>
@@ -179,7 +180,7 @@ export default async function PackagesPage() {
               <label className="label-xs">Default Price ($)</label>
               <input type="number" step="0.01" name="default_price" defaultValue={0} className="input w-full" />
             </div>
-            <button className="btn-primary w-full py-2 text-xs">Create &amp; Open Editor</button>
+            <SaveButton className="btn-primary w-full py-2 text-xs" savedLabel="Added">Create &amp; Open Editor</SaveButton>
           </form>
         </details>
       </div>
@@ -243,7 +244,7 @@ export default async function PackagesPage() {
               <label className="label-xs">New Package Category</label>
               <input name="name" required className="input w-full py-1.5" />
             </div>
-            <button className="btn-primary px-4 py-2 text-xs">Add</button>
+            <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Added">Add</SaveButton>
           </form>
         </div>
 
@@ -279,7 +280,7 @@ export default async function PackagesPage() {
               <label className="label-xs">New Add-On Category</label>
               <input name="name" required className="input w-full py-1.5" />
             </div>
-            <button className="btn-primary px-4 py-2 text-xs">Add</button>
+            <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Added">Add</SaveButton>
           </form>
         </div>
       </div>

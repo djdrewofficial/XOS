@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
 import Tabs from "@/components/Tabs";
+import SaveButton from "@/components/SaveButton";
 import {
   updateEmployeeGeneral,
   updateEmployeeContact,
@@ -132,7 +133,7 @@ export default async function EmployeeProfilePage({
             Active employee
           </label>
           <div className="col-span-2">
-            <button className="btn-primary">Save</button>
+            <SaveButton>Save</SaveButton>
           </div>
         </form>
       </div>
@@ -246,7 +247,7 @@ export default async function EmployeeProfilePage({
           <input type="date" name="birthday" defaultValue={emp.birthday ?? ""} className="input w-full" />
         </div>
         <div className="col-span-2">
-          <button className="btn-primary">Save</button>
+          <SaveButton>Save</SaveButton>
         </div>
       </form>
     </div>
@@ -276,7 +277,7 @@ export default async function EmployeeProfilePage({
               <input type="number" step="0.1" name="sales_commission_pct" defaultValue={emp.sales_commission_pct ?? 0} className="input w-full" />
             </div>
             <div className="col-span-2">
-              <button className="btn-primary">Save</button>
+              <SaveButton>Save</SaveButton>
             </div>
           </form>
         </div>
@@ -361,7 +362,7 @@ export default async function EmployeeProfilePage({
             <label className="label-xs">Reason</label>
             <input name="notes" className="input w-full" placeholder="e.g. Paula visiting" />
           </div>
-          <button className="btn-primary">Add</button>
+          <SaveButton savedLabel="Added">Add</SaveButton>
         </form>
       </div>
 

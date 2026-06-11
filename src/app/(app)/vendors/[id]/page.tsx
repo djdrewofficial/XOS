@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { updateVendor, addVendorContact, removeVendorContact } from "../actions";
+import SaveButton from "@/components/SaveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -150,7 +151,7 @@ export default async function VendorDetailPage({
               <label className="label-xs">Notes</label>
               <textarea name="notes" rows={3} defaultValue={vendor.notes ?? ""} className="input w-full" />
             </div>
-            <button className="btn-primary">Save Vendor</button>
+            <SaveButton>Save Vendor</SaveButton>
           </form>
         </div>
 

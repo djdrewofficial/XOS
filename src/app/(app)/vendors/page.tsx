@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import VendorsDirectory from "@/components/VendorsDirectory";
+import SaveButton from "@/components/SaveButton";
 import { createVendor, createVendorCategory, toggleVendorCategory } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export default async function VendorsPage() {
           <label className="label-xs">New Category</label>
           <input name="name" required className="input w-full" placeholder="e.g. Live Musicians" />
         </div>
-        <button className="btn-primary">Add Category</button>
+        <SaveButton savedLabel="Added">Add Category</SaveButton>
       </form>
     </div>
   );

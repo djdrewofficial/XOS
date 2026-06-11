@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import SaveButton from "@/components/SaveButton";
 import StatusRow, { type Status } from "@/components/StatusRow";
 import {
   createStatus,
@@ -92,7 +93,7 @@ export default async function StatusesPage() {
         <label className="flex items-center gap-1.5 pb-2 text-xs text-zinc-600 dark:text-zinc-400">
           <input type="checkbox" name="is_active" defaultChecked className="size-4 accent-brand-light" /> Active
         </label>
-        <button className="btn-primary">Add Status</button>
+        <SaveButton savedLabel="Added">Add Status</SaveButton>
       </form>
       </details>
 
@@ -191,7 +192,7 @@ export default async function StatusesPage() {
             ))}
           </select>
         </div>
-        <button className="btn-primary">Add Action</button>
+        <SaveButton savedLabel="Added">Add Action</SaveButton>
       </form>
     </div>
   );

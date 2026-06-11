@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import SaveButton from "@/components/SaveButton";
 import { createSource, updateSource } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -94,7 +95,7 @@ export default async function SourcesPage() {
             ))}
           </select>
         </div>
-        <button className="btn-primary">Add Source</button>
+        <SaveButton savedLabel="Added">Add Source</SaveButton>
       </form>
     </div>
   );

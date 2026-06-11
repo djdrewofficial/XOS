@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Section, Row, Note } from "@/components/SettingsForm";
+import SaveButton from "@/components/SaveButton";
 import { savePaymentSettings } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -141,7 +142,7 @@ export default async function PaymentSettingsPage() {
         </Section>
 
         <div className="flex justify-end">
-          <button className="btn-primary">Save Settings</button>
+          <SaveButton>Save Settings</SaveButton>
         </div>
       </form>
     </div>

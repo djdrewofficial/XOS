@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { updateTemplate } from "../actions";
 import Tabs from "@/components/Tabs";
+import SaveButton from "@/components/SaveButton";
 import RichTextEditor from "@/components/RichTextEditor";
 import { Section, Row, Note, CheckBoxField, CheckGroup } from "@/components/SettingsForm";
 import { RadioChecklist, EnabledToggle } from "@/components/HelperEditorControls";
@@ -330,7 +331,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
             <h1 className="page-title mt-1">Edit Email Template</h1>
             <p className="text-sm text-zinc-500">{tpl.display_name ?? tpl.name}</p>
           </div>
-          <button className="btn-primary px-8">Save</button>
+          <SaveButton className="btn-primary px-8">Save</SaveButton>
         </div>
 
         <Tabs

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
 import Tabs from "@/components/Tabs";
+import SaveButton from "@/components/SaveButton";
 import { updateAddonSettings, deleteAddon, saveAddonEquipmentDefaults } from "@/app/(app)/packages/actions";
 
 export const dynamic = "force-dynamic";
@@ -87,7 +88,7 @@ export default async function AddonDetailPage({
             Active
           </label>
         </div>
-        <button className="btn-primary">Save</button>
+        <SaveButton>Save</SaveButton>
       </form>
 
       <div className="row mt-6 flex items-center justify-between pt-4">
@@ -146,7 +147,7 @@ export default async function AddonDetailPage({
           {(items ?? []).length === 0 && <p className="text-sm text-zinc-500">No standalone items yet.</p>}
         </div>
       </div>
-      <button className="btn-primary mt-4">Save Assigned Equipment</button>
+      <SaveButton className="btn-primary mt-4">Save Assigned Equipment</SaveButton>
     </form>
   );
 

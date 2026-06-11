@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import SaveButton from "@/components/SaveButton";
 
 type Option = { id: string; name: string };
 type Status = { id: string; name: string; color: string; text_color: string };
@@ -25,7 +26,7 @@ export default function BookingInfoEditor({
   save: (formData: FormData) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const currentStatus = statuses.find((s) => s.id === current.statusId) ?? null;
 
@@ -108,9 +109,7 @@ export default function BookingInfoEditor({
         </select>
       </div>
       <div className="flex gap-2">
-        <button disabled={pending} className="btn-primary px-5 py-2 text-xs">
-          {pending ? "Saving…" : "Save"}
-        </button>
+        <SaveButton className="btn-primary px-5 py-2 text-xs">Save</SaveButton>
         <button type="button" onClick={() => setEditing(false)} className="btn-ghost px-4 py-2 text-xs">
           Cancel
         </button>

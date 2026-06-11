@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, type XEvent } from "@/lib/types";
 import { updateVenue, addVenueContact, removeVenueContact, addVenueRoom } from "../actions";
+import SaveButton from "@/components/SaveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -114,7 +115,7 @@ export default async function VenueDetailPage({
               <textarea name="notes" rows={2} defaultValue={venue.notes ?? ""} className="input w-full" />
             </div>
             <div className="col-span-2">
-              <button className="btn-primary">Save Venue</button>
+              <SaveButton>Save Venue</SaveButton>
             </div>
           </form>
         </div>

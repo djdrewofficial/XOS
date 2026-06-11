@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import Tabs from "@/components/Tabs";
+import SaveButton from "@/components/SaveButton";
 import { Section, Row, Note, CheckBoxField, CheckGroup } from "@/components/SettingsForm";
 import { RadioChecklist } from "@/components/HelperEditorControls";
 import {
@@ -32,14 +33,6 @@ const TIER_LABELS: Record<string, string> = {
   salesperson: "Salesperson",
   employee: "Employee",
 };
-
-function SaveButton() {
-  return (
-    <div className="mt-4 flex justify-end">
-      <button className="btn-primary">Save Settings</button>
-    </div>
-  );
-}
 
 export default async function StaffSettingsPage() {
   const supabase = await createClient();
@@ -161,7 +154,7 @@ export default async function StaffSettingsPage() {
           <CheckBoxField name="show_upcoming_event_count" label="Show Count Of Upcoming Events" defaultChecked={s.show_upcoming_event_count} />
         </div>
       </Section>
-      <SaveButton />
+      <div className="mt-4 flex justify-end"><SaveButton>Save Settings</SaveButton></div>
     </form>
   );
 
@@ -207,7 +200,7 @@ export default async function StaffSettingsPage() {
           </label>
         </Row>
       </Section>
-      <SaveButton />
+      <div className="mt-4 flex justify-end"><SaveButton>Save Settings</SaveButton></div>
     </form>
   );
 
@@ -273,7 +266,7 @@ export default async function StaffSettingsPage() {
           })}
         </div>
       </Section>
-      <SaveButton />
+      <div className="mt-4 flex justify-end"><SaveButton>Save Settings</SaveButton></div>
     </form>
   );
 
@@ -354,7 +347,7 @@ export default async function StaffSettingsPage() {
             />
           </Row>
         </Section>
-        <SaveButton />
+        <div className="mt-4 flex justify-end"><SaveButton>Save Settings</SaveButton></div>
       </form>
     </div>
   );
@@ -415,7 +408,7 @@ export default async function StaffSettingsPage() {
           />
         </div>
       </Section>
-      <SaveButton />
+      <div className="mt-4 flex justify-end"><SaveButton>Save Settings</SaveButton></div>
     </form>
   );
 
@@ -431,7 +424,7 @@ export default async function StaffSettingsPage() {
                 <option value="first_name">First Name</option>
                 <option value="last_name">Last Name</option>
               </select>
-              <button className="btn-primary px-5 py-1.5 text-xs">Save</button>
+              <SaveButton className="btn-primary px-5 py-1.5 text-xs">Save</SaveButton>
             </div>
           </Row>
         </Section>
@@ -481,7 +474,7 @@ export default async function StaffSettingsPage() {
                 <CheckBoxField name="check_in_required" label="Check-In Required" defaultChecked={e.check_in_required} />
                 <CheckBoxField name="can_send_as_self" label="Send Email As Self" defaultChecked={e.can_send_as_self} />
               </div>
-              <button className="btn-primary px-5 py-1.5 text-xs">Save</button>
+              <SaveButton className="btn-primary px-5 py-1.5 text-xs">Save</SaveButton>
             </form>
           ))}
           {(employees ?? []).length === 0 && (

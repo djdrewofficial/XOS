@@ -42,6 +42,7 @@ import AddonPicker from "@/components/AddonPicker";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
 import Tabs from "@/components/Tabs";
+import SaveButton from "@/components/SaveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -274,7 +275,7 @@ export default async function EventDetailPage({
               <h3 className="label-xs mt-4">Client Notes</h3>
               <form action={addClientNote.bind(null, id, c.id)} className="mb-2 flex gap-2">
                 <input name="body" placeholder={`Note about ${c.first_name}…`} className="input w-full py-1.5 text-xs" />
-                <button className="btn-ghost px-3 py-1 text-xs">Add</button>
+                <SaveButton className="btn-ghost px-3 py-1 text-xs" savedLabel="Added">Add</SaveButton>
               </form>
               <ul className="space-y-1.5">
                 {notesForClient.map((n) => (
@@ -509,11 +510,11 @@ export default async function EventDetailPage({
                 />
               </div>
             ))}
-            <button className="btn-primary mt-1 px-5 py-2 text-xs">Save Dates</button>
+            <SaveButton className="btn-primary mt-1 px-5 py-2 text-xs">Save Dates</SaveButton>
           </form>
           <form action={addCustomDateField.bind(null, id)} className="mt-4 flex gap-2 border-t border-zinc-200 dark:border-white/[0.06] pt-3">
             <input name="name" placeholder="New custom date field (global)…" className="input w-full py-1.5 text-xs" />
-            <button className="btn-ghost px-3 py-1 text-xs">Add Field</button>
+            <SaveButton className="btn-ghost px-3 py-1 text-xs" savedLabel="Added">Add Field</SaveButton>
           </form>
         </div>
       </div>
@@ -522,7 +523,7 @@ export default async function EventDetailPage({
         <h2 className="card-title">Contract Notes</h2>
         <form action={addContractNote.bind(null, id)} className="mb-3 flex gap-2">
           <input name="body" placeholder="Add a note about the contract…" className="input w-full" />
-          <button className="btn-primary px-5">Add</button>
+          <SaveButton className="btn-primary px-5" savedLabel="Added">Add</SaveButton>
         </form>
         <ul className="space-y-2 text-sm">
           {contractNotes.map((n) => (
@@ -764,7 +765,7 @@ export default async function EventDetailPage({
                 ))}
               </select>
             </div>
-            <button className="btn-primary px-4 py-2 text-xs">Generate</button>
+            <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Done">Generate</SaveButton>
           </form>
           <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-600">
             Package rules: splits of {paymentRules.splits.join(" / ")} ·{" "}
@@ -797,7 +798,7 @@ export default async function EventDetailPage({
               ))}
             </select>
             <input type="date" name="paid_at" className="input w-40" />
-            <button className="btn-ghost px-4 py-2 text-xs">Add Payment</button>
+            <SaveButton className="btn-ghost px-4 py-2 text-xs" savedLabel="Added">Add Payment</SaveButton>
           </form>
           <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06] text-sm">
             {(payments ?? []).map((p: Payment) => (
@@ -862,7 +863,7 @@ export default async function EventDetailPage({
             <input name="payee" placeholder="Payee (e.g. subcontractor)" className="input" />
             <input name="description" placeholder="Description" className="input" />
             <div className="col-span-2">
-              <button className="btn-primary px-5 py-2 text-xs">Add Expense</button>
+              <SaveButton className="btn-primary px-5 py-2 text-xs" savedLabel="Added">Add Expense</SaveButton>
             </div>
           </form>
           <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06] text-sm">
@@ -907,7 +908,7 @@ export default async function EventDetailPage({
             </datalist>
             <input name="notes" placeholder="Notes (e.g. venue walkthrough)" className="input" />
             <div className="col-span-2">
-              <button className="btn-primary px-5 py-2 text-xs">Log Trip</button>
+              <SaveButton className="btn-primary px-5 py-2 text-xs" savedLabel="Done">Log Trip</SaveButton>
             </div>
           </form>
           <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06] text-sm">
@@ -1022,7 +1023,7 @@ export default async function EventDetailPage({
             <label className="label-xs">Notes</label>
             <input name="notes" placeholder="e.g. arrives at 2 PM" className="input w-full" />
           </div>
-          <button className="btn-primary">Add</button>
+          <SaveButton savedLabel="Added">Add</SaveButton>
         </form>
         <p className="mt-2 text-xs text-zinc-500">
           Vendor not in the directory yet? <Link href="/vendors" className="text-brand dark:text-brand-lighter hover:underline">Add them in Vendors</Link> first.
@@ -1155,7 +1156,7 @@ export default async function EventDetailPage({
           </div>
           <input type="number" name="quantity" defaultValue={1} min={1} className="input w-16" title="Quantity" />
           <input name="notes" placeholder="Note (optional)" className="input w-48" />
-          <button className="btn-primary px-4 py-2 text-xs">Add</button>
+          <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Added">Add</SaveButton>
         </form>
         <p className="mt-2 text-xs text-zinc-500">
           Manage your gear list in <Link href="/equipment" className="text-brand dark:text-brand-lighter hover:underline">Equipment</Link>.
@@ -1166,7 +1167,7 @@ export default async function EventDetailPage({
         <h2 className="card-title">Logistics Notes</h2>
         <form action={addLogisticsNote.bind(null, id)} className="mb-3 flex gap-2">
           <input name="body" placeholder="e.g. Loading dock is on the north side, freight elevator code 4421…" className="input w-full" />
-          <button className="btn-primary px-5">Add</button>
+          <SaveButton className="btn-primary px-5" savedLabel="Added">Add</SaveButton>
         </form>
         <ul className="space-y-2 text-sm">
           {logisticsNotes.map((n) => (

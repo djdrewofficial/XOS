@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import SaveButton from "@/components/SaveButton";
 
 type Vendor = {
   id: string;
@@ -222,7 +223,7 @@ export default function VendorsDirectory({
               </div>
               <div className="col-span-2 flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setAddOpen(false)} className="btn-ghost px-4 py-2 text-xs">Cancel</button>
-                <button className="btn-primary px-5 py-2 text-xs">Create Vendor</button>
+                <SaveButton className="btn-primary px-5 py-2 text-xs" savedLabel="Added">Create Vendor</SaveButton>
               </div>
             </form>
           </div>

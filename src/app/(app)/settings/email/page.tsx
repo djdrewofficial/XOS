@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import SaveButton from "@/components/SaveButton";
 import { sendQueuedEmails, saveCompanySettings, sendTest, runScheduledNow } from "./actions";
 import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
 
@@ -35,9 +36,9 @@ export default async function EmailPage() {
         )}
         {queuedCount > 0 && (
           <form action={sendQueuedEmails} className="mt-2">
-            <button className="btn-primary px-4 py-1.5">
+            <SaveButton className="btn-primary px-4 py-1.5">
               Send {queuedCount} Queued Email{queuedCount === 1 ? "" : "s"} Now
-            </button>
+            </SaveButton>
           </form>
         )}
       </div>
@@ -68,7 +69,7 @@ export default async function EmailPage() {
                 <input name="reply_to" type="email" defaultValue={company?.reply_to ?? ""} placeholder="(defaults to From)" className={input} />
               </div>
             </div>
-            <button className="btn-primary">Save Identity</button>
+            <SaveButton>Save Identity</SaveButton>
           </form>
         </div>
 
@@ -83,9 +84,9 @@ export default async function EmailPage() {
               <label className={label}>To Address</label>
               <input name="test_to" type="email" required placeholder="you@example.com" className={input} />
             </div>
-            <button className="btn-primary" disabled={!mailgunConfigured}>
+            <SaveButton disabled={!mailgunConfigured}>
               {mailgunConfigured ? "Send Test" : "Configure Mailgun first"}
-            </button>
+            </SaveButton>
           </form>
         </div>
       </div>
@@ -99,7 +100,7 @@ export default async function EmailPage() {
             </button>
           </form>
           <form action={createBlankTemplate}>
-            <button className="btn-primary text-sm">+ Add Template</button>
+            <SaveButton className="btn-primary text-sm" savedLabel="Added">+ Add Template</SaveButton>
           </form>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import SaveButton from "@/components/SaveButton";
 import { createBlankHelper, toggleHelper, deleteHelper, moveHelper, duplicateHelper } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ export default async function HelpersPage() {
           </p>
         </div>
         <form action={createBlankHelper}>
-          <button className="btn-primary">+ Add Booking Helper</button>
+          <SaveButton savedLabel="Added">+ Add Booking Helper</SaveButton>
         </form>
       </div>
 

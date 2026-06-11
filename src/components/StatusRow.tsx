@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { updateStatus, deleteStatus } from "@/app/(app)/settings/statuses/actions";
+import SaveButton from "@/components/SaveButton";
 
 const GROUPS = [
   ["is_booked_group", "Booked"],
@@ -147,7 +148,7 @@ export default function StatusRow({ status, inUse }: { status: Status; inUse: nu
               ) : (
                 <span className="text-xs text-zinc-400" title="In use by events — deactivate instead">🔒 in use</span>
               )}
-              <button className="btn-primary px-6 py-1.5 text-xs">Save</button>
+              <SaveButton className="btn-primary px-6 py-1.5 text-xs">Save</SaveButton>
             </div>
           </div>
         </form>

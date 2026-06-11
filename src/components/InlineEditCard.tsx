@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
+import SaveButton from "@/components/SaveButton";
 
 export type InlineField = {
   name: string;
@@ -25,7 +26,7 @@ export default function InlineEditCard({
   editLabel?: string;
 }) {
   const [editing, setEditing] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   if (!editing) {
     return (
@@ -74,9 +75,7 @@ export default function InlineEditCard({
         ))}
       </div>
       <div className="mt-3 flex gap-2">
-        <button disabled={pending} className="btn-primary px-5 py-2 text-xs">
-          {pending ? "Saving…" : "Save"}
-        </button>
+        <SaveButton className="btn-primary px-5 py-2 text-xs">Save</SaveButton>
         <button type="button" onClick={() => setEditing(false)} className="btn-ghost px-4 py-2 text-xs">
           Cancel
         </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import SaveButton from "@/components/SaveButton";
 
 type Addon = { id: string; name: string; default_price: number };
 
@@ -53,7 +54,7 @@ export default function AddonPicker({
         className="input w-28"
         title="Price for this event — edit to override"
       />
-      <button className="btn-primary px-4 py-2 text-xs">Add</button>
+      <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Added">Add</SaveButton>
     </form>
   );
 }

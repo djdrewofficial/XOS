@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { updateHelper } from "../actions";
 import Tabs from "@/components/Tabs";
+import SaveButton from "@/components/SaveButton";
 import { ButtonSettingsRows, RadioChecklist, EnabledToggle } from "@/components/HelperEditorControls";
 
 export const dynamic = "force-dynamic";
@@ -504,7 +505,7 @@ export default async function EditHelperPage({
             </h1>
             <p className="text-sm text-zinc-500">{helper.title}</p>
           </div>
-          <button className="btn-primary px-8">Save</button>
+          <SaveButton className="btn-primary px-8">Save</SaveButton>
         </div>
 
         <Tabs

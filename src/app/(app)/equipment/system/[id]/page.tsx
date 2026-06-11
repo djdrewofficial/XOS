@@ -11,6 +11,7 @@ import {
 } from "../../actions";
 import EquipmentHistory from "@/components/EquipmentHistory";
 import PhotoGallery from "@/components/PhotoGallery";
+import SaveButton from "@/components/SaveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +78,7 @@ export default async function SystemDetailPage({
                 <input type="checkbox" name="is_active" defaultChecked={system.is_active} className="size-4 accent-brand-light" />
                 Active
               </label>
-              <button className="btn-primary">Save</button>
+              <SaveButton>Save</SaveButton>
             </form>
           </div>
 
