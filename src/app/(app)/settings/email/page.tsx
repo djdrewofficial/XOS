@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { createTemplate, deleteTemplate, sendQueuedEmails } from "./actions";
+import { createTemplate, deleteTemplate, sendQueuedEmails, saveCompanySettings, sendTest } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +13,14 @@ const MERGE_TAGS = [
 
 export default async function EmailPage() {
   const supabase = await createClient();
-  const [{ data: templates }, { data: log }] = await Promise.all([
+  const [{ data: templates }, { data: log }, { data: company }] = await Promise.all([
     supabase.from("email_templates").select("*").eq("is_active", true).order("group_name").order("name"),
     supabase.from("email_log").select("*").order("created_at", { ascending: false }).limit(50),
+    supabase.from("company_settings").select("*").eq("id", true).maybeSingle(),
   ]);
 
   const mailgunConfigured = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
+  const region = (process.env.MAILGUN_REGION ?? "us").toUpperCase();
   const queuedCount = (log ?? []).filter((m) => m.status === "queued").length;
 
   const groups = [...new Set((templates ?? []).map((t) => t.group_name))];
@@ -31,9 +33,9 @@ export default async function EmailPage() {
     <div className="max-w-5xl">
       <h1 className="mb-5 text-2xl font-bold">Email</h1>
 
-      <div className={`card mb-6 p-4 text-sm ${mailgunConfigured ? "border-emerald-400/30 text-emerald-200" : "border-amber-400/30 text-amber-800 dark:text-amber-200"}`}>
+      <div className={`card mb-6 p-4 text-sm ${mailgunConfigured ? "border-emerald-400/30 text-emerald-800 dark:text-emerald-200" : "border-amber-400/30 text-amber-800 dark:text-amber-200"}`}>
         {mailgunConfigured ? (
-          <>Mailgun is configured — queued emails send via <strong>{process.env.MAILGUN_DOMAIN}</strong>.</>
+          <>Mailgun is configured — queued emails send via <strong>{process.env.MAILGUN_DOMAIN}</strong> ({region} region).</>
         ) : (
           <>Mailgun not configured yet. Emails queue safely in the outbox; add <code>MAILGUN_API_KEY</code> and <code>MAILGUN_DOMAIN</code> to <code>.env.local</code> to enable sending.</>
         )}
@@ -44,6 +46,54 @@ export default async function EmailPage() {
             </button>
           </form>
         )}
+      </div>
+
+      <div className="mb-6 grid gap-6 lg:grid-cols-2">
+        <div>
+          <h2 className="card-title">Company Sending Identity</h2>
+          <form action={saveCompanySettings} className="card space-y-3 p-5">
+            <p className="text-xs text-zinc-500">
+              The default “from” for emails. Booking helpers can override this to send as the assigned salesperson or DJ —
+              any address on your verified domain sends through Mailgun with no extra login.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className={label}>Company Name</label>
+                <input name="company_name" defaultValue={company?.company_name ?? "Xpress Entertainment"} className={input} />
+              </div>
+              <div>
+                <label className={label}>From Name</label>
+                <input name="from_name" defaultValue={company?.from_name ?? "Xpress Entertainment"} className={input} />
+              </div>
+              <div>
+                <label className={label}>From Email</label>
+                <input name="from_email" type="email" defaultValue={company?.from_email ?? "events@xpressdjs.com"} className={input} />
+              </div>
+              <div>
+                <label className={label}>Reply-To (optional)</label>
+                <input name="reply_to" type="email" defaultValue={company?.reply_to ?? ""} placeholder="(defaults to From)" className={input} />
+              </div>
+            </div>
+            <button className="btn-primary">Save Identity</button>
+          </form>
+        </div>
+
+        <div>
+          <h2 className="card-title">Send a Test Email</h2>
+          <form action={sendTest} className="card space-y-3 p-5">
+            <p className="text-xs text-zinc-500">
+              Sends a test message from your company identity through Mailgun, then records it in the log below — the
+              fastest way to confirm sending works end to end.
+            </p>
+            <div>
+              <label className={label}>To Address</label>
+              <input name="test_to" type="email" required placeholder="you@example.com" className={input} />
+            </div>
+            <button className="btn-primary" disabled={!mailgunConfigured}>
+              {mailgunConfigured ? "Send Test" : "Configure Mailgun first"}
+            </button>
+          </form>
+        </div>
       </div>
 
       <h2 className="card-title">Templates</h2>
@@ -112,6 +162,7 @@ export default async function EmailPage() {
           <thead className="table-head">
             <tr>
               <th className="px-4 py-2">Queued</th>
+              <th className="px-4 py-2">From</th>
               <th className="px-4 py-2">To</th>
               <th className="px-4 py-2">Subject</th>
               <th className="px-4 py-2">Status</th>
@@ -121,14 +172,19 @@ export default async function EmailPage() {
             {(log ?? []).map((m) => (
               <tr key={m.id} className="row">
                 <td className="px-4 py-2 whitespace-nowrap">{new Date(m.created_at).toLocaleString()}</td>
+                <td className="px-4 py-2 whitespace-nowrap text-xs text-zinc-500" title={m.from_address ?? undefined}>
+                  {m.from_name ?? m.from_address ?? "—"}
+                </td>
                 <td className="px-4 py-2">{m.to_address}</td>
                 <td className="px-4 py-2">{m.subject}</td>
                 <td className="px-4 py-2">
                   <span
                     className={`rounded px-2 py-0.5 text-xs font-semibold ${
-                      m.status === "sent" || m.status === "delivered"
+                      m.status === "delivered" || m.status === "opened"
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                        : m.status === "failed"
+                        : m.status === "sent"
+                        ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                        : m.status === "failed" || m.status === "bounced" || m.status === "complained"
                         ? "bg-red-500/15 text-red-700 dark:text-red-300"
                         : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
                     }`}
@@ -141,8 +197,8 @@ export default async function EmailPage() {
             ))}
             {(log ?? []).length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">
-                  No emails yet — run a booking helper that sends one.
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">
+                  No emails yet — run a booking helper that sends one, or send a test above.
                 </td>
               </tr>
             )}

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { processOutbox } from "@/lib/mailgun";
+import { processOutbox, sendTestEmail } from "@/lib/mailgun";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -45,5 +45,28 @@ export async function deleteTemplate(id: string) {
 
 export async function sendQueuedEmails() {
   await processOutbox();
+  revalidatePath("/settings/email");
+}
+
+export async function saveCompanySettings(formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("company_settings")
+    .update({
+      company_name: clean(formData.get("company_name")) ?? "Xpress Entertainment",
+      from_name: clean(formData.get("from_name")) ?? "Xpress Entertainment",
+      from_email: clean(formData.get("from_email")) ?? "events@xpressdjs.com",
+      reply_to: clean(formData.get("reply_to")),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", true);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+}
+
+export async function sendTest(formData: FormData) {
+  const to = clean(formData.get("test_to"));
+  if (!to) return;
+  await sendTestEmail(to);
   revalidatePath("/settings/email");
 }

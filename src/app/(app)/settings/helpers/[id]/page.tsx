@@ -20,6 +20,7 @@ type HelperAction = {
   value?: string;
   template_id?: string;
   to?: string;
+  from?: string;
   address?: string;
   audience?: string;
   body?: string;
@@ -313,6 +314,13 @@ export default async function EditHelperPage({
       <Section title="Send Email To Related Contact">
         <Row label="Client">
           <TemplateSelect name="action_template_id" value={clientEmail?.template_id} />
+        </Row>
+        <Row label="Send As" hint="Salesperson/DJ must have an address on your verified domain; otherwise falls back to company.">
+          <select name="action_email_from" defaultValue={clientEmail?.from ?? "company"} className="input w-full max-w-xs">
+            <option value="company">Company (default)</option>
+            <option value="salesperson">Assigned Salesperson</option>
+            <option value="primary_dj">Assigned DJ</option>
+          </select>
         </Row>
       </Section>
       <Section title="Send Email To Specific Email Address">

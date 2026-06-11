@@ -59,6 +59,7 @@ export async function updateEmployeeContact(id: string, formData: FormData) {
       address: clean(formData.get("address")),
       emergency_contact: clean(formData.get("emergency_contact")),
       birthday: clean(formData.get("birthday")),
+      can_send_as_self: formData.get("can_send_as_self") === "on",
     })
     .eq("id", id);
   if (error) throw new Error(error.message);

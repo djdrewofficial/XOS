@@ -229,6 +229,10 @@ export default async function EmployeeProfilePage({
           <label className="label-xs">Phone</label>
           <input name="phone" defaultValue={emp.phone ?? ""} className="input w-full" />
         </div>
+        <label className="col-span-2 flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <input type="checkbox" name="can_send_as_self" defaultChecked={emp.can_send_as_self ?? true} className="size-4 accent-brand-light" />
+          Can send client emails as themselves (uses the email above — must be on the verified sending domain; otherwise emails go out as the company)
+        </label>
         <div className="col-span-2">
           <label className="label-xs">Address</label>
           <input name="address" defaultValue={emp.address ?? ""} className="input w-full" />

@@ -70,7 +70,14 @@ function buildHelperPayload(formData: FormData) {
 
   // emails
   const templateId = clean(formData.get("action_template_id"));
-  if (templateId) actions.push({ type: "send_email", template_id: templateId, to: "client" });
+  if (templateId) {
+    actions.push({
+      type: "send_email",
+      template_id: templateId,
+      to: "client",
+      from: clean(formData.get("action_email_from")) ?? "company",
+    });
+  }
 
   const customAddress = clean(formData.get("email_custom_address"));
   const customTemplate = clean(formData.get("email_custom_template_id"));
