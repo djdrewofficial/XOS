@@ -45,7 +45,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
           { href: "/settings/general", label: "General", icon: "⚙" },
           { href: "/settings/helpers", label: "Booking Helpers", icon: "⚡" },
           { href: "/settings/dashboard", label: "Dashboard Layout", icon: "◆" },
-          { href: "/settings/event-list", label: "Event List Settings", icon: "▤" },
+          { href: "/events?settings=1", label: "Event List Settings", icon: "▤" },
           { href: "/settings/statuses", label: "Event Statuses", icon: "●" },
           { href: "/settings/staff", label: "Staff Settings", icon: "✦" },
           { href: "/settings/payment-settings", label: "Payment Settings", icon: "$" },

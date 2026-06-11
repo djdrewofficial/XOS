@@ -48,6 +48,9 @@ const DEFAULT_VISIBLE = [
 ];
 
 const STORAGE_KEY = "xos-events-columns";
+const SETTINGS_KEY = "xos-events-settings";
+
+type StatusColorMode = "row" | "cell" | "none";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -59,7 +62,9 @@ export default function EventsGrid({ rows }: { rows: GridRow[] }) {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ col: string; dir: 1 | -1 }>({ col: "event_date", dir: 1 });
   const [view, setView] = useState<"upcoming" | "past" | "all">("upcoming");
+  const [statusColorMode, setStatusColorMode] = useState<StatusColorMode>("row");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     try {
@@ -69,7 +74,29 @@ export default function EventsGrid({ rows }: { rows: GridRow[] }) {
         if (Array.isArray(parsed) && parsed.length) setVisible(parsed.filter((c) => ALL_COLUMNS.some((a) => a.id === c)));
       }
     } catch {}
+    try {
+      const saved = localStorage.getItem(SETTINGS_KEY);
+      if (saved) {
+        const s = JSON.parse(saved) as { statusColorMode?: StatusColorMode; sortBy?: string; sortDir?: 1 | -1 };
+        if (s.statusColorMode) setStatusColorMode(s.statusColorMode);
+        if (s.sortBy && ALL_COLUMNS.some((c) => c.id === s.sortBy)) {
+          setSort({ col: s.sortBy, dir: s.sortDir === -1 ? -1 : 1 });
+        }
+      }
+    } catch {}
+    try {
+      if (new URLSearchParams(window.location.search).get("settings") === "1") setSettingsOpen(true);
+    } catch {}
+    setLoaded(true);
   }, []);
+
+  // persist appearance + default sort whenever they change
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ statusColorMode, sortBy: sort.col, sortDir: sort.dir }));
+    } catch {}
+  }, [statusColorMode, sort, loaded]);
 
   function saveVisible(cols: string[]) {
     setVisible(cols);
@@ -188,7 +215,7 @@ export default function EventsGrid({ rows }: { rows: GridRow[] }) {
                 key={r.id}
                 onClick={() => router.push(`/events/${r.id}`)}
                 className="row cursor-pointer"
-                style={r.statusColor ? { backgroundColor: `${r.statusColor}2e` } : undefined}
+                style={statusColorMode === "row" && r.statusColor ? { backgroundColor: `${r.statusColor}2e` } : undefined}
               >
                 {cols.map((c) => {
                   const v = r.values[c.id];
@@ -199,12 +226,16 @@ export default function EventsGrid({ rows }: { rows: GridRow[] }) {
                   if (c.id === "status" && v) {
                     return (
                       <td key={c.id} className="px-3 py-2 whitespace-nowrap">
-                        <span
-                          className="chip"
-                          style={{ backgroundColor: r.statusColor ?? "#ccc", color: r.statusFg ?? "#000" }}
-                        >
-                          {display}
-                        </span>
+                        {statusColorMode === "none" ? (
+                          display
+                        ) : (
+                          <span
+                            className="chip"
+                            style={{ backgroundColor: r.statusColor ?? "#ccc", color: r.statusFg ?? "#000" }}
+                          >
+                            {display}
+                          </span>
+                        )}
                       </td>
                     );
                   }
@@ -306,6 +337,51 @@ export default function EventsGrid({ rows }: { rows: GridRow[] }) {
             <p className="mt-4 text-xs text-zinc-500">
               Use ↑ ↓ to reorder. Your column setup is saved on this browser.
             </p>
+
+            <div className="mt-6 grid gap-5 border-t border-zinc-200 pt-5 dark:border-white/10 sm:grid-cols-2">
+              <div>
+                <h3 className="card-title">Appearance</h3>
+                <label className="label-xs">Apply Status Color To</label>
+                <select
+                  value={statusColorMode}
+                  onChange={(e) => setStatusColorMode(e.target.value as StatusColorMode)}
+                  className="input w-full"
+                >
+                  <option value="row">Entire Row</option>
+                  <option value="cell">Status Field Only</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+              <div>
+                <h3 className="card-title">Default Sort Order</h3>
+                <p className="mb-2 text-[11px] text-zinc-500">Controls how the list is ordered when it loads.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="label-xs">Sort By</label>
+                    <select
+                      value={sort.col}
+                      onChange={(e) => setSort((s) => ({ ...s, col: e.target.value }))}
+                      className="input w-full"
+                    >
+                      {ALL_COLUMNS.map((c) => (
+                        <option key={c.id} value={c.id}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-xs">Sort Order</label>
+                    <select
+                      value={String(sort.dir)}
+                      onChange={(e) => setSort((s) => ({ ...s, dir: e.target.value === "-1" ? -1 : 1 }))}
+                      className="input w-full"
+                    >
+                      <option value="1">Ascending</option>
+                      <option value="-1">Descending</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
