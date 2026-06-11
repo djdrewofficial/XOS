@@ -21,7 +21,13 @@ import {
   deleteExpense,
   addTrip,
   deleteTrip,
+  updateEventDetails,
+  updateEventVenue,
+  updateEventLinks,
+  updateEventFinancials,
+  deleteEvent,
 } from "../actions";
+import InlineEditCard from "@/components/InlineEditCard";
 import ClientPicker from "@/components/ClientPicker";
 import BookingInfoEditor from "@/components/BookingInfoEditor";
 import AddonPicker from "@/components/AddonPicker";
@@ -108,6 +114,12 @@ export default async function EventDetailPage({
     supabase.from("vehicles").select("*").eq("is_active", true).order("name"),
   ]);
 
+  const [{ data: eventTypes }, { data: venuesList }, { data: packagesList }] = await Promise.all([
+    supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("venues").select("id, name").order("name"),
+    supabase.from("packages").select("id, name").eq("is_active", true).order("display_order"),
+  ]);
+
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
   const { data: clientNotes } = linkedClientIds.length
     ? await supabase
@@ -141,6 +153,13 @@ export default async function EventDetailPage({
   const addNoteBound = addEventNote.bind(null, id);
 
   const dt = (v: string | null | undefined) => v ?? "—";
+  const fmtTime = (t: string | null) => {
+    if (!t) return "—";
+    const [h, m] = t.split(":").map(Number);
+    const ampm = h >= 12 ? "PM" : "AM";
+    const hh = h % 12 === 0 ? 12 : h % 12;
+    return `${hh}:${String(m).padStart(2, "0")} ${ampm}`;
+  };
 
   /* ---------- TAB: Client ---------- */
   const canRemove = (eventClients ?? []).length > 1;
@@ -250,18 +269,34 @@ export default async function EventDetailPage({
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="card p-5">
         <h2 className="card-title">Event Details</h2>
-        <dl className="space-y-2 text-sm">
-          <div className="flex justify-between"><dt className="text-zinc-500">Event Name</dt><dd className="font-semibold">{event.name || "—"}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Event Type</dt><dd>{event.event_type?.name ?? "—"}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Event Date</dt><dd className="font-semibold">{dt(event.event_date)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Setup Time</dt><dd>{dt(event.setup_time)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Start Time</dt><dd>{dt(event.start_time)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">End Time</dt><dd>{dt(event.end_time)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Guest Count</dt><dd>{event.guest_count ?? "—"}</dd></div>
-        </dl>
-        <Link href={`/events/${id}/edit`} className="btn-ghost mt-4 px-4 py-1.5 text-xs">
-          Edit Details
-        </Link>
+        <InlineEditCard
+          save={updateEventDetails.bind(null, id)}
+          fields={[
+            { name: "name", label: "Event Name", type: "text", value: event.name, span2: true },
+            {
+              name: "event_type_id",
+              label: "Event Type",
+              type: "select",
+              value: event.event_type_id,
+              options: (eventTypes ?? []).map((t) => ({ value: t.id, label: t.name })),
+            },
+            { name: "event_date", label: "Event Date", type: "date", value: event.event_date },
+            { name: "setup_time", label: "Setup Time", type: "time", value: event.setup_time },
+            { name: "guest_count", label: "Guest Count", type: "number", value: event.guest_count },
+            { name: "start_time", label: "Start Time", type: "time", value: event.start_time },
+            { name: "end_time", label: "End Time", type: "time", value: event.end_time },
+          ]}
+        >
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between"><dt className="text-zinc-500">Event Name</dt><dd className="font-semibold">{event.name || "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Event Type</dt><dd>{event.event_type?.name ?? "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Event Date</dt><dd className="font-semibold">{dt(event.event_date)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Setup Time</dt><dd>{fmtTime(event.setup_time)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Start Time</dt><dd>{fmtTime(event.start_time)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">End Time</dt><dd>{fmtTime(event.end_time)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Guest Count</dt><dd>{event.guest_count ?? "—"}</dd></div>
+          </dl>
+        </InlineEditCard>
       </div>
 
       <div className="card p-5">
@@ -273,57 +308,83 @@ export default async function EventDetailPage({
             </Link>
           )}
         </div>
-        {venue ? (
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between"><dt className="text-zinc-500">Venue</dt><dd className="font-semibold">{venue.name}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Address</dt><dd className="text-right">{[venue.address, venue.city, venue.state].filter(Boolean).join(", ") || "—"}</dd></div>
-            <div className="flex justify-between"><dt className="text-zinc-500">Travel Fee</dt><dd>{money(venue.travel_fee)}</dd></div>
-            {venue.setup_fee != null && venue.setup_fee > 0 && (
-              <div className="flex justify-between"><dt className="text-zinc-500">Setup Fee</dt><dd>{money(venue.setup_fee)}</dd></div>
-            )}
-            {venue.load_in_details && (
-              <div><dt className="text-zinc-500">Load-In</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.load_in_details}</dd></div>
-            )}
-            {venue.driving_notes && (
-              <div><dt className="text-zinc-500">Driving Notes</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.driving_notes}</dd></div>
-            )}
-            {venue.notes && (
-              <div><dt className="text-zinc-500">Venue Notes</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.notes}</dd></div>
-            )}
-          </dl>
-        ) : (
-          <p className="text-sm text-zinc-500">No venue selected.</p>
-        )}
+        <InlineEditCard
+          save={updateEventVenue.bind(null, id)}
+          editLabel={venue ? "Change Venue" : "Select Venue"}
+          fields={[
+            {
+              name: "venue_id",
+              label: "Venue",
+              type: "select",
+              value: event.venue_id,
+              span2: true,
+              options: (venuesList ?? []).map((v) => ({ value: v.id, label: v.name })),
+            },
+          ]}
+        >
+          {venue ? (
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between"><dt className="text-zinc-500">Venue</dt><dd className="font-semibold">{venue.name}</dd></div>
+              <div className="flex justify-between"><dt className="text-zinc-500">Address</dt><dd className="text-right">{[venue.address, venue.city, venue.state].filter(Boolean).join(", ") || "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-zinc-500">Travel Fee</dt><dd>{money(venue.travel_fee)}</dd></div>
+              {venue.setup_fee != null && venue.setup_fee > 0 && (
+                <div className="flex justify-between"><dt className="text-zinc-500">Setup Fee</dt><dd>{money(venue.setup_fee)}</dd></div>
+              )}
+              {venue.load_in_details && (
+                <div><dt className="text-zinc-500">Load-In</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.load_in_details}</dd></div>
+              )}
+              {venue.driving_notes && (
+                <div><dt className="text-zinc-500">Driving Notes</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.driving_notes}</dd></div>
+              )}
+              {venue.notes && (
+                <div><dt className="text-zinc-500">Venue Notes</dt><dd className="mt-1 text-zinc-700 dark:text-zinc-300">{venue.notes}</dd></div>
+              )}
+            </dl>
+          ) : (
+            <p className="text-sm text-zinc-500">No venue selected.</p>
+          )}
+        </InlineEditCard>
       </div>
 
       <div className="card p-5">
         <h2 className="card-title">Vibo & Files</h2>
-        <ul className="space-y-2.5 text-sm">
-          {(
-            [
-              ["Vibo Event", cf.vibo_link, "Music planning for this event"],
-              ["Google Drive Timeline", cf.gdrive_timeline, "Event timeline document"],
-              ["Google Drive Folder", cf.gdrive_folder, "All event files"],
-              ["Photo Booth Gallery", cf.photobooth_gallery, "Client gallery"],
-            ] as const
-          ).map(([label, url, hint]) =>
-            url ? (
-              <li key={label}>
-                <a href={url} target="_blank" className="font-semibold text-brand dark:text-brand-lighter hover:underline">
-                  {label} ↗
-                </a>
-                <div className="text-xs text-zinc-400 dark:text-zinc-600">{hint}</div>
-              </li>
-            ) : (
-              <li key={label} className="text-zinc-400 dark:text-zinc-600">
-                {label} — <Link href={`/events/${id}/edit`} className="text-brand/70 dark:text-brand dark:text-brand-lighter/70 hover:underline">add link</Link>
-              </li>
-            )
-          )}
-        </ul>
-        <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-600">
-          Coming soon: XOS will create the Drive folder and Vibo event automatically when an event books.
-        </p>
+        <InlineEditCard
+          save={updateEventLinks.bind(null, id)}
+          editLabel="Edit Links"
+          fields={[
+            { name: "vibo_link", label: "Vibo Event Link", type: "url", value: cf.vibo_link ?? "", span2: true, placeholder: "https://…" },
+            { name: "gdrive_timeline", label: "Google Drive Timeline", type: "url", value: cf.gdrive_timeline ?? "", span2: true, placeholder: "https://…" },
+            { name: "gdrive_folder", label: "Google Drive Folder", type: "url", value: cf.gdrive_folder ?? "", span2: true, placeholder: "https://…" },
+            { name: "photobooth_gallery", label: "Photo Booth Gallery", type: "url", value: cf.photobooth_gallery ?? "", span2: true, placeholder: "https://…" },
+          ]}
+        >
+          <ul className="space-y-2.5 text-sm">
+            {(
+              [
+                ["Vibo Event", cf.vibo_link, "Music planning for this event"],
+                ["Google Drive Timeline", cf.gdrive_timeline, "Event timeline document"],
+                ["Google Drive Folder", cf.gdrive_folder, "All event files"],
+                ["Photo Booth Gallery", cf.photobooth_gallery, "Client gallery"],
+              ] as const
+            ).map(([label, url, hint]) =>
+              url ? (
+                <li key={label}>
+                  <a href={url} target="_blank" className="font-semibold text-brand dark:text-brand-lighter hover:underline">
+                    {label} ↗
+                  </a>
+                  <div className="text-xs text-zinc-400 dark:text-zinc-600">{hint}</div>
+                </li>
+              ) : (
+                <li key={label} className="text-zinc-400 dark:text-zinc-600">
+                  {label} — not set
+                </li>
+              )
+            )}
+          </ul>
+          <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-600">
+            Coming soon: XOS will create the Drive folder and Vibo event automatically when an event books.
+          </p>
+        </InlineEditCard>
       </div>
     </div>
   );
@@ -529,6 +590,26 @@ export default async function EventDetailPage({
 
         <div className="card p-5">
           <h2 className="card-title">Fee Summary Report</h2>
+          <InlineEditCard
+            save={updateEventFinancials.bind(null, id)}
+            editLabel="Edit Fees"
+            fields={[
+              {
+                name: "package_id",
+                label: "Package",
+                type: "select",
+                value: event.package_id,
+                span2: true,
+                options: (packagesList ?? []).map((p) => ({ value: p.id, label: p.name })),
+              },
+              { name: "package_price_override", label: "Package Price Override ($)", type: "number", step: "0.01", value: event.package_price_override, placeholder: "blank = default" },
+              { name: "deposit_value", label: "Deposit ($)", type: "number", step: "0.01", value: event.deposit_value },
+              { name: "overtime_fee", label: "Overtime Fee ($)", type: "number", step: "0.01", value: event.overtime_fee },
+              { name: "travel_fee", label: "Travel Fee ($)", type: "number", step: "0.01", value: event.travel_fee },
+              { name: "discount1_amount", label: "Discount 1 ($)", type: "number", step: "0.01", value: event.discount1_amount },
+              { name: "discount2_amount", label: "Discount 2 ($)", type: "number", step: "0.01", value: event.discount2_amount },
+            ]}
+          >
           <div className="divide-y divide-white/[0.05]">
             {event.package && (
               <div className={feeRow}>
@@ -594,6 +675,7 @@ export default async function EventDetailPage({
             <span className="font-bold text-amber-800 dark:text-amber-200">BALANCE DUE</span>
             <span className="font-black text-amber-900 dark:text-amber-100">{money(balance)}</span>
           </div>
+          </InlineEditCard>
         </div>
       </div>
 
@@ -821,13 +903,6 @@ export default async function EventDetailPage({
   );
 
   /* ---------- header helpers ---------- */
-  const fmtTime = (t: string | null) => {
-    if (!t) return "—";
-    const [h, m] = t.split(":").map(Number);
-    const ampm = h >= 12 ? "PM" : "AM";
-    const hh = h % 12 === 0 ? 12 : h % 12;
-    return `${hh}:${String(m).padStart(2, "0")} ${ampm}`;
-  };
   // parse date parts from the string to avoid timezone shifts
   const dateParts = event.event_date ? event.event_date.split("-").map(Number) : null;
   const dateObj = dateParts ? new Date(dateParts[0], dateParts[1] - 1, dateParts[2]) : null;
@@ -900,9 +975,6 @@ export default async function EventDetailPage({
             <span className="hidden rounded-lg border border-zinc-300 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-3 py-1.5 text-sm font-bold text-zinc-900 dark:text-white md:inline">
               {money(balance)} <span className="text-xs font-medium text-zinc-500">due</span>
             </span>
-            <Link href={`/events/${id}/edit`} className="btn-primary px-4 py-2">
-              Edit
-            </Link>
           </div>
         </div>
       </div>
@@ -967,6 +1039,14 @@ export default async function EventDetailPage({
           { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />
+
+      <div className="mt-10 flex justify-end border-t border-zinc-200 pt-4 dark:border-white/[0.06]">
+        <form action={deleteEvent.bind(null, id)}>
+          <button className="text-xs font-semibold text-red-600 hover:underline dark:text-red-400">
+            Delete This Event
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

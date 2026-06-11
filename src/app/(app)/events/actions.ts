@@ -493,6 +493,74 @@ export async function addContractNote(eventId: string, formData: FormData) {
   revalidatePath(`/events/${eventId}`);
 }
 
+export async function updateEventDetails(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("events")
+    .update({
+      name: clean(formData.get("name")) ?? "",
+      event_type_id: clean(formData.get("event_type_id")),
+      event_date: clean(formData.get("event_date")),
+      setup_time: clean(formData.get("setup_time")),
+      start_time: clean(formData.get("start_time")),
+      end_time: clean(formData.get("end_time")),
+      guest_count: formData.get("guest_count") ? num(formData.get("guest_count")) : null,
+    })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+}
+
+export async function updateEventVenue(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("events")
+    .update({ venue_id: clean(formData.get("venue_id")) })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+}
+
+export async function updateEventLinks(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { data: event } = await supabase
+    .from("events")
+    .select("custom_fields")
+    .eq("id", eventId)
+    .single();
+  const cf = { ...((event?.custom_fields as Record<string, string>) ?? {}) };
+  cf.vibo_link = clean(formData.get("vibo_link")) ?? "";
+  cf.gdrive_timeline = clean(formData.get("gdrive_timeline")) ?? "";
+  cf.gdrive_folder = clean(formData.get("gdrive_folder")) ?? "";
+  cf.photobooth_gallery = clean(formData.get("photobooth_gallery")) ?? "";
+  const { error } = await supabase.from("events").update({ custom_fields: cf }).eq("id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function updateEventFinancials(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("events")
+    .update({
+      package_id: clean(formData.get("package_id")),
+      package_price_override: clean(formData.get("package_price_override"))
+        ? num(formData.get("package_price_override"))
+        : null,
+      deposit_value: num(formData.get("deposit_value")),
+      overtime_fee: num(formData.get("overtime_fee")),
+      travel_fee: num(formData.get("travel_fee")),
+      discount1_amount: num(formData.get("discount1_amount")),
+      discount2_amount: num(formData.get("discount2_amount")),
+    })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+}
+
 export async function updateBookingInfo(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase
