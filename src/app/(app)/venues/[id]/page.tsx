@@ -14,10 +14,11 @@ export default async function VenueDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: venue }, { data: contacts }, { data: rooms }, { data: events }] = await Promise.all([
+  const [{ data: venue }, { data: contacts }, { data: rooms }, { data: categories }, { data: events }] = await Promise.all([
     supabase.from("venues").select("*").eq("id", id).single(),
     supabase.from("venue_contacts").select("*").eq("venue_id", id).order("name"),
     supabase.from("venue_rooms").select("*").eq("venue_id", id).order("name"),
+    supabase.from("venue_categories").select("id, name").eq("is_active", true).order("name"),
     supabase
       .from("events")
       .select("*, client:clients(first_name, last_name), status:event_statuses(name, color, text_color)")
@@ -62,6 +63,15 @@ export default async function VenueDetailPage({
             <div className="col-span-2">
               <label className="label-xs">Name</label>
               <input name="name" defaultValue={venue.name} required className="input w-full" />
+            </div>
+            <div className="col-span-2">
+              <label className="label-xs">Category</label>
+              <select name="category_id" defaultValue={venue.category_id ?? ""} className="input w-full">
+                <option value="">—</option>
+                {(categories ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
             </div>
             <div className="col-span-2">
               <label className="label-xs">Address</label>
