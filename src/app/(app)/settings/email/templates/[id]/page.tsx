@@ -21,19 +21,19 @@ const ANCHORS = [
 ] as const;
 
 const AUTOFILL_TO = [
-  { value: "client", label: "Client" },
+  { value: "primary_client", label: "Primary Client" },
+  { value: "additional_clients", label: "Additional Clients" },
   { value: "employees", label: "Employees" },
   { value: "salesperson", label: "Salesperson" },
   { value: "administrator", label: "Administrator" },
-  { value: "planning_clients", label: "Planning Only Clients" },
   { value: "vendors", label: "Vendors" },
   { value: "venue", label: "Venue" },
   { value: "logged_employee", label: "Logged On Employee" },
 ];
 
 const SCHED_TO = [
-  { value: "client", label: "Client" },
-  { value: "planning_clients", label: "Planning Only Clients" },
+  { value: "primary_client", label: "Primary Client" },
+  { value: "additional_clients", label: "Additional Clients" },
   { value: "venue", label: "Venue" },
   { value: "vendors", label: "Vendors" },
   { value: "all_employees", label: "All Assigned Employees" },
@@ -55,6 +55,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     { data: addons },
     { data: employees },
     { data: helpers },
+    { data: vendorCategories },
   ] = await Promise.all([
     supabase.from("email_templates").select("*").eq("id", id).single(),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
@@ -63,6 +64,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     supabase.from("addons").select("id, name").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name"),
     supabase.from("booking_helpers").select("id, title").order("position"),
+    supabase.from("vendor_categories").select("id, name").eq("is_active", true).order("name"),
   ]);
 
   if (!tpl) notFound();
@@ -248,6 +250,9 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
       <Section title="Send To">
         <Row label="Send To">
           <CheckGroup name="sched_send_to" options={SCHED_TO} selected={(tpl.sched_send_to ?? []) as string[]} />
+        </Row>
+        <Row label="Vendor Categories" hint="When “Vendors” is checked: leave empty for all vendors, or pick specific types.">
+          <Checklist name="sched_vendor_category_ids" items={(vendorCategories ?? []).map((c) => ({ id: c.id, name: c.name }))} selected={(tpl.sched_vendor_category_ids ?? []) as string[]} />
         </Row>
         <Row label="Exclude Declined Employees">
           <CheckBoxField name="sched_exclude_declined" label="Exclude" defaultChecked={tpl.sched_exclude_declined} />

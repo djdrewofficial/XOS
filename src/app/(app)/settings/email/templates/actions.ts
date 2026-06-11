@@ -57,6 +57,7 @@ function buildPayload(formData: FormData) {
     sched_employee_ids: employeeIds,
     schedule_from: clean(formData.get("schedule_from")) ?? "company",
     sched_send_to: ids(formData, "sched_send_to"),
+    sched_vendor_category_ids: ids(formData, "sched_vendor_category_ids"),
     sched_exclude_declined: formData.get("sched_exclude_declined") === "on",
     sched_also_send_to: clean(formData.get("sched_also_send_to")),
     sched_set_status_id: clean(formData.get("sched_set_status_id")),
