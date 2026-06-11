@@ -6,6 +6,8 @@ type Helper = {
   button_text: string;
   button_bg: string;
   button_fg: string;
+  button_font_size?: number | null;
+  button_font_weight?: number | null;
   visible_status_ids: string[];
   hide_if_payment_made: boolean;
   hide_if_already_ran: boolean;
@@ -46,8 +48,13 @@ export default function BookingHelperBar({
           <form key={h.id} action={runBookingHelper.bind(null, eventId, h.id)}>
             <button
               type="submit"
-              className="rounded px-3 py-1.5 text-sm font-bold shadow-sm transition-transform hover:scale-105"
-              style={{ backgroundColor: h.button_bg, color: h.button_fg }}
+              className="rounded px-3 py-1.5 shadow-sm transition-transform hover:scale-105"
+              style={{
+                backgroundColor: h.button_bg,
+                color: h.button_fg,
+                fontSize: `${h.button_font_size ?? 14}px`,
+                fontWeight: h.button_font_weight ?? 700,
+              }}
             >
               {h.button_text}
             </button>

@@ -60,25 +60,82 @@ function buildHelperPayload(formData: FormData) {
     actions.push({ type: "mark_staff_notified" });
   }
 
+  // times
+  const setupBefore = clean(formData.get("setup_before_start_minutes"));
+  if (setupBefore) actions.push({ type: "setup_before_start", minutes: setupBefore });
+  for (const tf of ["setup_time", "start_time", "end_time"]) {
+    const v = clean(formData.get(`time_${tf}`));
+    if (v) actions.push({ type: "set_time", field: tf, value: v });
+  }
+
+  // emails
   const templateId = clean(formData.get("action_template_id"));
   if (templateId) actions.push({ type: "send_email", template_id: templateId, to: "client" });
+
+  const customAddress = clean(formData.get("email_custom_address"));
+  const customTemplate = clean(formData.get("email_custom_template_id"));
+  if (customAddress && customTemplate) {
+    actions.push({ type: "send_email", template_id: customTemplate, to: "custom", address: customAddress });
+  }
+
+  const staffTemplate = clean(formData.get("staff_email_template_id"));
+  const staffAudience = clean(formData.get("staff_email_audience"));
+  if (staffTemplate && staffAudience) {
+    actions.push({ type: "send_email_staff", template_id: staffTemplate, audience: staffAudience });
+  }
 
   const note = clean(formData.get("action_note"));
   if (note) actions.push({ type: "add_note", body: note });
 
+  // secondary helper runs last
+  const secondary = clean(formData.get("secondary_helper_id"));
+  if (secondary) actions.push({ type: "run_helper", helper_id: secondary });
+
+  const fontSize = parseInt(clean(formData.get("button_font_size")) ?? "", 10);
+  const fontWeight = parseInt(clean(formData.get("button_font_weight")) ?? "", 10);
+
   return {
     title: clean(formData.get("title")) ?? "Untitled Helper",
+    description: clean(formData.get("description")),
     button_text: clean(formData.get("button_text")) ?? clean(formData.get("title")) ?? "Helper",
     button_bg: clean(formData.get("button_bg")) ?? "#97CC9A",
     button_fg: clean(formData.get("button_fg")) ?? "#000000",
+    button_font_size: Number.isFinite(fontSize) ? fontSize : 16,
+    button_font_weight: Number.isFinite(fontWeight) ? fontWeight : 900,
     is_active: formData.get("is_active") === "on",
     hide_if_payment_made: formData.get("hide_if_payment_made") === "on",
     hide_if_already_ran: formData.get("hide_if_already_ran") === "on",
     hide_if_helpers_ran: formData.getAll("hide_if_helpers_ran").map(String).filter(Boolean),
     visible_status_ids: formData.getAll("visible_status_ids").map(String).filter(Boolean),
     required_fields: formData.getAll("required_fields").map(String).filter(Boolean),
+    auto_on_create: formData.get("auto_on_create") === "on",
+    auto_status_ids: formData.getAll("auto_status_ids").map(String).filter(Boolean),
     actions,
   };
+}
+
+export async function createBlankHelper() {
+  const supabase = await createClient();
+  const { data: maxRow } = await supabase
+    .from("booking_helpers")
+    .select("position")
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const { data, error } = await supabase
+    .from("booking_helpers")
+    .insert({
+      title: "New Booking Helper",
+      button_text: "New Helper",
+      is_active: false, // stays off events until configured and activated
+      position: (maxRow?.position ?? 0) + 1,
+      actions: [],
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/helpers");
+  redirect(`/settings/helpers/${data.id}`);
 }
 
 export async function createHelper(formData: FormData) {
@@ -149,6 +206,8 @@ export async function duplicateHelper(id: string) {
     button_text: `${src.button_text} (Copy)`,
     button_bg: src.button_bg,
     button_fg: src.button_fg,
+    button_font_size: src.button_font_size ?? 16,
+    button_font_weight: src.button_font_weight ?? 900,
     position: (maxRow?.position ?? 0) + 1,
     is_active: false, // duplicates start disabled so they don't appear on events until reviewed
     visible_status_ids: src.visible_status_ids,
@@ -156,6 +215,8 @@ export async function duplicateHelper(id: string) {
     hide_if_already_ran: src.hide_if_already_ran,
     hide_if_helpers_ran: src.hide_if_helpers_ran,
     required_fields: src.required_fields ?? [],
+    auto_on_create: false, // copies never auto-fire until reviewed
+    auto_status_ids: src.auto_status_ids ?? [],
     actions: src.actions,
   });
   if (error) throw new Error(error.message);
