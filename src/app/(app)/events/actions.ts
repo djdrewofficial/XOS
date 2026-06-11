@@ -234,6 +234,27 @@ export async function markStaff(
   revalidatePath(`/events/${eventId}`);
 }
 
+export async function addEventVendor(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const vendorId = clean(formData.get("vendor_id"));
+  if (!vendorId) return;
+  const { error } = await supabase.from("event_vendors").insert({
+    event_id: eventId,
+    vendor_id: vendorId,
+    role: clean(formData.get("role")) ?? "Vendor",
+    notes: clean(formData.get("notes")),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function removeEventVendor(eventId: string, eventVendorId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("event_vendors").delete().eq("id", eventVendorId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
 export async function updateStaffDetails(eventId: string, staffId: string, formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase

@@ -25,6 +25,8 @@ import {
   updateEventVenue,
   updateEventLinks,
   updateEventFinancials,
+  addEventVendor,
+  removeEventVendor,
   deleteEvent,
 } from "../actions";
 import InlineEditCard from "@/components/InlineEditCard";
@@ -114,11 +116,18 @@ export default async function EventDetailPage({
     supabase.from("vehicles").select("*").eq("is_active", true).order("name"),
   ]);
 
-  const [{ data: eventTypes }, { data: venuesList }, { data: packagesList }] = await Promise.all([
-    supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
-    supabase.from("venues").select("id, name").order("name"),
-    supabase.from("packages").select("id, name").eq("is_active", true).order("display_order"),
-  ]);
+  const [{ data: eventTypes }, { data: venuesList }, { data: packagesList }, { data: eventVendors }, { data: vendorsList }] =
+    await Promise.all([
+      supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
+      supabase.from("venues").select("id, name").order("name"),
+      supabase.from("packages").select("id, name").eq("is_active", true).order("display_order"),
+      supabase
+        .from("event_vendors")
+        .select("*, vendor:vendors(id, company_name, category)")
+        .eq("event_id", id)
+        .order("created_at"),
+      supabase.from("vendors").select("id, company_name, category").order("company_name"),
+    ]);
 
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
   const { data: clientNotes } = linkedClientIds.length
@@ -872,6 +881,94 @@ export default async function EventDetailPage({
     </div>
   );
 
+  /* ---------- TAB: Vendors ---------- */
+  type EventVendorRow = {
+    id: string;
+    role: string;
+    notes: string | null;
+    vendor: { id: string; company_name: string; category: string | null } | null;
+  };
+  const vendorRows = (eventVendors ?? []) as unknown as EventVendorRow[];
+  const linkedVendorIds = new Set(vendorRows.map((v) => v.vendor?.id));
+  const addableVendors = (vendorsList ?? []).filter((v) => !linkedVendorIds.has(v.id));
+
+  const vendorsTab = (
+    <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-2">
+        {vendorRows.map((ev) => (
+          <div key={ev.id} className="card p-5">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="text-base font-bold text-zinc-900 dark:text-white">
+                  <Link href={`/vendors/${ev.vendor?.id}`} className="hover:text-brand hover:underline dark:hover:text-brand-lighter">
+                    {ev.vendor?.company_name ?? "(unknown vendor)"}
+                  </Link>
+                </h2>
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <span className="rounded bg-black/[0.07] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-700 dark:bg-white/10 dark:text-zinc-300">
+                    {ev.role}
+                  </span>
+                  {ev.vendor?.category && (
+                    <span className="text-xs text-zinc-500">{ev.vendor.category}</span>
+                  )}
+                </div>
+                {ev.notes && <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">{ev.notes}</p>}
+              </div>
+              <div className="flex shrink-0 gap-3 text-xs">
+                <Link href={`/vendors/${ev.vendor?.id}`} className="font-semibold text-brand hover:underline dark:text-brand-lighter">
+                  Open →
+                </Link>
+                <form action={removeEventVendor.bind(null, id, ev.id)}>
+                  <button className="font-semibold text-red-600 dark:text-red-400 hover:underline">Remove</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        ))}
+        {vendorRows.length === 0 && (
+          <div className="card p-5">
+            <p className="text-sm text-zinc-500">No vendors on this event yet — add who you&apos;re working with below.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="card max-w-2xl p-5">
+        <h2 className="card-title">Add Vendor To Event</h2>
+        <form action={addEventVendor.bind(null, id)} className="flex flex-wrap items-end gap-2">
+          <div className="min-w-48 flex-1">
+            <label className="label-xs">Vendor</label>
+            <select name="vendor_id" required className="input w-full">
+              <option value="">Select…</option>
+              {addableVendors.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.company_name}
+                  {v.category ? ` — ${v.category}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="min-w-40">
+            <label className="label-xs">Role On This Event</label>
+            <input name="role" defaultValue="Vendor" list="vendor-roles" className="input w-full" />
+            <datalist id="vendor-roles">
+              {["Photographer", "Videographer", "Wedding Planner", "Florist", "Caterer", "Venue Coordinator", "Hair & Makeup", "Officiant", "Rentals"].map((r) => (
+                <option key={r} value={r} />
+              ))}
+            </datalist>
+          </div>
+          <div className="min-w-44 flex-1">
+            <label className="label-xs">Notes</label>
+            <input name="notes" placeholder="e.g. arrives at 2 PM" className="input w-full" />
+          </div>
+          <button className="btn-primary">Add</button>
+        </form>
+        <p className="mt-2 text-xs text-zinc-500">
+          Vendor not in the directory yet? <Link href="/vendors" className="text-brand dark:text-brand-lighter hover:underline">Add them in Vendors</Link> first.
+        </p>
+      </div>
+    </div>
+  );
+
   /* ---------- TAB: Staff ---------- */
   const staffTab = <StaffSection eventId={id} staff={staff ?? []} employees={employees ?? []} />;
 
@@ -1036,6 +1133,7 @@ export default async function EventDetailPage({
           { id: "booking", label: "Booking", content: bookingTab },
           { id: "financials", label: "Financials", badge: balance > 0 ? money(balance) : undefined, content: financialsTab },
           { id: "staff", label: "Staff", badge: (staff ?? []).length, content: staffTab },
+          { id: "vendors", label: "Vendors", badge: vendorRows.length, content: vendorsTab },
           { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />

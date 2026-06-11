@@ -19,6 +19,7 @@ const SECTIONS: { heading: string; items: { href: string; label: string; icon: s
     heading: "Directory",
     items: [
       { href: "/venues", label: "Venues", icon: "⌂" },
+      { href: "/vendors", label: "Vendors", icon: "◈" },
       { href: "/packages", label: "Packages", icon: "❖" },
       { href: "/employees", label: "Employees", icon: "✦" },
     ],
@@ -33,6 +34,7 @@ const SECTIONS: { heading: string; items: { href: string; label: string; icon: s
       { href: "/settings/helpers", label: "Booking Helpers", icon: "⚡" },
       { href: "/settings/email", label: "Email", icon: "✉" },
       { href: "/settings/statuses", label: "Statuses", icon: "●" },
+      { href: "/settings/sources", label: "Inquiry Sources", icon: "◎" },
     ],
   },
 ];
