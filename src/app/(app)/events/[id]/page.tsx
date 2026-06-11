@@ -1015,7 +1015,6 @@ export default async function EventDetailPage({
           {equipRows.map((r) => {
             const name = r.item?.name ?? r.system?.name ?? "?";
             const isSystem = !!r.system;
-            const qr = r.item?.qr_code ?? r.system?.qr_code ?? "";
             return (
               <li key={r.id} className="py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1040,7 +1039,6 @@ export default async function EventDetailPage({
                       <span className="ml-2 rounded bg-black/[0.07] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-700 dark:bg-white/10 dark:text-zinc-300">
                         {isSystem ? "System" : r.item?.category ?? "Item"}
                       </span>
-                      <span className="ml-2 text-[10px] text-zinc-500">{qr}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px]">
@@ -1115,8 +1113,7 @@ export default async function EventDetailPage({
           <button className="btn-primary px-4 py-2 text-xs">Add</button>
         </form>
         <p className="mt-2 text-xs text-zinc-500">
-          Manage gear and print QR codes in <Link href="/equipment" className="text-brand dark:text-brand-lighter hover:underline">Equipment</Link>.
-          Scanning a case&apos;s QR opens its check-in/out page.
+          Manage your gear list in <Link href="/equipment" className="text-brand dark:text-brand-lighter hover:underline">Equipment</Link>.
         </p>
       </div>
 

@@ -8,26 +8,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-function qrImageUrl(code: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const target = `${base}/scan/${code}`;
-  return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(target)}`;
-}
-
-function QrBlock({ code }: { code: string }) {
-  return (
-    <details>
-      <summary className="cursor-pointer text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">
-        {code}
-      </summary>
-      <div className="mt-2 inline-block rounded-lg bg-white p-2 shadow">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={qrImageUrl(code)} alt={`QR ${code}`} width={140} height={140} />
-      </div>
-      <p className="mt-1 text-[10px] text-zinc-500">Print and stick on the case — scanning opens the check-in/out page.</p>
-    </details>
-  );
-}
 
 export default async function EquipmentPage() {
   const supabase = await createClient();
@@ -46,34 +26,29 @@ export default async function EquipmentPage() {
       <h1 className="page-title mb-1">Equipment</h1>
       <p className="mb-5 text-sm text-zinc-500">
         Items are individual pieces of gear; Systems are racks/cases that hold multiple things and travel as one unit.
-        Every item and system gets an XOS QR code.
       </p>
 
       {/* ---------- SYSTEMS ---------- */}
       <h2 className="card-title">Systems (Racks &amp; Cases)</h2>
       <div className="card mb-4 overflow-hidden">
         <div className="table-head flex items-center py-2">
-          <span className="w-[24%] px-3">System</span>
-          <span className="w-[34%] px-2">Description</span>
-          <span className="w-[10%] px-2 text-center">Items Inside</span>
-          <span className="w-[16%] px-2">QR Code</span>
-          <span className="w-[6%] text-center">Active</span>
+          <span className="w-[28%] px-3">System</span>
+          <span className="w-[42%] px-2">Description</span>
+          <span className="w-[12%] px-2 text-center">Items Inside</span>
+          <span className="w-[8%] text-center">Active</span>
           <span className="w-[10%] px-3 text-right">Save</span>
         </div>
         {(systems ?? []).map((s) => (
           <div key={s.id} className={`row flex w-full items-center py-1.5 ${!s.is_active ? "opacity-50" : ""}`}>
             <form action={updateEquipmentSystem.bind(null, s.id)} className="contents">
-              <span className="w-[24%] px-3">
+              <span className="w-[28%] px-3">
                 <input name="name" defaultValue={s.name} className="input w-full py-1.5" />
               </span>
-              <span className="w-[34%] px-2">
+              <span className="w-[42%] px-2">
                 <input name="description" defaultValue={s.description ?? ""} className="input w-full py-1.5" />
               </span>
-              <span className="w-[10%] px-2 text-center text-sm font-semibold">{itemsBySystem.get(s.id) ?? 0}</span>
-              <span className="w-[16%] px-2">
-                <QrBlock code={s.qr_code} />
-              </span>
-              <span className="w-[6%] text-center">
+              <span className="w-[12%] px-2 text-center text-sm font-semibold">{itemsBySystem.get(s.id) ?? 0}</span>
+              <span className="w-[8%] text-center">
                 <input type="checkbox" name="is_active" defaultChecked={s.is_active} className="size-4 accent-brand-light" />
               </span>
               <span className="flex w-[10%] justify-end px-3">
@@ -100,24 +75,23 @@ export default async function EquipmentPage() {
       <div className="card mb-4 overflow-x-auto">
         <div className="min-w-[1000px]">
           <div className="table-head flex items-center py-2">
-            <span className="w-[24%] px-3">Item</span>
-            <span className="w-[13%] px-2">Category</span>
-            <span className="w-[17%] px-2">Inside System</span>
-            <span className="w-[18%] px-2">Notes</span>
-            <span className="w-[14%] px-2">QR Code</span>
-            <span className="w-[5%] text-center">Active</span>
+            <span className="w-[26%] px-3">Item</span>
+            <span className="w-[15%] px-2">Category</span>
+            <span className="w-[20%] px-2">Inside System</span>
+            <span className="w-[24%] px-2">Notes</span>
+            <span className="w-[6%] text-center">Active</span>
             <span className="w-[9%] px-3 text-right">Save</span>
           </div>
           {(items ?? []).map((i) => (
             <div key={i.id} className={`row flex w-full items-center py-1.5 ${!i.is_active ? "opacity-50" : ""}`}>
               <form action={updateEquipmentItem.bind(null, i.id)} className="contents">
-                <span className="w-[24%] px-3">
+                <span className="w-[26%] px-3">
                   <input name="name" defaultValue={i.name} className="input w-full py-1.5" />
                 </span>
-                <span className="w-[13%] px-2">
+                <span className="w-[15%] px-2">
                   <input name="category" defaultValue={i.category ?? ""} className="input w-full py-1.5" />
                 </span>
-                <span className="w-[17%] px-2">
+                <span className="w-[20%] px-2">
                   <select name="system_id" defaultValue={i.system_id ?? ""} className="input w-full py-1.5">
                     <option value="">— standalone —</option>
                     {(systems ?? []).map((s) => (
@@ -125,13 +99,10 @@ export default async function EquipmentPage() {
                     ))}
                   </select>
                 </span>
-                <span className="w-[18%] px-2">
+                <span className="w-[24%] px-2">
                   <input name="notes" defaultValue={i.notes ?? ""} className="input w-full py-1.5" />
                 </span>
-                <span className="w-[14%] px-2">
-                  <QrBlock code={i.qr_code} />
-                </span>
-                <span className="w-[5%] text-center">
+                <span className="w-[6%] text-center">
                   <input type="checkbox" name="is_active" defaultChecked={i.is_active} className="size-4 accent-brand-light" />
                 </span>
                 <span className="flex w-[9%] justify-end px-3">
