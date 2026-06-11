@@ -63,22 +63,144 @@ function eventPayload(formData: FormData) {
   };
 }
 
+// Resolve the package price for a date: Custom Date Range > weekday price > default.
+// Snapshot semantics (DJEP parity): applied when the package is selected; later
+// package-setting changes don't reprice saved events.
+async function applyPackageSelection(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+  packageId: string,
+  eventDate: string | null,
+  manualOverride: boolean
+) {
+  const { data: pkg } = await supabase
+    .from("packages")
+    .select("default_price, deposit_value, deposit_pct, weekday_prices")
+    .eq("id", packageId)
+    .single();
+  if (!pkg) return;
+
+  let effective = Number(pkg.default_price);
+  if (eventDate) {
+    const weekday = (pkg.weekday_prices as Record<string, number> | null) ?? {};
+    const [y, m, d] = eventDate.split("-").map(Number);
+    const dow = String(new Date(y, m - 1, d).getDay());
+    if (weekday[dow] !== undefined) effective = Number(weekday[dow]);
+
+    const { data: ranges } = await supabase
+      .from("package_date_prices")
+      .select("price")
+      .eq("package_id", packageId)
+      .lte("start_date", eventDate)
+      .gte("end_date", eventDate)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (ranges && ranges.length) effective = Number(ranges[0].price);
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (!manualOverride) {
+    updates.package_price_override = effective !== Number(pkg.default_price) ? effective : null;
+  }
+  // default the deposit if none set yet
+  const { data: ev } = await supabase
+    .from("events")
+    .select("deposit_value")
+    .eq("id", eventId)
+    .single();
+  if (ev && Number(ev.deposit_value) === 0) {
+    if (pkg.deposit_pct != null && Number(pkg.deposit_pct) > 0) {
+      updates.deposit_value = Math.round(effective * Number(pkg.deposit_pct)) / 100;
+    } else if (Number(pkg.deposit_value) > 0) {
+      updates.deposit_value = Number(pkg.deposit_value);
+    }
+  }
+  if (Object.keys(updates).length) {
+    await supabase.from("events").update(updates).eq("id", eventId);
+  }
+
+  // auto-assign the package's default add-ons (skip ones already on the event)
+  const { data: addonDefaults } = await supabase
+    .from("package_addon_defaults")
+    .select("addon_id, quantity")
+    .eq("package_id", packageId);
+  if (addonDefaults?.length) {
+    const { data: existing } = await supabase
+      .from("event_addons")
+      .select("addon_id")
+      .eq("event_id", eventId);
+    const have = new Set((existing ?? []).map((x) => x.addon_id));
+    const rows = addonDefaults
+      .filter((a) => !have.has(a.addon_id))
+      .map((a) => ({ event_id: eventId, addon_id: a.addon_id, quantity: a.quantity }));
+    if (rows.length) await supabase.from("event_addons").insert(rows);
+  }
+
+  // auto-assign the package's default equipment to the logistics checklist
+  const { data: equipDefaults } = await supabase
+    .from("package_equipment_defaults")
+    .select("item_id, system_id, quantity")
+    .eq("package_id", packageId);
+  if (equipDefaults?.length) {
+    const { data: existing } = await supabase
+      .from("event_equipment")
+      .select("item_id, system_id")
+      .eq("event_id", eventId);
+    const haveItems = new Set((existing ?? []).map((x) => x.item_id).filter(Boolean));
+    const haveSystems = new Set((existing ?? []).map((x) => x.system_id).filter(Boolean));
+    const rows = equipDefaults
+      .filter((e) => (e.item_id ? !haveItems.has(e.item_id) : !haveSystems.has(e.system_id)))
+      .map((e) => ({
+        event_id: eventId,
+        item_id: e.item_id,
+        system_id: e.system_id,
+        quantity: e.quantity,
+      }));
+    if (rows.length) await supabase.from("event_equipment").insert(rows);
+  }
+}
+
 export async function createEvent(formData: FormData) {
   const supabase = await createClient();
+  const payload = eventPayload(formData);
   const { data, error } = await supabase
     .from("events")
-    .insert(eventPayload(formData))
+    .insert(payload)
     .select("id")
     .single();
   if (error) throw new Error(error.message);
+  if (payload.package_id) {
+    await applyPackageSelection(
+      supabase,
+      data.id,
+      payload.package_id,
+      payload.event_date,
+      payload.package_price_override != null
+    );
+  }
   revalidatePath("/events");
   redirect(`/events/${data.id}`);
 }
 
 export async function updateEvent(id: string, formData: FormData) {
   const supabase = await createClient();
-  const { error } = await supabase.from("events").update(eventPayload(formData)).eq("id", id);
+  const { data: before } = await supabase
+    .from("events")
+    .select("package_id")
+    .eq("id", id)
+    .single();
+  const payload = eventPayload(formData);
+  const { error } = await supabase.from("events").update(payload).eq("id", id);
   if (error) throw new Error(error.message);
+  if (payload.package_id && payload.package_id !== before?.package_id) {
+    await applyPackageSelection(
+      supabase,
+      id,
+      payload.package_id,
+      payload.event_date,
+      payload.package_price_override != null
+    );
+  }
   revalidatePath(`/events/${id}`);
   revalidatePath("/events");
   redirect(`/events/${id}`);
@@ -631,13 +753,19 @@ export async function updateEventLinks(eventId: string, formData: FormData) {
 
 export async function updateEventFinancials(eventId: string, formData: FormData) {
   const supabase = await createClient();
+  const { data: before } = await supabase
+    .from("events")
+    .select("package_id, event_date")
+    .eq("id", eventId)
+    .single();
+  const newPackageId = clean(formData.get("package_id"));
+  const overrideSubmitted = clean(formData.get("package_price_override")) != null;
+
   const { error } = await supabase
     .from("events")
     .update({
-      package_id: clean(formData.get("package_id")),
-      package_price_override: clean(formData.get("package_price_override"))
-        ? num(formData.get("package_price_override"))
-        : null,
+      package_id: newPackageId,
+      package_price_override: overrideSubmitted ? num(formData.get("package_price_override")) : null,
       deposit_value: num(formData.get("deposit_value")),
       overtime_fee: num(formData.get("overtime_fee")),
       travel_fee: num(formData.get("travel_fee")),
@@ -646,6 +774,11 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
     })
     .eq("id", eventId);
   if (error) throw new Error(error.message);
+
+  // package newly selected or changed → apply date-aware pricing + package defaults
+  if (newPackageId && newPackageId !== before?.package_id) {
+    await applyPackageSelection(supabase, eventId, newPackageId, before?.event_date ?? null, overrideSubmitted);
+  }
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
 }
