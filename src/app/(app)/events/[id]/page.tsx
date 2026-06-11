@@ -6,14 +6,18 @@ import {
   addPayment,
   addScheduledPayments,
   addEventNote,
-  setEventStatus,
+  addContractNote,
   addEventClient,
   createClientAndAttach,
   removeEventClient,
   setPrimaryEventClient,
   addClientNote,
+  updateBookingInfo,
+  updateBookingDates,
+  addCustomDateField,
 } from "../actions";
 import ClientPicker from "@/components/ClientPicker";
+import BookingInfoEditor from "@/components/BookingInfoEditor";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
 import Tabs from "@/components/Tabs";
@@ -48,6 +52,10 @@ export default async function EventDetailPage({
     { data: staff },
     { data: employees },
     { data: eventClients },
+    { data: inquirySources },
+    { data: dateDefs },
+    { data: customDates },
+    { data: eventLogs },
   ] = await Promise.all([
     supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
     supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
@@ -63,6 +71,10 @@ export default async function EventDetailPage({
       .eq("event_id", id)
       .order("is_primary", { ascending: false })
       .order("created_at"),
+    supabase.from("inquiry_sources").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("custom_date_definitions").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("event_custom_dates").select("*").eq("event_id", id),
+    supabase.from("event_logs").select("*").eq("event_id", id).order("created_at", { ascending: false }).limit(100),
   ]);
 
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
@@ -150,7 +162,10 @@ export default async function EventDetailPage({
                 {notesForClient.map((n) => (
                   <li key={n.id} className="rounded-lg bg-white/[0.05] p-2 text-xs">
                     <span className="text-zinc-300">{n.body}</span>
-                    <span className="ml-2 text-[10px] text-zinc-600">{new Date(n.created_at).toLocaleDateString()}</span>
+                    <div className="mt-0.5 text-[10px] text-zinc-600">
+                      {(n as { author_name?: string | null }).author_name ?? "unknown"} ·{" "}
+                      {new Date(n.created_at).toLocaleString()}
+                    </div>
                   </li>
                 ))}
                 {notesForClient.length === 0 && (
@@ -269,40 +284,129 @@ export default async function EventDetailPage({
   );
 
   /* ---------- TAB: Booking ---------- */
+  const customValueByDef = new Map((customDates ?? []).map((cd) => [cd.definition_id, cd.value]));
+  const contractNotes = (notes ?? []).filter((n) => n.kind === "contract");
+  const internalNotes = (notes ?? []).filter((n) => n.kind !== "contract");
+  const eventNumber = (event as unknown as { event_number?: number }).event_number;
+  const bookedDate = (event as unknown as { booked_date?: string | null }).booked_date;
+
   const bookingTab = (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <div className="card p-5">
-        <h2 className="card-title">Status</h2>
-        <div className="flex flex-wrap gap-1.5">
-          {(statuses ?? []).map((s) => (
-            <form key={s.id} action={setEventStatus.bind(null, id, s.id)}>
-              <button
-                type="submit"
-                className={`status-chip transition-transform hover:scale-105 ${
-                  s.id === event.status_id ? "ring-2 ring-brand-light ring-offset-2 ring-offset-black" : "opacity-80"
-                }`}
-                style={{ backgroundColor: s.color, color: s.text_color }}
-              >
-                {s.name}
-              </button>
-            </form>
-          ))}
+    <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="card-title mb-0">Booking Status</h2>
+            {eventNumber && (
+              <span className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-300">
+                Event ID #{eventNumber}
+              </span>
+            )}
+          </div>
+          <BookingInfoEditor
+            current={{
+              statusId: event.status_id,
+              sourceId: event.inquiry_source_id,
+              sourceName: event.inquiry_source?.name ?? null,
+              salespersonId: event.salesperson_id,
+              salespersonName: event.salesperson
+                ? `${event.salesperson.first_name} ${event.salesperson.last_name}`
+                : null,
+            }}
+            statuses={statuses ?? []}
+            sources={inquirySources ?? []}
+            salespeople={(employees ?? []).map((e) => ({
+              id: e.id,
+              name: `${e.first_name} ${e.last_name}`.trim(),
+            }))}
+            save={updateBookingInfo.bind(null, id)}
+          />
+        </div>
+
+        <div className="card p-5">
+          <h2 className="card-title">Important Dates</h2>
+          <form action={updateBookingDates.bind(null, id)} className="space-y-2.5">
+            {(
+              [
+                ["initial_contact_date", "Initial Contact", event.initial_contact_date],
+                ["contract_sent_date", "Contract Sent", event.contract_sent_date],
+                ["contract_due_date", "Contract Due", event.contract_due_date],
+                ["booked_date", "Date Booked", bookedDate ?? null],
+              ] as const
+            ).map(([name, label, value]) => (
+              <div key={name} className="flex items-center justify-between gap-3">
+                <label className="text-sm text-zinc-500">{label}</label>
+                <input type="date" name={name} defaultValue={value ?? ""} className="input w-44 py-1.5" />
+              </div>
+            ))}
+            {(dateDefs ?? []).map((d) => (
+              <div key={d.id} className="flex items-center justify-between gap-3">
+                <label className="text-sm text-zinc-500">{d.name}</label>
+                <input
+                  type="date"
+                  name={`custom_${d.id}`}
+                  defaultValue={customValueByDef.get(d.id) ?? ""}
+                  className="input w-44 py-1.5"
+                />
+              </div>
+            ))}
+            <button className="btn-primary mt-1 px-5 py-2 text-xs">Save Dates</button>
+          </form>
+          <form action={addCustomDateField.bind(null, id)} className="mt-4 flex gap-2 border-t border-white/[0.06] pt-3">
+            <input name="name" placeholder="New custom date field (global)…" className="input w-full py-1.5 text-xs" />
+            <button className="btn-ghost px-3 py-1 text-xs">Add Field</button>
+          </form>
         </div>
       </div>
-      <div className="card p-5">
-        <h2 className="card-title">Sales Tracking</h2>
-        <dl className="space-y-2 text-sm">
-          <div className="flex justify-between"><dt className="text-zinc-500">Inquiry Source</dt><dd>{event.inquiry_source?.name ?? "—"}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Salesperson</dt><dd>{event.salesperson ? `${event.salesperson.first_name} ${event.salesperson.last_name}` : "—"}</dd></div>
-        </dl>
-        <h2 className="card-title mt-6">Important Dates</h2>
-        <dl className="space-y-2 text-sm">
-          <div className="flex justify-between"><dt className="text-zinc-500">Initial Contact</dt><dd>{dt(event.initial_contact_date)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Contract Sent</dt><dd>{dt(event.contract_sent_date)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Contract Due</dt><dd>{dt(event.contract_due_date)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Contract Signed</dt><dd>{dt(event.contract_signed_date)}</dd></div>
-        </dl>
+
+      <div className="card max-w-3xl p-5">
+        <h2 className="card-title">Contract Notes</h2>
+        <form action={addContractNote.bind(null, id)} className="mb-3 flex gap-2">
+          <input name="body" placeholder="Add a note about the contract…" className="input w-full" />
+          <button className="btn-primary px-5">Add</button>
+        </form>
+        <ul className="space-y-2 text-sm">
+          {contractNotes.map((n) => (
+            <li key={n.id} className="rounded-lg bg-white/[0.05] p-3">
+              <span className="text-zinc-300">{n.body}</span>
+              <div className="mt-1 text-[11px] text-zinc-600">
+                {n.author_name ?? "unknown"} · {new Date(n.created_at).toLocaleString()}
+              </div>
+            </li>
+          ))}
+          {contractNotes.length === 0 && <li className="text-sm text-zinc-600">No contract notes yet.</li>}
+        </ul>
       </div>
+
+      <details className="card overflow-hidden">
+        <summary className="cursor-pointer px-5 py-3.5 text-sm font-bold text-zinc-300 transition-colors hover:bg-white/[0.04] hover:text-white">
+          Event Log
+          <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-zinc-400">
+            {(eventLogs ?? []).length}
+          </span>
+        </summary>
+        <div className="max-h-96 overflow-y-auto border-t border-white/[0.06]">
+          <table className="w-full text-sm">
+            <tbody>
+              {(eventLogs ?? []).map((l) => (
+                <tr key={l.id} className="row">
+                  <td className="px-5 py-2 whitespace-nowrap text-xs text-zinc-600">
+                    {new Date(l.created_at).toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-xs font-semibold text-brand-lighter">{l.actor}</td>
+                  <td className="px-3 py-2 text-zinc-300">{l.action}</td>
+                </tr>
+              ))}
+              {(eventLogs ?? []).length === 0 && (
+                <tr>
+                  <td className="px-5 py-6 text-center text-sm text-zinc-600">
+                    No changes logged yet — the log starts recording once migration 00005 is applied.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </div>
   );
 
@@ -389,13 +493,15 @@ export default async function EventDetailPage({
         <p className="mb-3 rounded-lg bg-amber-400/10 p-3 text-sm text-amber-100">{event.internal_notes}</p>
       )}
       <ul className="space-y-2 text-sm">
-        {(notes ?? []).map((n: { id: string; body: string; created_at: string }) => (
+        {internalNotes.map((n: { id: string; body: string; created_at: string; author_name?: string | null }) => (
           <li key={n.id} className="rounded-lg bg-white/[0.05] p-3">
             <span className="text-zinc-300">{n.body}</span>
-            <span className="ml-2 text-xs text-zinc-600">{new Date(n.created_at).toLocaleString()}</span>
+            <div className="mt-1 text-[11px] text-zinc-600">
+              {n.author_name ?? "unknown"} · {new Date(n.created_at).toLocaleString()}
+            </div>
           </li>
         ))}
-        {(notes ?? []).length === 0 && !event.internal_notes && (
+        {internalNotes.length === 0 && !event.internal_notes && (
           <li className="text-zinc-500">No notes yet.</li>
         )}
       </ul>
@@ -409,6 +515,7 @@ export default async function EventDetailPage({
         <div>
           <h1 className="page-title">{event.name || "(unnamed event)"}</h1>
           <p className="mt-1 text-sm text-zinc-500">
+            {eventNumber ? `#${eventNumber} · ` : ""}
             {event.event_date ?? "no date"} · {event.event_type?.name ?? "—"} ·{" "}
             {event.client ? `${event.client.first_name} ${event.client.last_name}` : "no client"} ·{" "}
             {event.venue?.name ?? "no venue"}
@@ -447,7 +554,7 @@ export default async function EventDetailPage({
           { id: "booking", label: "Booking", content: bookingTab },
           { id: "financials", label: "Financials", badge: balance > 0 ? money(balance) : undefined, content: financialsTab },
           { id: "staff", label: "Staff", badge: (staff ?? []).length, content: staffTab },
-          { id: "notes", label: "Notes", badge: (notes ?? []).length, content: notesTab },
+          { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />
     </div>

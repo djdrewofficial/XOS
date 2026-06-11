@@ -13,6 +13,20 @@ function num(v: FormDataEntryValue | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function actorName(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return "system";
+  const { data: emp } = await supabase
+    .from("employees")
+    .select("first_name, last_name")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+  if (emp) return `${emp.first_name} ${emp.last_name}`.trim();
+  return user.email ?? "user";
+}
+
 function eventPayload(formData: FormData) {
   return {
     name: clean(formData.get("name")) ?? "",
@@ -292,7 +306,11 @@ export async function addClientNote(eventId: string, clientId: string, formData:
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
-  const { error } = await supabase.from("client_notes").insert({ client_id: clientId, body });
+  const { error } = await supabase.from("client_notes").insert({
+    client_id: clientId,
+    body,
+    author_name: await actorName(supabase),
+  });
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
   revalidatePath(`/clients/${clientId}`);
@@ -302,7 +320,86 @@ export async function addEventNote(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
-  const { error } = await supabase.from("event_notes").insert({ event_id: eventId, body });
+  const { error } = await supabase.from("event_notes").insert({
+    event_id: eventId,
+    body,
+    kind: "internal",
+    author_name: await actorName(supabase),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function addContractNote(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const body = clean(formData.get("body"));
+  if (!body) return;
+  const { error } = await supabase.from("event_notes").insert({
+    event_id: eventId,
+    body,
+    kind: "contract",
+    author_name: await actorName(supabase),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function updateBookingInfo(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("events")
+    .update({
+      status_id: clean(formData.get("status_id")),
+      inquiry_source_id: clean(formData.get("inquiry_source_id")),
+      salesperson_id: clean(formData.get("salesperson_id")),
+    })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+}
+
+export async function updateBookingDates(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("events")
+    .update({
+      initial_contact_date: clean(formData.get("initial_contact_date")),
+      contract_sent_date: clean(formData.get("contract_sent_date")),
+      contract_due_date: clean(formData.get("contract_due_date")),
+      booked_date: clean(formData.get("booked_date")),
+    })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+
+  // custom date fields arrive as custom_<definitionId>
+  for (const [key, raw] of formData.entries()) {
+    if (!key.startsWith("custom_")) continue;
+    const definitionId = key.slice(7);
+    const value = (raw ?? "").toString().trim();
+    if (value === "") {
+      await supabase
+        .from("event_custom_dates")
+        .delete()
+        .eq("event_id", eventId)
+        .eq("definition_id", definitionId);
+    } else {
+      await supabase
+        .from("event_custom_dates")
+        .upsert(
+          { event_id: eventId, definition_id: definitionId, value },
+          { onConflict: "event_id,definition_id" }
+        );
+    }
+  }
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function addCustomDateField(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const name = clean(formData.get("name"));
+  if (!name) return;
+  const { error } = await supabase.from("custom_date_definitions").insert({ name });
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
 }
