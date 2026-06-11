@@ -1,17 +1,36 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { createEquipmentItem, createEquipmentSystem } from "./actions";
+import {
+  createEquipmentItem,
+  createEquipmentSystem,
+  createStorageLocation,
+  toggleStorageLocation,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function EquipmentPage() {
   const supabase = await createClient();
-  const [{ data: systems }, { data: items }, { data: photos }, { data: usage }] = await Promise.all([
-    supabase.from("equipment_systems").select("*").order("name"),
-    supabase.from("equipment_items").select("*").order("name"),
-    supabase.from("equipment_photos").select("*").order("created_at"),
-    supabase.from("event_equipment").select("item_id, system_id"),
-  ]);
+  const [{ data: systems }, { data: items }, { data: photos }, { data: usage }, { data: locations }, { data: openDamage }] =
+    await Promise.all([
+      supabase.from("equipment_systems").select("*").order("name"),
+      supabase.from("equipment_items").select("*").order("name"),
+      supabase.from("equipment_photos").select("*").order("created_at"),
+      supabase.from("event_equipment").select("item_id, system_id"),
+      supabase.from("equipment_storage_locations").select("*").order("name"),
+      supabase.from("equipment_damage_reports").select("item_id").eq("status", "open"),
+    ]);
+
+  const locationName = new Map((locations ?? []).map((l) => [l.id as string, l.name as string]));
+  const damageCount = new Map<string, number>();
+  (openDamage ?? []).forEach((d) => damageCount.set(d.item_id, (damageCount.get(d.item_id) ?? 0) + 1));
+  const locationUsage = new Map<string, number>();
+  (items ?? []).forEach((i) => {
+    if (i.storage_location_id) locationUsage.set(i.storage_location_id, (locationUsage.get(i.storage_location_id) ?? 0) + 1);
+  });
+  (systems ?? []).forEach((s) => {
+    if (s.storage_location_id) locationUsage.set(s.storage_location_id, (locationUsage.get(s.storage_location_id) ?? 0) + 1);
+  });
 
   const itemsBySystem = new Map<string, typeof items>();
   const standalone: NonNullable<typeof items> = [];
@@ -72,9 +91,12 @@ export default async function EquipmentPage() {
               <div className="p-4">
                 <div className="font-bold text-zinc-900 dark:text-white">{s.name}</div>
                 {s.description && <div className="mt-0.5 line-clamp-1 text-xs text-zinc-500">{s.description}</div>}
-                <div className="mt-2 flex gap-3 text-[11px] font-semibold text-zinc-500">
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] font-semibold text-zinc-500">
                   <span>{inside.length} item{inside.length === 1 ? "" : "s"} inside</span>
                   <span>{eventCount.get(s.id) ?? 0} events</span>
+                  {s.storage_location_id && locationName.get(s.storage_location_id) && (
+                    <span className="text-brand dark:text-brand-lighter">📍 {locationName.get(s.storage_location_id)}</span>
+                  )}
                 </div>
               </div>
             </Link>
@@ -113,6 +135,14 @@ export default async function EquipmentPage() {
                       </span>
                       <span className="flex-1">
                         <span className="font-semibold">{i.name}</span>
+                        {(damageCount.get(i.id) ?? 0) > 0 && (
+                          <span className="ml-2 rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">
+                            ⚠ DAMAGED
+                          </span>
+                        )}
+                        {i.storage_location_id && locationName.get(i.storage_location_id) && (
+                          <span className="ml-2 text-[11px] text-brand dark:text-brand-lighter">📍 {locationName.get(i.storage_location_id)}</span>
+                        )}
                         {i.notes && <span className="ml-2 text-xs text-zinc-500">{i.notes}</span>}
                       </span>
                       <span className="text-[11px] font-semibold text-zinc-500">
@@ -155,6 +185,43 @@ export default async function EquipmentPage() {
           </select>
         </div>
         <button className="btn-primary">Add Item</button>
+      </form>
+
+      {/* ---------- STORAGE LOCATIONS ---------- */}
+      <h2 className="card-title mt-8">Storage Locations</h2>
+      <div className="card mb-3 overflow-hidden">
+        <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
+          {(locations ?? []).map((l) => (
+            <li key={l.id} className={`flex items-center justify-between px-4 py-2.5 text-sm ${!l.is_active ? "opacity-50" : ""}`}>
+              <span>
+                <span className="font-semibold">📍 {l.name}</span>
+                {l.notes && <span className="ml-2 text-xs text-zinc-500">{l.notes}</span>}
+                <span className="ml-2 text-xs text-zinc-500">
+                  {locationUsage.get(l.id) ?? 0} thing{(locationUsage.get(l.id) ?? 0) === 1 ? "" : "s"} stored here
+                </span>
+              </span>
+              <form action={toggleStorageLocation.bind(null, l.id, !l.is_active)}>
+                <button className="text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">
+                  {l.is_active ? "Deactivate" : "Reactivate"}
+                </button>
+              </form>
+            </li>
+          ))}
+          {(locations ?? []).length === 0 && (
+            <li className="px-4 py-4 text-sm text-zinc-500">No storage locations yet.</li>
+          )}
+        </ul>
+      </div>
+      <form action={createStorageLocation} className="card flex flex-wrap items-end gap-3 p-4">
+        <div className="min-w-44 flex-1">
+          <label className="label-xs">New Location</label>
+          <input name="name" required className="input w-full" placeholder="Warehouse Shelf B" />
+        </div>
+        <div className="min-w-52 flex-1">
+          <label className="label-xs">Notes</label>
+          <input name="notes" className="input w-full" placeholder="e.g. back room, behind the trailer" />
+        </div>
+        <button className="btn-primary">Add Location</button>
       </form>
     </div>
   );

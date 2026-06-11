@@ -43,12 +43,110 @@ export async function updateEquipmentItem(id: string, formData: FormData) {
       category: clean(formData.get("category")),
       system_id: clean(formData.get("system_id")),
       notes: clean(formData.get("notes")),
+      date_purchased: clean(formData.get("date_purchased")),
+      retailer: clean(formData.get("retailer")),
+      serial_number: clean(formData.get("serial_number")),
+      storage_location_id: clean(formData.get("storage_location_id")),
       is_active: formData.get("is_active") === "on",
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/equipment");
   revalidatePath(`/equipment/item/${id}`);
+}
+
+async function actorName(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return "system";
+  const { data: emp } = await supabase
+    .from("employees")
+    .select("first_name, last_name")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+  if (emp) return `${emp.first_name} ${emp.last_name}`.trim();
+  return user.email ?? "user";
+}
+
+export async function reportDamage(itemId: string, formData: FormData) {
+  const supabase = await createClient();
+  const description = clean(formData.get("description"));
+  if (!description) return;
+  const { data: report, error } = await supabase
+    .from("equipment_damage_reports")
+    .insert({
+      item_id: itemId,
+      description,
+      reported_by: await actorName(supabase),
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  const file = formData.get("photo") as File | null;
+  if (file && file.size > 0) {
+    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+    const path = `damage/${report.id}/${crypto.randomUUID()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage
+      .from("equipment")
+      .upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type });
+    if (!uploadError) {
+      await supabase.from("equipment_photos").insert({
+        damage_report_id: report.id,
+        storage_path: path,
+      });
+    }
+  }
+  revalidatePath(`/equipment/item/${itemId}`);
+  revalidatePath("/equipment");
+}
+
+export async function addDamagePhoto(itemId: string, reportId: string, formData: FormData) {
+  const supabase = await createClient();
+  const file = formData.get("photo") as File | null;
+  if (!file || file.size === 0) return;
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const path = `damage/${reportId}/${crypto.randomUUID()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage
+    .from("equipment")
+    .upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type });
+  if (uploadError) throw new Error(uploadError.message);
+  await supabase.from("equipment_photos").insert({ damage_report_id: reportId, storage_path: path });
+  revalidatePath(`/equipment/item/${itemId}`);
+}
+
+export async function resolveDamage(itemId: string, reportId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("equipment_damage_reports")
+    .update({ status: "resolved", resolved_at: new Date().toISOString() })
+    .eq("id", reportId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/equipment/item/${itemId}`);
+  revalidatePath("/equipment");
+}
+
+export async function createStorageLocation(formData: FormData) {
+  const supabase = await createClient();
+  const name = clean(formData.get("name"));
+  if (!name) return;
+  const { error } = await supabase.from("equipment_storage_locations").insert({
+    name,
+    notes: clean(formData.get("notes")),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/equipment");
+}
+
+export async function toggleStorageLocation(id: string, isActive: boolean) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("equipment_storage_locations")
+    .update({ is_active: isActive })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/equipment");
 }
 
 export async function uploadEquipmentPhoto(
@@ -113,6 +211,7 @@ export async function updateEquipmentSystem(id: string, formData: FormData) {
     .update({
       name: clean(formData.get("name")) ?? "Unnamed",
       description: clean(formData.get("description")),
+      storage_location_id: clean(formData.get("storage_location_id")),
       is_active: formData.get("is_active") === "on",
     })
     .eq("id", id);

@@ -22,7 +22,7 @@ export default async function SystemDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: system }, { data: items }, { data: standalone }, { data: photos }, { data: assignments }] =
+  const [{ data: system }, { data: items }, { data: standalone }, { data: photos }, { data: assignments }, { data: locations }] =
     await Promise.all([
       supabase.from("equipment_systems").select("*").eq("id", id).single(),
       supabase.from("equipment_items").select("*").eq("system_id", id).order("name"),
@@ -32,6 +32,7 @@ export default async function SystemDetailPage({
         .from("event_equipment")
         .select("*, event:events(id, name, event_date, venue:venues(name), status:event_statuses(name, color, text_color))")
         .eq("system_id", id),
+      supabase.from("equipment_storage_locations").select("id, name").eq("is_active", true).order("name"),
     ]);
 
   if (!system) notFound();
@@ -62,6 +63,15 @@ export default async function SystemDetailPage({
               <div>
                 <label className="label-xs">Description</label>
                 <textarea name="description" rows={2} defaultValue={system.description ?? ""} className="input w-full" />
+              </div>
+              <div>
+                <label className="label-xs">Stored At</label>
+                <select name="storage_location_id" defaultValue={system.storage_location_id ?? ""} className="input w-full">
+                  <option value="">—</option>
+                  {(locations ?? []).map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
               </div>
               <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
                 <input type="checkbox" name="is_active" defaultChecked={system.is_active} className="size-4 accent-brand-light" />
