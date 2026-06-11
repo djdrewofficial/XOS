@@ -1,15 +1,9 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { createTemplate, deleteTemplate, sendQueuedEmails, saveCompanySettings, sendTest } from "./actions";
+import { sendQueuedEmails, saveCompanySettings, sendTest, runScheduledNow } from "./actions";
+import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
 
 export const dynamic = "force-dynamic";
-
-const MERGE_TAGS = [
-  "<first_name>", "<last_name>", "<client_name>", "<client_email>", "<client_cell>",
-  "<event_name>", "<event_type>", "<event_date_long>", "<event_date_short>",
-  "<event_date_countdown>", "<venue_name>", "<package_name>", "<total_fee>",
-  "<balance_due>", "<payments_received>", "<deposit_value>", "<start_time>",
-  "<end_time>", "<company_name>", "<current_date>",
-];
 
 export default async function EmailPage() {
   const supabase = await createClient();
@@ -96,65 +90,52 @@ export default async function EmailPage() {
         </div>
       </div>
 
-      <h2 className="card-title">Templates</h2>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="card-title mb-0">Templates</h2>
+        <div className="flex gap-2">
+          <form action={runScheduledNow}>
+            <button className="btn-ghost text-xs" title="Check scheduled templates and queue any that are due right now">
+              Run Scheduled Now
+            </button>
+          </form>
+          <form action={createBlankTemplate}>
+            <button className="btn-primary text-sm">+ Add Template</button>
+          </form>
+        </div>
+      </div>
       {groups.map((g) => (
         <div key={g} className="mb-4">
           <h3 className="mb-1 rounded-t-xl bg-black/[0.07] dark:bg-white/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-zinc-900 dark:text-white">{g}</h3>
           <div className="card overflow-hidden rounded-t-none">
             <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
               {(templates ?? []).filter((t) => t.group_name === g).map((t) => (
-                <li key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                  <div>
-                    <span className="font-medium">{t.name}</span>
-                    <span className="ml-3 italic text-zinc-600 dark:text-zinc-400">Subject: {t.subject}</span>
+                <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                  <Link href={`/settings/email/templates/${t.id}`} className="min-w-0 flex-1">
+                    <span className="font-medium text-zinc-800 hover:text-brand hover:underline dark:text-zinc-200 dark:hover:text-brand-lighter">
+                      {t.display_name ?? t.name}
+                    </span>
+                    {t.schedule_enabled && (
+                      <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400">
+                        Scheduled {t.schedule_days}d {t.schedule_direction}
+                      </span>
+                    )}
+                    <span className="ml-3 truncate italic text-zinc-500">{t.subject}</span>
+                  </Link>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <Link href={`/settings/email/templates/${t.id}`} className="text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">Edit</Link>
+                    <form action={duplicateTemplate.bind(null, t.id)}>
+                      <button className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:underline">Duplicate</button>
+                    </form>
+                    <form action={deleteTemplate.bind(null, t.id)}>
+                      <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Delete</button>
+                    </form>
                   </div>
-                  <form action={deleteTemplate.bind(null, t.id)}>
-                    <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Delete</button>
-                  </form>
                 </li>
               ))}
             </ul>
           </div>
         </div>
       ))}
-
-      <h2 className="card-title mt-6">Add Template</h2>
-      <form action={createTemplate} className="space-y-4 card p-5">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div>
-            <label className={label}>Group</label>
-            <input name="group_name" defaultValue="GENERAL" className={input} list="groups" />
-            <datalist id="groups">
-              {["BOOKED", "BOOKING AGREEMENT", "LEADS", "EMPLOYEES", "GENERAL"].map((g) => (
-                <option key={g} value={g} />
-              ))}
-            </datalist>
-          </div>
-          <div className="md:col-span-2">
-            <label className={label}>Template Name</label>
-            <input name="name" required className={input} />
-          </div>
-        </div>
-        <div>
-          <label className={label}>Subject</label>
-          <input name="subject" className={input} placeholder="Your <event_type> on <event_date_long>" />
-        </div>
-        <div>
-          <label className={label}>Body (HTML, merge tags supported)</label>
-          <textarea name="body_html" rows={8} className={`${input} font-mono text-xs`} placeholder="<p>Hi <first_name>,</p>" />
-        </div>
-        <details className="text-xs text-zinc-500">
-          <summary className="cursor-pointer font-semibold">Available merge tags</summary>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {MERGE_TAGS.map((t) => (
-              <code key={t} className="rounded bg-black/[0.07] dark:bg-white/10 px-1.5 py-0.5">{t}</code>
-            ))}
-          </div>
-        </details>
-        <button className="btn-primary">
-          Save Template
-        </button>
-      </form>
 
       <h2 className="card-title mt-8">Send Log</h2>
       <div className="card overflow-hidden">

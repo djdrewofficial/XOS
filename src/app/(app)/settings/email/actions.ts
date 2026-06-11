@@ -48,6 +48,13 @@ export async function sendQueuedEmails() {
   revalidatePath("/settings/email");
 }
 
+export async function runScheduledNow() {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("run_scheduled_emails");
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+}
+
 export async function saveCompanySettings(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase
