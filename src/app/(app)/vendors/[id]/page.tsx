@@ -13,9 +13,10 @@ export default async function VendorDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: vendor }, { data: contacts }, { data: links }] = await Promise.all([
+  const [{ data: vendor }, { data: contacts }, { data: categories }, { data: links }] = await Promise.all([
     supabase.from("vendors").select("*").eq("id", id).single(),
     supabase.from("vendor_contacts").select("*").eq("vendor_id", id).order("name"),
+    supabase.from("vendor_categories").select("id, name").eq("is_active", true).order("name"),
     supabase
       .from("event_vendors")
       .select("*, event:events(id, name, event_date, status:event_statuses(name, color, text_color), venue:venues(name))")
@@ -47,8 +48,34 @@ export default async function VendorDetailPage({
     <div className="max-w-5xl">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="page-title">{vendor.company_name}</h1>
-          <p className="mt-1 text-sm text-zinc-500">{vendor.category ?? "Vendor"}</p>
+          <h1 className="page-title">
+            {vendor.is_preferred && <span className="mr-2 text-amber-500" title="Preferred Vendor">★</span>}
+            {vendor.company_name}
+          </h1>
+          <p className="mt-1 flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+            {(categories ?? []).find((c) => c.id === vendor.category_id)?.name ?? "Vendor"}
+            {vendor.website && <a href={vendor.website} target="_blank" className="text-brand dark:text-brand-lighter hover:underline">Website ↗</a>}
+            {vendor.instagram && (
+              <a href={`https://instagram.com/${vendor.instagram.replace(/^@/, "")}`} target="_blank" className="text-brand dark:text-brand-lighter hover:underline">
+                IG {vendor.instagram}
+              </a>
+            )}
+            {vendor.tiktok && (
+              <a href={`https://tiktok.com/@${vendor.tiktok.replace(/^@/, "")}`} target="_blank" className="text-brand dark:text-brand-lighter hover:underline">
+                TikTok {vendor.tiktok}
+              </a>
+            )}
+            {vendor.youtube && (
+              <a href={vendor.youtube.startsWith("http") ? vendor.youtube : `https://youtube.com/${vendor.youtube}`} target="_blank" className="text-brand dark:text-brand-lighter hover:underline">
+                YouTube ↗
+              </a>
+            )}
+            {vendor.social_collab && (
+              <span className="rounded bg-black/[0.06] px-2 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-white/[0.08] dark:text-zinc-300">
+                {vendor.social_collab === "collab" ? "Invite to Collab" : vendor.social_collab === "tag" ? "Just Tag" : "Collab or Tag"}
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex gap-2 text-sm">
           <span className="card px-3 py-1.5">
@@ -70,9 +97,47 @@ export default async function VendorDetailPage({
               <label className="label-xs">Company / Vendor Name</label>
               <input name="company_name" defaultValue={vendor.company_name} required className="input w-full" />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label-xs">Category</label>
+                <select name="category_id" defaultValue={vendor.category_id ?? ""} className="input w-full">
+                  <option value="">—</option>
+                  {(categories ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-end gap-2 pb-2 text-sm text-zinc-600 dark:text-zinc-400">
+                <input type="checkbox" name="is_preferred" defaultChecked={vendor.is_preferred} className="size-4 accent-brand-light" />
+                ★ Preferred Vendor
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label-xs">Website</label>
+                <input name="website" defaultValue={vendor.website ?? ""} className="input w-full" placeholder="https://…" />
+              </div>
+              <div>
+                <label className="label-xs">Instagram</label>
+                <input name="instagram" defaultValue={vendor.instagram ?? ""} className="input w-full" placeholder="@handle" />
+              </div>
+              <div>
+                <label className="label-xs">TikTok</label>
+                <input name="tiktok" defaultValue={vendor.tiktok ?? ""} className="input w-full" placeholder="@handle" />
+              </div>
+              <div>
+                <label className="label-xs">YouTube</label>
+                <input name="youtube" defaultValue={vendor.youtube ?? ""} className="input w-full" placeholder="@channel or URL" />
+              </div>
+            </div>
             <div>
-              <label className="label-xs">Category</label>
-              <input name="category" defaultValue={vendor.category ?? ""} className="input w-full" />
+              <label className="label-xs">When We Post About Shared Events</label>
+              <select name="social_collab" defaultValue={vendor.social_collab ?? ""} className="input w-full">
+                <option value="">—</option>
+                <option value="collab">Invite to Collab</option>
+                <option value="tag">Just Tag</option>
+                <option value="either">Either</option>
+              </select>
             </div>
             <div>
               <label className="label-xs">Notes</label>
