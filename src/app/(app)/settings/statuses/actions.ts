@@ -19,6 +19,9 @@ function statusPayload(formData: FormData) {
     is_pending_group: formData.get("is_pending_group") === "on",
     is_lost_sale_group: formData.get("is_lost_sale_group") === "on",
     is_leads_group: formData.get("is_leads_group") === "on",
+    counts_financial: formData.get("counts_financial") === "on",
+    counts_availability: formData.get("counts_availability") === "on",
+    counts_payroll: formData.get("counts_payroll") === "on",
   };
 }
 

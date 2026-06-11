@@ -10,7 +10,14 @@ const GROUPS = [
   ["is_leads_group", "Leads"],
 ] as const;
 
+const COUNTS = [
+  ["counts_financial", "Financials", "Counts toward financial calculations"],
+  ["counts_availability", "Availability", "Blocks employees on the availability check"],
+  ["counts_payroll", "Payroll", "Generates employee payroll for the event"],
+] as const;
+
 type GroupKey = (typeof GROUPS)[number][0];
+type CountKey = (typeof COUNTS)[number][0];
 
 export type Status = {
   id: string;
@@ -19,7 +26,8 @@ export type Status = {
   text_color: string;
   sort_order: number;
   is_active: boolean;
-} & Record<GroupKey, boolean>;
+} & Record<GroupKey, boolean> &
+  Record<CountKey, boolean>;
 
 const SWATCH =
   "h-9 w-12 shrink-0 cursor-pointer rounded border border-zinc-300 bg-transparent dark:border-white/10";
@@ -96,11 +104,27 @@ export default function StatusRow({ status, inUse }: { status: Status; inUse: nu
             />
           </div>
           <div>
-            <label className="label-xs">Groups</label>
+            <label className="label-xs">Semantic Group</label>
             <div className="flex flex-wrap gap-2">
               {GROUPS.map(([k, l]) => (
                 <label
                   key={k}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-md border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300"
+                >
+                  <input type="checkbox" name={k} defaultChecked={status[k]} className="size-4 accent-brand-light" />
+                  {l}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="label-xs">Counts Toward</label>
+            <div className="flex flex-wrap gap-2">
+              {COUNTS.map(([k, l, hint]) => (
+                <label
+                  key={k}
+                  title={hint}
                   className="flex cursor-pointer items-center gap-1.5 rounded-md border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300"
                 >
                   <input type="checkbox" name={k} defaultChecked={status[k]} className="size-4 accent-brand-light" />

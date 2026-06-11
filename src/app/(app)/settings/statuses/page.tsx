@@ -80,6 +80,15 @@ export default async function StatusesPage() {
             <input type="checkbox" name={key} className="size-4 accent-brand-light" /> {label}
           </label>
         ))}
+        {([
+          ["counts_financial", "Financials"],
+          ["counts_availability", "Availability"],
+          ["counts_payroll", "Payroll"],
+        ] as const).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-1.5 pb-2 text-xs text-zinc-600 dark:text-zinc-400">
+            <input type="checkbox" name={key} className="size-4 accent-brand-light" /> {label}
+          </label>
+        ))}
         <label className="flex items-center gap-1.5 pb-2 text-xs text-zinc-600 dark:text-zinc-400">
           <input type="checkbox" name="is_active" defaultChecked className="size-4 accent-brand-light" /> Active
         </label>
