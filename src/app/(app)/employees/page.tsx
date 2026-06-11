@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
 import { createEmployee, toggleEmployee } from "./actions";
@@ -36,7 +37,11 @@ export default async function EmployeesPage() {
           <tbody>
             {(employees ?? []).map((e) => (
               <tr key={e.id} className={`row ${!e.is_active ? "opacity-40" : ""}`}>
-                <td className="px-4 py-2 font-medium">{e.first_name} {e.last_name}</td>
+                <td className="px-4 py-2 font-medium">
+                  <Link href={`/employees/${e.id}`} className="text-brand dark:text-brand-lighter hover:underline">
+                    {e.first_name} {e.last_name}
+                  </Link>
+                </td>
                 <td className="px-4 py-2">{e.email ?? "—"}</td>
                 <td className="px-4 py-2">{e.permission_tier.replace("_", " ")}</td>
                 <td className="px-4 py-2 text-right">{e.hourly_rate ? money(e.hourly_rate) : "—"}</td>
