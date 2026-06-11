@@ -316,6 +316,90 @@ export async function addClientNote(eventId: string, clientId: string, formData:
   revalidatePath(`/clients/${clientId}`);
 }
 
+export async function addEventAddon(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const addonId = clean(formData.get("addon_id"));
+  if (!addonId) return;
+  const { error } = await supabase.from("event_addons").insert({
+    event_id: eventId,
+    addon_id: addonId,
+    quantity: Math.max(1, Math.round(num(formData.get("quantity")) || 1)),
+    price_override: clean(formData.get("price_override")) ? num(formData.get("price_override")) : null,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function removeEventAddon(eventId: string, eventAddonId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("event_addons").delete().eq("id", eventAddonId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function addExpense(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  let categoryId = clean(formData.get("category_id"));
+  const newCategory = clean(formData.get("new_category"));
+  if (newCategory) {
+    const { data: cat, error: catError } = await supabase
+      .from("expense_categories")
+      .upsert({ name: newCategory }, { onConflict: "name" })
+      .select("id")
+      .single();
+    if (catError) throw new Error(catError.message);
+    categoryId = cat.id;
+  }
+  const { error } = await supabase.from("expenses").insert({
+    event_id: eventId,
+    category_id: categoryId,
+    payee: clean(formData.get("payee")),
+    description: clean(formData.get("description")),
+    amount: num(formData.get("amount")),
+    expense_date: clean(formData.get("expense_date")) ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function deleteExpense(eventId: string, expenseId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("expenses").delete().eq("id", expenseId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function addTrip(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  let vehicleId: string | null = null;
+  const vehicleName = clean(formData.get("vehicle"));
+  if (vehicleName) {
+    const { data: v, error: vError } = await supabase
+      .from("vehicles")
+      .upsert({ name: vehicleName }, { onConflict: "name" })
+      .select("id")
+      .single();
+    if (vError) throw new Error(vError.message);
+    vehicleId = v.id;
+  }
+  const { error } = await supabase.from("event_trips").insert({
+    event_id: eventId,
+    vehicle_id: vehicleId,
+    trip_date: clean(formData.get("trip_date")) ?? undefined,
+    miles: num(formData.get("miles")),
+    notes: clean(formData.get("notes")),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function deleteTrip(eventId: string, tripId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("event_trips").delete().eq("id", tripId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
 export async function addEventNote(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const body = clean(formData.get("body"));

@@ -88,7 +88,9 @@ export type XEvent = {
   package_price_override: number | null;
   overtime_fee: number;
   travel_fee: number;
+  discount1_label: string | null;
   discount1_amount: number;
+  discount2_label: string | null;
   discount2_amount: number;
   deposit_value: number;
   initial_contact_date: string | null;

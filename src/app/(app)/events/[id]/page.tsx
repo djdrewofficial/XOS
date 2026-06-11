@@ -15,6 +15,12 @@ import {
   updateBookingInfo,
   updateBookingDates,
   addCustomDateField,
+  addEventAddon,
+  removeEventAddon,
+  addExpense,
+  deleteExpense,
+  addTrip,
+  deleteTrip,
 } from "../actions";
 import ClientPicker from "@/components/ClientPicker";
 import BookingInfoEditor from "@/components/BookingInfoEditor";
@@ -77,6 +83,30 @@ export default async function EventDetailPage({
     supabase.from("event_logs").select("*").eq("event_id", id).order("created_at", { ascending: false }).limit(100),
   ]);
 
+  const [
+    { data: eventAddons },
+    { data: addonCatalog },
+    { data: expenses },
+    { data: expenseCategories },
+    { data: trips },
+    { data: vehicles },
+  ] = await Promise.all([
+    supabase.from("event_addons").select("*, addon:addons(*)").eq("event_id", id),
+    supabase.from("addons").select("*").eq("is_active", true).order("display_order"),
+    supabase
+      .from("expenses")
+      .select("*, category:expense_categories(name)")
+      .eq("event_id", id)
+      .order("expense_date", { ascending: false }),
+    supabase.from("expense_categories").select("*").eq("is_active", true).order("name"),
+    supabase
+      .from("event_trips")
+      .select("*, vehicle:vehicles(name)")
+      .eq("event_id", id)
+      .order("trip_date", { ascending: false }),
+    supabase.from("vehicles").select("*").eq("is_active", true).order("name"),
+  ]);
+
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
   const { data: clientNotes } = linkedClientIds.length
     ? await supabase
@@ -86,7 +116,21 @@ export default async function EventDetailPage({
         .order("created_at", { ascending: false })
     : { data: [] as { id: string; client_id: string; body: string; created_at: string }[] };
 
-  const total = eventTotal(event);
+  type EventAddonRow = {
+    id: string;
+    quantity: number;
+    price_override: number | null;
+    addon: { id: string; name: string; default_price: number; description: string | null } | null;
+  };
+  const addonRows = (eventAddons ?? []) as unknown as EventAddonRow[];
+  const addonLine = (ea: EventAddonRow) =>
+    ea.quantity * Number(ea.price_override ?? ea.addon?.default_price ?? 0);
+  const addonsTotal = addonRows.reduce((s, ea) => s + addonLine(ea), 0);
+  const venueSetupFee = Number(
+    (event.venue as unknown as { setup_fee?: number } | null)?.setup_fee ?? 0
+  );
+
+  const total = eventTotal(event) + addonsTotal + venueSetupFee;
   const paid = (payments ?? []).reduce((s: number, p: Payment) => s + Number(p.amount), 0);
   const balance = total - paid;
   const cf = (event.custom_fields ?? {}) as Record<string, string>;
@@ -411,69 +455,320 @@ export default async function EventDetailPage({
   );
 
   /* ---------- TAB: Financials ---------- */
+  const wages = (staff ?? []).reduce((s: number, st: { flat_wage: number }) => s + Number(st.flat_wage), 0);
+  const expensesTotal = (expenses ?? []).reduce((s, x) => s + Number(x.amount), 0);
+  const netProfit = total - wages - expensesTotal;
+  const totalMiles = (trips ?? []).reduce((s, t) => s + Number(t.miles), 0);
+  const pkgPrice = event.package_price_override ?? event.package?.default_price ?? 0;
+  const pkgDescription = (event.package as unknown as { description?: string | null } | null)?.description;
+
+  const feeRow = "flex justify-between py-1.5 text-sm";
+
   const financialsTab = (
-    <div className="grid gap-5 lg:grid-cols-3">
-      <div className="card p-5">
-        <h2 className="card-title">Overview</h2>
-        <dl className="space-y-2 text-sm">
-          <div className="flex justify-between"><dt className="text-zinc-500">Package</dt><dd>{event.package?.name ?? "—"}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Total Fee</dt><dd className="font-semibold">{money(total)}</dd></div>
-          <div className="flex justify-between"><dt className="text-zinc-500">Payments Received</dt><dd className="text-emerald-400">{money(paid)}</dd></div>
-          <div className="row flex justify-between pt-2"><dt className="font-semibold">Outstanding Balance</dt><dd className="text-lg font-black text-white">{money(balance)}</dd></div>
-        </dl>
-        <h3 className="label-xs mt-6">Add Payment</h3>
-        <form action={addPaymentBound} className="space-y-2">
-          <input type="number" step="0.01" name="amount" placeholder="Amount" required className="input w-full" />
-          <div className="flex gap-2">
-            <select name="method" className="input w-full">
+    <div className="space-y-5">
+      {/* row 1: package & add-ons | fee summary */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="card p-5">
+          <h2 className="card-title">Package &amp; Add-Ons</h2>
+
+          {event.package ? (
+            <details className="mb-3 rounded-lg bg-white/[0.04]">
+              <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-sm">
+                <span className="font-semibold text-white">{event.package.name}</span>
+                <span className="font-semibold">{money(pkgPrice)}</span>
+              </summary>
+              <div className="border-t border-white/[0.06] px-3 py-2.5 text-xs whitespace-pre-line text-zinc-400">
+                {pkgDescription || "No description on file — add one in Supabase (packages.description)."}
+              </div>
+            </details>
+          ) : (
+            <p className="mb-3 text-sm text-zinc-500">No package selected.</p>
+          )}
+
+          {addonRows.map((ea) => (
+            <details key={ea.id} className="mb-2 rounded-lg bg-white/[0.04]">
+              <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-sm">
+                <span className="text-zinc-200">
+                  {ea.addon?.name ?? "?"}{" "}
+                  <span className="text-xs text-zinc-500">
+                    ({ea.quantity} @ {money(ea.price_override ?? ea.addon?.default_price ?? 0)})
+                  </span>
+                </span>
+                <span className="font-semibold">{money(addonLine(ea))}</span>
+              </summary>
+              <div className="border-t border-white/[0.06] px-3 py-2.5 text-xs">
+                <p className="mb-2 whitespace-pre-line text-zinc-400">
+                  {ea.addon?.description || "No description on file."}
+                </p>
+                <form action={removeEventAddon.bind(null, id, ea.id)}>
+                  <button className="font-semibold text-red-400 hover:underline">Remove Add-On</button>
+                </form>
+              </div>
+            </details>
+          ))}
+
+          <div className="row mt-3 flex justify-between pt-3 text-sm">
+            <span className="font-semibold text-zinc-300">Package &amp; Add-Ons Sub Total</span>
+            <span className="font-bold text-white">{money(pkgPrice + addonsTotal)}</span>
+          </div>
+
+          <h3 className="label-xs mt-5">Add An Add-On</h3>
+          <form action={addEventAddon.bind(null, id)} className="flex flex-wrap items-end gap-2">
+            <div className="min-w-44 flex-1">
+              <select name="addon_id" required className="input w-full">
+                <option value="">Select add-on…</option>
+                {(addonCatalog ?? []).map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} — {money(a.default_price)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <input type="number" name="quantity" defaultValue={1} min={1} className="input w-16" title="Quantity" />
+            <input type="number" step="0.01" name="price_override" placeholder="$ override" className="input w-28" />
+            <button className="btn-primary px-4 py-2 text-xs">Add</button>
+          </form>
+        </div>
+
+        <div className="card p-5">
+          <h2 className="card-title">Fee Summary Report</h2>
+          <div className="divide-y divide-white/[0.05]">
+            {event.package && (
+              <div className={feeRow}>
+                <span className="text-zinc-400">{event.package.name}</span>
+                <span>{money(pkgPrice)}</span>
+              </div>
+            )}
+            {addonRows.map((ea) => (
+              <div key={ea.id} className={feeRow}>
+                <span className="text-zinc-400">
+                  {ea.addon?.name} ({ea.quantity} @ {money(ea.price_override ?? ea.addon?.default_price ?? 0)})
+                </span>
+                <span>{money(addonLine(ea))}</span>
+              </div>
+            ))}
+            {event.overtime_fee > 0 && (
+              <div className={feeRow}>
+                <span className="text-zinc-400">Overtime</span>
+                <span>{money(event.overtime_fee)}</span>
+              </div>
+            )}
+            {event.travel_fee > 0 && (
+              <div className={feeRow}>
+                <span className="text-zinc-400">Travel Fee</span>
+                <span>{money(event.travel_fee)}</span>
+              </div>
+            )}
+            {venueSetupFee > 0 && (
+              <div className={feeRow}>
+                <span className="text-zinc-400">Venue Setup Fee ({event.venue?.name})</span>
+                <span>{money(venueSetupFee)}</span>
+              </div>
+            )}
+            {event.discount1_amount > 0 && (
+              <div className={feeRow}>
+                <span className="text-zinc-400">Discount{event.discount1_label ? ` — ${event.discount1_label}` : " 1"}</span>
+                <span className="text-emerald-400">−{money(event.discount1_amount)}</span>
+              </div>
+            )}
+            {event.discount2_amount > 0 && (
+              <div className={feeRow}>
+                <span className="text-zinc-400">Discount{event.discount2_label ? ` — ${event.discount2_label}` : " 2"}</span>
+                <span className="text-emerald-400">−{money(event.discount2_amount)}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-2 flex justify-between rounded-lg bg-white/[0.06] px-3 py-2.5 text-sm">
+            <span className="font-bold text-white">TOTAL FEE</span>
+            <span className="font-black text-white">{money(total)}</span>
+          </div>
+          <dl className="mt-2 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <dt className="text-zinc-500">Deposit</dt>
+              <dd>{money(event.deposit_value || event.package?.deposit_value || 0)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-zinc-500">Payments Received</dt>
+              <dd className="text-emerald-400">{money(paid)}</dd>
+            </div>
+          </dl>
+          <div className="mt-2 flex justify-between rounded-lg bg-amber-400/10 px-3 py-2.5 text-sm">
+            <span className="font-bold text-amber-200">BALANCE DUE</span>
+            <span className="font-black text-amber-100">{money(balance)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* row 2: payments | profitability */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="card p-5">
+          <h2 className="card-title">Payments</h2>
+          <form action={addPaymentBound} className="mb-4 flex flex-wrap items-end gap-2">
+            <input type="number" step="0.01" name="amount" placeholder="Amount" required className="input w-28" />
+            <select name="method" className="input w-28">
               {["card", "cash", "check", "zelle", "venmo", "ach", "other"].map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
-            <input type="date" name="paid_at" className="input w-full" />
-          </div>
-          <button className="btn-primary w-full">Add Payment</button>
-        </form>
+            <input type="date" name="paid_at" className="input w-40" />
+            <button className="btn-primary px-4 py-2 text-xs">Add Payment</button>
+          </form>
+          <ul className="mb-5 divide-y divide-white/[0.06] text-sm">
+            {(payments ?? []).map((p: Payment) => (
+              <li key={p.id} className="flex justify-between py-2">
+                <span className="text-zinc-400">
+                  {new Date(p.paid_at).toLocaleDateString()} · {p.method}
+                  {p.notes ? ` · ${p.notes}` : ""}
+                </span>
+                <span className="font-semibold text-emerald-400">{money(p.amount)}</span>
+              </li>
+            ))}
+            {(payments ?? []).length === 0 && <li className="py-2 text-zinc-500">No payments yet.</li>}
+          </ul>
+
+          <h3 className="label-xs">Scheduled Payments</h3>
+          <ul className="mb-3 space-y-1.5 text-sm">
+            {(schedule ?? []).map((sp: ScheduledPayment) => (
+              <li key={sp.id} className="flex justify-between">
+                <span className="text-zinc-400">#{sp.seq} {sp.label} · due {sp.due_date ?? "—"}</span>
+                <span className="font-semibold">{money(sp.amount)}</span>
+              </li>
+            ))}
+            {(schedule ?? []).length === 0 && <li className="text-zinc-600">No payment schedule yet.</li>}
+          </ul>
+          <form action={addScheduleBound} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="total" value={total} />
+            <input type="hidden" name="event_date" value={event.event_date ?? ""} />
+            <input type="number" step="0.01" name="deposit" defaultValue={event.deposit_value || event.package?.deposit_value || 0} className="input w-28" placeholder="Deposit" title="Deposit" />
+            <input type="number" name="count" defaultValue={2} min={1} max={12} className="input w-20" title="# of payments" />
+            <button className="btn-ghost px-4 py-2 text-xs">Auto-Split Balance</button>
+          </form>
+        </div>
+
+        <div className="card p-5">
+          <h2 className="card-title">Event Profitability</h2>
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between"><dt className="text-zinc-500">Total Fee</dt><dd>{money(total)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Employee Wages</dt><dd className="text-red-300">−{money(wages)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Related Expenses</dt><dd className="text-red-300">−{money(expensesTotal)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Tax</dt><dd>{money(0)}</dd></div>
+            <div className="row flex justify-between pt-2">
+              <dt className="font-bold text-white">Net Profit</dt>
+              <dd className={`text-lg font-black ${netProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>{money(netProfit)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-zinc-500">Profit Ratio (Net Profit / Total Fee)</dt>
+              <dd>{total > 0 ? `${((netProfit / total) * 100).toFixed(1)}%` : "—"}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-zinc-500">Cost Per Guest (Total Fee / Guest Count)</dt>
+              <dd>{event.guest_count ? money(total / event.guest_count) : "—"}</dd>
+            </div>
+            {totalMiles > 0 && (
+              <div className="flex justify-between">
+                <dt className="text-zinc-500">Miles Driven</dt>
+                <dd>{totalMiles.toFixed(1)} mi</dd>
+              </div>
+            )}
+          </dl>
+        </div>
       </div>
 
-      <div className="card p-5">
-        <h2 className="card-title">Scheduled Payments</h2>
-        <ul className="mb-4 space-y-1.5 text-sm">
-          {(schedule ?? []).map((sp: ScheduledPayment) => (
-            <li key={sp.id} className="flex justify-between">
-              <span className="text-zinc-400">#{sp.seq} {sp.label} · due {sp.due_date ?? "—"}</span>
-              <span className="font-semibold">{money(sp.amount)}</span>
-            </li>
-          ))}
-          {(schedule ?? []).length === 0 && <li className="text-zinc-500">No payment schedule yet.</li>}
-        </ul>
-        <h3 className="label-xs">Generate Schedule (Auto-Split)</h3>
-        <form action={addScheduleBound} className="space-y-2">
-          <input type="hidden" name="total" value={total} />
-          <input type="hidden" name="event_date" value={event.event_date ?? ""} />
-          <div className="flex gap-2">
-            <input type="number" step="0.01" name="deposit" defaultValue={event.deposit_value || event.package?.deposit_value || 0} className="input w-full" placeholder="Deposit" />
-            <input type="number" name="count" defaultValue={2} min={1} max={12} className="input w-full" placeholder="# payments" />
-          </div>
-          <button className="btn-primary w-full">Auto-Split Balance</button>
-          <p className="text-xs text-zinc-500">Deposit + N payments, evenly split, spaced 30 days before the event.</p>
-        </form>
-      </div>
+      {/* row 3: expenses | trip tracker */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="card p-5">
+          <h2 className="card-title">Event Expenses</h2>
+          <form action={addExpense.bind(null, id)} className="mb-4 grid grid-cols-2 gap-2">
+            <input type="number" step="0.01" name="amount" placeholder="Amount" required className="input" />
+            <input type="date" name="expense_date" className="input" />
+            <select name="category_id" className="input">
+              <option value="">Category…</option>
+              {(expenseCategories ?? []).map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <input name="new_category" placeholder="…or new category" className="input" />
+            <input name="payee" placeholder="Payee (e.g. subcontractor)" className="input" />
+            <input name="description" placeholder="Description" className="input" />
+            <div className="col-span-2">
+              <button className="btn-primary px-5 py-2 text-xs">Add Expense</button>
+            </div>
+          </form>
+          <ul className="divide-y divide-white/[0.06] text-sm">
+            {(expenses ?? []).map((x) => (
+              <li key={x.id} className="flex items-center justify-between py-2">
+                <span className="text-zinc-400">
+                  {x.expense_date} ·{" "}
+                  <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-300">
+                    {(x.category as { name?: string } | null)?.name ?? "uncategorized"}
+                  </span>{" "}
+                  {x.payee && <span className="text-zinc-300">{x.payee}</span>}
+                  {x.description && <span className="text-zinc-500"> — {x.description}</span>}
+                </span>
+                <span className="flex items-center gap-3">
+                  <span className="font-semibold text-red-300">{money(x.amount)}</span>
+                  <form action={deleteExpense.bind(null, id, x.id)}>
+                    <button className="text-xs text-red-400 hover:underline">✕</button>
+                  </form>
+                </span>
+              </li>
+            ))}
+            {(expenses ?? []).length === 0 && <li className="py-2 text-zinc-600">No expenses logged.</li>}
+          </ul>
+          {expensesTotal > 0 && (
+            <div className="row mt-2 flex justify-between pt-2 text-sm">
+              <span className="font-semibold text-zinc-300">Total Expenses</span>
+              <span className="font-bold text-red-300">{money(expensesTotal)}</span>
+            </div>
+          )}
+        </div>
 
-      <div className="card p-5">
-        <h2 className="card-title">Payment Log</h2>
-        <ul className="divide-y divide-white/[0.06] text-sm">
-          {(payments ?? []).map((p: Payment) => (
-            <li key={p.id} className="flex justify-between py-2">
-              <span className="text-zinc-400">
-                {new Date(p.paid_at).toLocaleDateString()} · {p.method}
-                {p.notes ? ` · ${p.notes}` : ""}
-              </span>
-              <span className="font-semibold text-emerald-400">{money(p.amount)}</span>
-            </li>
-          ))}
-          {(payments ?? []).length === 0 && <li className="py-2 text-zinc-500">No payments yet.</li>}
-        </ul>
+        <div className="card p-5">
+          <h2 className="card-title">Trip Tracker</h2>
+          <form action={addTrip.bind(null, id)} className="mb-4 grid grid-cols-2 gap-2">
+            <input type="number" step="0.1" name="miles" placeholder="Miles" required className="input" />
+            <input type="date" name="trip_date" className="input" />
+            <input name="vehicle" placeholder="Vehicle" list="vehicle-list" className="input" />
+            <datalist id="vehicle-list">
+              {(vehicles ?? []).map((v) => (
+                <option key={v.id} value={v.name} />
+              ))}
+            </datalist>
+            <input name="notes" placeholder="Notes (e.g. venue walkthrough)" className="input" />
+            <div className="col-span-2">
+              <button className="btn-primary px-5 py-2 text-xs">Log Trip</button>
+            </div>
+          </form>
+          <ul className="divide-y divide-white/[0.06] text-sm">
+            {(trips ?? []).map((t) => (
+              <li key={t.id} className="flex items-center justify-between py-2">
+                <span className="text-zinc-400">
+                  {t.trip_date}
+                  {(t.vehicle as { name?: string } | null)?.name && (
+                    <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-300">
+                      {(t.vehicle as { name?: string }).name}
+                    </span>
+                  )}
+                  {t.notes && <span className="text-zinc-500"> — {t.notes}</span>}
+                </span>
+                <span className="flex items-center gap-3">
+                  <span className="font-semibold">{Number(t.miles).toFixed(1)} mi</span>
+                  <form action={deleteTrip.bind(null, id, t.id)}>
+                    <button className="text-xs text-red-400 hover:underline">✕</button>
+                  </form>
+                </span>
+              </li>
+            ))}
+            {(trips ?? []).length === 0 && <li className="py-2 text-zinc-600">No trips logged.</li>}
+          </ul>
+          {totalMiles > 0 && (
+            <div className="row mt-2 flex justify-between pt-2 text-sm">
+              <span className="font-semibold text-zinc-300">Total Miles</span>
+              <span className="font-bold">{totalMiles.toFixed(1)} mi</span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
