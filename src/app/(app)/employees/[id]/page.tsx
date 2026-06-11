@@ -104,6 +104,14 @@ export default async function EmployeeProfilePage({
             </select>
           </div>
           <div>
+            <label className="label-xs">Staff Category</label>
+            <select name="staff_category" defaultValue={emp.staff_category ?? "Production"} className="input w-full">
+              {["Administrators", "Salespeople", "Production", "Subcontractors", "Live Musicians"].map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="label-xs">Start / Hired Date</label>
             <input type="date" name="hired_date" defaultValue={emp.hired_date ?? ""} className="input w-full" />
           </div>

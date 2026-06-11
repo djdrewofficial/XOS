@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import LiveFilter from "@/components/LiveFilter";
 import {
   createEquipmentItem,
   createEquipmentSystem,
@@ -65,12 +66,16 @@ export default async function EquipmentPage() {
   };
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-6xl" id="equipment-root">
       <h1 className="page-title mb-1">Equipment</h1>
       <p className="mb-5 text-sm text-zinc-500">
         Systems are racks/cases that travel as one unit; standalone items are grouped by category.
         Click anything to see its photos, contents, and event history.
       </p>
+
+      <div className="mb-5">
+        <LiveFilter targetSelector="#equipment-root" placeholder="Search systems and items…" />
+      </div>
 
       {/* ---------- SYSTEMS ---------- */}
       <h2 className="card-title">Systems (Racks &amp; Cases)</h2>
@@ -79,7 +84,7 @@ export default async function EquipmentPage() {
           const inside = itemsBySystem.get(s.id) ?? [];
           const img = thumb("system", s.id);
           return (
-            <Link key={s.id} href={`/equipment/system/${s.id}`} className={`card group overflow-hidden transition-shadow hover:shadow-lg ${!s.is_active ? "opacity-50" : ""}`}>
+            <Link key={s.id} data-searchable href={`/equipment/system/${s.id}`} className={`card group overflow-hidden transition-shadow hover:shadow-lg ${!s.is_active ? "opacity-50" : ""}`}>
               <div className="flex h-28 items-center justify-center overflow-hidden bg-black/[0.04] dark:bg-white/[0.04]">
                 {img ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -113,14 +118,14 @@ export default async function EquipmentPage() {
       {/* ---------- STANDALONE ITEMS BY CATEGORY ---------- */}
       <h2 className="card-title">Standalone Items</h2>
       {categories.map((cat) => (
-        <div key={cat} className="mb-4">
+        <div key={cat} className="mb-4" data-search-group>
           <h3 className="mb-1.5 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{cat}</h3>
           <div className="card overflow-hidden">
             <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
               {byCategory.get(cat)!.map((i) => {
                 const img = thumb("item", i.id);
                 return (
-                  <li key={i.id}>
+                  <li key={i.id} data-searchable>
                     <Link
                       href={`/equipment/item/${i.id}`}
                       className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04] ${!i.is_active ? "opacity-50" : ""}`}

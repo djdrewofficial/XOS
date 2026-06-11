@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
+import LiveFilter from "@/components/LiveFilter";
 import {
   createPackage,
   createPackageCategory,
@@ -62,7 +63,7 @@ export default async function PackagesPage() {
           </thead>
           <tbody>
             {pkgs.map((p) => (
-              <tr key={p.id} className={`row ${!p.is_active ? "opacity-50" : ""}`}>
+              <tr key={p.id} data-searchable className={`row ${!p.is_active ? "opacity-50" : ""}`}>
                 <td className="px-4 py-2.5 font-medium">
                   <Link href={`/packages/${p.id}`} className="text-brand dark:text-brand-lighter hover:underline">
                     {p.name}
@@ -98,9 +99,10 @@ export default async function PackagesPage() {
   }
 
   return (
-    <div className="max-w-6xl">
-      <div className="mb-5 flex items-center justify-between">
+    <div className="max-w-6xl" id="packages-root">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h1 className="page-title">Packages &amp; Add-Ons</h1>
+        <LiveFilter targetSelector="#packages-root" placeholder="Search packages and add-ons…" />
         <details className="relative">
           <summary className="btn-primary cursor-pointer list-none px-4 py-2 text-sm">+ Add Package</summary>
           <form
@@ -133,7 +135,7 @@ export default async function PackagesPage() {
         const pkgs = (packages ?? []).filter((p) => p.category_id === cat.id);
         if (pkgs.length === 0) return null;
         return (
-          <div key={cat.id} className="mb-6">
+          <div key={cat.id} className="mb-6" data-search-group>
             <h2 className="mb-0 rounded-t-xl bg-gradient-to-r from-brand to-brand-light px-4 py-2 text-sm font-bold uppercase tracking-wide text-white">
               {cat.name}
             </h2>
@@ -193,7 +195,7 @@ export default async function PackagesPage() {
           </thead>
           <tbody>
             {(addons ?? []).map((a) => (
-              <tr key={a.id} className={`row ${!a.is_active ? "opacity-50" : ""}`}>
+              <tr key={a.id} data-searchable className={`row ${!a.is_active ? "opacity-50" : ""}`}>
                 <td className="px-4 py-2 font-medium">
                   <Link href={`/addons/${a.id}`} className="text-brand dark:text-brand-lighter hover:underline">
                     {a.name}

@@ -16,6 +16,7 @@ export async function createEmployee(formData: FormData) {
     email: clean(formData.get("email")),
     phone: clean(formData.get("phone")),
     permission_tier: clean(formData.get("permission_tier")) ?? "employee",
+    staff_category: clean(formData.get("staff_category")) ?? "Production",
     hourly_rate: formData.get("hourly_rate")
       ? parseFloat(formData.get("hourly_rate")!.toString())
       : null,
@@ -33,6 +34,7 @@ export async function updateEmployeeGeneral(id: string, formData: FormData) {
       last_name: clean(formData.get("last_name")) ?? "",
       stage_name: clean(formData.get("stage_name")),
       permission_tier: clean(formData.get("permission_tier")) ?? "employee",
+      staff_category: clean(formData.get("staff_category")) ?? "Production",
       hired_date: clean(formData.get("hired_date")),
       profession_since: formData.get("profession_since")
         ? parseInt(formData.get("profession_since")!.toString()) || null
