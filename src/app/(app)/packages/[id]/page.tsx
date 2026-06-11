@@ -45,6 +45,8 @@ export default async function PackageDetailPage({
     supabase.from("equipment_items").select("*").eq("is_active", true).is("system_id", null).order("name"),
     supabase.from("equipment_systems").select("*").eq("is_active", true).order("name"),
   ]);
+  const { data: addonCategories } = await supabase.from("addon_categories").select("id, name");
+  const addonCatName = new Map((addonCategories ?? []).map((c) => [c.id as string, c.name as string]));
 
   if (!pkg) notFound();
 
@@ -64,7 +66,8 @@ export default async function PackageDetailPage({
   // addons grouped by category
   const addonsByCat = new Map<string, NonNullable<typeof addons>>();
   (addons ?? []).forEach((a) => {
-    const cat = a.category?.trim() || "Not Categorized";
+    const cat =
+      (a.category_id && addonCatName.get(a.category_id)) || a.category?.trim() || "Not Categorized";
     if (!addonsByCat.has(cat)) addonsByCat.set(cat, []);
     addonsByCat.get(cat)!.push(a);
   });

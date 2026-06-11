@@ -134,6 +134,10 @@ async function applyPackageSelection(
       .filter((a) => !have.has(a.addon_id))
       .map((a) => ({ event_id: eventId, addon_id: a.addon_id, quantity: a.quantity }));
     if (rows.length) await supabase.from("event_addons").insert(rows);
+    // pull each auto-added add-on's equipment onto the logistics checklist too
+    for (const r of rows) {
+      await assignAddonEquipment(supabase, eventId, r.addon_id);
+    }
   }
 
   // auto-assign the package's default equipment to the logistics checklist
@@ -585,6 +589,28 @@ export async function addClientNote(eventId: string, clientId: string, formData:
   revalidatePath(`/clients/${clientId}`);
 }
 
+async function assignAddonEquipment(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  eventId: string,
+  addonId: string
+) {
+  const { data: defaults } = await supabase
+    .from("addon_equipment_defaults")
+    .select("item_id, system_id, quantity")
+    .eq("addon_id", addonId);
+  if (!defaults?.length) return;
+  const { data: existing } = await supabase
+    .from("event_equipment")
+    .select("item_id, system_id")
+    .eq("event_id", eventId);
+  const haveItems = new Set((existing ?? []).map((x) => x.item_id).filter(Boolean));
+  const haveSystems = new Set((existing ?? []).map((x) => x.system_id).filter(Boolean));
+  const rows = defaults
+    .filter((e) => (e.item_id ? !haveItems.has(e.item_id) : !haveSystems.has(e.system_id)))
+    .map((e) => ({ event_id: eventId, item_id: e.item_id, system_id: e.system_id, quantity: e.quantity }));
+  if (rows.length) await supabase.from("event_equipment").insert(rows);
+}
+
 export async function addEventAddon(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const addonId = clean(formData.get("addon_id"));
@@ -603,6 +629,7 @@ export async function addEventAddon(eventId: string, formData: FormData) {
     price_override: priceOverride,
   });
   if (error) throw new Error(error.message);
+  await assignAddonEquipment(supabase, eventId, addonId);
   revalidatePath(`/events/${eventId}`);
 }
 

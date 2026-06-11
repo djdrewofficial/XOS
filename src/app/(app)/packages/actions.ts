@@ -39,6 +39,142 @@ export async function createPackageCategory(packageId: string | null, formData: 
   if (packageId) revalidatePath(`/packages/${packageId}`);
 }
 
+export async function updatePackageCategory(id: string, formData: FormData) {
+  const supabase = await createClient();
+  const name = clean(formData.get("name"));
+  if (!name) return;
+  const { error } = await supabase
+    .from("package_categories")
+    .update({ name, is_active: formData.get("is_active") === "on" })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/packages");
+}
+
+export async function deletePackageCategory(id: string) {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("packages")
+    .select("id", { count: "exact", head: true })
+    .eq("category_id", id);
+  if ((count ?? 0) > 0) {
+    throw new Error("Category has packages in it — move them first or deactivate the category.");
+  }
+  const { error } = await supabase.from("package_categories").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/packages");
+}
+
+/* ---------- ADD-ON CATEGORIES ---------- */
+export async function createAddonCategory(formData: FormData) {
+  const supabase = await createClient();
+  const name = clean(formData.get("name"));
+  if (!name) return;
+  const { error } = await supabase.from("addon_categories").insert({ name });
+  if (error) throw new Error(error.message);
+  revalidatePath("/packages");
+}
+
+export async function updateAddonCategory(id: string, formData: FormData) {
+  const supabase = await createClient();
+  const name = clean(formData.get("name"));
+  if (!name) return;
+  const { error } = await supabase
+    .from("addon_categories")
+    .update({ name, is_active: formData.get("is_active") === "on" })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/packages");
+}
+
+export async function deleteAddonCategory(id: string) {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("addons")
+    .select("id", { count: "exact", head: true })
+    .eq("category_id", id);
+  if ((count ?? 0) > 0) {
+    throw new Error("Category has add-ons in it — move them first or deactivate the category.");
+  }
+  const { error } = await supabase.from("addon_categories").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/packages");
+}
+
+/* ---------- ADD-ONS ---------- */
+export async function createAddon(formData: FormData) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("addons")
+    .insert({
+      name: clean(formData.get("name")) ?? "New Add-On",
+      category_id: clean(formData.get("category_id")),
+      default_price: num(formData.get("default_price")),
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  revalidatePath("/packages");
+  redirect(`/addons/${data.id}`);
+}
+
+export async function updateAddonSettings(id: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("addons")
+    .update({
+      name: clean(formData.get("name")) ?? "Unnamed",
+      client_facing_name: clean(formData.get("client_facing_name")),
+      category_id: clean(formData.get("category_id")),
+      default_price: num(formData.get("default_price")),
+      description: clean(formData.get("description")),
+      notes: clean(formData.get("notes")),
+      commission_eligible: formData.get("commission_eligible") === "on",
+      display_order: parseInt(clean(formData.get("display_order")) ?? "0") || 0,
+      is_active: formData.get("is_active") === "on",
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/addons/${id}`);
+  revalidatePath("/packages");
+}
+
+export async function deleteAddon(id: string) {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("event_addons")
+    .select("id", { count: "exact", head: true })
+    .eq("addon_id", id);
+  if ((count ?? 0) > 0) {
+    throw new Error("Add-on is used on events — deactivate it instead of deleting.");
+  }
+  const { error } = await supabase.from("addons").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/packages");
+  redirect("/packages");
+}
+
+export async function saveAddonEquipmentDefaults(addonId: string, formData: FormData) {
+  const supabase = await createClient();
+  await supabase.from("addon_equipment_defaults").delete().eq("addon_id", addonId);
+  const rows: { addon_id: string; item_id: string | null; system_id: string | null; quantity: number }[] = [];
+  for (const [key, raw] of formData.entries()) {
+    if (key.startsWith("system_") && raw === "on") {
+      rows.push({ addon_id: addonId, item_id: null, system_id: key.slice(7), quantity: 1 });
+    } else if (key.startsWith("item_")) {
+      const qty = parseInt(raw.toString());
+      if (Number.isFinite(qty) && qty > 0) {
+        rows.push({ addon_id: addonId, item_id: key.slice(5), system_id: null, quantity: qty });
+      }
+    }
+  }
+  if (rows.length) {
+    const { error } = await supabase.from("addon_equipment_defaults").insert(rows);
+    if (error) throw new Error(error.message);
+  }
+  revalidatePath(`/addons/${addonId}`);
+}
+
 export async function updatePackageGeneral(id: string, formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase
