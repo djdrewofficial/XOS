@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -10,24 +11,53 @@ function clean(v: FormDataEntryValue | null): string | null {
 
 type HelperAction = Record<string, string>;
 
-export async function createHelper(formData: FormData) {
-  const supabase = await createClient();
+const DATE_FIELDS = [
+  "initial_contact_date",
+  "contract_sent_date",
+  "contract_due_date",
+  "contract_signed_date",
+  "quote_sent_date",
+  "booked_date",
+];
 
-  // build the actions array from the structured form
+function buildHelperPayload(formData: FormData) {
   const actions: HelperAction[] = [];
 
   const statusId = clean(formData.get("action_status_id"));
   if (statusId) actions.push({ type: "set_status", status_id: statusId });
 
-  for (const field of [
-    "initial_contact_date",
-    "contract_sent_date",
-    "contract_due_date",
-    "contract_signed_date",
-    "quote_sent_date",
-  ]) {
+  const eventTypeId = clean(formData.get("action_event_type_id"));
+  if (eventTypeId) actions.push({ type: "set_event_type", event_type_id: eventTypeId });
+
+  const eventName = clean(formData.get("action_event_name"));
+  if (eventName) actions.push({ type: "set_event_name", value: eventName });
+
+  const sourceId = clean(formData.get("action_inquiry_source_id"));
+  if (sourceId) actions.push({ type: "set_inquiry_source", inquiry_source_id: sourceId });
+
+  const salespersonId = clean(formData.get("action_salesperson_id"));
+  if (salespersonId) actions.push({ type: "set_salesperson", employee_id: salespersonId });
+
+  for (const field of DATE_FIELDS) {
     const value = clean(formData.get(`date_${field}`));
     if (value) actions.push({ type: "set_date", field, value });
+  }
+  for (const [key, raw] of formData.entries()) {
+    if (!key.startsWith("customdate_")) continue;
+    const value = (raw ?? "").toString().trim();
+    if (value) actions.push({ type: "set_custom_date", definition_id: key.slice(11), value });
+  }
+
+  const assignEmployee = clean(formData.get("action_assign_employee_id"));
+  if (assignEmployee) {
+    actions.push({
+      type: "assign_employee",
+      employee_id: assignEmployee,
+      role: clean(formData.get("action_assign_role")) ?? "DJ",
+    });
+  }
+  if (formData.get("action_mark_notified") === "on") {
+    actions.push({ type: "mark_staff_notified" });
   }
 
   const templateId = clean(formData.get("action_template_id"));
@@ -36,18 +66,97 @@ export async function createHelper(formData: FormData) {
   const note = clean(formData.get("action_note"));
   if (note) actions.push({ type: "add_note", body: note });
 
-  const visibleStatuses = formData.getAll("visible_status_ids").map(String).filter(Boolean);
-
-  const { error } = await supabase.from("booking_helpers").insert({
+  return {
     title: clean(formData.get("title")) ?? "Untitled Helper",
     button_text: clean(formData.get("button_text")) ?? clean(formData.get("title")) ?? "Helper",
     button_bg: clean(formData.get("button_bg")) ?? "#97CC9A",
     button_fg: clean(formData.get("button_fg")) ?? "#000000",
-    position: parseInt(clean(formData.get("position")) ?? "0") || 0,
+    is_active: formData.get("is_active") === "on",
     hide_if_payment_made: formData.get("hide_if_payment_made") === "on",
     hide_if_already_ran: formData.get("hide_if_already_ran") === "on",
-    visible_status_ids: visibleStatuses,
+    hide_if_helpers_ran: formData.getAll("hide_if_helpers_ran").map(String).filter(Boolean),
+    visible_status_ids: formData.getAll("visible_status_ids").map(String).filter(Boolean),
+    required_fields: formData.getAll("required_fields").map(String).filter(Boolean),
     actions,
+  };
+}
+
+export async function createHelper(formData: FormData) {
+  const supabase = await createClient();
+  const { data: maxRow } = await supabase
+    .from("booking_helpers")
+    .select("position")
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const { error } = await supabase.from("booking_helpers").insert({
+    ...buildHelperPayload(formData),
+    position: (maxRow?.position ?? 0) + 1,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/helpers");
+  redirect("/settings/helpers");
+}
+
+export async function updateHelper(id: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("booking_helpers")
+    .update(buildHelperPayload(formData))
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/helpers");
+  revalidatePath(`/settings/helpers/${id}`);
+  redirect("/settings/helpers");
+}
+
+export async function moveHelper(id: string, direction: "up" | "down") {
+  const supabase = await createClient();
+  const { data: helpers } = await supabase
+    .from("booking_helpers")
+    .select("id, position")
+    .order("position")
+    .order("created_at");
+  if (!helpers) return;
+  const idx = helpers.findIndex((h) => h.id === id);
+  const swapWith = direction === "up" ? idx - 1 : idx + 1;
+  if (idx < 0 || swapWith < 0 || swapWith >= helpers.length) return;
+  const a = helpers[idx];
+  const b = helpers[swapWith];
+  await supabase.from("booking_helpers").update({ position: swapWith }).eq("id", a.id);
+  await supabase.from("booking_helpers").update({ position: idx }).eq("id", b.id);
+  for (let i = 0; i < helpers.length; i++) {
+    if (i !== idx && i !== swapWith && helpers[i].position !== i) {
+      await supabase.from("booking_helpers").update({ position: i }).eq("id", helpers[i].id);
+    }
+  }
+  revalidatePath("/settings/helpers");
+}
+
+export async function duplicateHelper(id: string) {
+  const supabase = await createClient();
+  const { data: src } = await supabase.from("booking_helpers").select("*").eq("id", id).single();
+  if (!src) return;
+  const { data: maxRow } = await supabase
+    .from("booking_helpers")
+    .select("position")
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const { error } = await supabase.from("booking_helpers").insert({
+    title: `${src.title} (Copy)`,
+    description: src.description,
+    button_text: `${src.button_text} (Copy)`,
+    button_bg: src.button_bg,
+    button_fg: src.button_fg,
+    position: (maxRow?.position ?? 0) + 1,
+    is_active: false, // duplicates start disabled so they don't appear on events until reviewed
+    visible_status_ids: src.visible_status_ids,
+    hide_if_payment_made: src.hide_if_payment_made,
+    hide_if_already_ran: src.hide_if_already_ran,
+    hide_if_helpers_ran: src.hide_if_helpers_ran,
+    required_fields: src.required_fields ?? [],
+    actions: src.actions,
   });
   if (error) throw new Error(error.message);
   revalidatePath("/settings/helpers");

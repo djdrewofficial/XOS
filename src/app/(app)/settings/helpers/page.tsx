@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { createHelper, toggleHelper, deleteHelper } from "./actions";
+import { createHelper, toggleHelper, deleteHelper, moveHelper, duplicateHelper } from "./actions";
+import HelperFormFields from "@/components/HelperFormFields";
 
 export const dynamic = "force-dynamic";
 
@@ -22,25 +24,33 @@ function describeAction(a: HelperAction, statusNames: Map<string, string>, templ
 
 export default async function HelpersPage() {
   const supabase = await createClient();
-  const [{ data: helpers }, { data: statuses }, { data: templates }] = await Promise.all([
+  const [
+    { data: helpers },
+    { data: statuses },
+    { data: templates },
+    { data: eventTypes },
+    { data: sources },
+    { data: employees },
+    { data: dateDefs },
+  ] = await Promise.all([
     supabase.from("booking_helpers").select("*").order("position"),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
     supabase.from("email_templates").select("id, name, group_name").eq("is_active", true).order("group_name"),
+    supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("inquiry_sources").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name"),
+    supabase.from("custom_date_definitions").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
 
   const statusNames = new Map((statuses ?? []).map((s) => [s.id as string, s.name as string]));
   const templateNames = new Map((templates ?? []).map((t) => [t.id as string, t.name as string]));
-
-  const input =
-    "input w-full";
-  const label = "label-xs";
 
   return (
     <div className="max-w-5xl">
       <h1 className="mb-1 text-2xl font-bold">Booking Helpers</h1>
       <p className="mb-5 text-sm text-zinc-500">
         One-click action bundles on the event record — set status, stamp dates, email the client, leave a note.
-        Conditions control when each button is visible.
+        Conditions control when each button is visible. <strong>The order here is the order the buttons appear on events</strong> — use ↑ ↓ to rearrange.
       </p>
 
       <div className="mb-8 card overflow-hidden">
@@ -55,9 +65,17 @@ export default async function HelpersPage() {
             </tr>
           </thead>
           <tbody>
-            {(helpers ?? []).map((h) => (
+            {(helpers ?? []).map((h, idx) => (
               <tr key={h.id} className={`row ${!h.is_active ? "opacity-40" : ""}`}>
-                <td className="px-4 py-2">{h.position}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <span className="mr-1.5 text-xs text-zinc-500">{idx + 1}</span>
+                  <form action={moveHelper.bind(null, h.id, "up")} className="inline">
+                    <button disabled={idx === 0} className="rounded px-1 text-xs text-zinc-500 hover:bg-black/10 disabled:opacity-25 dark:hover:bg-white/10">↑</button>
+                  </form>
+                  <form action={moveHelper.bind(null, h.id, "down")} className="inline">
+                    <button disabled={idx === (helpers ?? []).length - 1} className="rounded px-1 text-xs text-zinc-500 hover:bg-black/10 disabled:opacity-25 dark:hover:bg-white/10">↓</button>
+                  </form>
+                </td>
                 <td className="px-4 py-2">
                   <span
                     className="rounded px-2.5 py-1 text-xs font-bold"
@@ -79,9 +97,15 @@ export default async function HelpersPage() {
                   {h.hide_if_already_ran && <div>Run once per event</div>}
                   {h.visible_status_ids.length === 0 && !h.hide_if_payment_made && !h.hide_if_already_ran && "Always visible"}
                 </td>
-                <td className="px-4 py-2 text-right text-xs">
-                  <form action={toggleHelper.bind(null, h.id, !h.is_active)} className="inline">
-                    <button className="font-semibold text-brand dark:text-brand-lighter hover:underline">
+                <td className="px-4 py-2 text-right text-xs whitespace-nowrap">
+                  <Link href={`/settings/helpers/${h.id}`} className="font-semibold text-brand dark:text-brand-lighter hover:underline">
+                    Edit
+                  </Link>
+                  <form action={duplicateHelper.bind(null, h.id)} className="ml-3 inline">
+                    <button className="font-semibold text-zinc-600 dark:text-zinc-400 hover:underline">Duplicate</button>
+                  </form>
+                  <form action={toggleHelper.bind(null, h.id, !h.is_active)} className="ml-3 inline">
+                    <button className="font-semibold text-zinc-600 dark:text-zinc-400 hover:underline">
                       {h.is_active ? "Disable" : "Enable"}
                     </button>
                   </form>
@@ -96,99 +120,18 @@ export default async function HelpersPage() {
       </div>
 
       <h2 className="card-title">Add Booking Helper</h2>
-      <form action={createHelper} className="space-y-5 card p-5">
-        <div className="grid gap-4 md:grid-cols-4">
-          <div className="md:col-span-2">
-            <label className={label}>Title</label>
-            <input name="title" required className={input} />
-          </div>
-          <div className="md:col-span-2">
-            <label className={label}>Button Text</label>
-            <input name="button_text" className={input} placeholder="defaults to title" />
-          </div>
-          <div>
-            <label className={label}>Button Color</label>
-            <input type="color" name="button_bg" defaultValue="#97CC9A" className="h-10 w-full rounded-md border border-zinc-300" />
-          </div>
-          <div>
-            <label className={label}>Text Color</label>
-            <input type="color" name="button_fg" defaultValue="#000000" className="h-10 w-full rounded-md border border-zinc-300" />
-          </div>
-          <div>
-            <label className={label}>Position</label>
-            <input type="number" name="position" defaultValue={0} className={input} />
-          </div>
-        </div>
-
-        <div>
-          <h3 className="mb-2 text-xs font-bold uppercase text-zinc-500">Actions (run in order)</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className={label}>1 · Set Status To</label>
-              <select name="action_status_id" className={input}>
-                <option value="">(don&apos;t change status)</option>
-                {(statuses ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={label}>3 · Send Email Template To Client</label>
-              <select name="action_template_id" className={input}>
-                <option value="">(don&apos;t send email)</option>
-                {(templates ?? []).map((t) => (
-                  <option key={t.id} value={t.id}>{t.group_name} — {t.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-5">
-            {(["initial_contact_date", "contract_sent_date", "contract_due_date", "contract_signed_date", "quote_sent_date"] as const).map(
-              (f) => (
-                <div key={f}>
-                  <label className={label}>2 · {f.replace(/_/g, " ")}</label>
-                  <input
-                    name={`date_${f}`}
-                    placeholder='"today" or "+7"'
-                    className={input}
-                  />
-                </div>
-              )
-            )}
-          </div>
-          <div className="mt-3">
-            <label className={label}>4 · Add Note (supports merge tags)</label>
-            <input name="action_note" className={input} placeholder="Contract sent to <first_name>." />
-          </div>
-        </div>
-
-        <div>
-          <h3 className="mb-2 text-xs font-bold uppercase text-zinc-500">Visibility Conditions</h3>
-          <div className="mb-3 flex flex-wrap gap-2">
-            {(statuses ?? []).map((s) => (
-              <label
-                key={s.id}
-                className="flex cursor-pointer items-center gap-1.5 rounded border border-zinc-300 dark:border-white/10 px-2 py-1 text-xs"
-              >
-                <input type="checkbox" name="visible_status_ids" value={s.id} />
-                <span className="rounded px-1.5 py-0.5 font-semibold" style={{ backgroundColor: s.color, color: s.text_color }}>
-                  {s.name}
-                </span>
-              </label>
-            ))}
-          </div>
-          <p className="mb-2 text-xs text-zinc-600 dark:text-zinc-400">Leave all unchecked = visible for every status.</p>
-          <label className="mr-5 inline-flex items-center gap-2 text-sm">
-            <input type="checkbox" name="hide_if_payment_made" /> Hide if a payment has been made
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input type="checkbox" name="hide_if_already_ran" /> Only run once per event
-          </label>
-        </div>
-
-        <button className="btn-primary">
-          Create Helper
-        </button>
+      <form action={createHelper} className="card p-5">
+        <HelperFormFields
+          d={{}}
+          statuses={statuses ?? []}
+          templates={templates ?? []}
+          eventTypes={eventTypes ?? []}
+          sources={sources ?? []}
+          employees={(employees ?? []).map((e) => ({ id: e.id, name: `${e.first_name} ${e.last_name}`.trim() }))}
+          dateDefs={dateDefs ?? []}
+          otherHelpers={(helpers ?? []).map((h) => ({ id: h.id, title: h.title }))}
+        />
+        <button className="btn-primary mt-6">Create Helper</button>
       </form>
     </div>
   );
