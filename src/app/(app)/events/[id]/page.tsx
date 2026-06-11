@@ -187,7 +187,7 @@ export default async function EventDetailPage({
     | (typeof event.venue & { setup_fee?: number; driving_notes?: string | null; notes?: string | null })
     | null;
   const detailsTab = (
-    <div className="grid gap-5 lg:grid-cols-3">
+    <div className="grid gap-5 lg:grid-cols-2">
       <div className="card p-5">
         <h2 className="card-title">Event Details</h2>
         <dl className="space-y-2 text-sm">
