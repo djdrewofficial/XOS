@@ -46,7 +46,7 @@ export default async function StatusesPage() {
           <span className="w-[11%] px-3">Preview</span>
           <span className="w-[6%] px-2 text-center">BG</span>
           <span className="w-[6%] px-2 text-center">Text</span>
-          <span className="w-[6%] px-2 text-center">Order</span>
+          <span className="w-[8%] px-2 text-center">Order</span>
           {GROUPS.map(([key, label, hint]) => (
             <span key={key} className="w-[7%] text-center" title={hint}>
               {label}
@@ -78,8 +78,8 @@ export default async function StatusesPage() {
               <span className="w-[6%] px-2">
                 <input type="color" name="text_color" defaultValue={s.text_color} className="h-8 w-full cursor-pointer rounded border border-zinc-300 dark:border-white/10 bg-transparent" />
               </span>
-              <span className="w-[6%] px-2">
-                <input type="number" name="sort_order" defaultValue={s.sort_order} className="input w-full py-1.5 text-center" />
+              <span className="w-[8%] px-2">
+                <input type="number" name="sort_order" defaultValue={s.sort_order} className="input w-full py-1.5 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
               </span>
               {GROUPS.map(([key]) => (
                 <span key={key} className="w-[7%] text-center">
