@@ -11,7 +11,7 @@ function clean(v: FormDataEntryValue | null): string | null {
 
 function socialCollab(v: FormDataEntryValue | null): string | null {
   const s = clean(v);
-  return s === "collab" || s === "tag" || s === "either" ? s : null;
+  return s === "collab" || s === "tag" || s === "either" || s === "none" ? s : null;
 }
 
 export async function createVendorCategory(formData: FormData) {

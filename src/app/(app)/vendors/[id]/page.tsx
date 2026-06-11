@@ -72,7 +72,13 @@ export default async function VendorDetailPage({
             )}
             {vendor.social_collab && (
               <span className="rounded bg-black/[0.06] px-2 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-white/[0.08] dark:text-zinc-300">
-                {vendor.social_collab === "collab" ? "Invite to Collab" : vendor.social_collab === "tag" ? "Just Tag" : "Collab or Tag"}
+                {vendor.social_collab === "collab"
+                  ? "Invite to Collab"
+                  : vendor.social_collab === "tag"
+                  ? "Just Tag"
+                  : vendor.social_collab === "none"
+                  ? "No Tag or Collab"
+                  : "Collab or Tag"}
               </span>
             )}
           </p>
@@ -137,6 +143,7 @@ export default async function VendorDetailPage({
                 <option value="collab">Invite to Collab</option>
                 <option value="tag">Just Tag</option>
                 <option value="either">Either</option>
+                <option value="none">No Tag or Collab</option>
               </select>
             </div>
             <div>

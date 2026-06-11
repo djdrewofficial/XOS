@@ -22,6 +22,7 @@ const COLLAB_LABEL: Record<string, string> = {
   collab: "Invite to Collab",
   tag: "Just Tag",
   either: "Either",
+  none: "No Tag or Collab",
 };
 
 export default function VendorsDirectory({
@@ -212,6 +213,7 @@ export default function VendorsDirectory({
                   <option value="collab">Invite to Collab</option>
                   <option value="tag">Just Tag</option>
                   <option value="either">Either</option>
+                  <option value="none">No Tag or Collab</option>
                 </select>
               </div>
               <div className="col-span-2">
