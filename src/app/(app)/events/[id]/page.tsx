@@ -462,6 +462,16 @@ export default async function EventDetailPage({
   const totalMiles = (trips ?? []).reduce((s, t) => s + Number(t.miles), 0);
   const pkgPrice = event.package_price_override ?? event.package?.default_price ?? 0;
   const pkgDescription = (event.package as unknown as { description?: string | null } | null)?.description;
+  const pkgRules = event.package as unknown as {
+    allowed_splits?: number[] | null;
+    payment_terms?: string | null;
+    payment_terms_days?: number | null;
+  } | null;
+  const paymentRules = {
+    splits: pkgRules?.allowed_splits?.length ? pkgRules.allowed_splits : [1, 2, 3],
+    terms: pkgRules?.payment_terms ?? "days_before",
+    days: pkgRules?.payment_terms_days ?? 30,
+  };
 
   const feeRow = "flex justify-between py-1.5 text-sm";
 
@@ -590,8 +600,46 @@ export default async function EventDetailPage({
       {/* row 2: payments | profitability */}
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="card p-5">
-          <h2 className="card-title">Payments</h2>
-          <form action={addPaymentBound} className="mb-4 flex flex-wrap items-end gap-2">
+          <h2 className="card-title">Payment Schedule</h2>
+          <ul className="mb-3 space-y-1.5 text-sm">
+            {(schedule ?? []).map((sp: ScheduledPayment) => (
+              <li key={sp.id} className="flex justify-between">
+                <span className="text-zinc-400">#{sp.seq} {sp.label} · due {sp.due_date ?? "—"}</span>
+                <span className="font-semibold">{money(sp.amount)}</span>
+              </li>
+            ))}
+            {(schedule ?? []).length === 0 && <li className="text-zinc-600">No payment schedule yet — generate one below.</li>}
+          </ul>
+          <h3 className="label-xs">Generate Schedule</h3>
+          <form action={addScheduleBound} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="total" value={total} />
+            <input type="hidden" name="event_date" value={event.event_date ?? ""} />
+            <div>
+              <label className="label-xs">Deposit</label>
+              <input type="number" step="0.01" name="deposit" defaultValue={event.deposit_value || event.package?.deposit_value || 0} className="input w-28" />
+            </div>
+            <div>
+              <label className="label-xs">Split</label>
+              <select name="count" className="input w-44">
+                {paymentRules.splits.map((n) => (
+                  <option key={n} value={n}>
+                    {n === 1 ? "Pay in full (1 payment)" : `${n} monthly payments`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button className="btn-primary px-4 py-2 text-xs">Generate</button>
+          </form>
+          <p className="mt-2 text-xs text-zinc-600">
+            Package rules: splits of {paymentRules.splits.join(" / ")} ·{" "}
+            {paymentRules.terms === "net_days_after"
+              ? `Net ${paymentRules.days} — balance due ${paymentRules.days} days after the event`
+              : `balance due ${paymentRules.days} days before the event date`}
+            . These same limits will gate the client&apos;s schedule choice in the booking-agreement workflow.
+          </p>
+
+          <h3 className="label-xs mt-5">Payments Received</h3>
+          <form action={addPaymentBound} className="mb-3 flex flex-wrap items-end gap-2">
             <input type="number" step="0.01" name="amount" placeholder="Amount" required className="input w-28" />
             <select name="method" className="input w-28">
               {["card", "cash", "check", "zelle", "venmo", "ach", "other"].map((m) => (
@@ -599,9 +647,9 @@ export default async function EventDetailPage({
               ))}
             </select>
             <input type="date" name="paid_at" className="input w-40" />
-            <button className="btn-primary px-4 py-2 text-xs">Add Payment</button>
+            <button className="btn-ghost px-4 py-2 text-xs">Add Payment</button>
           </form>
-          <ul className="mb-5 divide-y divide-white/[0.06] text-sm">
+          <ul className="divide-y divide-white/[0.06] text-sm">
             {(payments ?? []).map((p: Payment) => (
               <li key={p.id} className="flex justify-between py-2">
                 <span className="text-zinc-400">
@@ -613,24 +661,6 @@ export default async function EventDetailPage({
             ))}
             {(payments ?? []).length === 0 && <li className="py-2 text-zinc-500">No payments yet.</li>}
           </ul>
-
-          <h3 className="label-xs">Scheduled Payments</h3>
-          <ul className="mb-3 space-y-1.5 text-sm">
-            {(schedule ?? []).map((sp: ScheduledPayment) => (
-              <li key={sp.id} className="flex justify-between">
-                <span className="text-zinc-400">#{sp.seq} {sp.label} · due {sp.due_date ?? "—"}</span>
-                <span className="font-semibold">{money(sp.amount)}</span>
-              </li>
-            ))}
-            {(schedule ?? []).length === 0 && <li className="text-zinc-600">No payment schedule yet.</li>}
-          </ul>
-          <form action={addScheduleBound} className="flex flex-wrap items-end gap-2">
-            <input type="hidden" name="total" value={total} />
-            <input type="hidden" name="event_date" value={event.event_date ?? ""} />
-            <input type="number" step="0.01" name="deposit" defaultValue={event.deposit_value || event.package?.deposit_value || 0} className="input w-28" placeholder="Deposit" title="Deposit" />
-            <input type="number" name="count" defaultValue={2} min={1} max={12} className="input w-20" title="# of payments" />
-            <button className="btn-ghost px-4 py-2 text-xs">Auto-Split Balance</button>
-          </form>
         </div>
 
         <div className="card p-5">

@@ -108,11 +108,36 @@ export async function addPayment(eventId: string, formData: FormData) {
 
 export async function addScheduledPayments(eventId: string, formData: FormData) {
   const supabase = await createClient();
-  // unlimited scheduled payments with auto-split of the remaining balance
+  // schedule generation governed by the package's payment rules:
+  // allowed splits + final-due terms (N days before event, or corporate Net-N after)
   const count = Math.max(1, Math.round(num(formData.get("count"))));
   const total = num(formData.get("total"));
   const deposit = num(formData.get("deposit"));
   const eventDate = clean(formData.get("event_date"));
+
+  const { data: event } = await supabase
+    .from("events")
+    .select("package_id")
+    .eq("id", eventId)
+    .single();
+  let terms: "days_before" | "net_days_after" = "days_before";
+  let termsDays = 30;
+  let allowedSplits: number[] = [1, 2, 3];
+  if (event?.package_id) {
+    const { data: pkg } = await supabase
+      .from("packages")
+      .select("payment_terms, payment_terms_days, allowed_splits")
+      .eq("id", event.package_id)
+      .single();
+    if (pkg) {
+      terms = (pkg.payment_terms as typeof terms) ?? "days_before";
+      termsDays = pkg.payment_terms_days ?? 30;
+      allowedSplits = pkg.allowed_splits?.length ? pkg.allowed_splits : [1, 2, 3];
+    }
+  }
+  if (!allowedSplits.includes(count)) {
+    throw new Error(`This package allows ${allowedSplits.join(", ")} payment split(s) — ${count} is not permitted.`);
+  }
 
   await supabase.from("scheduled_payments").delete().eq("event_id", eventId);
 
@@ -131,23 +156,30 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
     due_date: new Date().toISOString().slice(0, 10),
   });
 
+  // final payment lands on the package's due date; earlier payments step back monthly
+  let finalDue: Date | null = null;
+  if (eventDate) {
+    finalDue = new Date(eventDate);
+    if (terms === "days_before") finalDue.setDate(finalDue.getDate() - termsDays);
+    else finalDue.setDate(finalDue.getDate() + termsDays);
+  }
+
   const remaining = Math.max(0, total - deposit);
   const per = Math.floor((remaining / count) * 100) / 100;
   for (let i = 0; i < count; i++) {
     const isLast = i === count - 1;
     const amount = isLast ? Math.round((remaining - per * (count - 1)) * 100) / 100 : per;
     let due: string | null = null;
-    if (eventDate) {
-      // spread evenly: last payment 30 days out, spacing 30 days (DJEP used 60/30)
-      const d = new Date(eventDate);
-      d.setDate(d.getDate() - 30 * (count - i));
+    if (finalDue) {
+      const d = new Date(finalDue);
+      d.setMonth(d.getMonth() - (count - 1 - i));
       due = d.toISOString().slice(0, 10);
     }
     rows.push({
       event_id: eventId,
       seq: i + 2,
       amount,
-      label: `Payment ${i + 2}`,
+      label: count === 1 ? "Final Payment" : `Payment ${i + 2}`,
       due_date: due,
     });
   }
