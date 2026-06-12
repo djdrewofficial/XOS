@@ -36,19 +36,19 @@ export function toE164(raw: string): string | null {
 async function hlFetch(
   path: string,
   version: string,
-  body: Record<string, unknown>
+  body?: Record<string, unknown>
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
   const { token } = highlevelConfig();
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
+      method: body ? "POST" : "GET",
       headers: {
         Authorization: `Bearer ${token}`,
         Version: version,
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify(body),
+      ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const text = await res.text();
     if (!res.ok) return { ok: false, error: `${res.status}: ${text.slice(0, 300)}` };
@@ -92,6 +92,231 @@ async function sendSms(
   if (!result.ok) return result;
   const id = (result.data.messageId ?? result.data.msg ?? null) as string | null;
   return { ok: true, messageId: typeof id === "string" ? id : null };
+}
+
+/* ============ Conversation sync (Communications Hub) ============
+   Polls GHL conversations into hl_conversations / hl_messages, keyed by GHL
+   ids (idempotent upserts). A watermark in hl_sync_state keeps incremental
+   runs cheap; conversations link to XOS clients by cell phone / email. */
+
+type HlConversation = {
+  id: string;
+  contactId?: string;
+  contactName?: string;
+  fullName?: string;
+  phone?: string;
+  email?: string;
+  lastMessageDate?: number; // epoch ms
+  lastMessageType?: string;
+  lastMessageDirection?: string;
+  lastMessageBody?: string;
+  unreadCount?: number;
+};
+
+type HlMessage = {
+  id: string;
+  direction?: string;
+  messageType?: string;
+  status?: string;
+  body?: string;
+  from?: string;
+  to?: string;
+  dateAdded?: string;
+  conversationId?: string;
+  meta?: Record<string, unknown>;
+  attachments?: unknown[];
+  callDuration?: number;
+  callStatus?: string;
+};
+
+/** last-10-digits key for matching GHL contacts to XOS clients by phone */
+function phoneKey(raw: string | null | undefined): string | null {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : null;
+}
+
+async function fetchConversationMessages(conversationId: string): Promise<HlMessage[]> {
+  const result = await hlFetch(
+    `/conversations/${conversationId}/messages?limit=100`,
+    "2021-04-15"
+  );
+  if (!result.ok) return [];
+  const wrapper = result.data.messages as { messages?: HlMessage[] } | HlMessage[] | undefined;
+  if (Array.isArray(wrapper)) return wrapper;
+  return wrapper?.messages ?? [];
+}
+
+async function upsertConversationMessages(
+  supabase: SupabaseClient,
+  conversationId: string
+): Promise<number> {
+  const messages = await fetchConversationMessages(conversationId);
+  if (!messages.length) return 0;
+  const rows = messages.map((m) => ({
+    id: m.id,
+    conversation_id: conversationId,
+    direction: m.direction ?? null,
+    message_type: m.messageType ?? null,
+    status: m.status ?? null,
+    body: m.body ?? null,
+    from_number: m.from ?? null,
+    to_number: m.to ?? null,
+    date_added: m.dateAdded ?? null,
+    meta: {
+      ...(m.meta ?? {}),
+      ...(m.callDuration != null ? { callDuration: m.callDuration } : {}),
+      ...(m.callStatus ? { callStatus: m.callStatus } : {}),
+      ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+    },
+    synced_at: new Date().toISOString(),
+  }));
+  await supabase.from("hl_messages").upsert(rows, { onConflict: "id" });
+  return rows.length;
+}
+
+/** Refreshes a single conversation (used right after sending an inbox reply). */
+export async function refreshConversation(
+  supabase: SupabaseClient,
+  conversationId: string
+): Promise<void> {
+  await upsertConversationMessages(supabase, conversationId);
+  const { data: latest } = await supabase
+    .from("hl_messages")
+    .select("message_type, direction, body, date_added")
+    .eq("conversation_id", conversationId)
+    .order("date_added", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latest) {
+    await supabase
+      .from("hl_conversations")
+      .update({
+        last_message_at: latest.date_added,
+        last_message_type: latest.message_type,
+        last_message_direction: latest.direction,
+        last_message_body: latest.body?.slice(0, 500) ?? null,
+        synced_at: new Date().toISOString(),
+      })
+      .eq("id", conversationId);
+  }
+}
+
+/** Incremental (or full) pull of GHL conversations into XOS.
+    Walks newest-first and stops once it's past the watermark. */
+export async function syncHighLevelConversations(
+  client?: SupabaseClient,
+  opts?: { full?: boolean; maxPages?: number; claimSeconds?: number }
+): Promise<{ conversations: number; messages: number; skipped: string | null; error?: string }> {
+  if (!isHighLevelConfigured()) {
+    return { conversations: 0, messages: 0, skipped: "HighLevel not configured" };
+  }
+  const supabase = client ?? (await createClient());
+  const { locationId } = highlevelConfig();
+
+  const { data: state } = await supabase
+    .from("hl_sync_state")
+    .select("last_message_watermark, last_synced_at")
+    .eq("id", true)
+    .maybeSingle();
+
+  // run claim: skip if another sync started moments ago (page loads can stack;
+  // the realtime tick uses a short window so the inbox stays near-live)
+  const claimSeconds = opts?.claimSeconds ?? 90;
+  if (!opts?.full && state?.last_synced_at) {
+    const sinceMs = Date.now() - new Date(state.last_synced_at).getTime();
+    if (sinceMs < claimSeconds * 1000) {
+      return { conversations: 0, messages: 0, skipped: "synced moments ago" };
+    }
+  }
+  await supabase
+    .from("hl_sync_state")
+    .update({ last_synced_at: new Date().toISOString() })
+    .eq("id", true);
+  // 1h overlap so late status updates (delivered/read) on recent messages get re-pulled
+  const watermarkMs =
+    !opts?.full && state?.last_message_watermark
+      ? new Date(state.last_message_watermark).getTime() - 60 * 60 * 1000
+      : 0;
+
+  // clients lookup for phone/email matching (single-tenant scale: load once)
+  const { data: clientRows } = await supabase.from("clients").select("id, cell_phone, email");
+  const byPhone = new Map<string, string>();
+  const byEmail = new Map<string, string>();
+  for (const c of clientRows ?? []) {
+    const key = phoneKey(c.cell_phone);
+    if (key && !byPhone.has(key)) byPhone.set(key, c.id);
+    const em = (c.email ?? "").trim().toLowerCase();
+    if (em && !byEmail.has(em)) byEmail.set(em, c.id);
+  }
+
+  let conversations = 0;
+  let messages = 0;
+  let newestSeen = watermarkMs;
+  let startAfterDate: number | null = null;
+  const maxPages = opts?.full ? 30 : (opts?.maxPages ?? 5);
+
+  for (let page = 0; page < maxPages; page++) {
+    const params = new URLSearchParams({
+      locationId: locationId!,
+      limit: "100",
+      sortBy: "last_message_date",
+      sort: "desc",
+    });
+    if (startAfterDate != null) params.set("startAfterDate", String(startAfterDate));
+    const result = await hlFetch(`/conversations/search?${params}`, "2021-04-15");
+    if (!result.ok) {
+      return { conversations, messages, skipped: null, error: result.error };
+    }
+    const batch = (result.data.conversations ?? []) as HlConversation[];
+    if (!batch.length) break;
+
+    let reachedWatermark = false;
+    for (const conv of batch) {
+      const lastMs = conv.lastMessageDate ?? 0;
+      if (lastMs > newestSeen) newestSeen = lastMs;
+      if (lastMs <= watermarkMs) {
+        reachedWatermark = true;
+        break;
+      }
+      const clientId =
+        (phoneKey(conv.phone) ? byPhone.get(phoneKey(conv.phone)!) : undefined) ??
+        byEmail.get((conv.email ?? "").trim().toLowerCase()) ??
+        null;
+      await supabase.from("hl_conversations").upsert(
+        {
+          id: conv.id,
+          hl_contact_id: conv.contactId ?? null,
+          client_id: clientId,
+          contact_name: conv.contactName ?? conv.fullName ?? null,
+          phone: conv.phone ?? null,
+          email: conv.email ?? null,
+          last_message_at: lastMs ? new Date(lastMs).toISOString() : null,
+          last_message_type: conv.lastMessageType ?? null,
+          last_message_direction: conv.lastMessageDirection ?? null,
+          last_message_body: conv.lastMessageBody?.slice(0, 500) ?? null,
+          unread_count: conv.unreadCount ?? 0,
+          synced_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+      messages += await upsertConversationMessages(supabase, conv.id);
+      conversations++;
+    }
+    if (reachedWatermark || batch.length < 100) break;
+    startAfterDate = batch[batch.length - 1].lastMessageDate ?? null;
+    if (startAfterDate == null) break;
+  }
+
+  await supabase
+    .from("hl_sync_state")
+    .update({
+      last_message_watermark: newestSeen ? new Date(newestSeen).toISOString() : null,
+      last_synced_at: new Date().toISOString(),
+      last_result: { conversations, messages },
+    })
+    .eq("id", true);
+
+  return { conversations, messages, skipped: null };
 }
 
 /** Drains queued rows from sms_log through HighLevel.

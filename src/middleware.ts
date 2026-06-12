@@ -35,6 +35,7 @@ export async function middleware(request: NextRequest) {
   const isPublic =
     pathname.startsWith("/sign/") ||
     pathname.startsWith("/api/mailgun/") ||
+    pathname.startsWith("/api/highlevel/") ||
     pathname.startsWith("/api/cron/");
   if (isPublic) return response;
 

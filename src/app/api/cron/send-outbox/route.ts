@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { processOutbox } from "@/lib/mailgun";
-import { processSmsOutbox } from "@/lib/highlevel";
+import { processSmsOutbox, syncHighLevelConversations } from "@/lib/highlevel";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /* Protected outbox drainer. Trigger every minute from pg_cron (see migration 00023)
@@ -23,7 +23,10 @@ async function run(req: Request) {
   const admin = createAdminClient();
   const email = await processOutbox(admin);
   const sms = await processSmsOutbox(admin);
-  return NextResponse.json({ email, sms });
+  // ?full=1 forces a complete conversation backfill (first run / repairs)
+  const full = new URL(req.url).searchParams.get("full") === "1";
+  const inbox = await syncHighLevelConversations(admin, { full });
+  return NextResponse.json({ email, sms, inbox });
 }
 
 export async function POST(req: Request) {

@@ -9,6 +9,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import {
   faGauge,
+  faInbox,
   faCalendarDays,
   faCalendarPlus,
   faUsers,
@@ -43,6 +44,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
     heading: "Operations",
     items: [
       { href: "/", label: "Dashboard", icon: faGauge },
+      { href: "/inbox", label: "Inbox", icon: faInbox },
       { href: "/events", label: "Events", icon: faCalendarDays },
       { href: "/events/new", label: "Add Event", icon: faCalendarPlus },
       { href: "/clients", label: "Clients", icon: faUsers },
