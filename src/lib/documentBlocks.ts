@@ -32,6 +32,18 @@ export const DOC_TYPES = [
   ["other", "Other"],
 ] as const;
 
+/* Client-facing wording — we never say "contract" to clients; it's a Booking Agreement. */
+export const DOC_TYPE_CLIENT_LABELS: Record<string, string> = {
+  contract: "Booking Agreement",
+  quote: "Quote",
+  invoice: "Invoice",
+  other: "Document",
+};
+
+export function docTypeClientLabel(t: string | null | undefined): string {
+  return DOC_TYPE_CLIENT_LABELS[t ?? "other"] ?? "Document";
+}
+
 export function sanitizeBlocks(value: unknown): DocBlock[] {
   if (!Array.isArray(value)) return [];
   const valid = new Set(["text", "fee_table", "payment_schedule", "event_details", "signature", "divider"]);

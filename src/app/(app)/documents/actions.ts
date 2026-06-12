@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { sanitizeBlocks, type DocBlock } from "@/lib/documentBlocks";
-import { renderBlocks } from "@/lib/documentRender";
+import { sanitizeBlocks, docTypeClientLabel, type DocBlock } from "@/lib/documentBlocks";
+import { renderBlocks, loadEventBundle } from "@/lib/documentRender";
 import { processOutbox } from "@/lib/mailgun";
-import { appUrl, signingEmailHtml } from "@/lib/signing";
+import { appUrl, agreementEmailHtml } from "@/lib/signing";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -212,6 +212,11 @@ export async function sendForSignature(id: string) {
   const companyName = cs?.company_name ?? "Xpress Entertainment";
   const firstName = ev?.client?.first_name ?? "there";
   const link = `${appUrl()}/sign/${doc.access_token}`;
+  const docLabel = docTypeClientLabel(doc.doc_type);
+
+  // full quote-style email: package + descriptions, add-ons, Total Investment, payment plan
+  const bundle = await loadEventBundle(supabase, doc.event_id);
+  if (!bundle) throw new Error("Could not load event data for the email.");
 
   const { error } = await supabase.from("email_log").insert({
     event_id: ev?.id ?? null,
@@ -219,11 +224,11 @@ export async function sendForSignature(id: string) {
     from_name: cs?.from_name ?? companyName,
     from_address: cs?.from_email ?? null,
     reply_to: cs?.reply_to ?? null,
-    subject: `${doc.title} — ready for your signature`,
-    body_html: signingEmailHtml({
-      heading: `Hi ${firstName}, your ${doc.doc_type} is ready!`,
-      bodyHtml: `<p>Please take a moment to review and sign your <strong>${doc.title}</strong>. It only takes a minute — open it, type your name, and you're done.</p>`,
-      buttonLabel: "Review & Sign",
+    subject: `Your ${docLabel} is ready, ${firstName}! 🎉`,
+    body_html: agreementEmailHtml({
+      bundle,
+      docLabel,
+      firstName,
       buttonUrl: link,
       companyName,
     }),

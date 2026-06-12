@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import DocumentShell from "@/components/DocumentShell";
 import PrintButton from "@/components/PrintButton";
 import SignPanel from "@/components/SignPanel";
-import { sanitizeBlocks } from "@/lib/documentBlocks";
+import { sanitizeBlocks, docTypeClientLabel } from "@/lib/documentBlocks";
 import { signDocument } from "./actions";
 
 /* PUBLIC client signing page — no login; the unguessable token is the key.
@@ -78,7 +78,7 @@ export default async function PublicSignPage({
       <div className="px-4 sm:px-0">
         <DocumentShell
           title={doc.title}
-          docType={doc.doc_type}
+          docType={docTypeClientLabel(doc.doc_type)}
           clientName={clientName}
           eventDateLabel={fmtDate(ev?.event_date)}
           companyName={companyName}

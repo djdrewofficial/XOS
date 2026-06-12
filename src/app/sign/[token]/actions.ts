@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processOutbox } from "@/lib/mailgun";
-import { sanitizeBlocks, type DocBlock } from "@/lib/documentBlocks";
+import { sanitizeBlocks, docTypeClientLabel, type DocBlock } from "@/lib/documentBlocks";
 import { appUrl, signingEmailHtml } from "@/lib/signing";
 
 export type SignResult = {
@@ -111,8 +111,8 @@ export async function signDocument(
       subject: `Signed copy: ${doc.title}`,
       body_html: signingEmailHtml({
         heading: "You're all set! 🎉",
-        bodyHtml: `<p>Thank you, ${signerName.split(" ")[0]}! Your <strong>${doc.title}</strong> was signed on ${signedAt.toLocaleDateString()}.</p><p>Keep this email — the button below opens your signed copy any time, and you can print or save it as a PDF.</p>`,
-        buttonLabel: "View My Signed Document",
+        bodyHtml: `<p>Thank you, ${signerName.split(" ")[0]}! Your <strong>${docTypeClientLabel(doc.doc_type)}</strong> was signed on ${signedAt.toLocaleDateString()}.</p><p>Keep this email — the button below opens your signed copy any time, and you can print or save it as a PDF.</p>`,
+        buttonLabel: `View My Signed ${docTypeClientLabel(doc.doc_type)}`,
         buttonUrl: `${appUrl()}/sign/${token}`,
         companyName,
       }),

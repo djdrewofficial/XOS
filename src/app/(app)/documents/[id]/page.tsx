@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import DocumentShell from "@/components/DocumentShell";
 import DocumentBuilder from "@/components/DocumentBuilder";
-import { sanitizeBlocks } from "@/lib/documentBlocks";
+import { sanitizeBlocks, docTypeClientLabel } from "@/lib/documentBlocks";
 import {
   updateDocumentBlocks,
   regenerateDocument,
@@ -124,7 +124,7 @@ export default async function DocumentDetailPage({
         <div className="rounded-2xl bg-zinc-200/70 p-4 sm:p-8 dark:bg-black/40">
           <DocumentShell
             title={doc.title}
-            docType={doc.doc_type}
+            docType={docTypeClientLabel(doc.doc_type)}
             clientName={clientName}
             eventDateLabel={fmtDate(ev?.event_date)}
             companyName={cs?.company_name ?? "Xpress Entertainment"}

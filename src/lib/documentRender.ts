@@ -29,7 +29,7 @@ function fmtTime(t: string | null | undefined): string {
   return `${hr}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-type EventBundle = {
+export type EventBundle = {
   event: Record<string, unknown> & {
     id: string;
     name: string;
@@ -108,6 +108,34 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
   return { event: e, addons: addonRows, schedule: schedule ?? [], pinnedDescription, total };
 }
 
+/** Structured fee lines — shared by the document fee table and the quote-style emails. */
+export function feeSummary(b: EventBundle): {
+  packageLine: { name: string; description: string | null; amount: number } | null;
+  addonLines: { name: string; description: string | null; amount: number }[];
+  feeLines: { name: string; amount: number }[];
+  discountLines: { name: string; amount: number }[];
+  total: number;
+} {
+  const e = b.event;
+  const pkgPrice = Number(e.package_price_override ?? e.package_price_locked ?? e.package?.default_price ?? 0);
+  const packageLine = e.package
+    ? { name: e.package.client_facing_name || e.package.name, description: b.pinnedDescription, amount: pkgPrice }
+    : null;
+  const addonLines = b.addons.map((a) => ({
+    name: `${(a.addon?.client_facing_name as string | null) || a.addon?.name || "Add-On"}${a.quantity > 1 ? ` × ${a.quantity}` : ""}`,
+    description: a.addon?.description ?? null,
+    amount: Number(a.price_override ?? a.price_locked ?? a.addon?.default_price ?? 0) * a.quantity,
+  }));
+  const feeLines: { name: string; amount: number }[] = [];
+  if (Number(e.overtime_fee) > 0) feeLines.push({ name: "Overtime", amount: Number(e.overtime_fee) });
+  if (Number(e.travel_fee) > 0) feeLines.push({ name: "Travel Fee", amount: Number(e.travel_fee) });
+  if (Number(e.venue?.setup_fee ?? 0) > 0) feeLines.push({ name: "Venue Setup Fee", amount: Number(e.venue?.setup_fee) });
+  const discountLines: { name: string; amount: number }[] = [];
+  if (Number(e.discount1_amount) > 0) discountLines.push({ name: e.discount1_label || "Discount", amount: Number(e.discount1_amount) });
+  if (Number(e.discount2_amount) > 0) discountLines.push({ name: e.discount2_label || "Discount", amount: Number(e.discount2_amount) });
+  return { packageLine, addonLines, feeLines, discountLines, total: b.total };
+}
+
 export function renderFeeTable(b: EventBundle): string {
   const e = b.event;
   const pkgPrice = Number(e.package_price_override ?? e.package_price_locked ?? e.package?.default_price ?? 0);
@@ -136,7 +164,7 @@ export function renderFeeTable(b: EventBundle): string {
   if (Number(e.discount2_amount) > 0)
     rows.push(`<tr class="xdoc-discount"><td>${esc(e.discount2_label || "Discount")}</td><td class="xdoc-amount">−${money(Number(e.discount2_amount))}</td></tr>`);
 
-  return `<table class="xdoc-table"><thead><tr><th>Services</th><th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows.join("")}</tbody><tfoot><tr><td>Total</td><td class="xdoc-amount">${money(b.total)}</td></tr></tfoot></table>`;
+  return `<table class="xdoc-table"><thead><tr><th>Services</th><th class="xdoc-amount">Investment</th></tr></thead><tbody>${rows.join("")}</tbody><tfoot><tr><td>Total Investment</td><td class="xdoc-amount">${money(b.total)}</td></tr></tfoot></table>`;
 }
 
 export function renderPaymentSchedule(b: EventBundle): string {
