@@ -14,7 +14,10 @@ export default async function DocumentTemplatePage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const { data: template } = await supabase.from("document_templates").select("*").eq("id", id).single();
+  const [{ data: template }, { data: helpers }] = await Promise.all([
+    supabase.from("document_templates").select("*").eq("id", id).single(),
+    supabase.from("booking_helpers").select("id, title").eq("is_active", true).order("position"),
+  ]);
   if (!template) notFound();
 
   return (
@@ -51,6 +54,18 @@ export default async function DocumentTemplatePage({
               placeholder="https://… — where the client goes after signing (payment page, Vibo, your site)"
               className="input w-full"
             />
+          </div>
+          <div className="min-w-64 flex-1">
+            <label className="label-xs">After-Sign Automation (optional)</label>
+            <select name="after_sign_helper_id" defaultValue={template.after_sign_helper_id ?? ""} className="input w-full">
+              <option value="">— None —</option>
+              {(helpers ?? []).map((h) => (
+                <option key={h.id} value={h.id}>{h.title}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-zinc-400">
+              Booking helper that runs automatically the moment the client signs.
+            </p>
           </div>
         </div>
 

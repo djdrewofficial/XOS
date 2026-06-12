@@ -85,6 +85,34 @@ export async function signDocument(
     client: { first_name: string; last_name: string; email: string | null } | null;
   } | null;
 
+  // after-sign automation: run the template's booking helper (status → Booked,
+  // confirmation email, retainer request — whatever the helper is configured to
+  // do). Emails it queues drain with the single outbox pass below.
+  let afterSignUrl: string | null = null;
+  if (doc.template_id) {
+    const { data: t } = await supabase
+      .from("document_templates")
+      .select("after_sign_url, after_sign_helper_id")
+      .eq("id", doc.template_id)
+      .maybeSingle();
+    afterSignUrl = t?.after_sign_url ?? null;
+    if (t?.after_sign_helper_id && ev?.id) {
+      const { error: helperError } = await supabase.rpc("run_booking_helper", {
+        p_helper_id: t.after_sign_helper_id,
+        p_event_id: ev.id,
+      });
+      if (helperError) {
+        // the signature itself succeeded — surface the automation failure instead of failing the client
+        await supabase.rpc("create_notification", {
+          p_type: "document_signed",
+          p_title: `After-sign automation failed: ${doc.title}`,
+          p_body: helperError.message,
+          p_href: `/events/${ev.id}`,
+        });
+      }
+    }
+  }
+
   // office notification (respects the General settings allowlist)
   await supabase.rpc("create_notification", {
     p_type: "document_signed",
@@ -117,19 +145,10 @@ export async function signDocument(
         companyName,
       }),
     });
-    await processOutbox(supabase);
   }
 
-  // after-sign forward URL from the template
-  let afterSignUrl: string | null = null;
-  if (doc.template_id) {
-    const { data: t } = await supabase
-      .from("document_templates")
-      .select("after_sign_url")
-      .eq("id", doc.template_id)
-      .maybeSingle();
-    afterSignUrl = t?.after_sign_url ?? null;
-  }
+  // one drain sends the signed copy plus anything the after-sign helper queued
+  await processOutbox(supabase);
 
   revalidatePath(`/documents/${doc.id}`);
   if (ev?.id) revalidatePath(`/events/${ev.id}`);

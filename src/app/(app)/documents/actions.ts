@@ -69,6 +69,7 @@ export async function updateTemplate(id: string, formData: FormData) {
       name: clean(formData.get("name")) ?? "Untitled",
       doc_type: clean(formData.get("doc_type")) ?? "contract",
       after_sign_url: clean(formData.get("after_sign_url")),
+      after_sign_helper_id: clean(formData.get("after_sign_helper_id")),
       blocks: blocksFromForm(formData),
       updated_at: new Date().toISOString(),
     })
