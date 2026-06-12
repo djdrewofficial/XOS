@@ -27,6 +27,7 @@ type HelperAction = {
   body?: string;
   minutes?: string;
   helper_id?: string;
+  number?: string;
 };
 
 const DATE_FIELDS = [
@@ -162,6 +163,9 @@ export default async function EditHelperPage({
   const clientEmail = emailActions.find((a) => a.to !== "custom");
   const customEmail = emailActions.find((a) => a.to === "custom");
   const staffEmail = find("send_email_staff");
+  const smsActions = actions.filter((a) => a.type === "send_sms");
+  const clientSms = smsActions.find((a) => a.to !== "custom");
+  const customSms = smsActions.find((a) => a.to === "custom");
   const assignAction = find("assign_employee");
   const dates = new Map(actions.filter((a) => a.type === "set_date" && a.field).map((a) => [a.field!, a.value ?? ""]));
   const customDates = new Map(
@@ -349,6 +353,41 @@ export default async function EditHelperPage({
     </div>
   );
 
+  /* ================= TAB: SEND TEXTS ================= */
+  const textsTab = (
+    <div className="space-y-5">
+      <div className="rounded-lg bg-zinc-100 px-4 py-2.5 text-xs text-zinc-500 dark:bg-white/[0.04] dark:text-zinc-400">
+        Texts are queued to the outbox and sent through HighLevel — the conversation (including replies) appears in
+        your HighLevel inbox. Merge tags work in message bodies. Every send is logged on the event.
+      </div>
+      <Section title="Send Text Message To Client">
+        <Row label="Message" hint="(merge tag enabled) Sent to the client's cell phone — skipped if blank.">
+          <textarea
+            name="action_sms_body"
+            defaultValue={clientSms?.body ?? ""}
+            rows={4}
+            className="input w-full"
+            placeholder={'e.g. "Hi <first_name>! Your <event_type> on <event_date_long> is officially booked 🎉"'}
+          />
+        </Row>
+      </Section>
+      <Section title="Send Text Message To Specific Number">
+        <Row label="Phone Number">
+          <input
+            type="tel"
+            name="sms_custom_number"
+            defaultValue={customSms?.number ?? ""}
+            className="input w-full max-w-xs"
+            placeholder="(305) 555-1234"
+          />
+        </Row>
+        <Row label="Message" hint="(merge tag enabled)">
+          <textarea name="sms_custom_body" defaultValue={customSms?.body ?? ""} rows={4} className="input w-full" />
+        </Row>
+      </Section>
+    </div>
+  );
+
   /* ================= TAB: DATES / TIMES ================= */
   const datesTab = (
     <div className="space-y-5">
@@ -513,6 +552,7 @@ export default async function EditHelperPage({
             { id: "general", label: "General", content: generalTab },
             { id: "details", label: "Event Details", content: eventDetailsTab },
             { id: "emails", label: "Send Emails", content: emailsTab },
+            { id: "texts", label: "Send Texts", badge: smsActions.length || undefined, content: textsTab },
             { id: "dates", label: "Dates / Times", content: datesTab },
             { id: "employees", label: "Employees", content: employeesTab },
             { id: "automation", label: "Automation", badge: helper.auto_on_create ? "ON" : undefined, content: automationTab },

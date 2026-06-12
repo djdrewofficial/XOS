@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processOutbox } from "@/lib/mailgun";
+import { processSmsOutbox } from "@/lib/highlevel";
 import { sanitizeBlocks, docTypeClientLabel, type DocBlock } from "@/lib/documentBlocks";
 import { appUrl, signingEmailHtml } from "@/lib/signing";
 
@@ -149,6 +150,7 @@ export async function signDocument(
 
   // one drain sends the signed copy plus anything the after-sign helper queued
   await processOutbox(supabase);
+  await processSmsOutbox(supabase);
 
   revalidatePath(`/documents/${doc.id}`);
   if (ev?.id) revalidatePath(`/events/${ev.id}`);

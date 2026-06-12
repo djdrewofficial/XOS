@@ -91,6 +91,16 @@ function buildHelperPayload(formData: FormData) {
     actions.push({ type: "send_email_staff", template_id: staffTemplate, audience: staffAudience });
   }
 
+  // texts (HighLevel SMS)
+  const smsBody = clean(formData.get("action_sms_body"));
+  if (smsBody) actions.push({ type: "send_sms", to: "client", body: smsBody });
+
+  const smsCustomNumber = clean(formData.get("sms_custom_number"));
+  const smsCustomBody = clean(formData.get("sms_custom_body"));
+  if (smsCustomNumber && smsCustomBody) {
+    actions.push({ type: "send_sms", to: "custom", number: smsCustomNumber, body: smsCustomBody });
+  }
+
   const note = clean(formData.get("action_note"));
   if (note) actions.push({ type: "add_note", body: note });
 

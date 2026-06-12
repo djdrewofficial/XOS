@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { processOutbox } from "@/lib/mailgun";
+import { processSmsOutbox } from "@/lib/highlevel";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /* Protected outbox drainer. Trigger every minute from pg_cron (see migration 00023)
@@ -19,8 +20,10 @@ async function run(req: Request) {
   if (!authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const result = await processOutbox(createAdminClient());
-  return NextResponse.json(result);
+  const admin = createAdminClient();
+  const email = await processOutbox(admin);
+  const sms = await processSmsOutbox(admin);
+  return NextResponse.json({ email, sms });
 }
 
 export async function POST(req: Request) {

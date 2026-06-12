@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { processOutbox } from "@/lib/mailgun";
+import { processSmsOutbox } from "@/lib/highlevel";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -323,9 +324,10 @@ export async function runBookingHelper(eventId: string, helperId: string) {
     p_event_id: eventId,
   });
   if (error) throw new Error(error.message);
-  // deliver any emails the helper queued right away (attachments/sign links
+  // deliver anything the helper queued right away (attachments/sign links
   // are handled at send time) instead of waiting for the 10-minute cron
   await processOutbox();
+  await processSmsOutbox();
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
 }
