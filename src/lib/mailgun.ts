@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { docTypeClientLabel } from "@/lib/documentBlocks";
-import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml } from "@/lib/signing";
+import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell } from "@/lib/signing";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
 
@@ -195,6 +195,23 @@ async function enrichMessage(
   return { html: replaceTag(html, "document_sign_link", ""), attachments };
 }
 
+/** Wraps editor-authored bodies in the branded shell (logo header + white card).
+    Emails that are already complete HTML documents pass through untouched. */
+function brandWrap(html: string, companyName: string): string {
+  if (/^\s*(<!doctype|<html)/i.test(html)) return html;
+  // minimal inline styling for editor content (email clients ignore stylesheets)
+  const styled = html
+    .replace(/<h1(?![^>]*style)/gi, '<h1 style="font-size:22px;color:#1d1d22;margin:0 0 10px;"')
+    .replace(/<h2(?![^>]*style)/gi, '<h2 style="font-size:18px;color:#1d1d22;margin:18px 0 8px;"')
+    .replace(/<h3(?![^>]*style)/gi, '<h3 style="font-size:16px;color:#1d1d22;margin:16px 0 6px;"')
+    .replace(/<a (?![^>]*style)/gi, '<a style="color:#4b328e;" ')
+    .replace(/<p(?![^>]*style)/gi, '<p style="margin:0 0 12px;"');
+  return emailShell(
+    companyName,
+    `<div style="padding:28px 30px;color:#2c2c33;font-size:15px;line-height:1.6;font-family:ui-sans-serif,system-ui,'Segoe UI',Arial,sans-serif;">${styled}</div>`
+  );
+}
+
 /** Drains queued rows from the outbox through Mailgun, using each row's stored sender identity.
     Pass a service-role client when running without a user session (cron route). */
 export async function processOutbox(
@@ -207,6 +224,12 @@ export async function processOutbox(
 
   const fallbackFrom = process.env.MAIL_FROM ?? `Xpress Entertainment <events@${domain}>`;
   const supabase = client ?? (await createClient());
+  const { data: csRow } = await supabase
+    .from("company_settings")
+    .select("company_name")
+    .eq("id", true)
+    .maybeSingle();
+  const companyName = csRow?.company_name ?? "Xpress Entertainment";
   const { data: queued } = await supabase
     .from("email_log")
     .select("*")
@@ -225,7 +248,7 @@ export async function processOutbox(
     let attachments: EmailAttachment[] = [];
     try {
       const enriched = await enrichMessage(supabase, msg);
-      html = enriched.html;
+      html = brandWrap(enriched.html, companyName);
       attachments = enriched.attachments;
     } catch (err) {
       await supabase

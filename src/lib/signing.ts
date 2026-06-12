@@ -31,8 +31,9 @@ function fmtTime(t: string | null | undefined): string | null {
   return `${hr}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-/** Branded email wrapper: gradient header with the white logo, white card body. */
-function emailShell(companyName: string, contentHtml: string): string {
+/** Branded email wrapper: gradient header with the white logo, white card body.
+    The outbox wraps every template email in this at send time. */
+export function emailShell(companyName: string, contentHtml: string): string {
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head><body style="margin:0;padding:0;background:#f4f2fa;font-family:ui-sans-serif,system-ui,'Segoe UI',Arial,sans-serif;">
   <div style="max-width:600px;margin:0 auto;padding:28px 14px;">
     <div style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e8e4f3;">
