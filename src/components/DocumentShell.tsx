@@ -4,12 +4,13 @@ import type { DocBlock } from "@/lib/documentBlocks";
    The builder only handles content; this owns the look (screen + print). */
 
 const XDOC_CSS = `
+.xdoc, .xdoc * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .xdoc { max-width: 820px; margin: 0 auto; background: #fff; color: #1d1d22;
   font-family: Georgia, 'Times New Roman', serif; line-height: 1.65; font-size: 15px;
   border-radius: 14px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,.12); }
 .xdoc-header { background: linear-gradient(110deg, #4b328e 0%, #8b6fd6 100%); color: #fff;
   padding: 44px 52px 36px; font-family: ui-sans-serif, system-ui, sans-serif; }
-.xdoc-header img { width: 190px; margin-bottom: 18px; filter: brightness(0) invert(1); }
+.xdoc-header img { width: 190px; margin-bottom: 18px; }
 .xdoc-kind { font-size: 11px; letter-spacing: .28em; text-transform: uppercase; opacity: .85; font-weight: 700; }
 .xdoc-title { font-size: 30px; font-weight: 800; margin: 6px 0 4px; letter-spacing: -.01em; }
 .xdoc-sub { font-size: 14px; opacity: .9; }
@@ -47,9 +48,18 @@ const XDOC_CSS = `
   justify-content: space-between; gap: 12px; font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 12px; color: #8a8a94; }
 @media print {
-  body { background: #fff !important; }
-  .xdoc { box-shadow: none; border-radius: 0; max-width: none; }
+  @page { margin: 0.45in; }
+  html, body { background: #fff !important; }
+  .xdoc { box-shadow: none; border-radius: 0; max-width: none; overflow: visible; }
   .xdoc-noprint { display: none !important; }
+  .xdoc-header { border-radius: 0; padding: 34px 44px 28px; }
+  .xdoc-body { padding: 32px 44px; }
+  /* keep blocks from snapping in half across pages */
+  .xdoc-table, .xdoc-details, .xdoc-sign, .xdoc-detail { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-body h1, .xdoc-body h2, .xdoc-body h3 { break-after: avoid; page-break-after: avoid; }
+  .xdoc-divider { break-after: avoid; }
+  .xdoc-footer { border-top: 1px solid #ece9f4; }
 }
 `;
 
@@ -77,8 +87,9 @@ export default function DocumentShell({
       <style dangerouslySetInnerHTML={{ __html: XDOC_CSS }} />
       <div className="xdoc">
         <header className="xdoc-header">
+          {/* the white logo — sits on the brand-gradient header and survives print */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-light.png" alt={companyName} />
+          <img src="/logo-dark.png" alt={companyName} />
           <div className="xdoc-kind">{docType}</div>
           <div className="xdoc-title">{title}</div>
           <div className="xdoc-sub">
