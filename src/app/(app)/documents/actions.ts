@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizeBlocks, type DocBlock } from "@/lib/documentBlocks";
 import { renderBlocks } from "@/lib/documentRender";
+import { processOutbox } from "@/lib/mailgun";
+import { appUrl, signingEmailHtml } from "@/lib/signing";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -56,6 +58,7 @@ export async function updateTemplate(id: string, formData: FormData) {
     .update({
       name: clean(formData.get("name")) ?? "Untitled",
       doc_type: clean(formData.get("doc_type")) ?? "contract",
+      after_sign_url: clean(formData.get("after_sign_url")),
       blocks: blocksFromForm(formData),
       updated_at: new Date().toISOString(),
     })
@@ -180,6 +183,61 @@ export async function setDocumentStatus(id: string, status: string) {
     .eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath(`/documents/${id}`);
+  revalidatePath("/documents");
+}
+
+/** Emails the client their signing link and marks the document as sent. */
+export async function sendForSignature(id: string) {
+  const supabase = await createClient();
+  const [{ data: doc }, { data: cs }] = await Promise.all([
+    supabase
+      .from("documents")
+      .select("*, event:events(id, name, client:clients(first_name, last_name, email))")
+      .eq("id", id)
+      .single(),
+    supabase.from("company_settings").select("company_name, from_name, from_email, reply_to").eq("id", true).maybeSingle(),
+  ]);
+  if (!doc) throw new Error("Document not found");
+  if (doc.signed_at) throw new Error("Already signed.");
+  if (doc.status === "void") throw new Error("Document is void.");
+
+  const ev = doc.event as unknown as {
+    id: string;
+    name: string;
+    client: { first_name: string; last_name: string; email: string | null } | null;
+  } | null;
+  const clientEmail = ev?.client?.email;
+  if (!clientEmail) throw new Error("The event's primary client has no email address on file.");
+
+  const companyName = cs?.company_name ?? "Xpress Entertainment";
+  const firstName = ev?.client?.first_name ?? "there";
+  const link = `${appUrl()}/sign/${doc.access_token}`;
+
+  const { error } = await supabase.from("email_log").insert({
+    event_id: ev?.id ?? null,
+    to_address: clientEmail,
+    from_name: cs?.from_name ?? companyName,
+    from_address: cs?.from_email ?? null,
+    reply_to: cs?.reply_to ?? null,
+    subject: `${doc.title} — ready for your signature`,
+    body_html: signingEmailHtml({
+      heading: `Hi ${firstName}, your ${doc.doc_type} is ready!`,
+      bodyHtml: `<p>Please take a moment to review and sign your <strong>${doc.title}</strong>. It only takes a minute — open it, type your name, and you're done.</p>`,
+      buttonLabel: "Review & Sign",
+      buttonUrl: link,
+      companyName,
+    }),
+  });
+  if (error) throw new Error(error.message);
+  await processOutbox();
+
+  await supabase
+    .from("documents")
+    .update({ status: "sent", visible_to_client: true, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  revalidatePath(`/documents/${id}`);
+  if (ev?.id) revalidatePath(`/events/${ev.id}`);
   revalidatePath("/documents");
 }
 

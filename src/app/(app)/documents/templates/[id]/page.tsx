@@ -42,6 +42,16 @@ export default async function DocumentTemplatePage({
               ))}
             </select>
           </div>
+          <div className="min-w-64 flex-1">
+            <label className="label-xs">After-Sign Forward URL (optional)</label>
+            <input
+              name="after_sign_url"
+              type="url"
+              defaultValue={template.after_sign_url ?? ""}
+              placeholder="https://… — where the client goes after signing (payment page, Vibo, your site)"
+              className="input w-full"
+            />
+          </div>
         </div>
 
         <DocumentBuilder initial={sanitizeBlocks(template.blocks)} mode="template" />

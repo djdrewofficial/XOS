@@ -9,7 +9,10 @@ import {
   regenerateDocument,
   setDocumentStatus,
   deleteDocument,
+  sendForSignature,
 } from "../actions";
+import SaveButton from "@/components/SaveButton";
+import { appUrl } from "@/lib/signing";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +68,14 @@ export default async function DocumentDetailPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <a href={`/doc/${doc.id}`} target="_blank" className="btn-primary px-4 py-2 text-xs">
+          {!locked && (
+            <form action={sendForSignature.bind(null, id)}>
+              <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Sent">
+                ✉ Send To Client For Signature
+              </SaveButton>
+            </form>
+          )}
+          <a href={`/doc/${doc.id}`} target="_blank" className="btn-ghost px-4 py-2 text-xs">
             Print / Save PDF
           </a>
           {!locked && (
@@ -89,6 +99,17 @@ export default async function DocumentDetailPage({
             </>
           )}
         </div>
+      </div>
+
+      <div className="card mb-5 flex flex-wrap items-center gap-2 px-4 py-3 text-xs">
+        <span className="font-bold uppercase tracking-wide text-zinc-400">Client signing link</span>
+        <code className="rounded bg-black/5 px-2 py-1 text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
+          {appUrl()}/sign/{doc.access_token}
+        </code>
+        <a href={`/sign/${doc.access_token}`} target="_blank" className="font-semibold text-brand hover:underline dark:text-brand-lighter">
+          Open ↗
+        </a>
+        <span className="text-zinc-400">— every visit is logged in the tracking panel on the event&apos;s Documents tab</span>
       </div>
 
       {editing ? (

@@ -44,6 +44,9 @@ const XDOC_CSS = `
 .xdoc-sign-line { border-bottom: 2px solid #1d1d22; height: 44px; }
 .xdoc-sign-name { font-weight: 700; margin-top: 8px; }
 .xdoc-sign-meta { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: #8a8a94; }
+.xdoc-signed { max-width: 420px; }
+.xdoc-sign-script { font-family: 'Segoe Script', 'Brush Script MT', 'Snell Roundhand', cursive;
+  font-size: 32px; color: #1d1d22; border-bottom: 2px solid #1d1d22; padding: 6px 4px 10px; }
 .xdoc-footer { padding: 22px 52px 30px; border-top: 1px solid #ece9f4; display: flex;
   justify-content: space-between; gap: 12px; font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 12px; color: #8a8a94; }
