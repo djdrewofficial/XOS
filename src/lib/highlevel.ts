@@ -79,15 +79,18 @@ async function upsertContact(opts: {
   return { ok: true, contactId: contact.id };
 }
 
-/** Low-level SMS send to an existing GHL contact. */
+/** Low-level SMS/MMS send to an existing GHL contact.
+    attachments = publicly fetchable URLs (the sms-media bucket). */
 async function sendSms(
   contactId: string,
-  message: string
+  message: string,
+  attachments?: string[]
 ): Promise<{ ok: true; messageId: string | null } | { ok: false; error: string }> {
   const result = await hlFetch("/conversations/messages", "2021-04-15", {
     type: "SMS",
     contactId,
     message,
+    ...(attachments?.length ? { attachments } : {}),
   });
   if (!result.ok) return result;
   const id = (result.data.messageId ?? result.data.msg ?? null) as string | null;
@@ -367,7 +370,7 @@ export async function processSmsOutbox(
       continue;
     }
 
-    const result = await sendSms(contact.contactId, msg.body);
+    const result = await sendSms(contact.contactId, msg.body, msg.attachments ?? []);
     if (result.ok) {
       await supabase
         .from("sms_log")

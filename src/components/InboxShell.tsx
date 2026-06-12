@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import SaveButton from "@/components/SaveButton";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowUpRightFromSquare, faRotate } from "@fortawesome/free-solid-svg-icons";
+import { faArrowUpRightFromSquare, faRotate, faPaperclip, faFile } from "@fortawesome/free-solid-svg-icons";
 import { channelIcon, channelLabel, fmtWhen, fmtFull } from "@/app/(app)/inbox/ui";
 import { sendInboxReply, syncInbox } from "@/app/(app)/inbox/actions";
 
@@ -51,6 +51,46 @@ const CHANNELS = [
   ["other", "Other"],
 ] as const;
 
+const IMAGE_RE = /\.(jpe?g|png|gif|webp|heic)(\?|$)/i;
+
+/** GHL stores attachments as URL strings (ours and theirs both end up on their CDN). */
+function attachmentUrls(meta: Record<string, unknown> | null): string[] {
+  const raw = (meta as { attachments?: unknown })?.attachments;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((a) => (typeof a === "string" ? a : (a as { url?: string })?.url ?? ""))
+    .filter(Boolean);
+}
+
+function AttachmentList({ urls, out }: { urls: string[]; out: boolean }) {
+  if (!urls.length) return null;
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      {urls.map((url) =>
+        IMAGE_RE.test(url) ? (
+          <a key={url} href={url} target="_blank" rel="noreferrer" className="block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt="attachment" className="max-h-60 max-w-full rounded-lg" />
+          </a>
+        ) : (
+          <a
+            key={url}
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
+              out ? "bg-white/15 text-white" : "bg-black/[0.06] text-zinc-700 dark:bg-white/10 dark:text-zinc-200"
+            }`}
+          >
+            <FontAwesomeIcon icon={faFile} />
+            <span className="truncate">{decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? "file")}</span>
+          </a>
+        )
+      )}
+    </div>
+  );
+}
+
 export default function InboxShell({
   conversations: initialConversations,
   active,
@@ -63,6 +103,8 @@ export default function InboxShell({
   const [messages, setMessages] = useState<MsgRow[]>(active?.messages ?? []);
   const [channel, setChannel] = useState<string>("all");
   const [q, setQ] = useState("");
+  const [fileNames, setFileNames] = useState<string[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const activeId = active?.conv.id ?? null;
 
@@ -290,10 +332,10 @@ export default function InboxShell({
                           )}
                         </div>
                       )}
-                      {m.body ? (
-                        <div className="whitespace-pre-wrap break-words">{m.body}</div>
-                      ) : (
-                        !isText || <div className="italic opacity-70">(no content)</div>
+                      {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
+                      <AttachmentList urls={attachmentUrls(m.meta)} out={out} />
+                      {!m.body && isText && attachmentUrls(m.meta).length === 0 && (
+                        <div className="italic opacity-70">(no content)</div>
                       )}
                       <div className={`mt-1 text-[10px] ${out ? "text-white/70" : "text-zinc-400"}`}>
                         {m.date_added ? fmtFull(m.date_added) : ""}
@@ -307,24 +349,69 @@ export default function InboxShell({
             {active.conv.phone ? (
               <form
                 action={sendInboxReply.bind(null, active.conv.id)}
-                className="flex items-end gap-3 border-t border-zinc-100 p-4 dark:border-white/[0.05]"
+                onSubmit={() => setTimeout(() => setFileNames([]), 800)}
+                className="border-t border-zinc-100 p-4 dark:border-white/[0.05]"
               >
-                <textarea
-                  name="body"
-                  rows={2}
-                  required
-                  placeholder={`Text ${title}…`}
-                  className="input min-h-[3rem] flex-1 resize-y"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      e.currentTarget.form?.requestSubmit();
+                {fileNames.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {fileNames.map((name) => (
+                      <span
+                        key={name}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-1 text-[11px] font-semibold text-brand dark:text-brand-lighter"
+                      >
+                        <FontAwesomeIcon icon={faPaperclip} />
+                        {name}
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fileRef.current) fileRef.current.value = "";
+                        setFileNames([]);
+                      }}
+                      className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-600"
+                    >
+                      clear
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    name="files"
+                    multiple
+                    accept="image/*,.pdf,.vcf"
+                    className="hidden"
+                    onChange={(e) =>
+                      setFileNames(Array.from(e.currentTarget.files ?? []).map((f) => f.name))
                     }
-                  }}
-                />
-                <SaveButton className="btn-primary px-5" savedLabel="Sent">
-                  Send
-                </SaveButton>
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    title="Attach image or file (MMS)"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.05] hover:text-brand dark:hover:bg-white/[0.08]"
+                  >
+                    <FontAwesomeIcon icon={faPaperclip} />
+                  </button>
+                  <textarea
+                    name="body"
+                    rows={2}
+                    required={fileNames.length === 0}
+                    placeholder={`Text ${title}…`}
+                    className="input min-h-[3rem] flex-1 resize-y"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        e.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                  />
+                  <SaveButton className="btn-primary px-5" savedLabel="Sent">
+                    Send
+                  </SaveButton>
+                </div>
               </form>
             ) : (
               <div className="border-t border-zinc-100 px-4 py-3 text-center text-xs text-zinc-400 dark:border-white/[0.05]">
