@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
+import NotificationBell from "@/components/NotificationBell";
 import {
   faGauge,
   faCalendarDays,
@@ -163,8 +164,10 @@ export default function TopBar() {
         )}
       </div>
 
-      {/* quick-nav icons with tooltips */}
+      {/* notifications + quick-nav icons with tooltips */}
       <nav className="ml-auto flex items-center gap-1">
+        <NotificationBell />
+        <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-white/10" />
         {QUICK_NAV.map((item) => {
           const active = isActive(item.href);
           return (
