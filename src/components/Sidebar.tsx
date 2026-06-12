@@ -5,9 +5,35 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ThemeToggle from "@/components/ThemeToggle";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
+import {
+  faGauge,
+  faCalendarDays,
+  faCalendarPlus,
+  faUsers,
+  faBuilding,
+  faHandshake,
+  faBoxOpen,
+  faSliders,
+  faUserGroup,
+  faMoneyBillWave,
+  faGear,
+  faBolt,
+  faTableColumns,
+  faListCheck,
+  faCircleHalfStroke,
+  faIdBadge,
+  faCreditCard,
+  faReceipt,
+  faPenToSquare,
+  faEnvelope,
+  faBullseye,
+  faPowerOff,
+} from "@fortawesome/free-solid-svg-icons";
 
-type NavItem = { href: string; label: string; icon: string };
-type NavGroup = { group: string; icon: string; items: NavItem[] };
+type NavItem = { href: string; label: string; icon: IconDefinition };
+type NavGroup = { group: string; icon: IconDefinition; items: NavItem[] };
 type Entry = NavItem | NavGroup;
 const isGroup = (e: Entry): e is NavGroup => "group" in e;
 
@@ -15,46 +41,46 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
   {
     heading: "Operations",
     items: [
-      { href: "/", label: "Dashboard", icon: "◆" },
-      { href: "/events", label: "Events", icon: "▣" },
-      { href: "/events/new", label: "Add Event", icon: "+" },
-      { href: "/clients", label: "Clients", icon: "◉" },
+      { href: "/", label: "Dashboard", icon: faGauge },
+      { href: "/events", label: "Events", icon: faCalendarDays },
+      { href: "/events/new", label: "Add Event", icon: faCalendarPlus },
+      { href: "/clients", label: "Clients", icon: faUsers },
     ],
   },
   {
     heading: "Directory",
     items: [
-      { href: "/venues", label: "Venues", icon: "⌂" },
-      { href: "/vendors", label: "Vendors", icon: "◈" },
-      { href: "/packages", label: "Packages", icon: "❖" },
-      { href: "/equipment", label: "Equipment", icon: "▤" },
-      { href: "/employees", label: "Employees", icon: "✦" },
+      { href: "/venues", label: "Venues", icon: faBuilding },
+      { href: "/vendors", label: "Vendors", icon: faHandshake },
+      { href: "/packages", label: "Packages", icon: faBoxOpen },
+      { href: "/equipment", label: "Equipment", icon: faSliders },
+      { href: "/employees", label: "Employees", icon: faUserGroup },
     ],
   },
   {
     heading: "Money",
-    items: [{ href: "/payments", label: "Payments", icon: "$" }],
+    items: [{ href: "/payments", label: "Payments", icon: faMoneyBillWave }],
   },
   {
     heading: "XOS Settings",
     items: [
       {
         group: "Application",
-        icon: "⚙",
+        icon: faGear,
         items: [
-          { href: "/settings/general", label: "General", icon: "⚙" },
-          { href: "/settings/helpers", label: "Booking Helpers", icon: "⚡" },
-          { href: "/settings/dashboard", label: "Dashboard Layout", icon: "◆" },
-          { href: "/events?settings=1", label: "Event List Settings", icon: "▤" },
-          { href: "/settings/statuses", label: "Event Statuses", icon: "●" },
-          { href: "/settings/staff", label: "Staff Settings", icon: "✦" },
-          { href: "/settings/payment-settings", label: "Payment Settings", icon: "$" },
-          { href: "/settings/expenses", label: "Expenses", icon: "▦" },
-          { href: "/settings/custom-fields", label: "Custom Fields", icon: "◇" },
+          { href: "/settings/general", label: "General", icon: faGear },
+          { href: "/settings/helpers", label: "Booking Helpers", icon: faBolt },
+          { href: "/settings/dashboard", label: "Dashboard Layout", icon: faTableColumns },
+          { href: "/events?settings=1", label: "Event List Settings", icon: faListCheck },
+          { href: "/settings/statuses", label: "Event Statuses", icon: faCircleHalfStroke },
+          { href: "/settings/staff", label: "Staff Settings", icon: faIdBadge },
+          { href: "/settings/payment-settings", label: "Payment Settings", icon: faCreditCard },
+          { href: "/settings/expenses", label: "Expenses", icon: faReceipt },
+          { href: "/settings/custom-fields", label: "Custom Fields", icon: faPenToSquare },
         ],
       },
-      { href: "/settings/email", label: "Email", icon: "✉" },
-      { href: "/settings/sources", label: "Inquiry Sources", icon: "◎" },
+      { href: "/settings/email", label: "Email", icon: faEnvelope },
+      { href: "/settings/sources", label: "Inquiry Sources", icon: faBullseye },
     ],
   },
 ];
@@ -89,10 +115,10 @@ export default function Sidebar() {
       >
         <span
           className={`w-4 text-center text-xs ${
-            active ? "text-zinc-900 dark:text-white" : "text-zinc-400 dark:text-zinc-600 group-hover:text-brand dark:text-brand-lighter"
+            active ? "text-white" : "text-zinc-400 dark:text-zinc-600 group-hover:text-brand dark:group-hover:text-brand-lighter"
           }`}
         >
-          {item.icon}
+          <FontAwesomeIcon icon={item.icon} fixedWidth />
         </span>
         {item.label}
       </Link>
@@ -110,7 +136,7 @@ export default function Sidebar() {
           className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition-all hover:bg-black/[0.05] hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
         >
           <span className="w-4 text-center text-xs text-zinc-400 group-hover:text-brand dark:text-zinc-600 dark:group-hover:text-brand-lighter">
-            {group.icon}
+            <FontAwesomeIcon icon={group.icon} fixedWidth />
           </span>
           {group.group}
           <span className={`ml-auto text-[10px] text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
@@ -163,7 +189,8 @@ export default function Sidebar() {
           onClick={signOut}
           className="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.06] hover:text-zinc-900 dark:hover:text-white"
         >
-          ⏻ Sign Out
+          <FontAwesomeIcon icon={faPowerOff} className="mr-2 text-xs" />
+          Sign Out
         </button>
       </div>
     </aside>
