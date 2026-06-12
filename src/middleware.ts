@@ -31,11 +31,13 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   // PUBLIC routes: client signing links + machine endpoints (webhook/cron do
-  // their own auth — Mailgun HMAC and the CRON_SECRET bearer token)
+  // their own auth — Mailgun HMAC and the CRON_SECRET bearer token; /api/mobile
+  // verifies the XOS Mobile app's Supabase JWT itself)
   const isPublic =
     pathname.startsWith("/sign/") ||
     pathname.startsWith("/api/mailgun/") ||
     pathname.startsWith("/api/highlevel/") ||
+    pathname.startsWith("/api/mobile/") ||
     pathname.startsWith("/api/cron/");
   if (isPublic) return response;
 
