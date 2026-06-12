@@ -29,7 +29,16 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
+  const { pathname } = request.nextUrl;
+  // PUBLIC routes: client signing links + machine endpoints (webhook/cron do
+  // their own auth — Mailgun HMAC and the CRON_SECRET bearer token)
+  const isPublic =
+    pathname.startsWith("/sign/") ||
+    pathname.startsWith("/api/mailgun/") ||
+    pathname.startsWith("/api/cron/");
+  if (isPublic) return response;
+
+  const isLoginPage = pathname.startsWith("/login");
   if (!user && !isLoginPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
