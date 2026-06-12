@@ -14,6 +14,7 @@ const PAGES: { label: string; href: string; keywords: string }[] = [
   { label: "Events", href: "/events", keywords: "event list calendar" },
   { label: "Add Event", href: "/events/new", keywords: "new event create booking" },
   { label: "Clients", href: "/clients", keywords: "customers contacts" },
+  { label: "Documents", href: "/documents", keywords: "contracts quotes invoices templates esign agreement" },
   { label: "Venues", href: "/venues", keywords: "locations halls" },
   { label: "Vendors", href: "/vendors", keywords: "photographers video planners" },
   { label: "Packages", href: "/packages", keywords: "pricing services" },

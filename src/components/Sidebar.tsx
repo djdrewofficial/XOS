@@ -24,6 +24,7 @@ import {
   faListCheck,
   faCircleHalfStroke,
   faIdBadge,
+  faFileSignature,
   faCreditCard,
   faReceipt,
   faPenToSquare,
@@ -45,6 +46,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
       { href: "/events", label: "Events", icon: faCalendarDays },
       { href: "/events/new", label: "Add Event", icon: faCalendarPlus },
       { href: "/clients", label: "Clients", icon: faUsers },
+      { href: "/documents", label: "Documents", icon: faFileSignature },
     ],
   },
   {
