@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { money } from "@/lib/types";
-import type { DocBlock } from "@/lib/documentBlocks";
+import { sanitizeBlocks, type DocBlock } from "@/lib/documentBlocks";
 
 /* Server-side document generation: merges text blocks via render_merge_tags and
    renders smart blocks from event data, freezing everything into the document
@@ -203,6 +203,42 @@ export function renderSignature(b: EventBundle): string {
   const client = b.event.client;
   const name = client ? `${client.first_name} ${client.last_name}`.trim() : "Client";
   return `<div class="xdoc-sign"><div class="xdoc-sign-line"></div><div class="xdoc-sign-name">${esc(name)}</div><div class="xdoc-sign-meta">Signature &nbsp;·&nbsp; Date</div></div>`;
+}
+
+/** Generates a frozen document for an event from a document template and
+    returns the inserted row. Shared by the Documents UI and the email outbox. */
+export async function generateDocumentRow(
+  supabase: SupabaseClient,
+  templateId: string,
+  eventId: string,
+  status: string = "draft"
+): Promise<{ id: string; title: string; access_token: string; doc_type: string } | null> {
+  const [{ data: template }, { data: event }] = await Promise.all([
+    supabase.from("document_templates").select("*").eq("id", templateId).single(),
+    supabase.from("events").select("id, name, client:clients(first_name, last_name)").eq("id", eventId).single(),
+  ]);
+  if (!template || !event) return null;
+
+  const rendered = await renderBlocks(supabase, eventId, sanitizeBlocks(template.blocks));
+  if (!rendered) return null;
+
+  const client = event.client as unknown as { first_name: string; last_name: string } | null;
+  const title = `${template.name} — ${client ? `${client.first_name} ${client.last_name}`.trim() : event.name || "Event"}`;
+
+  const { data: doc, error } = await supabase
+    .from("documents")
+    .insert({
+      template_id: templateId,
+      event_id: eventId,
+      title,
+      doc_type: template.doc_type,
+      blocks: rendered,
+      status,
+    })
+    .select("id, title, access_token, doc_type")
+    .single();
+  if (error || !doc) return null;
+  return doc;
 }
 
 export async function renderBlocks(

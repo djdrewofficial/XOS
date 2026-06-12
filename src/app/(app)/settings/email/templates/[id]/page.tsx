@@ -57,6 +57,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     { data: employees },
     { data: helpers },
     { data: vendorCategories },
+    { data: docTemplates },
   ] = await Promise.all([
     supabase.from("email_templates").select("*").eq("id", id).single(),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
@@ -66,6 +67,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     supabase.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name"),
     supabase.from("booking_helpers").select("id, title").order("position"),
     supabase.from("vendor_categories").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("document_templates").select("id, name, doc_type").eq("is_active", true).order("name"),
   ]);
 
   if (!tpl) notFound();
@@ -146,6 +148,46 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
         <Row label="Status">
           <CheckBoxField name="is_active" label="Active" defaultChecked={tpl.is_active} />
         </Row>
+      </Section>
+
+      <Section title="Attach Document">
+        <Note>
+          Attaches a document from the{" "}
+          <Link href="/documents" className="font-semibold text-brand underline dark:text-brand-lighter">Document Manager</Link>{" "}
+          every time this email sends — from booking helpers, the scheduler, or manual sends.
+        </Note>
+        <Row label="Document Template">
+          <select name="attach_template_id" defaultValue={tpl.attach_template_id ?? ""} className="input w-full max-w-md">
+            <option value="">— No document —</option>
+            {(docTemplates ?? []).map((d) => (
+              <option key={d.id} value={d.id}>{d.name} ({d.doc_type})</option>
+            ))}
+          </select>
+        </Row>
+        <Row label="Attach As">
+          <div className="space-y-2">
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm text-zinc-700 dark:text-zinc-300">
+              <input type="radio" name="attach_mode" value="esign_link" defaultChecked={(tpl.attach_mode ?? "esign_link") === "esign_link"} className="mt-1 accent-brand-light" />
+              <span>
+                <strong>E-Sign Link</strong> — generates the document for the event at send time and puts the secure
+                signing button in the email. Use the <code className="rounded bg-black/5 px-1 dark:bg-white/10">&lt;document_sign_link&gt;</code>{" "}
+                merge tag to place the link yourself, or leave it out and a Review &amp; Sign button is added at the bottom.
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm text-zinc-700 dark:text-zinc-300">
+              <input type="radio" name="attach_mode" value="pdf" defaultChecked={tpl.attach_mode === "pdf"} className="mt-1 accent-brand-light" />
+              <span>
+                <strong>PDF Attachment (no e-sign)</strong> — renders the branded PDF and attaches it. Uses the latest{" "}
+                <em>signed</em> copy when one exists (e.g. sending the executed agreement), otherwise generates fresh.
+                The PDF is also saved to the event&apos;s files.
+              </span>
+            </label>
+          </div>
+        </Row>
+        <Note>
+          Quote-style merge tags for the body: <code className="rounded bg-black/5 px-1 dark:bg-white/10">&lt;quote_summary&gt;</code>{" "}
+          (package + add-ons + Total Investment) and <code className="rounded bg-black/5 px-1 dark:bg-white/10">&lt;payment_plan&gt;</code>.
+        </Note>
       </Section>
 
       <Section title="Autofill Settings">

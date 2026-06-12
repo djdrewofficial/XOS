@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizeBlocks, docTypeClientLabel, type DocBlock } from "@/lib/documentBlocks";
-import { renderBlocks, loadEventBundle } from "@/lib/documentRender";
+import { renderBlocks, loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { processOutbox } from "@/lib/mailgun";
 import { appUrl, agreementEmailHtml } from "@/lib/signing";
 
@@ -110,30 +110,8 @@ export async function generateDocument(formData: FormData) {
   if (!templateId || !eventId) return;
 
   const supabase = await createClient();
-  const [{ data: template }, { data: event }] = await Promise.all([
-    supabase.from("document_templates").select("*").eq("id", templateId).single(),
-    supabase.from("events").select("id, name, client:clients(first_name, last_name)").eq("id", eventId).single(),
-  ]);
-  if (!template || !event) throw new Error("Template or event not found");
-
-  const rendered = await renderBlocks(supabase, eventId, sanitizeBlocks(template.blocks));
-  if (!rendered) throw new Error("Could not render document for this event");
-
-  const client = event.client as unknown as { first_name: string; last_name: string } | null;
-  const title = `${template.name} — ${client ? `${client.first_name} ${client.last_name}`.trim() : event.name || "Event"}`;
-
-  const { data: doc, error } = await supabase
-    .from("documents")
-    .insert({
-      template_id: templateId,
-      event_id: eventId,
-      title,
-      doc_type: template.doc_type,
-      blocks: rendered,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
+  const doc = await generateDocumentRow(supabase, templateId, eventId);
+  if (!doc) throw new Error("Could not render document for this event");
   revalidatePath("/documents");
   redirect(`/documents/${doc.id}`);
 }

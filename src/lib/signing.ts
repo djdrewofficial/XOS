@@ -61,25 +61,10 @@ function lineHtml(name: string, amount: number, description?: string | null, col
   </div>`;
 }
 
-/** The quote-style email: greeting, event summary, package + add-ons with
-    descriptions, Total Investment, payment plan, and the big CTA. */
-export function agreementEmailHtml({
-  bundle,
-  docLabel,
-  firstName,
-  buttonUrl,
-  companyName,
-  intro,
-  buttonLabel,
-}: {
-  bundle: EventBundle;
-  docLabel: string;
-  firstName: string;
-  buttonUrl: string;
-  companyName: string;
-  intro?: string;
-  buttonLabel?: string;
-}): string {
+/** Quote summary block: "prepared for" card, package + add-ons with
+    descriptions, fees, discounts, Total Investment. Also the <quote_summary>
+    merge tag in email templates. */
+export function quoteSummaryHtml(bundle: EventBundle): string {
   const e = bundle.event;
   const fees = feeSummary(bundle);
   const clientName = e.client ? `${e.client.first_name} ${e.client.last_name}`.trim() : "";
@@ -105,19 +90,13 @@ export function agreementEmailHtml({
   const packageSection = fees.packageLine
     ? `<div style="${SECTION_LABEL}">Your Package</div>${lineHtml(fees.packageLine.name, fees.packageLine.amount, fees.packageLine.description)}`
     : "";
-
   const addonSection = fees.addonLines.length
     ? `<div style="${SECTION_LABEL}">Add-Ons</div>${fees.addonLines.map((a) => lineHtml(a.name, a.amount, a.description)).join("")}`
     : "";
-
-  const feeSection = fees.feeLines.length
-    ? fees.feeLines.map((f) => lineHtml(f.name, f.amount)).join("")
-    : "";
-
+  const feeSection = fees.feeLines.length ? fees.feeLines.map((f) => lineHtml(f.name, f.amount)).join("") : "";
   const discountSection = fees.discountLines.length
     ? fees.discountLines.map((d) => lineHtml(d.name, -d.amount, null, "#1d7a46")).join("")
     : "";
-
   const totalRow = `
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;border-top:2px solid #4b328e;">
     <tr>
@@ -126,36 +105,60 @@ export function agreementEmailHtml({
     </tr>
   </table>`;
 
-  const scheduleSection = bundle.schedule.length
-    ? `<div style="${SECTION_LABEL}">Payment Plan</div>
-      ${bundle.schedule
-        .map(
-          (sp) => `<div style="${LINE_ROW}">
-            <table width="100%" cellpadding="0" cellspacing="0"><tr>
-              <td style="font-size:13.5px;color:#1d1d22;font-weight:600;">${esc(sp.label || (sp.seq === 1 ? "Retainer" : `Payment ${sp.seq}`))}</td>
-              <td style="font-size:12.5px;color:#6b6b76;">${sp.due_date ? fmtDate(sp.due_date) : "TBD"}</td>
-              <td align="right" style="font-size:13.5px;font-weight:700;color:#1d1d22;white-space:nowrap;">${money(Number(sp.amount))}</td>
-            </tr></table>
-          </div>`
-        )
-        .join("")}`
-    : "";
+  return `${summaryCard}${packageSection}${addonSection}${feeSection}${discountSection}${totalRow}`;
+}
 
+/** Payment plan block — also the <payment_plan> merge tag in email templates. */
+export function paymentPlanHtml(bundle: EventBundle): string {
+  if (!bundle.schedule.length) return "";
+  return `<div style="${SECTION_LABEL}">Payment Plan</div>
+    ${bundle.schedule
+      .map(
+        (sp) => `<div style="${LINE_ROW}">
+          <table width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td style="font-size:13.5px;color:#1d1d22;font-weight:600;">${esc(sp.label || (sp.seq === 1 ? "Retainer" : `Payment ${sp.seq}`))}</td>
+            <td style="font-size:12.5px;color:#6b6b76;">${sp.due_date ? fmtDate(sp.due_date) : "TBD"}</td>
+            <td align="right" style="font-size:13.5px;font-weight:700;color:#1d1d22;white-space:nowrap;">${money(Number(sp.amount))}</td>
+          </tr></table>
+        </div>`
+      )
+      .join("")}`;
+}
+
+/** CTA button — also used when an email template attaches an e-sign document. */
+export function signButtonHtml(buttonUrl: string, label: string): string {
+  return `<div style="text-align:center;margin:28px 0 6px;">
+    <a href="${buttonUrl}" style="display:inline-block;background:#4b328e;color:#ffffff;text-decoration:none;font-weight:800;font-size:16px;padding:15px 40px;border-radius:12px;">${esc(label)}</a>
+  </div>
+  <p style="font-size:12px;color:#8a8a94;text-align:center;margin:14px 0 0;">If the button doesn't work, copy this link into your browser:<br/><a href="${buttonUrl}" style="color:#4b328e;word-break:break-all;">${buttonUrl}</a></p>`;
+}
+
+/** The quote-style email: greeting, event summary, package + add-ons with
+    descriptions, Total Investment, payment plan, and the big CTA. */
+export function agreementEmailHtml({
+  bundle,
+  docLabel,
+  firstName,
+  buttonUrl,
+  companyName,
+  intro,
+  buttonLabel,
+}: {
+  bundle: EventBundle;
+  docLabel: string;
+  firstName: string;
+  buttonUrl: string;
+  companyName: string;
+  intro?: string;
+  buttonLabel?: string;
+}): string {
   const content = `
   <div style="padding:30px;color:#2c2c33;font-size:15px;line-height:1.6;">
     <h1 style="margin:0 0 4px;font-size:22px;color:#1d1d22;">Hi ${esc(firstName)}, we can already picture you on the dance floor! 🎶</h1>
     <p style="margin:0 0 20px;color:#55555e;">${esc(intro ?? `Your ${docLabel} is ready — here's everything we've put together for your big day.`)}</p>
-    ${summaryCard}
-    ${packageSection}
-    ${addonSection}
-    ${feeSection}
-    ${discountSection}
-    ${totalRow}
-    ${scheduleSection}
-    <div style="text-align:center;margin:28px 0 6px;">
-      <a href="${buttonUrl}" style="display:inline-block;background:#4b328e;color:#ffffff;text-decoration:none;font-weight:800;font-size:16px;padding:15px 40px;border-radius:12px;">${esc(buttonLabel ?? `Review & Sign ${docLabel}`)}</a>
-    </div>
-    <p style="font-size:12px;color:#8a8a94;text-align:center;margin:14px 0 0;">If the button doesn't work, copy this link into your browser:<br/><a href="${buttonUrl}" style="color:#4b328e;word-break:break-all;">${buttonUrl}</a></p>
+    ${quoteSummaryHtml(bundle)}
+    ${paymentPlanHtml(bundle)}
+    ${signButtonHtml(buttonUrl, buttonLabel ?? `Review & Sign ${docLabel}`)}
   </div>`;
 
   return emailShell(companyName, content);

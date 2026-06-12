@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
+import { docTypeClientLabel } from "@/lib/documentBlocks";
+import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml } from "@/lib/signing";
+import { buildDocumentHtml } from "@/lib/documentHtml";
+import { htmlToPdf } from "@/lib/pdf";
 
 /* ============ Mailgun config ============
    Set in .env.local:
@@ -26,6 +31,8 @@ function fmtSender(name: string | null, email: string): string {
   return name ? `${name} <${email}>` : email;
 }
 
+export type EmailAttachment = { filename: string; data: Buffer; contentType: string };
+
 /** Low-level send. Returns Mailgun's message id on success. */
 async function mailgunSend(opts: {
   from: string;
@@ -34,6 +41,7 @@ async function mailgunSend(opts: {
   html: string;
   replyTo?: string | null;
   tags?: string[];
+  attachments?: EmailAttachment[];
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const { apiKey, domain, base } = mailgunConfig();
   if (!apiKey || !domain) return { ok: false, error: "Mailgun not configured" };
@@ -45,6 +53,9 @@ async function mailgunSend(opts: {
   form.append("html", opts.html || "<p>(empty)</p>");
   if (opts.replyTo) form.append("h:Reply-To", opts.replyTo);
   for (const tag of opts.tags ?? []) form.append("o:tag", tag);
+  for (const att of opts.attachments ?? []) {
+    form.append("attachment", new Blob([new Uint8Array(att.data)], { type: att.contentType }), att.filename);
+  }
 
   try {
     const res = await fetch(`${base}/v3/${domain}/messages`, {
@@ -63,6 +74,125 @@ async function mailgunSend(opts: {
   } catch (err) {
     return { ok: false, error: String(err).slice(0, 300) };
   }
+}
+
+/* ============ Send-time enrichment ============
+   Replaces TS-side merge tags (<quote_summary>, <payment_plan>,
+   <document_sign_link>) and handles the email template's attached document:
+   e-sign link merged into the body, or a branded PDF rendered, attached, and
+   saved to the event's files. Runs identically for booking helpers, scheduled
+   templates, and manual sends. */
+
+function tagPresent(html: string, tag: string): boolean {
+  return html.includes(`<${tag}>`) || html.includes(`&lt;${tag}&gt;`);
+}
+
+function replaceTag(html: string, tag: string, value: string): string {
+  return html.split(`<${tag}>`).join(value).split(`&lt;${tag}&gt;`).join(value);
+}
+
+async function enrichMessage(
+  supabase: SupabaseClient,
+  msg: {
+    id: string;
+    event_id: string | null;
+    template_id: string | null;
+    body_html: string;
+    attached_document_id: string | null;
+  }
+): Promise<{ html: string; attachments: EmailAttachment[] }> {
+  let html = msg.body_html ?? "";
+  const attachments: EmailAttachment[] = [];
+  if (!msg.event_id) return { html, attachments };
+
+  // quote-style merge tags
+  if (tagPresent(html, "quote_summary") || tagPresent(html, "payment_plan")) {
+    const bundle = await loadEventBundle(supabase, msg.event_id);
+    if (bundle) {
+      html = replaceTag(html, "quote_summary", quoteSummaryHtml(bundle));
+      html = replaceTag(html, "payment_plan", paymentPlanHtml(bundle));
+    }
+  }
+
+  // document attached to the email template?
+  if (!msg.template_id) return { html, attachments };
+  const { data: tmpl } = await supabase
+    .from("email_templates")
+    .select("attach_template_id, attach_mode")
+    .eq("id", msg.template_id)
+    .maybeSingle();
+  if (!tmpl?.attach_template_id) {
+    // no attachment configured — still clean up a dangling sign-link tag
+    return { html: replaceTag(html, "document_sign_link", ""), attachments };
+  }
+
+  if (tmpl.attach_mode === "esign_link") {
+    // reuse the latest unsigned document for this event+template, else generate fresh
+    const { data: existing } = await supabase
+      .from("documents")
+      .select("id, access_token, doc_type")
+      .eq("event_id", msg.event_id)
+      .eq("template_id", tmpl.attach_template_id)
+      .is("signed_at", null)
+      .neq("status", "void")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const doc =
+      existing ?? (await generateDocumentRow(supabase, tmpl.attach_template_id, msg.event_id, "sent"));
+    if (doc) {
+      const link = `${appUrl()}/sign/${doc.access_token}`;
+      if (tagPresent(html, "document_sign_link")) {
+        html = replaceTag(html, "document_sign_link", link);
+      } else {
+        html += signButtonHtml(link, `Review & Sign ${docTypeClientLabel(doc.doc_type)}`);
+      }
+      await supabase.from("documents").update({ status: "sent" }).eq("id", doc.id).is("signed_at", null);
+      await supabase.from("email_log").update({ attached_document_id: doc.id }).eq("id", msg.id);
+    }
+  } else {
+    // pdf attachment: prefer the latest SIGNED document, else latest, else generate
+    const { data: docs } = await supabase
+      .from("documents")
+      .select("id, title, signed_at")
+      .eq("event_id", msg.event_id)
+      .eq("template_id", tmpl.attach_template_id)
+      .neq("status", "void")
+      .order("created_at", { ascending: false });
+    const pick = (docs ?? []).find((d) => d.signed_at) ?? (docs ?? [])[0] ?? null;
+    const doc =
+      pick ?? (await generateDocumentRow(supabase, tmpl.attach_template_id, msg.event_id, "final"));
+    if (doc) {
+      const built = await buildDocumentHtml(supabase, doc.id);
+      if (built) {
+        const pdf = await htmlToPdf(built.html);
+        const filename = `${built.title.replace(/[^\w\- &']+/g, "").trim() || "Document"}.pdf`;
+        attachments.push({ filename, data: pdf, contentType: "application/pdf" });
+
+        // save a copy to the event's files
+        const path = `${msg.event_id}/${doc.id}-${Date.now()}.pdf`;
+        const { error: upError } = await supabase.storage
+          .from("event-files")
+          .upload(path, pdf, { contentType: "application/pdf", upsert: true });
+        if (!upError) {
+          await supabase.from("event_files").insert({
+            event_id: msg.event_id,
+            document_id: doc.id,
+            name: filename,
+            path,
+            content_type: "application/pdf",
+            size_bytes: pdf.length,
+          });
+        }
+        await supabase
+          .from("email_log")
+          .update({ attached_document_id: doc.id, attached_file_name: filename })
+          .eq("id", msg.id);
+      }
+    }
+  }
+
+  return { html: replaceTag(html, "document_sign_link", ""), attachments };
 }
 
 /** Drains queued rows from the outbox through Mailgun, using each row's stored sender identity.
@@ -89,13 +219,31 @@ export async function processOutbox(
 
   for (const msg of queued ?? []) {
     const from = msg.from_address ? fmtSender(msg.from_name, msg.from_address) : fallbackFrom;
+
+    // send-time enrichment: quote tags + attached documents (e-sign link / PDF)
+    let html = msg.body_html;
+    let attachments: EmailAttachment[] = [];
+    try {
+      const enriched = await enrichMessage(supabase, msg);
+      html = enriched.html;
+      attachments = enriched.attachments;
+    } catch (err) {
+      await supabase
+        .from("email_log")
+        .update({ status: "failed", error: `attachment: ${String(err).slice(0, 280)}` })
+        .eq("id", msg.id);
+      failed++;
+      continue;
+    }
+
     const result = await mailgunSend({
       from,
       to: msg.to_address,
       subject: msg.subject,
-      html: msg.body_html,
+      html,
       replyTo: msg.reply_to,
       tags: ["xos", msg.event_id ? "event" : "manual"],
+      attachments,
     });
 
     if (result.ok) {

@@ -74,6 +74,10 @@ function buildPayload(formData: FormData) {
     is_inbox_reply: formData.get("is_inbox_reply") === "on",
     is_vendor_template: formData.get("is_vendor_template") === "on",
     is_venue_template: formData.get("is_venue_template") === "on",
+
+    // Attached document (e-sign link or PDF generated at send time)
+    attach_template_id: clean(formData.get("attach_template_id")),
+    attach_mode: clean(formData.get("attach_mode")) ?? "esign_link",
   };
 }
 

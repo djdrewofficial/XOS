@@ -3,7 +3,7 @@ import type { DocBlock } from "@/lib/documentBlocks";
 /* The branded document shell — every generated document renders inside this.
    The builder only handles content; this owns the look (screen + print). */
 
-const XDOC_CSS = `
+export const XDOC_CSS = `
 .xdoc, .xdoc * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .xdoc { max-width: 820px; margin: 0 auto; background: #fff; color: #1d1d22;
   font-family: Georgia, 'Times New Roman', serif; line-height: 1.65; font-size: 15px;
