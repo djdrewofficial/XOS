@@ -40,6 +40,17 @@ const XDOC_CSS = `
   letter-spacing: .16em; color: #8b6fd6; font-weight: 800; }
 .xdoc-detail-v { display: block; font-size: 14px; font-weight: 600; margin-top: 2px; }
 .xdoc-divider { border: none; border-top: 2px solid #ece9f4; margin: 26px 0; }
+/* collapsible chapters (Section blocks) — compact legal text, tap to expand */
+.xdoc-sec { border: 1px solid #ece9f4; border-radius: 10px; margin: 0 0 10px; overflow: hidden; }
+.xdoc-sec summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px;
+  padding: 11px 16px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px;
+  font-weight: 800; color: #4b328e; letter-spacing: .02em; background: #faf9fd; user-select: none; }
+.xdoc-sec summary::-webkit-details-marker { display: none; }
+.xdoc-sec summary::before { content: '▸'; font-size: 11px; color: #8b6fd6; transition: transform .15s; }
+.xdoc-sec[open] summary::before { transform: rotate(90deg); }
+.xdoc-sec[open] summary { border-bottom: 1px solid #ece9f4; }
+.xdoc-sec-body { padding: 12px 16px; font-size: 13px; line-height: 1.55; color: #3a3a42; }
+.xdoc-sec-body p { margin: .5em 0; }
 .xdoc-sign { margin: 40px 0 8px; max-width: 360px; font-family: ui-sans-serif, system-ui, sans-serif; }
 .xdoc-sign-line { border-bottom: 2px solid #1d1d22; height: 44px; }
 .xdoc-sign-name { font-weight: 700; margin-top: 8px; }
@@ -59,6 +70,10 @@ const XDOC_CSS = `
   .xdoc-body { padding: 32px 44px; }
   /* keep blocks from snapping in half across pages */
   .xdoc-table, .xdoc-details, .xdoc-sign, .xdoc-detail { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-sec { border: none; border-radius: 0; }
+  .xdoc-sec summary { background: none; padding: 8px 0 2px; }
+  .xdoc-sec summary::before { display: none; }
+  .xdoc-sec-body { padding: 4px 0 10px; }
   .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .xdoc-body h1, .xdoc-body h2, .xdoc-body h3 { break-after: avoid; page-break-after: avoid; }
   .xdoc-divider { break-after: avoid; }
@@ -88,6 +103,12 @@ export default function DocumentShell({
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: XDOC_CSS }} />
+      {/* chapters collapse on screen but must always print fully expanded */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `window.addEventListener('beforeprint',function(){document.querySelectorAll('details.xdoc-sec').forEach(function(d){d.dataset.wasOpen=d.open?'1':'';d.open=true;});});window.addEventListener('afterprint',function(){document.querySelectorAll('details.xdoc-sec').forEach(function(d){if(!d.dataset.wasOpen)d.open=false;});});`,
+        }}
+      />
       <div className="xdoc">
         <header className="xdoc-header">
           {/* the white logo — sits on the brand-gradient header and survives print */}

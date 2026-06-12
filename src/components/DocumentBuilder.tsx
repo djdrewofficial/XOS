@@ -33,7 +33,15 @@ export default function DocumentBuilder({
   }
 
   function add(type: DocBlock["type"]) {
-    setBlocks((prev) => [...prev, { id: crypto.randomUUID(), type, html: type === "text" ? "" : undefined }]);
+    setBlocks((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type,
+        title: type === "section" ? "" : undefined,
+        html: type === "text" || type === "section" ? "" : undefined,
+      },
+    ]);
   }
 
   return (
@@ -62,6 +70,20 @@ export default function DocumentBuilder({
             <div className="p-3">
               <RichTextEditor name={`block_html_${b.id}`} defaultValue={b.html ?? ""} />
             </div>
+          ) : b.type === "section" && mode === "template" ? (
+            <div className="space-y-2 p-3">
+              <input
+                name={`block_title_${b.id}`}
+                defaultValue={b.title ?? ""}
+                required
+                placeholder="Chapter title — e.g. 9. REMEDIES"
+                className="input w-full font-semibold"
+              />
+              <p className="text-[11px] text-zinc-400">
+                Renders as a tap-to-expand chapter on the client&apos;s page (smaller legal text) — auto-expands when printing.
+              </p>
+              <RichTextEditor name={`block_html_${b.id}`} defaultValue={b.html ?? ""} />
+            </div>
           ) : mode === "document" && b.html ? (
             <div className="p-4">
               <div className="mb-2 text-[11px] uppercase tracking-wide text-zinc-400">
@@ -85,6 +107,14 @@ export default function DocumentBuilder({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Add block:</span>
           <button type="button" onClick={() => add("text")} className="btn-ghost px-3 py-1.5 text-xs">+ Text</button>
+          <button
+            type="button"
+            onClick={() => add("section")}
+            title="Collapsible chapter: title + smaller legal text, tap-to-expand on the client page"
+            className="btn-ghost px-3 py-1.5 text-xs"
+          >
+            + Section
+          </button>
           {SMART_BLOCKS.map((s) => (
             <button key={s.type} type="button" onClick={() => add(s.type)} title={s.description} className="btn-ghost px-3 py-1.5 text-xs">
               + {s.name}

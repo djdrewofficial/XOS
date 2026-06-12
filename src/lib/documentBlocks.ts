@@ -4,8 +4,9 @@
 
 export type DocBlock = {
   id: string;
-  type: "text" | "fee_table" | "payment_schedule" | "event_details" | "signature" | "divider";
-  html?: string; // text blocks: authored html (template) or merged html (document snapshot)
+  type: "text" | "section" | "fee_table" | "payment_schedule" | "event_details" | "signature" | "divider";
+  title?: string; // section blocks: the chapter heading (collapsible on the client page)
+  html?: string; // text/section blocks: authored html (template) or merged html (document snapshot)
 };
 
 export const SMART_BLOCKS: { type: DocBlock["type"]; name: string; description: string }[] = [
@@ -18,6 +19,7 @@ export const SMART_BLOCKS: { type: DocBlock["type"]; name: string; description: 
 
 export const BLOCK_NAMES: Record<DocBlock["type"], string> = {
   text: "Text",
+  section: "Section (collapsible chapter)",
   fee_table: "Fee Table",
   payment_schedule: "Payment Schedule",
   event_details: "Event Details",
@@ -46,8 +48,13 @@ export function docTypeClientLabel(t: string | null | undefined): string {
 
 export function sanitizeBlocks(value: unknown): DocBlock[] {
   if (!Array.isArray(value)) return [];
-  const valid = new Set(["text", "fee_table", "payment_schedule", "event_details", "signature", "divider"]);
+  const valid = new Set(["text", "section", "fee_table", "payment_schedule", "event_details", "signature", "divider"]);
   return value
     .filter((b) => b && typeof b.id === "string" && valid.has(b.type))
-    .map((b) => ({ id: b.id, type: b.type, html: typeof b.html === "string" ? b.html : undefined }));
+    .map((b) => ({
+      id: b.id,
+      type: b.type,
+      title: typeof b.title === "string" ? b.title : undefined,
+      html: typeof b.html === "string" ? b.html : undefined,
+    }));
 }

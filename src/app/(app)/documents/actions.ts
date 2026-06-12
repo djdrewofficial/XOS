@@ -22,9 +22,19 @@ function blocksFromForm(formData: FormData): DocBlock[] {
   } catch {
     manifest = [];
   }
-  return sanitizeBlocks(manifest).map((b) =>
-    b.type === "text" ? { ...b, html: (formData.get(`block_html_${b.id}`) ?? "").toString() } : b
-  );
+  return sanitizeBlocks(manifest).map((b) => {
+    if (b.type === "text") {
+      return { ...b, html: (formData.get(`block_html_${b.id}`) ?? "").toString() };
+    }
+    if (b.type === "section") {
+      return {
+        ...b,
+        title: (formData.get(`block_title_${b.id}`) ?? "").toString(),
+        html: (formData.get(`block_html_${b.id}`) ?? "").toString(),
+      };
+    }
+    return b;
+  });
 }
 
 /* ---------------- templates ---------------- */

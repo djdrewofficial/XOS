@@ -221,6 +221,25 @@ export async function renderBlocks(
         p_template: block.html ?? "",
       });
       out.push({ ...block, html: (merged as string | null) ?? block.html ?? "" });
+    } else if (block.type === "section") {
+      // collapsible chapter: merged title + body wrapped in a <details> the
+      // shell styles (smaller legal text, auto-expands for print)
+      const { data: mergedBody } = await supabase.rpc("render_merge_tags", {
+        p_event_id: eventId,
+        p_template: block.html ?? "",
+      });
+      const { data: mergedTitle } = await supabase.rpc("render_merge_tags", {
+        p_event_id: eventId,
+        p_template: block.title ?? "",
+      });
+      const title = ((mergedTitle as string | null) ?? block.title ?? "Section").trim() || "Section";
+      out.push({
+        ...block,
+        title,
+        html: `<details class="xdoc-sec"><summary>${esc(title)}</summary><div class="xdoc-sec-body">${
+          (mergedBody as string | null) ?? block.html ?? ""
+        }</div></details>`,
+      });
     } else if (block.type === "fee_table") {
       out.push({ ...block, html: renderFeeTable(bundle) });
     } else if (block.type === "payment_schedule") {
