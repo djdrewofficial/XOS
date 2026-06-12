@@ -102,6 +102,16 @@ export default async function VenueDetailPage({
               <input type="checkbox" name="is_one_time" id="one_time" defaultChecked={venue.is_one_time} className="size-4 accent-brand-light" />
               <label htmlFor="one_time" className="text-sm text-zinc-600 dark:text-zinc-400">One-time venue</label>
             </div>
+            <div className="col-span-2 flex items-center gap-2">
+              <input type="checkbox" name="auto_mileage" id="auto_mileage" defaultChecked={Boolean(venue.auto_mileage)} className="size-4 accent-brand-light" />
+              <label
+                htmlFor="auto_mileage"
+                className="text-sm text-zinc-600 dark:text-zinc-400"
+                title="Booked events at this venue get a mileage expense automatically, using the Distance above. Rate and rules live in Settings → Expenses."
+              >
+                Auto mileage expense (uses Distance · rules in Expenses settings)
+              </label>
+            </div>
             <div className="col-span-2">
               <label className="label-xs">Load-In Details</label>
               <textarea name="load_in_details" rows={2} defaultValue={venue.load_in_details ?? ""} className="input w-full" />

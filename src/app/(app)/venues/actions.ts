@@ -46,11 +46,13 @@ export async function updateVenue(id: string, formData: FormData) {
       driving_notes: clean(formData.get("driving_notes")),
       notes: clean(formData.get("notes")),
       is_one_time: formData.get("is_one_time") === "on",
+      auto_mileage: formData.get("auto_mileage") === "on",
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath(`/venues/${id}`);
   revalidatePath("/venues");
+  revalidatePath("/settings/expenses");
 }
 
 export async function addVenueContact(venueId: string, formData: FormData) {

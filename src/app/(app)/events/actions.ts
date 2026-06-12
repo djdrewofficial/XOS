@@ -658,6 +658,7 @@ export async function addExpense(eventId: string, formData: FormData) {
     event_id: eventId,
     category_id: categoryId,
     payee: clean(formData.get("payee")),
+    payment_method: clean(formData.get("payment_method")),
     description: clean(formData.get("description")),
     amount: num(formData.get("amount")),
     expense_date: clean(formData.get("expense_date")) ?? undefined,

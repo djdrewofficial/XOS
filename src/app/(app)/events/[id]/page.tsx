@@ -79,6 +79,7 @@ export default async function EventDetailPage({
     { data: customDates },
     { data: eventLogs },
     { data: paySettings },
+    { data: expSettings },
   ] = await Promise.all([
     supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
     supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
@@ -99,6 +100,7 @@ export default async function EventDetailPage({
     supabase.from("event_custom_dates").select("*").eq("event_id", id),
     supabase.from("event_logs").select("*").eq("event_id", id).order("created_at", { ascending: false }).limit(100),
     supabase.from("payment_settings").select("*").eq("id", true).maybeSingle(),
+    supabase.from("expense_settings").select("payees").eq("id", true).maybeSingle(),
   ]);
 
   const [
@@ -180,11 +182,14 @@ export default async function EventDetailPage({
   // payment-settings-driven add-payment defaults (configured in Settings → Payment Settings)
   const ps = paySettings as {
     payment_methods: string[];
+    expense_payment_methods: string[];
     payment_reasons: string[];
     prefill_reasons: string[];
     autofill_no_payments: string;
     autofill_after_payments: string;
   } | null;
+  const payeeOptions = (expSettings as { payees?: string[] } | null)?.payees ?? [];
+  const expenseMethodOptions = ps?.expense_payment_methods ?? [];
   const methodOptions =
     ps?.payment_methods?.length ? ps.payment_methods : ["Cash", "Credit Card", "Zelle", "Other"];
   const autofillMode = (payments ?? []).length === 0 ? ps?.autofill_no_payments : ps?.autofill_after_payments;
@@ -860,8 +865,19 @@ export default async function EventDetailPage({
               ))}
             </select>
             <input name="new_category" placeholder="…or new category" className="input" />
-            <input name="payee" placeholder="Payee (e.g. subcontractor)" className="input" />
-            <input name="description" placeholder="Description" className="input" />
+            <input name="payee" placeholder="Payee (e.g. subcontractor)" list="payee-options" className="input" />
+            <datalist id="payee-options">
+              {payeeOptions.map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
+            <select name="payment_method" className="input">
+              <option value="">Payment method…</option>
+              {expenseMethodOptions.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <input name="description" placeholder="Description" className="input col-span-2" />
             <div className="col-span-2">
               <SaveButton className="btn-primary px-5 py-2 text-xs" savedLabel="Added">Add Expense</SaveButton>
             </div>
