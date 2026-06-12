@@ -35,6 +35,7 @@ import {
   addLogisticsNote,
   deleteEvent,
 } from "../actions";
+import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/actions";
 import InlineEditCard from "@/components/InlineEditCard";
 import ClientPicker from "@/components/ClientPicker";
 import BookingInfoEditor from "@/components/BookingInfoEditor";
@@ -102,6 +103,16 @@ export default async function EventDetailPage({
     supabase.from("payment_settings").select("*").eq("id", true).maybeSingle(),
     supabase.from("expense_settings").select("payees").eq("id", true).maybeSingle(),
   ]);
+
+  // documents tab data
+  const [{ data: eventDocs }, { data: docTemplates }] = await Promise.all([
+    supabase.from("documents").select("*").eq("event_id", id).order("created_at", { ascending: false }),
+    supabase.from("document_templates").select("id, name, doc_type").eq("is_active", true).order("name"),
+  ]);
+  const docIds = (eventDocs ?? []).map((d) => d.id);
+  const { data: docViews } = docIds.length
+    ? await supabase.from("document_views").select("document_id, ip, user_agent, viewed_at").in("document_id", docIds)
+    : { data: [] as { document_id: string; ip: string | null; user_agent: string | null; viewed_at: string }[] };
 
   const [
     { data: eventAddons },
@@ -1243,6 +1254,142 @@ export default async function EventDetailPage({
     </div>
   );
 
+  /* ---------- TAB: Documents ---------- */
+  type DocView = { document_id: string; ip: string | null; user_agent: string | null; viewed_at: string };
+  const viewsByDoc = new Map<string, DocView[]>();
+  ((docViews ?? []) as DocView[]).forEach((v) => {
+    if (!viewsByDoc.has(v.document_id)) viewsByDoc.set(v.document_id, []);
+    viewsByDoc.get(v.document_id)!.push(v);
+  });
+
+  const DOC_STATUS_STYLES: Record<string, string> = {
+    draft: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+    final: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+    sent: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+    signed: "bg-emerald-600 text-white",
+    void: "bg-red-500/15 text-red-700 dark:text-red-300",
+  };
+
+  const documentsTab = (
+    <div className="space-y-6">
+      {/* ---------- generator ---------- */}
+      <div className="card max-w-2xl p-5">
+        <h2 className="card-title">Generate Document</h2>
+        <form action={generateDocument} className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="event_id" value={id} />
+          <div className="min-w-56 flex-1">
+            <label className="label-xs">Template</label>
+            <select name="template_id" required className="input w-full">
+              <option value="">Select…</option>
+              {(docTemplates ?? []).map((t) => (
+                <option key={t.id} value={t.id}>{t.name} ({t.doc_type})</option>
+              ))}
+            </select>
+          </div>
+          <SaveButton className="btn-primary px-5 py-2 text-xs" savedLabel="Done">Generate</SaveButton>
+        </form>
+        <p className="mt-2 text-xs text-zinc-500">
+          Merge tags fill from this event; the fee table uses the pinned package version. Templates are managed in{" "}
+          <Link href="/documents" className="font-semibold text-brand underline dark:text-brand-lighter">Documents</Link>.
+        </p>
+      </div>
+
+      {/* ---------- saved documents ---------- */}
+      <div>
+        <h2 className="card-title">Saved Documents</h2>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {(eventDocs ?? []).map((d) => (
+            <div key={d.id} className="card p-4">
+              <div className="mb-1 flex items-start justify-between gap-2">
+                <Link href={`/documents/${d.id}`} className="font-semibold text-brand hover:underline dark:text-brand-lighter">
+                  {d.title}
+                </Link>
+                <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${DOC_STATUS_STYLES[d.status] ?? DOC_STATUS_STYLES.draft}`}>
+                  {d.status}
+                </span>
+              </div>
+              <div className="text-xs text-zinc-500">
+                Created {new Date(d.created_at).toLocaleDateString()}
+              </div>
+              {d.signed_at && (
+                <div className="mt-2 inline-block rounded bg-zinc-900 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white dark:bg-white dark:text-zinc-900">
+                  E-Signed on {new Date(d.signed_at).toLocaleDateString()}
+                  {d.signer_name ? ` · ${d.signer_name}` : ""}
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                <Link href={`/documents/${d.id}`} className="font-semibold text-brand hover:underline dark:text-brand-lighter">View</Link>
+                <a href={`/doc/${d.id}`} target="_blank" className="font-semibold text-brand hover:underline dark:text-brand-lighter">Print / PDF</a>
+                <form action={setDocumentVisibility.bind(null, d.id, id, !d.visible_to_client)} className="ml-auto">
+                  <button
+                    className={`rounded-md border px-2.5 py-1 font-semibold ${
+                      d.visible_to_client
+                        ? "border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300"
+                        : "border-zinc-300 text-zinc-500 dark:border-white/10"
+                    }`}
+                    title="Controls whether the client can see this document on their link/portal"
+                  >
+                    {d.visible_to_client ? "Visible To Client" : "Hidden From Client"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          ))}
+          {(eventDocs ?? []).length === 0 && (
+            <p className="card px-4 py-8 text-center text-sm text-zinc-500 md:col-span-2 xl:col-span-3">
+              No documents generated for this event yet.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ---------- e-signature link tracking ---------- */}
+      {(eventDocs ?? []).length > 0 && (
+        <div>
+          <h2 className="card-title">E-Signature Link Tracking</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            {(eventDocs ?? []).map((d) => {
+              const views = viewsByDoc.get(d.id) ?? [];
+              const signedAt = d.signed_at ? new Date(d.signed_at).getTime() : null;
+              const viewsBefore = signedAt
+                ? views.filter((v) => new Date(v.viewed_at).getTime() <= signedAt).length
+                : views.length;
+              const uniqueIps = new Set(views.map((v) => v.ip).filter(Boolean)).size;
+              const uniqueAgents = new Set(views.map((v) => v.user_agent).filter(Boolean)).size;
+              const lastVisit = views.length
+                ? new Date(Math.max(...views.map((v) => new Date(v.viewed_at).getTime())))
+                : null;
+              const rows: [string, string][] = [
+                ["E-Signature ID", String(d.access_token).replace(/-/g, "").slice(0, 22)],
+                ["Page Views Before Signature", String(viewsBefore)],
+                ["Total Page Views", String(views.length)],
+                ["Unique IP Addresses", String(uniqueIps)],
+                ["Unique Browser Agent Strings", String(uniqueAgents)],
+                ["Last Visited Date", lastVisit ? lastVisit.toLocaleString() : "—"],
+              ];
+              return (
+                <div key={d.id} className="card p-4">
+                  <div className="mb-2 font-semibold text-zinc-800 dark:text-zinc-200">{d.title}</div>
+                  <dl className="space-y-1 text-sm">
+                    {rows.map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-4">
+                        <dt className="text-zinc-500">{k}</dt>
+                        <dd className="font-medium text-zinc-700 dark:text-zinc-300">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="mt-2 text-[11px] text-zinc-400">
+                    Views log automatically once the client signing link goes live (phase 2).
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   /* ---------- header helpers ---------- */
   // parse date parts from the string to avoid timezone shifts
   const dateParts = event.event_date ? event.event_date.split("-").map(Number) : null;
@@ -1379,6 +1526,7 @@ export default async function EventDetailPage({
           { id: "staff", label: "Staff", badge: (staff ?? []).length, content: staffTab },
           { id: "vendors", label: "Vendors", badge: vendorRows.length, content: vendorsTab },
           { id: "logistics", label: "Logistics", badge: equipRows.length ? `${packedCount}/${equipRows.length}` : undefined, content: logisticsTab },
+          { id: "documents", label: "Documents", badge: (eventDocs ?? []).length || undefined, content: documentsTab },
           { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />

@@ -183,6 +183,17 @@ export async function setDocumentStatus(id: string, status: string) {
   revalidatePath("/documents");
 }
 
+export async function setDocumentVisibility(id: string, eventId: string, visible: boolean) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("documents")
+    .update({ visible_to_client: visible, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath(`/documents/${id}`);
+}
+
 export async function deleteDocument(id: string) {
   const supabase = await createClient();
   const { data: doc } = await supabase.from("documents").select("signed_at").eq("id", id).single();
