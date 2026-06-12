@@ -20,6 +20,7 @@ type Preview = {
     discount1_amount: number;
     discount2_amount: number;
     package_price_override: number | null;
+    package_price_locked?: number | null;
     internal_notes: string | null;
     custom_fields: Record<string, string>;
     event_type: { name: string } | null;
@@ -60,7 +61,7 @@ export default function EventChip({
         supabase
           .from("events")
           .select(
-            "id, name, event_date, setup_time, start_time, end_time, guest_count, deposit_value, overtime_fee, travel_fee, discount1_amount, discount2_amount, package_price_override, internal_notes, custom_fields, event_type:event_types(name), status:event_statuses(name, color, text_color), client:clients(id, first_name, last_name, cell_phone, email), venue:venues(name, address, city), package:packages(name, default_price)"
+            "id, name, event_date, setup_time, start_time, end_time, guest_count, deposit_value, overtime_fee, travel_fee, discount1_amount, discount2_amount, package_price_override, package_price_locked, internal_notes, custom_fields, event_type:event_types(name), status:event_statuses(name, color, text_color), client:clients(id, first_name, last_name, cell_phone, email), venue:venues(name, address, city), package:packages(name, default_price)"
           )
           .eq("id", eventId)
           .single(),
@@ -96,7 +97,7 @@ export default function EventChip({
 
   const e = data?.event;
   const total = e
-    ? (e.package_price_override ?? e.package?.default_price ?? 0) +
+    ? (e.package_price_override ?? e.package_price_locked ?? e.package?.default_price ?? 0) +
       e.overtime_fee +
       e.travel_fee -
       e.discount1_amount -

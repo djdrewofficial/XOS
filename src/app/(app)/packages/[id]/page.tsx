@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
 import Tabs from "@/components/Tabs";
 import SaveButton from "@/components/SaveButton";
+import VersionSaveButtons from "@/components/VersionSaveButtons";
 import {
   updatePackageGeneral,
   updatePackageFinancials,
@@ -50,6 +51,22 @@ export default async function PackageDetailPage({
   const addonCatName = new Map((addonCategories ?? []).map((c) => [c.id as string, c.name as string]));
 
   if (!pkg) notFound();
+
+  // version history + which versions events are pinned to
+  const [{ data: versions }, { data: pinnedEvents }] = await Promise.all([
+    supabase
+      .from("package_versions")
+      .select("version_no, created_at, snapshot")
+      .eq("package_id", id)
+      .order("version_no", { ascending: false }),
+    supabase.from("events").select("package_version_no").eq("package_id", id),
+  ]);
+  const pinCounts = new Map<number, number>();
+  (pinnedEvents ?? []).forEach((e) => {
+    const v = (e as { package_version_no: number | null }).package_version_no;
+    if (v != null) pinCounts.set(v, (pinCounts.get(v) ?? 0) + 1);
+  });
+  const currentVersion: number = pkg.current_version ?? 1;
 
   const weekday = (pkg.weekday_prices as Record<string, number> | null) ?? {};
   const addonQty = new Map((addonDefaults ?? []).map((a) => [a.addon_id, a.quantity]));
@@ -114,7 +131,7 @@ export default async function PackageDetailPage({
               Active
             </label>
           </div>
-          <SaveButton>Save</SaveButton>
+          <VersionSaveButtons currentVersion={currentVersion} />
         </form>
       </div>
 
@@ -227,7 +244,7 @@ export default async function PackageDetailPage({
               </select>
             </div>
 
-            <SaveButton>Save Financials</SaveButton>
+            <VersionSaveButtons currentVersion={currentVersion} />
           </form>
         </div>
 
@@ -353,6 +370,68 @@ export default async function PackageDetailPage({
     </form>
   );
 
+  /* ---------- TAB: Versions ---------- */
+  const versionsTab = (
+    <div className="card overflow-hidden">
+      <div className="border-b border-zinc-100 px-5 py-4 dark:border-white/[0.05]">
+        <h2 className="card-title mb-1">Version History</h2>
+        <p className="text-xs text-zinc-500">
+          Events keep the version (price + description) they were sold with — changing this package never reprices
+          past events. Saving with <strong>Create New Version</strong> starts a new entry here; <strong>Update Current
+          Version</strong> fixes the latest one in place (typos).
+        </p>
+      </div>
+      {(versions ?? []).map((v) => {
+        const snap = v.snapshot as {
+          name?: string;
+          default_price?: number;
+          hourly_rate?: number;
+          is_hourly?: boolean;
+          description?: string | null;
+        };
+        const pinned = pinCounts.get(v.version_no) ?? 0;
+        return (
+          <div key={v.version_no} className="flex items-start gap-4 border-t border-zinc-100 px-5 py-3 first:border-t-0 dark:border-white/[0.05]">
+            <span
+              className={`mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-xs font-bold ${
+                v.version_no === currentVersion
+                  ? "bg-gradient-to-r from-brand to-brand-light text-white"
+                  : "bg-black/[0.06] text-zinc-600 dark:bg-white/10 dark:text-zinc-300"
+              }`}
+            >
+              v{v.version_no}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                {snap.name ?? pkg.name}
+                <span className="ml-2 font-normal text-zinc-500">
+                  {snap.is_hourly ? `${money(Number(snap.hourly_rate ?? 0))}/hr` : money(Number(snap.default_price ?? 0))}
+                </span>
+                {v.version_no === currentVersion && (
+                  <span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-brand dark:text-brand-lighter">current</span>
+                )}
+              </div>
+              {snap.description && (
+                <p className="mt-0.5 truncate text-xs text-zinc-500">{snap.description}</p>
+              )}
+            </div>
+            <div className="shrink-0 text-right text-xs text-zinc-400">
+              <div>{new Date(v.created_at).toLocaleDateString()}</div>
+              <div className={pinned > 0 ? "font-semibold text-zinc-600 dark:text-zinc-300" : ""}>
+                {pinned} event{pinned === 1 ? "" : "s"}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {(versions ?? []).length === 0 && (
+        <p className="px-5 py-8 text-center text-sm text-zinc-500">
+          No version history yet — run migration 00030, then every save records a version.
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div className="max-w-6xl">
       <div className="mb-5">
@@ -373,6 +452,7 @@ export default async function PackageDetailPage({
           { id: "financials", label: "Financials", badge: (datePrices ?? []).length ? `${(datePrices ?? []).length} date rules` : undefined, content: financialsTab },
           { id: "equipment", label: "Assigned Equipment", badge: (equipDefaults ?? []).length || undefined, content: equipmentTab },
           { id: "addons", label: "Assigned Add-Ons", badge: (addonDefaults ?? []).length || undefined, content: addonsTab },
+          { id: "versions", label: "Versions", badge: `v${currentVersion}`, content: versionsTab },
         ]}
       />
     </div>

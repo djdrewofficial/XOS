@@ -164,11 +164,12 @@ export default async function EventDetailPage({
     id: string;
     quantity: number;
     price_override: number | null;
+    price_locked?: number | null;
     addon: { id: string; name: string; default_price: number; description: string | null } | null;
   };
   const addonRows = (eventAddons ?? []) as unknown as EventAddonRow[];
   const addonLine = (ea: EventAddonRow) =>
-    ea.quantity * Number(ea.price_override ?? ea.addon?.default_price ?? 0);
+    ea.quantity * Number(ea.price_override ?? ea.price_locked ?? ea.addon?.default_price ?? 0);
   const addonsTotal = addonRows.reduce((s, ea) => s + addonLine(ea), 0);
   const venueSetupFee = Number(
     (event.venue as unknown as { setup_fee?: number } | null)?.setup_fee ?? 0
@@ -581,8 +582,20 @@ export default async function EventDetailPage({
   const expensesTotal = (expenses ?? []).reduce((s, x) => s + Number(x.amount), 0);
   const netProfit = total - wages - expensesTotal;
   const totalMiles = (trips ?? []).reduce((s, t) => s + Number(t.miles), 0);
-  const pkgPrice = event.package_price_override ?? event.package?.default_price ?? 0;
-  const pkgDescription = (event.package as unknown as { description?: string | null } | null)?.description;
+  const pkgPrice = event.package_price_override ?? event.package_price_locked ?? event.package?.default_price ?? 0;
+  // description pinned to the version the event was sold with (falls back to live package)
+  let pkgDescription = (event.package as unknown as { description?: string | null } | null)?.description;
+  const pinnedVersionNo = (event as { package_version_no?: number | null }).package_version_no;
+  if (event.package_id && pinnedVersionNo != null) {
+    const { data: pinnedVersion } = await supabase
+      .from("package_versions")
+      .select("snapshot")
+      .eq("package_id", event.package_id)
+      .eq("version_no", pinnedVersionNo)
+      .maybeSingle();
+    const snapDesc = (pinnedVersion?.snapshot as { description?: string | null } | undefined)?.description;
+    if (snapDesc !== undefined) pkgDescription = snapDesc;
+  }
   const pkgRules = event.package as unknown as {
     allowed_splits?: number[] | null;
     payment_terms?: string | null;
@@ -623,7 +636,7 @@ export default async function EventDetailPage({
                 <span className="text-zinc-800 dark:text-zinc-200">
                   {ea.addon?.name ?? "?"}{" "}
                   <span className="text-xs text-zinc-500">
-                    ({ea.quantity} @ {money(ea.price_override ?? ea.addon?.default_price ?? 0)})
+                    ({ea.quantity} @ {money(ea.price_override ?? ea.price_locked ?? ea.addon?.default_price ?? 0)})
                   </span>
                 </span>
                 <span className="font-semibold">{money(addonLine(ea))}</span>
@@ -680,7 +693,7 @@ export default async function EventDetailPage({
             {addonRows.map((ea) => (
               <div key={ea.id} className={feeRow}>
                 <span className="text-zinc-600 dark:text-zinc-400">
-                  {ea.addon?.name} ({ea.quantity} @ {money(ea.price_override ?? ea.addon?.default_price ?? 0)})
+                  {ea.addon?.name} ({ea.quantity} @ {money(ea.price_override ?? ea.price_locked ?? ea.addon?.default_price ?? 0)})
                 </span>
                 <span>{money(addonLine(ea))}</span>
               </div>

@@ -18,7 +18,7 @@ export default async function EventsPage() {
         .limit(1000),
       supabase.from("event_staff").select("event_id, employee:employees(first_name, last_name)"),
       supabase.from("event_vendors").select("event_id, vendor:vendors(company_name)"),
-      supabase.from("event_addons").select("event_id, quantity, price_override, addon:addons(name, default_price)"),
+      supabase.from("event_addons").select("event_id, quantity, price_override, price_locked, addon:addons(name, default_price)"),
       supabase.from("payments").select("event_id, amount"),
     ]);
 
@@ -43,7 +43,9 @@ export default async function EventsPage() {
     const ad = a.addon as unknown as { name: string; default_price: number } | null;
     const entry = addonsByEvent.get(a.event_id) ?? { names: [], total: 0 };
     if (ad) entry.names.push(a.quantity > 1 ? `${ad.name} ×${a.quantity}` : ad.name);
-    entry.total += (a.quantity ?? 1) * Number(a.price_override ?? ad?.default_price ?? 0);
+    entry.total +=
+      (a.quantity ?? 1) *
+      Number(a.price_override ?? (a as { price_locked?: number | null }).price_locked ?? ad?.default_price ?? 0);
     addonsByEvent.set(a.event_id, entry);
   });
 
@@ -61,7 +63,7 @@ export default async function EventsPage() {
     const addonInfo = addonsByEvent.get(e.id) ?? { names: [], total: 0 };
 
     const total =
-      Number(e.package_price_override ?? pkg?.default_price ?? 0) +
+      Number(e.package_price_override ?? e.package_price_locked ?? pkg?.default_price ?? 0) +
       addonInfo.total +
       Number(e.overtime_fee) +
       Number(e.travel_fee) +

@@ -13,6 +13,47 @@ function num(v: FormDataEntryValue | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/* After a catalog save: "new" bumps current_version and snapshots it (events keep the
+   version they signed with); "current" rewrites the latest snapshot in place (typo fix). */
+async function snapshotVersion(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: "packages" | "addons",
+  id: string,
+  mode: string | null
+) {
+  const versionTable = table === "packages" ? "package_versions" : "addon_versions";
+  const fk = table === "packages" ? "package_id" : "addon_id";
+  const { data: row, error } = await supabase.from(table).select("*").eq("id", id).single();
+  if (error || !row) return;
+
+  // pre-migration-00030 safety: if the version tables aren't there yet, save normally
+  const tolerate = (msg: string) => /could not find|does not exist|schema cache/i.test(msg);
+
+  if (mode === "new") {
+    const newVersion = (row.current_version ?? 1) + 1;
+    const { error: bumpError } = await supabase
+      .from(table)
+      .update({ current_version: newVersion })
+      .eq("id", id);
+    if (bumpError) {
+      if (tolerate(bumpError.message)) return;
+      throw new Error(bumpError.message);
+    }
+    const { error: insError } = await supabase.from(versionTable).insert({
+      [fk]: id,
+      version_no: newVersion,
+      snapshot: { ...row, current_version: newVersion },
+    });
+    if (insError && !tolerate(insError.message)) throw new Error(insError.message);
+  } else {
+    const { error: upError } = await supabase.from(versionTable).upsert(
+      { [fk]: id, version_no: row.current_version ?? 1, snapshot: row },
+      { onConflict: `${fk},version_no` }
+    );
+    if (upError && !tolerate(upError.message)) throw new Error(upError.message);
+  }
+}
+
 export async function createPackage(formData: FormData) {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -135,6 +176,7 @@ export async function updateAddonSettings(id: string, formData: FormData) {
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  await snapshotVersion(supabase, "addons", id, clean(formData.get("version_mode")));
   revalidatePath(`/addons/${id}`);
   revalidatePath("/packages");
 }
@@ -190,6 +232,7 @@ export async function updatePackageGeneral(id: string, formData: FormData) {
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  await snapshotVersion(supabase, "packages", id, clean(formData.get("version_mode")));
   revalidatePath(`/packages/${id}`);
   revalidatePath("/packages");
 }
@@ -231,6 +274,7 @@ export async function updatePackageFinancials(id: string, formData: FormData) {
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  await snapshotVersion(supabase, "packages", id, clean(formData.get("version_mode")));
   revalidatePath(`/packages/${id}`);
   revalidatePath("/packages");
 }

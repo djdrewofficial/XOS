@@ -86,6 +86,8 @@ export type XEvent = {
   venue_id: string | null;
   package_id: string | null;
   package_price_override: number | null;
+  package_price_locked?: number | null; // price pinned at assignment — catalog changes never reprice events
+  package_version_no?: number | null;
   overtime_fee: number;
   travel_fee: number;
   discount1_label: string | null;
@@ -133,6 +135,7 @@ export function money(n: number | null | undefined): string {
 }
 
 export function eventTotal(e: XEvent): number {
-  const pkg = e.package_price_override ?? e.package?.default_price ?? 0;
-  return pkg + e.overtime_fee + e.travel_fee - e.discount1_amount - e.discount2_amount;
+  // override → price locked at assignment → live catalog price (pre-00030 fallback)
+  const pkg = e.package_price_override ?? e.package_price_locked ?? e.package?.default_price ?? 0;
+  return Number(pkg) + e.overtime_fee + e.travel_fee - e.discount1_amount - e.discount2_amount;
 }
