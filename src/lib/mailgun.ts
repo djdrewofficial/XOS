@@ -253,6 +253,7 @@ export async function processOutbox(
           status: "sent",
           sent_at: new Date().toISOString(),
           provider_message_id: result.id || null,
+          body_html: html, // persist the enriched body — the log shows what was actually sent
           error: null,
         })
         .eq("id", msg.id);
