@@ -22,7 +22,13 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-    router.push("/");
+    // land on the page chosen in General settings
+    const { data: cs } = await supabase
+      .from("company_settings")
+      .select("landing_page")
+      .eq("id", true)
+      .maybeSingle();
+    router.push(cs?.landing_page || "/");
     router.refresh();
   }
 
