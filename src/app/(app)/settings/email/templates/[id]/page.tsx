@@ -148,6 +148,16 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
         <Row label="Status">
           <CheckBoxField name="is_active" label="Active" defaultChecked={tpl.is_active} />
         </Row>
+        <Row
+          label="Branded Design"
+          hint="ON: logo header + styled card. OFF: plain email exactly as written — better deliverability for follow-ups."
+        >
+          <CheckBoxField
+            name="branded_shell"
+            label="Wrap in the branded design (logo header + card)"
+            defaultChecked={tpl.branded_shell ?? true}
+          />
+        </Row>
       </Section>
 
       <Section title="Attach Document">

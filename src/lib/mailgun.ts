@@ -100,10 +100,19 @@ async function enrichMessage(
     body_html: string;
     attached_document_id: string | null;
   }
-): Promise<{ html: string; attachments: EmailAttachment[] }> {
+): Promise<{ html: string; attachments: EmailAttachment[]; branded: boolean }> {
   let html = msg.body_html ?? "";
   const attachments: EmailAttachment[] = [];
-  if (!msg.event_id) return { html, attachments };
+
+  // template settings drive branding + attachments
+  let tmpl: { attach_template_id?: string | null; attach_mode?: string | null; branded_shell?: boolean } | null = null;
+  if (msg.template_id) {
+    const { data } = await supabase.from("email_templates").select("*").eq("id", msg.template_id).maybeSingle();
+    tmpl = data;
+  }
+  const branded = tmpl?.branded_shell ?? true;
+
+  if (!msg.event_id) return { html, attachments, branded };
 
   // quote-style merge tags
   if (tagPresent(html, "quote_summary") || tagPresent(html, "payment_plan")) {
@@ -115,31 +124,26 @@ async function enrichMessage(
   }
 
   // document attached to the email template?
-  if (!msg.template_id) return { html, attachments };
-  const { data: tmpl } = await supabase
-    .from("email_templates")
-    .select("attach_template_id, attach_mode")
-    .eq("id", msg.template_id)
-    .maybeSingle();
   if (!tmpl?.attach_template_id) {
     // no attachment configured — still clean up a dangling sign-link tag
-    return { html: replaceTag(html, "document_sign_link", ""), attachments };
+    return { html: replaceTag(html, "document_sign_link", ""), attachments, branded };
   }
 
-  if (tmpl.attach_mode === "esign_link") {
+  const attachTemplateId = tmpl.attach_template_id as string;
+  if ((tmpl.attach_mode ?? "esign_link") === "esign_link") {
     // reuse the latest unsigned document for this event+template, else generate fresh
     const { data: existing } = await supabase
       .from("documents")
       .select("id, access_token, doc_type")
       .eq("event_id", msg.event_id)
-      .eq("template_id", tmpl.attach_template_id)
+      .eq("template_id", attachTemplateId)
       .is("signed_at", null)
       .neq("status", "void")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     const doc =
-      existing ?? (await generateDocumentRow(supabase, tmpl.attach_template_id, msg.event_id, "sent"));
+      existing ?? (await generateDocumentRow(supabase, attachTemplateId, msg.event_id, "sent"));
     if (doc) {
       const link = `${appUrl()}/sign/${doc.access_token}`;
       if (tagPresent(html, "document_sign_link")) {
@@ -156,12 +160,12 @@ async function enrichMessage(
       .from("documents")
       .select("id, title, signed_at")
       .eq("event_id", msg.event_id)
-      .eq("template_id", tmpl.attach_template_id)
+      .eq("template_id", attachTemplateId)
       .neq("status", "void")
       .order("created_at", { ascending: false });
     const pick = (docs ?? []).find((d) => d.signed_at) ?? (docs ?? [])[0] ?? null;
     const doc =
-      pick ?? (await generateDocumentRow(supabase, tmpl.attach_template_id, msg.event_id, "final"));
+      pick ?? (await generateDocumentRow(supabase, attachTemplateId, msg.event_id, "final"));
     if (doc) {
       const built = await buildDocumentHtml(supabase, doc.id);
       if (built) {
@@ -192,7 +196,7 @@ async function enrichMessage(
     }
   }
 
-  return { html: replaceTag(html, "document_sign_link", ""), attachments };
+  return { html: replaceTag(html, "document_sign_link", ""), attachments, branded };
 }
 
 /** Wraps editor-authored bodies in the branded shell (logo header + white card).
@@ -248,7 +252,7 @@ export async function processOutbox(
     let attachments: EmailAttachment[] = [];
     try {
       const enriched = await enrichMessage(supabase, msg);
-      html = brandWrap(enriched.html, companyName);
+      html = enriched.branded ? brandWrap(enriched.html, companyName) : enriched.html;
       attachments = enriched.attachments;
     } catch (err) {
       await supabase

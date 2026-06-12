@@ -78,6 +78,8 @@ function buildPayload(formData: FormData) {
     // Attached document (e-sign link or PDF generated at send time)
     attach_template_id: clean(formData.get("attach_template_id")),
     attach_mode: clean(formData.get("attach_mode")) ?? "esign_link",
+    // OFF = plain email for deliverability (follow-ups)
+    branded_shell: formData.get("branded_shell") === "on",
   };
 }
 
