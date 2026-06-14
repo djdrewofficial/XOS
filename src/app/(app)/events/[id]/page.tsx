@@ -42,19 +42,25 @@ import BookingInfoEditor from "@/components/BookingInfoEditor";
 import AddonPicker from "@/components/AddonPicker";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
-import Tabs from "@/components/Tabs";
+import UrlTabs from "@/components/UrlTabs";
 import SaveButton from "@/components/SaveButton";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
 import type { ConvRow } from "@/components/InboxShell";
 
 export const dynamic = "force-dynamic";
 
+const EVENT_TABS = ["client", "details", "booking", "financials", "staff", "vendors", "logistics", "documents", "comms", "notes"] as const;
+
 export default async function EventDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { id } = await params;
+  const { tab } = await searchParams;
+  const activeTab = (EVENT_TABS as readonly string[]).includes(tab ?? "") ? (tab as string) : "client";
   const supabase = await createClient();
 
   // PERF: every query that depends only on the event id runs in ONE parallel
@@ -182,12 +188,16 @@ export default async function EventDetailPage({
     linkedClientIds.length
       ? supabase.from("client_notes").select("*").in("client_id", linkedClientIds).order("created_at", { ascending: false })
       : Promise.resolve({ data: [] as { id: string; client_id: string; body: string; created_at: string }[] }),
-    Promise.all(
-      (eventFiles ?? []).map(async (f) => {
-        const { data: signed } = await supabase.storage.from("event-files").createSignedUrl(f.path, 3600);
-        return [f.id, signed?.signedUrl] as const;
-      })
-    ),
+    // signed URLs hit Storage once per file — only generate them when the
+    // Documents tab is actually open (URL-driven lazy load)
+    activeTab === "documents"
+      ? Promise.all(
+          (eventFiles ?? []).map(async (f) => {
+            const { data: signed } = await supabase.storage.from("event-files").createSignedUrl(f.path, 3600);
+            return [f.id, signed?.signedUrl] as const;
+          })
+        )
+      : Promise.resolve([] as (readonly [string, string | undefined])[]),
   ]);
 
   const fileLinks = new Map<string, string>();
@@ -1603,7 +1613,9 @@ export default async function EventDetailPage({
         </div>
       </div>
 
-      <Tabs
+      <UrlTabs
+        active={activeTab}
+        basePath={`/events/${id}`}
         tabs={[
           { id: "client", label: "Client", badge: (eventClients ?? []).length, content: clientTab },
           { id: "details", label: "Details", content: detailsTab },
