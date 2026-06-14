@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useMobileNav } from "@/components/MobileNav";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import {
@@ -92,6 +93,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { open, setOpen } = useMobileNav();
 
   async function signOut() {
     const supabase = createClient();
@@ -111,6 +113,7 @@ export default function Sidebar() {
     return (
       <Link
         href={item.href}
+        onClick={() => setOpen(false)}
         className={`group flex items-center gap-2.5 rounded-lg py-2 text-sm font-medium transition-all ${nested ? "pl-9 pr-3" : "px-3"} ${
           active
             ? "bg-gradient-to-r from-brand to-brand-light/80 text-white shadow-lg shadow-brand/40"
@@ -157,7 +160,20 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 dark:border-white/[0.06] bg-white/75 dark:bg-black/40 backdrop-blur-xl">
+    <>
+      {/* mobile backdrop — tap to close the drawer */}
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
+          aria-hidden
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 shrink-0 flex-col border-r border-zinc-200 bg-white backdrop-blur-xl transition-transform duration-200 dark:border-white/[0.06] dark:bg-zinc-950 md:sticky md:top-0 md:z-auto md:w-60 md:translate-x-0 md:bg-white/75 md:dark:bg-black/40 ${
+          open ? "translate-x-0 shadow-2xl" : "-translate-x-full md:shadow-none"
+        }`}
+      >
       <div className="px-5 pt-6 pb-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-light.png" alt="Xpress Entertainment" className="block w-40 dark:hidden" />
@@ -197,6 +213,7 @@ export default function Sidebar() {
           Sign Out
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

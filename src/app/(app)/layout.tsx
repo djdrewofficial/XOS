@@ -1,6 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import AutoCompleteControl from "@/components/AutoCompleteControl";
+import { MobileNavProvider } from "@/components/MobileNav";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({
@@ -16,11 +17,13 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-screen">
       <AutoCompleteControl enabled={Boolean(cs?.browser_autocomplete)} />
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar />
-        <main className="min-w-0 flex-1 p-6">{children}</main>
-      </div>
+      <MobileNavProvider>
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar />
+          <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+        </div>
+      </MobileNavProvider>
     </div>
   );
 }

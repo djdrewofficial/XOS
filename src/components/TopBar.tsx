@@ -6,12 +6,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import NotificationBell from "@/components/NotificationBell";
+import { useMobileNav } from "@/components/MobileNav";
 import {
   faGauge,
   faCalendarDays,
   faCalendarPlus,
   faMagnifyingGlass,
   faArrowLeft,
+  faBars,
 } from "@fortawesome/free-solid-svg-icons";
 
 /* Sticky app header: global search on the left, quick-nav icons (same icons
@@ -44,6 +46,7 @@ export default function TopBar() {
   const [highlight, setHighlight] = useState(0);
   const [loading, setLoading] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
+  const { setOpen: setNavOpen } = useMobileNav();
   const boxRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -117,14 +120,23 @@ export default function TopBar() {
   }
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-4 border-b border-zinc-200 bg-white/80 px-5 backdrop-blur-xl dark:border-white/[0.06] dark:bg-black/50">
+    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur-xl dark:border-white/[0.06] dark:bg-black/50 sm:gap-4 sm:px-5">
+      {/* hamburger — opens the nav drawer on mobile (sidebar is always-on at md+) */}
+      <button
+        type="button"
+        onClick={() => setNavOpen(true)}
+        aria-label="Open menu"
+        className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-black/[0.05] dark:text-zinc-300 dark:hover:bg-white/[0.08] md:hidden"
+      >
+        <FontAwesomeIcon icon={faBars} />
+      </button>
       {/* back — one click to wherever you came from (event → client → back) */}
       {canGoBack && (
         <button
           type="button"
           onClick={() => router.back()}
           title="Back to previous page"
-          className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-black/[0.05] hover:text-brand dark:hover:bg-white/[0.08] dark:hover:text-brand-lighter"
+          className="-ml-1 hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-black/[0.05] hover:text-brand dark:hover:bg-white/[0.08] dark:hover:text-brand-lighter sm:flex"
         >
           <FontAwesomeIcon icon={faArrowLeft} />
         </button>
@@ -193,7 +205,7 @@ export default function TopBar() {
               key={item.href}
               href={item.href}
               aria-label={item.label}
-              className={`group relative flex size-9 items-center justify-center rounded-lg transition-all ${
+              className={`group relative hidden size-9 items-center justify-center rounded-lg transition-all sm:flex ${
                 active
                   ? "bg-gradient-to-r from-brand to-brand-light text-white shadow-lg shadow-brand/40"
                   : "text-zinc-500 hover:bg-black/[0.05] hover:text-brand dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-brand-lighter"
