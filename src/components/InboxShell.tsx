@@ -6,9 +6,12 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import SaveButton from "@/components/SaveButton";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowUpRightFromSquare, faRotate, faPaperclip, faFile } from "@fortawesome/free-solid-svg-icons";
-import { channelIcon, channelLabel, fmtWhen, fmtFull } from "@/app/(app)/inbox/ui";
-import { sendInboxReply, syncInbox } from "@/app/(app)/inbox/actions";
+import { faArrowUpRightFromSquare, faRotate, faPenToSquare } from "@fortawesome/free-solid-svg-icons";
+import { channelIcon, channelLabel, fmtWhen } from "@/app/(app)/inbox/ui";
+import { syncInbox, startConversation } from "@/app/(app)/inbox/actions";
+import { MessageBubble, ReplyForm, ChannelTabs, CHANNEL_TO_TYPE, type MsgRow, type ThreadDoc } from "@/components/MessageParts";
+
+export type { MsgRow };
 
 export type ConvRow = {
   id: string;
@@ -24,23 +27,13 @@ export type ConvRow = {
   unread_count: number;
 };
 
-export type MsgRow = {
-  id: string;
-  conversation_id: string;
-  direction: string | null;
-  message_type: string | null;
-  status: string | null;
-  body: string | null;
-  date_added: string | null;
-  meta: Record<string, unknown> | null;
-};
-
 export type ActiveThread = {
   conv: ConvRow;
   messages: MsgRow[];
   client: { id: string; first_name: string; last_name: string; cell_phone: string | null; email: string | null } | null;
   events: { id: string; name: string; event_date: string | null; status_name: string | null; status_color: string | null; status_text_color: string | null }[];
   ghlUrl: string | null;
+  docs: ThreadDoc[];
 };
 
 const CHANNELS = [
@@ -48,69 +41,43 @@ const CHANNELS = [
   ["TYPE_SMS", "Texts"],
   ["TYPE_CALL", "Calls"],
   ["TYPE_EMAIL", "Email"],
+  ["TYPE_WHATSAPP", "WhatsApp"],
+  ["social", "Social"],
   ["other", "Other"],
 ] as const;
 
-const IMAGE_RE = /\.(jpe?g|png|gif|webp|heic)(\?|$)/i;
+const SOCIAL_TYPES = ["TYPE_INSTAGRAM", "TYPE_FACEBOOK", "TYPE_GMB"];
+const NAMED_TYPES = ["TYPE_SMS", "TYPE_CALL", "TYPE_EMAIL", "TYPE_WHATSAPP", ...SOCIAL_TYPES];
 
-/** GHL stores attachments as URL strings (ours and theirs both end up on their CDN). */
-function attachmentUrls(meta: Record<string, unknown> | null): string[] {
-  const raw = (meta as { attachments?: unknown })?.attachments;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((a) => (typeof a === "string" ? a : (a as { url?: string })?.url ?? ""))
-    .filter(Boolean);
-}
-
-function AttachmentList({ urls, out }: { urls: string[]; out: boolean }) {
-  if (!urls.length) return null;
-  return (
-    <div className="mt-1.5 space-y-1.5">
-      {urls.map((url) =>
-        IMAGE_RE.test(url) ? (
-          <a key={url} href={url} target="_blank" rel="noreferrer" className="block">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt="attachment" className="max-h-60 max-w-full rounded-lg" />
-          </a>
-        ) : (
-          <a
-            key={url}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
-              out ? "bg-white/15 text-white" : "bg-black/[0.06] text-zinc-700 dark:bg-white/10 dark:text-zinc-200"
-            }`}
-          >
-            <FontAwesomeIcon icon={faFile} />
-            <span className="truncate">{decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? "file")}</span>
-          </a>
-        )
-      )}
-    </div>
-  );
-}
+export type ClientLite = { id: string; first_name: string; last_name: string; cell_phone: string | null };
 
 export default function InboxShell({
   conversations: initialConversations,
   active,
+  clients = [],
 }: {
   conversations: ConvRow[];
   active: ActiveThread | null;
+  clients?: ClientLite[];
 }) {
   const router = useRouter();
   const [conversations, setConversations] = useState<ConvRow[]>(initialConversations);
   const [messages, setMessages] = useState<MsgRow[]>(active?.messages ?? []);
   const [channel, setChannel] = useState<string>("all");
   const [q, setQ] = useState("");
-  const [fileNames, setFileNames] = useState<string[]>([]);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [composing, setComposing] = useState(false);
+  const [composeClient, setComposeClient] = useState("");
+  const [composePhone, setComposePhone] = useState("");
+  const [channelView, setChannelView] = useState("all");
   const threadRef = useRef<HTMLDivElement>(null);
   const activeId = active?.conv.id ?? null;
 
   // fresh server props on navigation
   useEffect(() => setConversations(initialConversations), [initialConversations]);
-  useEffect(() => setMessages(active?.messages ?? []), [activeId, active?.messages]);
+  useEffect(() => {
+    setMessages(active?.messages ?? []);
+    setChannelView("all");
+  }, [activeId, active?.messages]);
 
   /* ===== realtime: DB changes stream straight into the UI ===== */
   useEffect(() => {
@@ -190,9 +157,12 @@ export default function InboxShell({
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return conversations.filter((c) => {
+      const type = c.last_message_type ?? "";
       if (channel === "other") {
-        if (["TYPE_SMS", "TYPE_CALL", "TYPE_EMAIL"].includes(c.last_message_type ?? "")) return false;
-      } else if (channel !== "all" && c.last_message_type !== channel) {
+        if (NAMED_TYPES.includes(type)) return false;
+      } else if (channel === "social") {
+        if (!SOCIAL_TYPES.includes(type)) return false;
+      } else if (channel !== "all" && type !== channel) {
         return false;
       }
       if (!needle) return true;
@@ -208,15 +178,29 @@ export default function InboxShell({
   return (
     <div className="flex h-[calc(100vh-6.5rem)] gap-4">
       {/* ============ LEFT: conversation list ============ */}
-      <div className="card flex w-80 shrink-0 flex-col overflow-hidden">
+      <div className="card flex w-64 shrink-0 flex-col overflow-hidden lg:w-80">
         <div className="space-y-2 border-b border-zinc-100 p-3 dark:border-white/[0.05]">
           <div className="flex items-center justify-between gap-2">
             <span className="px-1 text-sm font-bold">Conversations</span>
-            <form action={syncInbox.bind(null, false)}>
-              <SaveButton className="rounded-md px-2 py-1 text-xs font-semibold text-zinc-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]" savedLabel="✓">
-                <FontAwesomeIcon icon={faRotate} />
-              </SaveButton>
-            </form>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setComposing((c) => !c)}
+                title="New conversation"
+                className={`rounded-md px-2 py-1 text-xs font-semibold transition-colors ${
+                  composing
+                    ? "bg-brand/10 text-brand dark:text-brand-lighter"
+                    : "text-zinc-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]"
+                }`}
+              >
+                <FontAwesomeIcon icon={faPenToSquare} />
+              </button>
+              <form action={syncInbox.bind(null, false)}>
+                <SaveButton className="rounded-md px-2 py-1 text-xs font-semibold text-zinc-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]" savedLabel="✓">
+                  <FontAwesomeIcon icon={faRotate} />
+                </SaveButton>
+              </form>
+            </div>
           </div>
           <input
             value={q}
@@ -295,135 +279,116 @@ export default function InboxShell({
 
       {/* ============ CENTER: thread ============ */}
       <div className="card flex min-w-0 flex-1 flex-col overflow-hidden">
-        {!active ? (
+        {composing ? (
+          <>
+            <div className="border-b border-zinc-100 px-5 py-3 dark:border-white/[0.05]">
+              <div className="text-sm font-bold">New Conversation</div>
+              <div className="text-[11px] text-zinc-400">
+                Your first text creates the contact and thread in HighLevel.
+              </div>
+            </div>
+            <form action={startConversation} className="space-y-4 p-5">
+              <input type="hidden" name="origin" value="inbox" />
+              <input
+                type="hidden"
+                name="label"
+                value={(() => {
+                  const c = clients.find((x) => x.id === composeClient);
+                  return c ? `${c.first_name} ${c.last_name}`.trim() : "";
+                })()}
+              />
+              <div>
+                <label className="label-xs">Client</label>
+                <select
+                  name="client_id"
+                  value={composeClient}
+                  onChange={(e) => {
+                    setComposeClient(e.target.value);
+                    const c = clients.find((x) => x.id === e.target.value);
+                    if (c?.cell_phone) setComposePhone(c.cell_phone);
+                  }}
+                  className="input w-full max-w-sm"
+                >
+                  <option value="">— custom number —</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id} disabled={!c.cell_phone}>
+                      {c.first_name} {c.last_name}
+                      {c.cell_phone ? ` · ${c.cell_phone}` : " (no cell on file)"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label-xs">Phone Number</label>
+                <input
+                  type="tel"
+                  name="phone"
+                  required
+                  value={composePhone}
+                  onChange={(e) => setComposePhone(e.target.value)}
+                  placeholder="(954) 555-1234"
+                  className="input w-full max-w-sm"
+                />
+              </div>
+              <div>
+                <label className="label-xs">Message</label>
+                <textarea name="body" rows={3} required className="input w-full" placeholder="Hi! This is Drew from Xpress Entertainment…" />
+              </div>
+              <div className="flex items-center gap-3">
+                <SaveButton className="btn-primary px-6" savedLabel="Sent">
+                  Send &amp; Open Thread
+                </SaveButton>
+                <button
+                  type="button"
+                  onClick={() => setComposing(false)}
+                  className="text-xs font-semibold text-zinc-400 hover:text-zinc-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </>
+        ) : !active ? (
           <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
             Select a conversation
           </div>
         ) : (
           <>
-            <div className="border-b border-zinc-100 px-5 py-3 dark:border-white/[0.05]">
-              <div className="text-sm font-bold">{title}</div>
-              <div className="text-[11px] text-zinc-400">
-                {[active.conv.phone, active.conv.email].filter(Boolean).join(" · ")}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-5 py-3 dark:border-white/[0.05]">
+              <div>
+                <div className="text-sm font-bold">{title}</div>
+                <div className="text-[11px] text-zinc-400">
+                  {[active.conv.phone, active.conv.email].filter(Boolean).join(" · ")}
+                </div>
               </div>
+              <ChannelTabs
+                conversation={active.conv}
+                messages={messages}
+                value={channelView}
+                onChange={setChannelView}
+              />
             </div>
             <div ref={threadRef} className="flex-1 space-y-3 overflow-y-auto p-5">
-              {messages.map((m) => {
-                const out = m.direction === "outbound";
-                const isText = m.message_type === "TYPE_SMS" || m.message_type === "TYPE_WHATSAPP";
-                const meta = (m.meta ?? {}) as { callDuration?: number };
-                return (
-                  <div key={m.id} className={`flex ${out ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[78%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
-                        out
-                          ? "rounded-br-sm bg-gradient-to-br from-brand to-brand-light text-white"
-                          : "rounded-bl-sm bg-zinc-100 text-zinc-800 dark:bg-white/[0.07] dark:text-zinc-100"
-                      }`}
-                    >
-                      {!isText && (
-                        <div className={`mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide ${out ? "text-white/80" : "text-zinc-500"}`}>
-                          <FontAwesomeIcon icon={channelIcon(m.message_type)} />
-                          {channelLabel(m.message_type)}
-                          {m.message_type === "TYPE_CALL" && meta.callDuration != null && (
-                            <span className="font-normal normal-case">
-                              · {Math.floor(meta.callDuration / 60)}m {meta.callDuration % 60}s
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
-                      <AttachmentList urls={attachmentUrls(m.meta)} out={out} />
-                      {!m.body && isText && attachmentUrls(m.meta).length === 0 && (
-                        <div className="italic opacity-70">(no content)</div>
-                      )}
-                      <div className={`mt-1 text-[10px] ${out ? "text-white/70" : "text-zinc-400"}`}>
-                        {m.date_added ? fmtFull(m.date_added) : ""}
-                        {out && m.status ? ` · ${m.status}` : ""}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {(channelView === "all"
+                ? messages
+                : messages.filter((m) => m.message_type === CHANNEL_TO_TYPE[channelView])
+              ).map((m) => (
+                <MessageBubble key={m.id} m={m} />
+              ))}
             </div>
-            {active.conv.phone ? (
-              <form
-                action={sendInboxReply.bind(null, active.conv.id)}
-                onSubmit={() => setTimeout(() => setFileNames([]), 800)}
-                className="border-t border-zinc-100 p-4 dark:border-white/[0.05]"
-              >
-                {fileNames.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {fileNames.map((name) => (
-                      <span
-                        key={name}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-1 text-[11px] font-semibold text-brand dark:text-brand-lighter"
-                      >
-                        <FontAwesomeIcon icon={faPaperclip} />
-                        {name}
-                      </span>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (fileRef.current) fileRef.current.value = "";
-                        setFileNames([]);
-                      }}
-                      className="text-[11px] font-semibold text-zinc-400 hover:text-zinc-600"
-                    >
-                      clear
-                    </button>
-                  </div>
-                )}
-                <div className="flex items-end gap-2">
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    name="files"
-                    multiple
-                    accept="image/*,.pdf,.vcf"
-                    className="hidden"
-                    onChange={(e) =>
-                      setFileNames(Array.from(e.currentTarget.files ?? []).map((f) => f.name))
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    title="Attach image or file (MMS)"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-black/[0.05] hover:text-brand dark:hover:bg-white/[0.08]"
-                  >
-                    <FontAwesomeIcon icon={faPaperclip} />
-                  </button>
-                  <textarea
-                    name="body"
-                    rows={2}
-                    required={fileNames.length === 0}
-                    placeholder={`Text ${title}…`}
-                    className="input min-h-[3rem] flex-1 resize-y"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        e.currentTarget.form?.requestSubmit();
-                      }
-                    }}
-                  />
-                  <SaveButton className="btn-primary px-5" savedLabel="Sent">
-                    Send
-                  </SaveButton>
-                </div>
-              </form>
-            ) : (
-              <div className="border-t border-zinc-100 px-4 py-3 text-center text-xs text-zinc-400 dark:border-white/[0.05]">
-                No phone number — reply from HighLevel for this channel.
-              </div>
-            )}
+            <ReplyForm
+              conversation={active.conv}
+              messages={messages}
+              title={title ?? "client"}
+              docs={active.docs}
+              forcedChannel={channelView === "all" ? null : channelView}
+            />
           </>
         )}
       </div>
 
       {/* ============ RIGHT: contact / event panel ============ */}
-      <div className="card flex w-72 shrink-0 flex-col gap-0 overflow-y-auto">
+      <div className="card hidden w-72 shrink-0 flex-col gap-0 overflow-y-auto lg:flex">
         {!active ? (
           <div className="flex flex-1 items-center justify-center p-4 text-xs text-zinc-400">
             Contact details appear here

@@ -15,13 +15,14 @@ export default async function ConversationPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: conversations }, { data: conv }] = await Promise.all([
+  const [{ data: conversations }, { data: conv }, { data: clientList }] = await Promise.all([
     supabase
       .from("hl_conversations")
       .select("*")
       .order("last_message_at", { ascending: false })
       .limit(200),
     supabase.from("hl_conversations").select("*").eq("id", id).maybeSingle(),
+    supabase.from("clients").select("id, first_name, last_name, cell_phone").order("first_name"),
   ]);
   if (!conv) notFound();
 
@@ -50,6 +51,18 @@ export default async function ConversationPage({
         .limit(10)
     : { data: [] };
 
+  // documents attachable to email replies (from this client's events)
+  const eventIds = (events ?? []).map((ev) => ev.id as string);
+  const { data: docs } = eventIds.length
+    ? await supabase
+        .from("documents")
+        .select("id, title")
+        .in("event_id", eventIds)
+        .neq("status", "void")
+        .order("created_at", { ascending: false })
+        .limit(20)
+    : { data: [] };
+
   // freshen this thread + clear unread AFTER render; realtime delivers updates
   after(async () => {
     const admin = createAdminClient();
@@ -76,7 +89,14 @@ export default async function ConversationPage({
       conv.hl_contact_id && process.env.HIGHLEVEL_LOCATION_ID
         ? `https://app.gohighlevel.com/v2/location/${process.env.HIGHLEVEL_LOCATION_ID}/contacts/detail/${conv.hl_contact_id}`
         : null,
+    docs: (docs ?? []) as { id: string; title: string }[],
   };
 
-  return <InboxShell conversations={(conversations ?? []) as ConvRow[]} active={active} />;
+  return (
+    <InboxShell
+      conversations={(conversations ?? []) as ConvRow[]}
+      active={active}
+      clients={clientList ?? []}
+    />
+  );
 }

@@ -44,6 +44,8 @@ import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
 import Tabs from "@/components/Tabs";
 import SaveButton from "@/components/SaveButton";
+import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
+import type { ConvRow } from "@/components/InboxShell";
 
 export const dynamic = "force-dynamic";
 
@@ -55,17 +57,12 @@ export default async function EventDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: event } = await supabase
-    .from("events")
-    .select(
-      "*, client:clients(*), status:event_statuses(*), venue:venues(*), package:packages(*), event_type:event_types(*), salesperson:employees(*), inquiry_source:inquiry_sources(*)"
-    )
-    .eq("id", id)
-    .single<XEvent & { inquiry_source: { name: string } | null }>();
-
-  if (!event) notFound();
-
+  // PERF: every query that depends only on the event id runs in ONE parallel
+  // batch instead of 5 sequential groups — collapses ~30 round-trips into one
+  // wall-clock wait. The few queries that need these results (comms, doc views,
+  // signed file URLs, client notes) run in a single dependent batch below.
   const [
+    { data: event },
     { data: schedule },
     { data: payments },
     { data: notes },
@@ -81,7 +78,31 @@ export default async function EventDetailPage({
     { data: eventLogs },
     { data: paySettings },
     { data: expSettings },
+    { data: eventDocs },
+    { data: docTemplates },
+    { data: eventFiles },
+    { data: eventAddons },
+    { data: addonCatalog },
+    { data: expenses },
+    { data: expenseCategories },
+    { data: trips },
+    { data: vehicles },
+    { data: eventTypes },
+    { data: venuesList },
+    { data: packagesList },
+    { data: eventVendors },
+    { data: vendorsList },
+    { data: eventEquipment },
+    { data: equipmentItems },
+    { data: equipmentSystems },
   ] = await Promise.all([
+    supabase
+      .from("events")
+      .select(
+        "*, client:clients(*), status:event_statuses(*), venue:venues(*), package:packages(*), event_type:event_types(*), salesperson:employees(*), inquiry_source:inquiry_sources(*)"
+      )
+      .eq("id", id)
+      .maybeSingle<XEvent & { inquiry_source: { name: string } | null }>(),
     supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
     supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
     supabase.from("event_notes").select("*").eq("event_id", id).order("created_at", { ascending: false }),
@@ -102,38 +123,9 @@ export default async function EventDetailPage({
     supabase.from("event_logs").select("*").eq("event_id", id).order("created_at", { ascending: false }).limit(100),
     supabase.from("payment_settings").select("*").eq("id", true).maybeSingle(),
     supabase.from("expense_settings").select("payees").eq("id", true).maybeSingle(),
-  ]);
-
-  // documents tab data
-  const [{ data: eventDocs }, { data: docTemplates }] = await Promise.all([
     supabase.from("documents").select("*").eq("event_id", id).order("created_at", { ascending: false }),
     supabase.from("document_templates").select("id, name, doc_type").eq("is_active", true).order("name"),
-  ]);
-  const docIds = (eventDocs ?? []).map((d) => d.id);
-  const { data: docViews } = docIds.length
-    ? await supabase.from("document_views").select("document_id, ip, user_agent, viewed_at").in("document_id", docIds)
-    : { data: [] as { document_id: string; ip: string | null; user_agent: string | null; viewed_at: string }[] };
-
-  // event files (generated PDFs etc.) with one-hour download links
-  const { data: eventFiles } = await supabase
-    .from("event_files")
-    .select("*")
-    .eq("event_id", id)
-    .order("created_at", { ascending: false });
-  const fileLinks = new Map<string, string>();
-  for (const f of eventFiles ?? []) {
-    const { data: signed } = await supabase.storage.from("event-files").createSignedUrl(f.path, 3600);
-    if (signed?.signedUrl) fileLinks.set(f.id, signed.signedUrl);
-  }
-
-  const [
-    { data: eventAddons },
-    { data: addonCatalog },
-    { data: expenses },
-    { data: expenseCategories },
-    { data: trips },
-    { data: vehicles },
-  ] = await Promise.all([
+    supabase.from("event_files").select("*").eq("event_id", id).order("created_at", { ascending: false }),
     supabase.from("event_addons").select("*, addon:addons(*)").eq("event_id", id),
     supabase.from("addons").select("*").eq("is_active", true).order("display_order"),
     supabase
@@ -142,46 +134,97 @@ export default async function EventDetailPage({
       .eq("event_id", id)
       .order("expense_date", { ascending: false }),
     supabase.from("expense_categories").select("*").eq("is_active", true).order("name"),
-    supabase
-      .from("event_trips")
-      .select("*, vehicle:vehicles(name)")
-      .eq("event_id", id)
-      .order("trip_date", { ascending: false }),
+    supabase.from("event_trips").select("*, vehicle:vehicles(name)").eq("event_id", id).order("trip_date", { ascending: false }),
     supabase.from("vehicles").select("*").eq("is_active", true).order("name"),
+    supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("venues").select("id, name").order("name"),
+    supabase.from("packages").select("id, name").eq("is_active", true).order("display_order"),
+    supabase
+      .from("event_vendors")
+      .select("*, vendor:vendors(id, company_name, category)")
+      .eq("event_id", id)
+      .order("created_at"),
+    supabase.from("vendors").select("id, company_name, category").order("company_name"),
+    supabase
+      .from("event_equipment")
+      .select("*, item:equipment_items(id, name, category, qr_code), system:equipment_systems(id, name, description, qr_code)")
+      .eq("event_id", id)
+      .order("created_at"),
+    supabase.from("equipment_items").select("id, name, category").eq("is_active", true).order("name"),
+    supabase.from("equipment_systems").select("id, name").eq("is_active", true).order("name"),
   ]);
 
-  const [{ data: eventTypes }, { data: venuesList }, { data: packagesList }, { data: eventVendors }, { data: vendorsList }] =
-    await Promise.all([
-      supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
-      supabase.from("venues").select("id, name").order("name"),
-      supabase.from("packages").select("id, name").eq("is_active", true).order("display_order"),
-      supabase
-        .from("event_vendors")
-        .select("*, vendor:vendors(id, company_name, category)")
-        .eq("event_id", id)
-        .order("created_at"),
-      supabase.from("vendors").select("id, company_name, category").order("company_name"),
-    ]);
+  if (!event) notFound();
 
-  const [{ data: eventEquipment }, { data: equipmentItems }, { data: equipmentSystems }] =
-    await Promise.all([
-      supabase
-        .from("event_equipment")
-        .select("*, item:equipment_items(id, name, category, qr_code), system:equipment_systems(id, name, description, qr_code)")
-        .eq("event_id", id)
-        .order("created_at"),
-      supabase.from("equipment_items").select("id, name, category").eq("is_active", true).order("name"),
-      supabase.from("equipment_systems").select("id, name").eq("is_active", true).order("name"),
-    ]);
-
+  // PERF: second tier — queries/work that need the first batch's results, all
+  // run together. The comms threads used to fire one query PER event client
+  // (N+1); now it's a single batched query grouped in JS. Signed file URLs used
+  // to be a sequential loop; now generated in parallel.
+  const docIds = (eventDocs ?? []).map((d) => d.id);
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
-  const { data: clientNotes } = linkedClientIds.length
-    ? await supabase
-        .from("client_notes")
-        .select("*")
-        .in("client_id", linkedClientIds)
-        .order("created_at", { ascending: false })
-    : { data: [] as { id: string; client_id: string; body: string; created_at: string }[] };
+
+  const convOr: string[] = [];
+  if (linkedClientIds.length) convOr.push(`client_id.in.(${linkedClientIds.join(",")})`);
+  for (const ec of eventClients ?? []) {
+    const c = ec.client as { cell_phone: string | null; email: string | null } | null;
+    const digits = (c?.cell_phone ?? "").replace(/\D/g, "");
+    if (digits.length >= 10) convOr.push(`phone.like.*${digits.slice(-10)}`);
+    if (c?.email) convOr.push(`email.ilike.${c.email}`);
+  }
+
+  const [{ data: allConvs }, { data: docViews }, { data: clientNotes }, signedUrlEntries] = await Promise.all([
+    convOr.length
+      ? supabase.from("hl_conversations").select("*").or(convOr.join(",")).order("last_message_at", { ascending: false })
+      : Promise.resolve({ data: [] as ConvRow[] }),
+    docIds.length
+      ? supabase.from("document_views").select("document_id, ip, user_agent, viewed_at").in("document_id", docIds)
+      : Promise.resolve({ data: [] as { document_id: string; ip: string | null; user_agent: string | null; viewed_at: string }[] }),
+    linkedClientIds.length
+      ? supabase.from("client_notes").select("*").in("client_id", linkedClientIds).order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as { id: string; client_id: string; body: string; created_at: string }[] }),
+    Promise.all(
+      (eventFiles ?? []).map(async (f) => {
+        const { data: signed } = await supabase.storage.from("event-files").createSignedUrl(f.path, 3600);
+        return [f.id, signed?.signedUrl] as const;
+      })
+    ),
+  ]);
+
+  const fileLinks = new Map<string, string>();
+  for (const [fid, url] of signedUrlEntries) if (url) fileLinks.set(fid, url);
+
+  // comms tab: each event client (bride, groom, planner…) gets their thread,
+  // matched in JS against the single batched conversation pull above
+  const commsThreads: EventThread[] = [];
+  const commsStartable: StartableClient[] = [];
+  {
+    const convs = (allConvs ?? []) as ConvRow[];
+    const seenConvs = new Set<string>();
+    for (const ec of eventClients ?? []) {
+      const c = ec.client as { id: string; first_name: string; last_name: string; cell_phone: string | null; email: string | null } | null;
+      if (!c) continue;
+      const digits = (c.cell_phone ?? "").replace(/\D/g, "").slice(-10);
+      const email = (c.email ?? "").toLowerCase();
+      const matches = convs.filter(
+        (cv) =>
+          cv.client_id === c.id ||
+          (digits.length === 10 && (cv.phone ?? "").replace(/\D/g, "").endsWith(digits)) ||
+          (email !== "" && (cv.email ?? "").toLowerCase() === email)
+      );
+      const name = `${c.first_name} ${c.last_name}`.trim();
+      const label = ec.role && ec.role !== "Client" ? `${name} · ${ec.role}` : name;
+      let matched = false;
+      for (const conv of matches) {
+        if (seenConvs.has(conv.id)) continue;
+        seenConvs.add(conv.id);
+        matched = true;
+        commsThreads.push({ conv, label });
+      }
+      if (!matched && c.cell_phone) {
+        commsStartable.push({ clientId: c.id, label, phone: c.cell_phone });
+      }
+    }
+  }
 
   type EventAddonRow = {
     id: string;
@@ -1449,7 +1492,7 @@ export default async function EventDetailPage({
       {/* ---------- STICKY HEADER ---------- */}
       <div className="sticky top-14 z-30 -mx-6 -mt-6 mb-5 border-b border-zinc-200 dark:border-white/[0.08] bg-white/85 dark:bg-[#0b0913]/90 px-6 pt-4 pb-3 backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
             {/* calendar date badge */}
             <div className="w-16 shrink-0 overflow-hidden rounded-xl border border-zinc-300 dark:border-white/15 text-center shadow-lg">
               <div className="bg-gradient-to-r from-brand to-brand-light py-0.5 text-[10px] font-black tracking-widest text-white uppercase">
@@ -1465,8 +1508,8 @@ export default async function EventDetailPage({
                 {dateObj ? dateObj.getFullYear() : ""}
               </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-zinc-900 dark:text-white">
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold text-zinc-900 dark:text-white">
                 {event.name || "(unnamed event)"}
                 {eventNumber && <span className="ml-2 text-xs font-semibold text-zinc-400 dark:text-zinc-600">#{eventNumber}</span>}
               </h1>
@@ -1494,7 +1537,7 @@ export default async function EventDetailPage({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {event.status && (
               <span
                 className="status-chip px-3 py-1.5 text-sm"
@@ -1570,6 +1613,7 @@ export default async function EventDetailPage({
           { id: "vendors", label: "Vendors", badge: vendorRows.length, content: vendorsTab },
           { id: "logistics", label: "Logistics", badge: equipRows.length ? `${packedCount}/${equipRows.length}` : undefined, content: logisticsTab },
           { id: "documents", label: "Documents", badge: (eventDocs ?? []).length || undefined, content: documentsTab },
+          { id: "comms", label: "Comms", badge: commsThreads.length || undefined, content: <EventComms eventId={id} threads={commsThreads} startable={commsStartable} docs={(eventDocs ?? []).filter((d) => d.status !== "void").map((d) => ({ id: d.id, title: d.title }))} /> },
           { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />

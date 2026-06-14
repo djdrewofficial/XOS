@@ -25,20 +25,26 @@
   --font-mono: var(--font-geist-mono);
 }
 
-body {
+/* the gradient lives on the ROOT element: html's background paints the whole
+   scrollable canvas, body's only paints its own box — which left gray seams
+   whenever content overflowed the viewport */
+html {
   background:
     radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.07), transparent 60%),
     radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.05), transparent 60%),
     var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-.dark body {
+html.dark {
   background:
     radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.28), transparent 60%),
     radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.1), transparent 60%),
     var(--background);
+}
+
+body {
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
 /* ---------- Rich text editor (Tiptap) content — restore what preflight strips ---------- */

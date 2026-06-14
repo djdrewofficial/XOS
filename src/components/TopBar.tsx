@@ -11,6 +11,7 @@ import {
   faCalendarDays,
   faCalendarPlus,
   faMagnifyingGlass,
+  faArrowLeft,
 } from "@fortawesome/free-solid-svg-icons";
 
 /* Sticky app header: global search on the left, quick-nav icons (same icons
@@ -42,8 +43,14 @@ export default function TopBar() {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // only offer Back once there's somewhere to go (and avoid SSR/window mismatch)
+  useEffect(() => {
+    setCanGoBack(window.history.length > 1);
+  }, [pathname]);
 
   // debounced search
   useEffect(() => {
@@ -111,6 +118,17 @@ export default function TopBar() {
 
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-4 border-b border-zinc-200 bg-white/80 px-5 backdrop-blur-xl dark:border-white/[0.06] dark:bg-black/50">
+      {/* back — one click to wherever you came from (event → client → back) */}
+      {canGoBack && (
+        <button
+          type="button"
+          onClick={() => router.back()}
+          title="Back to previous page"
+          className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-black/[0.05] hover:text-brand dark:hover:bg-white/[0.08] dark:hover:text-brand-lighter"
+        >
+          <FontAwesomeIcon icon={faArrowLeft} />
+        </button>
+      )}
       {/* global search */}
       <div ref={boxRef} className="relative w-full max-w-md">
         <FontAwesomeIcon

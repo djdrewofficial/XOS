@@ -25,11 +25,20 @@ export default async function InboxPage() {
     });
   }
 
-  const { data: conversations } = await supabase
-    .from("hl_conversations")
-    .select("*")
-    .order("last_message_at", { ascending: false })
-    .limit(200);
+  const [{ data: conversations }, { data: clients }] = await Promise.all([
+    supabase
+      .from("hl_conversations")
+      .select("*")
+      .order("last_message_at", { ascending: false })
+      .limit(200),
+    supabase.from("clients").select("id, first_name, last_name, cell_phone").order("first_name"),
+  ]);
 
-  return <InboxShell conversations={(conversations ?? []) as ConvRow[]} active={null} />;
+  return (
+    <InboxShell
+      conversations={(conversations ?? []) as ConvRow[]}
+      active={null}
+      clients={clients ?? []}
+    />
+  );
 }

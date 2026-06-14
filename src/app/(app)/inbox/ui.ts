@@ -4,9 +4,9 @@ import {
   faPhone,
   faEnvelope,
   faVoicemail,
-  faCommentDots,
   faCircleInfo,
 } from "@fortawesome/free-solid-svg-icons";
+import { faInstagram, faWhatsapp, faFacebookMessenger, faGoogle } from "@fortawesome/free-brands-svg-icons";
 
 export function channelIcon(type: string | null): IconDefinition {
   switch (type) {
@@ -20,12 +20,31 @@ export function channelIcon(type: string | null): IconDefinition {
     case "TYPE_VOICEMAIL":
       return faVoicemail;
     case "TYPE_FACEBOOK":
+      return faFacebookMessenger;
     case "TYPE_INSTAGRAM":
+      return faInstagram;
     case "TYPE_WHATSAPP":
+      return faWhatsapp;
     case "TYPE_GMB":
-      return faCommentDots;
+      return faGoogle;
     default:
       return faCircleInfo;
+  }
+}
+
+/** Brand accent for channel icons (chips, tabs, list avatars). */
+export function channelColor(type: string | null): string | null {
+  switch (type) {
+    case "TYPE_INSTAGRAM":
+      return "#E1306C";
+    case "TYPE_WHATSAPP":
+      return "#25D366";
+    case "TYPE_FACEBOOK":
+      return "#0084FF";
+    case "TYPE_GMB":
+      return "#4285F4";
+    default:
+      return null;
   }
 }
 
