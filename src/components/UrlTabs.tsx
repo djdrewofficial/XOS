@@ -25,7 +25,7 @@ export default function UrlTabs({
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap gap-1 rounded-xl border border-zinc-200 dark:border-white/[0.07] bg-zinc-100/80 dark:bg-black/30 p-1 backdrop-blur-sm">
+      <div className="mb-5 flex gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-zinc-100/80 p-1 backdrop-blur-sm dark:border-white/[0.07] dark:bg-black/30 md:flex-wrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((t) => {
           const isActive = t.id === current?.id;
           return (
@@ -34,7 +34,7 @@ export default function UrlTabs({
               href={`${basePath}?tab=${t.id}`}
               scroll={false}
               prefetch
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+              className={`shrink-0 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
                 isActive
                   ? "bg-gradient-to-r from-brand to-brand-light text-white shadow-lg shadow-brand/50"
                   : "text-zinc-600 dark:text-zinc-400 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] hover:text-zinc-900 dark:hover:text-white"

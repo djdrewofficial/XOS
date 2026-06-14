@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import SaveButton from "@/components/SaveButton";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowUpRightFromSquare, faRotate, faPenToSquare } from "@fortawesome/free-solid-svg-icons";
+import { faArrowUpRightFromSquare, faRotate, faPenToSquare, faArrowLeft } from "@fortawesome/free-solid-svg-icons";
 import { channelIcon, channelLabel, fmtWhen } from "@/app/(app)/inbox/ui";
 import { syncInbox, startConversation } from "@/app/(app)/inbox/actions";
 import { MessageBubble, ReplyForm, ChannelTabs, CHANNEL_TO_TYPE, type MsgRow, type ThreadDoc } from "@/components/MessageParts";
@@ -176,9 +176,9 @@ export default function InboxShell({
     : null;
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] gap-4">
-      {/* ============ LEFT: conversation list ============ */}
-      <div className="card flex w-64 shrink-0 flex-col overflow-hidden lg:w-80">
+    <div className="flex h-[calc(100vh-7rem)] gap-2 md:h-[calc(100vh-6.5rem)] md:gap-4">
+      {/* ============ LEFT: conversation list (full-width on mobile, hidden once a thread is open) ============ */}
+      <div className={`card ${active ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col overflow-hidden md:w-64 lg:w-80`}>
         <div className="space-y-2 border-b border-zinc-100 p-3 dark:border-white/[0.05]">
           <div className="flex items-center justify-between gap-2">
             <span className="px-1 text-sm font-bold">Conversations</span>
@@ -277,8 +277,8 @@ export default function InboxShell({
         </div>
       </div>
 
-      {/* ============ CENTER: thread ============ */}
-      <div className="card flex min-w-0 flex-1 flex-col overflow-hidden">
+      {/* ============ CENTER: thread (full-width on mobile when a conversation is open) ============ */}
+      <div className={`card ${active ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col overflow-hidden`}>
         {composing ? (
           <>
             <div className="border-b border-zinc-100 px-5 py-3 dark:border-white/[0.05]">
@@ -354,11 +354,22 @@ export default function InboxShell({
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-5 py-3 dark:border-white/[0.05]">
-              <div>
-                <div className="text-sm font-bold">{title}</div>
-                <div className="text-[11px] text-zinc-400">
-                  {[active.conv.phone, active.conv.email].filter(Boolean).join(" · ")}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3 dark:border-white/[0.05] md:px-5">
+              <div className="flex min-w-0 items-center gap-2">
+                {/* back to the conversation list on mobile */}
+                <button
+                  type="button"
+                  onClick={() => router.push("/inbox")}
+                  aria-label="Back to inbox"
+                  className="-ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] md:hidden"
+                >
+                  <FontAwesomeIcon icon={faArrowLeft} />
+                </button>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-bold">{title}</div>
+                  <div className="truncate text-[11px] text-zinc-400">
+                    {[active.conv.phone, active.conv.email].filter(Boolean).join(" · ")}
+                  </div>
                 </div>
               </div>
               <ChannelTabs
