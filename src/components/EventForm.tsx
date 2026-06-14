@@ -1,5 +1,6 @@
 import type { XEvent } from "@/lib/types";
 import SaveButton from "@/components/SaveButton";
+import EntityPicker from "@/components/EntityPicker";
 
 type Option = { id: string; name: string };
 type ClientOption = { id: string; first_name: string; last_name: string };
@@ -51,12 +52,15 @@ export default function EventForm({
           </div>
           <div>
             <label className={label}>Client</label>
-            <select name="client_id" defaultValue={event?.client_id ?? ""} className={input}>
-              <option value="">—</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>
-              ))}
-            </select>
+            <EntityPicker
+              kind="client"
+              name="client_id"
+              defaultValue={event?.client_id ?? ""}
+              defaultLabel={(() => {
+                const c = clients.find((x) => x.id === event?.client_id);
+                return c ? `${c.first_name} ${c.last_name}`.trim() : undefined;
+              })()}
+            />
           </div>
           <div>
             <label className={label}>Event Date</label>
@@ -171,12 +175,12 @@ export default function EventForm({
         <div className="grid gap-4 md:grid-cols-3">
           <div>
             <label className={label}>Venue</label>
-            <select name="venue_id" defaultValue={event?.venue_id ?? ""} className={input}>
-              <option value="">—</option>
-              {venues.map((o) => (
-                <option key={o.id} value={o.id}>{o.name}</option>
-              ))}
-            </select>
+            <EntityPicker
+              kind="venue"
+              name="venue_id"
+              defaultValue={event?.venue_id ?? ""}
+              defaultLabel={venues.find((o) => o.id === event?.venue_id)?.name}
+            />
           </div>
         </div>
       </section>

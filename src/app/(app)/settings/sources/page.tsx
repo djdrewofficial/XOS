@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import SaveButton from "@/components/SaveButton";
+import EntityPicker from "@/components/EntityPicker";
 import { createSource, updateSource } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,10 @@ export default async function SourcesPage() {
   (events ?? []).forEach((e) => {
     if (e.inquiry_source_id) usage.set(e.inquiry_source_id, (usage.get(e.inquiry_source_id) ?? 0) + 1);
   });
+
+  // labels for already-linked venue/vendor pickers (avoids a fetch per row)
+  const venueName = new Map((venues ?? []).map((v) => [v.id, v.name]));
+  const vendorName = new Map((vendors ?? []).map((v) => [v.id, v.company_name]));
 
   return (
     <div className="max-w-4xl">
@@ -45,20 +50,10 @@ export default async function SourcesPage() {
               <input name="name" defaultValue={s.name} className="input w-full py-1.5" />
             </span>
             <span className="w-[24%] px-2">
-              <select name="venue_id" defaultValue={s.venue_id ?? ""} className="input w-full py-1.5">
-                <option value="">—</option>
-                {(venues ?? []).map((v) => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
-                ))}
-              </select>
+              <EntityPicker kind="venue" name="venue_id" compact defaultValue={s.venue_id ?? ""} defaultLabel={s.venue_id ? venueName.get(s.venue_id) : undefined} />
             </span>
             <span className="w-[24%] px-2">
-              <select name="vendor_id" defaultValue={s.vendor_id ?? ""} className="input w-full py-1.5">
-                <option value="">—</option>
-                {(vendors ?? []).map((v) => (
-                  <option key={v.id} value={v.id}>{v.company_name}</option>
-                ))}
-              </select>
+              <EntityPicker kind="vendor" name="vendor_id" compact defaultValue={s.vendor_id ?? ""} defaultLabel={s.vendor_id ? vendorName.get(s.vendor_id) : undefined} />
             </span>
             <span className="w-[8%] text-center">
               <input type="checkbox" name="is_active" defaultChecked={s.is_active} className="size-4 accent-brand-light" />
@@ -79,21 +74,11 @@ export default async function SourcesPage() {
         </div>
         <div className="min-w-44">
           <label className="label-xs">Linked Venue (optional)</label>
-          <select name="venue_id" className="input w-full">
-            <option value="">—</option>
-            {(venues ?? []).map((v) => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
+          <EntityPicker kind="venue" name="venue_id" />
         </div>
         <div className="min-w-44">
           <label className="label-xs">Linked Vendor (optional)</label>
-          <select name="vendor_id" className="input w-full">
-            <option value="">—</option>
-            {(vendors ?? []).map((v) => (
-              <option key={v.id} value={v.id}>{v.company_name}</option>
-            ))}
-          </select>
+          <EntityPicker kind="vendor" name="vendor_id" />
         </div>
         <SaveButton savedLabel="Added">Add Source</SaveButton>
       </form>

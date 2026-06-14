@@ -44,6 +44,7 @@ import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
 import UrlTabs from "@/components/UrlTabs";
 import SaveButton from "@/components/SaveButton";
+import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
 import type { ConvRow } from "@/components/InboxShell";
 
@@ -97,7 +98,6 @@ export default async function EventDetailPage({
     { data: venuesList },
     { data: packagesList },
     { data: eventVendors },
-    { data: vendorsList },
     { data: eventEquipment },
     { data: equipmentItems },
     { data: equipmentSystems },
@@ -150,7 +150,6 @@ export default async function EventDetailPage({
       .select("*, vendor:vendors(id, company_name, category)")
       .eq("event_id", id)
       .order("created_at"),
-    supabase.from("vendors").select("id, company_name, category").order("company_name"),
     supabase
       .from("event_equipment")
       .select("*, item:equipment_items(id, name, category, qr_code), system:equipment_systems(id, name, description, qr_code)")
@@ -1058,7 +1057,6 @@ export default async function EventDetailPage({
   };
   const vendorRows = (eventVendors ?? []) as unknown as EventVendorRow[];
   const linkedVendorIds = new Set(vendorRows.map((v) => v.vendor?.id));
-  const addableVendors = (vendorsList ?? []).filter((v) => !linkedVendorIds.has(v.id));
 
   const vendorsTab = (
     <div className="space-y-5">
@@ -1105,15 +1103,12 @@ export default async function EventDetailPage({
         <form action={addEventVendor.bind(null, id)} className="flex flex-wrap items-end gap-2">
           <div className="min-w-48 flex-1">
             <label className="label-xs">Vendor</label>
-            <select name="vendor_id" required className="input w-full">
-              <option value="">Select…</option>
-              {addableVendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.company_name}
-                  {v.category ? ` — ${v.category}` : ""}
-                </option>
-              ))}
-            </select>
+            <EntityPicker
+              kind="vendor"
+              name="vendor_id"
+              required
+              excludeIds={[...linkedVendorIds].filter((v): v is string => !!v)}
+            />
           </div>
           <div className="min-w-40">
             <label className="label-xs">Role On This Event</label>
