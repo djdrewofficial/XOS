@@ -3,5 +3,11 @@
   command = "npm run build"
   publish = ".next"
 
+[build.environment]
+  # PAYPAL_ENV is not a secret — its value ("sandbox"/"live") is a common word that
+  # the secrets scanner finds as plain source text (the "sandbox" fallback + the
+  # sandbox API URL in src/lib/paypal.ts). Omit it so the build doesn't false-fail.
+  SECRETS_SCAN_OMIT_KEYS = "PAYPAL_ENV"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
