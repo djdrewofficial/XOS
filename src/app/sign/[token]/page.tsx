@@ -42,7 +42,7 @@ export default async function PublicSignPage({
   const [{ data: doc }, { data: cs }] = await Promise.all([
     supabase
       .from("documents")
-      .select("*, event:events(id, name, event_date, client:clients(first_name, last_name))")
+      .select("*, event:events(id, name, event_date, pay_token, client:clients(first_name, last_name))")
       .eq("access_token", token)
       .maybeSingle(),
     supabase.from("company_settings").select("company_name, from_email").eq("id", true).maybeSingle(),
@@ -62,8 +62,10 @@ export default async function PublicSignPage({
   const ev = doc.event as unknown as {
     name: string;
     event_date: string | null;
+    pay_token: string | null;
     client: { first_name: string; last_name: string } | null;
   } | null;
+  const payUrl = ev?.pay_token ? `/welcome/${ev.pay_token}` : null;
   const clientName = ev?.client ? `${ev.client.first_name} ${ev.client.last_name}`.trim() : null;
   const companyName = cs?.company_name ?? "Xpress Entertainment";
   const signAction = signDocument.bind(null, token);
@@ -96,6 +98,14 @@ export default async function PublicSignPage({
               Signed by <strong>{doc.signer_name}</strong> on {new Date(doc.signed_at).toLocaleString()}. This document
               is locked — print or save it for your records.
             </p>
+            {payUrl && (
+              <a
+                href={payUrl}
+                className="mt-5 inline-block rounded-xl bg-gradient-to-r from-brand to-brand-light px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand/40"
+              >
+                Continue to payment →
+              </a>
+            )}
           </div>
         ) : (
           <SignPanel

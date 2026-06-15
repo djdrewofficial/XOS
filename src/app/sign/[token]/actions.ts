@@ -154,9 +154,15 @@ export async function signDocument(
     });
   }
 
-  // one drain sends the signed copy plus anything the after-sign helper queued
-  await processOutbox(supabase);
-  await processSmsOutbox(supabase);
+  // one drain sends the signed copy plus anything the after-sign helper queued.
+  // never let a mail/SMS hiccup throw — the signature is done and the client must
+  // still be forwarded to payment.
+  try {
+    await processOutbox(supabase);
+    await processSmsOutbox(supabase);
+  } catch {
+    /* delivery is retried by the outbox cron */
+  }
 
   revalidatePath(`/documents/${doc.id}`);
   if (ev?.id) revalidatePath(`/events/${ev.id}`);
