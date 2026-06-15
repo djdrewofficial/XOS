@@ -1,6 +1,5 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
@@ -178,26 +177,7 @@ export async function confirmProposal(token: string, formData: FormData) {
   await supabase.from("scheduled_payments").delete().eq("event_id", eventId);
   await supabase.from("scheduled_payments").insert(rows);
 
-  // ---- 3) autopay consent (charging machinery lands in Phase 3) ------------
-  const hasFuture = rows.some((r) => r.due_date && r.due_date > today);
-  if (formData.get("autopay") === "on" && hasFuture) {
-    const hdrs = await headers();
-    const ip = (hdrs.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
-    const ua = hdrs.get("user-agent") ?? "unknown";
-    const name = `${clean(formData.get("a_first")) ?? ""} ${clean(formData.get("a_last")) ?? ""}`.trim();
-    await supabase
-      .from("events")
-      .update({
-        autopay_enabled: true,
-        autopay_consent_at: new Date().toISOString(),
-        autopay_consent_ip: ip,
-        autopay_consent_ua: ua,
-        autopay_consent_name: name || null,
-      })
-      .eq("id", eventId);
-  } else {
-    await supabase.from("events").update({ autopay_enabled: false }).eq("id", eventId);
-  }
+  // (autopay is chosen later, on the payment screen — not here)
 
   // ---- 4) generate the per-type contract, then send them to sign -----------
   const templateId = journey.templateId ?? BOOKING_AGREEMENT_ID;

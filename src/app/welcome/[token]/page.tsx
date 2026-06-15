@@ -3,9 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPayInfo } from "@/lib/payInfo";
 import WelcomePayment from "@/components/WelcomePayment";
 
-/* PUBLIC "welcome to the family" page — where the sign flow forwards a newly
-   booked client. Warm welcome (confetti) + Zelle/PayPal. All copy + options
-   are admin-managed (Settings → Client Journey + Payment Settings). */
+/* PUBLIC payment step — where the sign flow forwards a newly booked client to
+   set up autopay or make a one-time payment. The celebration + planning portal
+   (Vibo) lives on the next screen, after payment. */
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { robots: { index: false, follow: false } };
@@ -43,47 +43,33 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
     );
   }
 
-  // render the admin-managed welcome copy through the merge-tag engine
-  const { data: bodyHtml } = await supabase.rpc("render_merge_tags", {
-    p_event_id: info.eventId,
-    p_template: info.settings.welcomeBody,
-  });
-  const heading = info.settings.welcomeHeading.replace(/<first_name>|&lt;first_name&gt;/g, info.firstName ?? "");
-
+  const first = info.firstName ?? "there";
   const paidInFull = info.balance <= 0;
 
   return (
     <Shell>
       <div className="mb-5 text-center">
-        <h1 className="text-xl font-extrabold text-zinc-900 dark:text-white">{heading}</h1>
+        <h1 className="text-xl font-extrabold text-zinc-900 dark:text-white">
+          {paidInFull ? `You're all set, ${first}! 🎉` : `You're booked, ${first}! 🎉`}
+        </h1>
+        {!paidInFull && (
+          <p className="mt-1 text-sm text-zinc-500">Let&apos;s take care of your payment to lock everything in.</p>
+        )}
       </div>
-
-      {info.settings.welcomeBody && (
-        <div
-          className="prose prose-sm mb-5 max-w-none text-zinc-600 dark:prose-invert dark:text-zinc-300"
-          dangerouslySetInnerHTML={{ __html: (bodyHtml as string) ?? "" }}
-        />
-      )}
 
       {paidInFull ? (
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center dark:border-emerald-500/30 dark:bg-emerald-500/10">
           <div className="text-2xl">✅</div>
           <div className="mt-1 font-bold text-emerald-800 dark:text-emerald-300">You&apos;re all paid up</div>
           <div className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">
-            Nothing is owed right now — we can&apos;t wait to celebrate with you!
+            Nothing is owed right now. We&apos;ll be in touch with your planning details next!
           </div>
         </div>
       ) : (
         <>
           <dl className="mb-5 space-y-1.5 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-white/10 dark:bg-white/[0.03]">
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Total Investment</dt>
-              <dd className="font-semibold">{money(info.total)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Paid so far</dt>
-              <dd className="text-emerald-600 dark:text-emerald-400">{money(info.paid)}</dd>
-            </div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Total Investment</dt><dd className="font-semibold">{money(info.total)}</dd></div>
+            <div className="flex justify-between"><dt className="text-zinc-500">Paid so far</dt><dd className="text-emerald-600 dark:text-emerald-400">{money(info.paid)}</dd></div>
             <div className="flex justify-between border-t border-zinc-200 pt-1.5 dark:border-white/10">
               <dt className="font-semibold text-zinc-700 dark:text-zinc-200">Balance</dt>
               <dd className="font-bold text-zinc-900 dark:text-white">{money(info.balance)}</dd>
@@ -101,14 +87,15 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
             zelleDisplayName={info.settings.zelleDisplayName}
             zelleHandle={info.settings.zelleHandle}
             zelleMemo={info.settings.zelleMemo}
-            confetti={info.settings.confetti}
+            autopayEligible={info.hasInstallments}
+            autopayArmed={info.autopayArmed}
           />
+
+          <p className="mt-4 text-center text-[11px] text-zinc-400">
+            A receipt is emailed once your payment completes. Your planning portal details are coming next.
+          </p>
         </>
       )}
-
-      <p className="mt-4 text-center text-[11px] text-zinc-400">
-        A receipt is emailed once your payment completes.
-      </p>
     </Shell>
   );
 }

@@ -116,9 +116,6 @@ export default function ProposalForm(props: ProposalFormProps) {
   );
 
   const isClient = props.mode === "client";
-  const isSplit = parsedPlan.kind === "split";
-  const officeHasFuture = props.officeRows.some((r) => r.due_date && r.due_date > new Date().toISOString().slice(0, 10));
-  const showAutopay = isClient ? isSplit : officeHasFuture;
 
   const planOptions: { value: string; label: string; sub: string }[] = [
     { value: "full", label: "Pay in full", sub: "One payment — settle the whole investment now" },
@@ -246,18 +243,6 @@ export default function ProposalForm(props: ProposalFormProps) {
           </>
         )}
       </div>
-
-      {/* ---- Autopay ---- */}
-      {showAutopay && (
-        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 dark:border-white/15 dark:bg-white/[0.03]">
-          <input type="checkbox" name="autopay" className="mt-0.5 size-4 accent-brand-light" />
-          <span className="text-xs text-zinc-600 dark:text-zinc-300">
-            <span className="font-semibold text-zinc-900 dark:text-white">Enroll in automatic payments.</span> I authorize
-            Xpress Entertainment to automatically charge my saved payment method for each scheduled payment on its due
-            date. I can cancel anytime by contacting the office.
-          </span>
-        </label>
-      )}
 
       <Submit />
       <p className="text-center text-[11px] text-zinc-400">
