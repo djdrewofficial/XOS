@@ -8,6 +8,7 @@ import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { sanitizeBlocks, docTypeClientLabel, type DocBlock } from "@/lib/documentBlocks";
 import { appUrl, signingEmailHtml } from "@/lib/signing";
+import { autoNameEvent } from "@/lib/eventName";
 
 export type SignResult = {
   ok: boolean;
@@ -85,6 +86,9 @@ export async function signDocument(
     name: string;
     client: { first_name: string; last_name: string; email: string | null } | null;
   } | null;
+
+  // auto-name unnamed events now that the couple's info is confirmed
+  if (ev?.id) await autoNameEvent(supabase, ev.id);
 
   // after-sign automation: run the template's booking helper (status → Booked,
   // confirmation email, retainer request — whatever the helper is configured to

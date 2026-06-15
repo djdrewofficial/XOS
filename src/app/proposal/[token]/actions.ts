@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { buildScheduleRows, type SchedulePlan } from "@/lib/paymentSchedule";
 import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConfig";
+import { autoNameEvent } from "@/lib/eventName";
 
 const BOOKING_AGREEMENT_ID = "e2ae8026-0d1a-4681-be90-f130d572aec4";
 
@@ -176,6 +177,9 @@ export async function confirmProposal(token: string, formData: FormData) {
   }));
   await supabase.from("scheduled_payments").delete().eq("event_id", eventId);
   await supabase.from("scheduled_payments").insert(rows);
+
+  // auto-name the event now that the couple's info is in ("Alex & Sam's Wedding")
+  await autoNameEvent(supabase, eventId);
 
   // (autopay is chosen later, on the payment screen — not here)
 
