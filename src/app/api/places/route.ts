@@ -10,6 +10,14 @@ export const dynamic = "force-dynamic";
 
 const KEY = process.env.GOOGLE_MAPS_API_KEY;
 
+// South Florida bounding box — covers the SE tri-county (Palm Beach → Miami-Dade),
+// the upper Keys (Key Largo / Islamorada), and the SW Gulf coast (Naples / Fort
+// Myers). low = SW corner, high = NE corner.
+const SF_BOUNDS = {
+  low: { latitude: 24.85, longitude: -82.0 },
+  high: { latitude: 27.0, longitude: -80.0 },
+};
+
 type Suggestion = {
   placePrediction?: {
     placeId?: string;
@@ -63,7 +71,13 @@ export async function GET(req: Request) {
       const res = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
         method: "POST",
         headers: { "X-Goog-Api-Key": KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({ input: q, includedRegionCodes: ["us"] }),
+        body: JSON.stringify({
+          input: q,
+          includedRegionCodes: ["us"],
+          // restrict to South Florida (Palm Beach → Miami-Dade, coast to western
+          // suburbs). Adjust SF_BOUNDS to widen (e.g. the Keys / Treasure Coast).
+          locationRestriction: { rectangle: SF_BOUNDS },
+        }),
       });
       if (!res.ok) return NextResponse.json({ suggestions: [] });
       const d = (await res.json()) as { suggestions?: Suggestion[] };
