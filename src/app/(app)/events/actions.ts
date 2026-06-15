@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
+import { buildScheduleRows } from "@/lib/paymentSchedule";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -270,49 +271,31 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
 
   await supabase.from("scheduled_payments").delete().eq("event_id", eventId);
 
-  const rows: {
-    event_id: string;
-    seq: number;
-    amount: number;
-    label: string;
-    due_date: string | null;
-  }[] = [];
-  rows.push({
-    event_id: eventId,
-    seq: 1,
-    amount: deposit,
-    label: "Deposit",
-    due_date: new Date().toISOString().slice(0, 10),
-  });
+  const rows = buildScheduleRows({
+    total,
+    deposit,
+    eventDate: eventDate ?? null,
+    terms,
+    termsDays,
+    plan: { kind: "split", count },
+    today: new Date().toISOString().slice(0, 10),
+  }).map((r) => ({ ...r, event_id: eventId }));
 
-  // final payment lands on the package's due date; earlier payments step back monthly
-  let finalDue: Date | null = null;
-  if (eventDate) {
-    finalDue = new Date(eventDate);
-    if (terms === "days_before") finalDue.setDate(finalDue.getDate() - termsDays);
-    else finalDue.setDate(finalDue.getDate() + termsDays);
-  }
-
-  const remaining = Math.max(0, total - deposit);
-  const per = Math.floor((remaining / count) * 100) / 100;
-  for (let i = 0; i < count; i++) {
-    const isLast = i === count - 1;
-    const amount = isLast ? Math.round((remaining - per * (count - 1)) * 100) / 100 : per;
-    let due: string | null = null;
-    if (finalDue) {
-      const d = new Date(finalDue);
-      d.setMonth(d.getMonth() - (count - 1 - i));
-      due = d.toISOString().slice(0, 10);
-    }
-    rows.push({
-      event_id: eventId,
-      seq: i + 2,
-      amount,
-      label: count === 1 ? "Final Payment" : `Payment ${i + 2}`,
-      due_date: due,
-    });
-  }
   const { error } = await supabase.from("scheduled_payments").insert(rows);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+/** Office-set billing terms for event types where the office (not the client)
+    decides the plan. Read by the public /proposal page when chooser = 'office'. */
+export async function updateBillingTerms(eventId: string, formData: FormData) {
+  const supabase = await createClient();
+  const terms = clean(formData.get("billing_terms"));
+  const count = Math.max(1, Math.round(num(formData.get("billing_terms_count"))) || 2);
+  const { error } = await supabase
+    .from("events")
+    .update({ billing_terms: terms, billing_terms_count: count })
+    .eq("id", eventId);
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
 }

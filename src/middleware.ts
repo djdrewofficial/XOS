@@ -35,8 +35,13 @@ export async function middleware(request: NextRequest) {
   // verifies the XOS Mobile app's Supabase JWT itself)
   const isPublic =
     pathname.startsWith("/sign/") ||
+    pathname.startsWith("/pay/") ||
+    pathname.startsWith("/welcome/") ||
+    pathname.startsWith("/proposal/") ||
     pathname.startsWith("/api/mailgun/") ||
     pathname.startsWith("/api/highlevel/") ||
+    pathname.startsWith("/api/paypal/") ||
+    pathname.startsWith("/api/pay/") ||
     pathname.startsWith("/api/mobile/") ||
     pathname.startsWith("/api/cron/");
   if (isPublic) return response;

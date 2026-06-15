@@ -97,6 +97,11 @@ export async function signDocument(
       .eq("id", doc.template_id)
       .maybeSingle();
     afterSignUrl = t?.after_sign_url ?? null;
+    // default forward: the "welcome to the family" page (warm welcome + payment)
+    if (!afterSignUrl && ev?.id) {
+      const { data: evp } = await supabase.from("events").select("pay_token").eq("id", ev.id).maybeSingle();
+      if (evp?.pay_token) afterSignUrl = `${appUrl()}/welcome/${evp.pay_token}`;
+    }
     if (t?.after_sign_helper_id && ev?.id) {
       const { error: helperError } = await supabase.rpc("run_booking_helper", {
         p_helper_id: t.after_sign_helper_id,

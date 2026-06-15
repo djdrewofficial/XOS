@@ -33,6 +33,7 @@ import {
   markEquipment,
   updateEquipmentNotes,
   addLogisticsNote,
+  updateBillingTerms,
   deleteEvent,
 } from "../actions";
 import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/actions";
@@ -47,6 +48,8 @@ import SaveButton from "@/components/SaveButton";
 import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
 import type { ConvRow } from "@/components/InboxShell";
+import SigningChecklist from "@/components/SigningChecklist";
+import { resolveRequiredFields, getMissingSigningFields } from "@/lib/signingRequirements";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +104,7 @@ export default async function EventDetailPage({
     { data: eventEquipment },
     { data: equipmentItems },
     { data: equipmentSystems },
+    { data: journeySettings },
   ] = await Promise.all([
     supabase
       .from("events")
@@ -157,6 +161,7 @@ export default async function EventDetailPage({
       .order("created_at"),
     supabase.from("equipment_items").select("id, name, category").eq("is_active", true).order("name"),
     supabase.from("equipment_systems").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("journey_settings").select("required_signing_fields").eq("id", true).maybeSingle(),
   ]);
 
   if (!event) notFound();
@@ -254,6 +259,21 @@ export default async function EventDetailPage({
   const paid = (payments ?? []).reduce((s: number, p: Payment) => s + Number(p.amount), 0);
   const balance = total - paid;
   const cf = (event.custom_fields ?? {}) as Record<string, string>;
+
+  // warn-only signing-requirements checklist (Settings → Signing Requirements)
+  const requiredFields = resolveRequiredFields(
+    (event.event_type as { required_signing_fields?: string[] | null } | null)?.required_signing_fields,
+    (journeySettings as { required_signing_fields?: string[] | null } | null)?.required_signing_fields
+  );
+  const missingSigning = getMissingSigningFields(requiredFields, {
+    event,
+    venue: event.venue as { name?: string | null; address?: string | null } | null,
+    eventClients: (eventClients ?? []).map((ec) => ({
+      is_primary: ec.is_primary,
+      client: ec.client as { first_name?: string | null; last_name?: string | null; email?: string | null; cell_phone?: string | null } | null,
+    })),
+    scheduleCount: (schedule ?? []).length,
+  });
 
   // payment-settings-driven add-payment defaults (configured in Settings → Payment Settings)
   const ps = paySettings as {
@@ -867,6 +887,54 @@ export default async function EventDetailPage({
               : `balance due ${paymentRules.days} days before the event date`}
             . These same limits will gate the client&apos;s schedule choice in the booking-agreement workflow.
           </p>
+
+          <h3 className="label-xs mt-5">Client Billing Terms (office-set)</h3>
+          <form action={updateBillingTerms.bind(null, id)} className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="label-xs">Terms</label>
+              <select name="billing_terms" defaultValue={(event as { billing_terms?: string | null }).billing_terms ?? ""} className="input w-44">
+                <option value="">— Not set —</option>
+                <option value="up_front">Charge up front</option>
+                <option value="net_30">Net 30 (invoice)</option>
+                <option value="installments">Installments</option>
+              </select>
+            </div>
+            <div>
+              <label className="label-xs"># Installments</label>
+              <input type="number" min={1} name="billing_terms_count" defaultValue={(event as { billing_terms_count?: number }).billing_terms_count ?? 2} className="input w-24" />
+            </div>
+            <SaveButton className="btn-ghost px-4 py-2 text-xs" savedLabel="Saved">Save Terms</SaveButton>
+          </form>
+          <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-600">
+            Used on the client&apos;s confirm page only for event types whose Payment Chooser is{" "}
+            <span className="font-semibold">Office sets</span> (Settings → Event Type Workflows). Couples who pick their
+            own plan ignore this.
+          </p>
+
+          {(() => {
+            const ap = event as {
+              autopay_enabled?: boolean;
+              autopay_vault_id?: string | null;
+              autopay_consent_at?: string | null;
+            };
+            if (!ap.autopay_enabled) return null;
+            const armed = !!ap.autopay_vault_id;
+            return (
+              <div
+                className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+                  armed
+                    ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300"
+                    : "bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
+                }`}
+              >
+                <span className="font-semibold">Autopay {armed ? "armed ✓" : "consented"}</span>
+                {ap.autopay_consent_at ? ` · ${new Date(ap.autopay_consent_at).toLocaleDateString()}` : ""}
+                {armed
+                  ? " · a card is on file; due payments charge automatically."
+                  : " · charges begin once the client makes their first card payment (which saves the method)."}
+              </div>
+            );
+          })()}
 
           <h3 className="label-xs mt-5">Payments Received</h3>
           <form action={addPaymentBound} className="mb-3 flex flex-wrap items-end gap-2">
@@ -1557,6 +1625,8 @@ export default async function EventDetailPage({
           </div>
         </div>
       </div>
+
+      <SigningChecklist missing={missingSigning} />
 
       <BookingHelperBar
         eventId={id}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Section, Row, Note } from "@/components/SettingsForm";
+import { Section, Row, Note, CheckBoxField } from "@/components/SettingsForm";
 import SaveButton from "@/components/SaveButton";
 import { savePaymentSettings } from "./actions";
 
@@ -21,6 +21,13 @@ type PaymentSettings = {
   autofill_no_payments: string;
   autofill_after_payments: string;
   past_due_adjust_days: number;
+  online_pay_enabled?: boolean;
+  paypal_pay_enabled?: boolean;
+  paypal_fee_pct?: number;
+  zelle_pay_enabled?: boolean;
+  zelle_display_name?: string;
+  zelle_handle?: string | null;
+  zelle_memo?: string;
 };
 
 export default async function PaymentSettingsPage() {
@@ -138,6 +145,41 @@ export default async function PaymentSettingsPage() {
           <Note>
             Each package can also set its own balance-due terms (days before the event or Net-N after) — package rules
             take precedence when generating an event&apos;s payment schedule.
+          </Note>
+        </Section>
+
+        <Section title="Online Payment Page (Client-Facing)">
+          <Note>
+            Controls the public <code className="rounded bg-black/5 px-1 dark:bg-white/10">/welcome</code> page clients
+            land on after signing — their payment options and the card fee.
+          </Note>
+          <Row label="Enable Online Payments" hint="Master switch for the welcome / pay page">
+            <CheckBoxField name="online_pay_enabled" label="Enabled" defaultChecked={s.online_pay_enabled ?? true} />
+          </Row>
+          <Row label="Accept Card / PayPal / Venmo">
+            <CheckBoxField name="paypal_pay_enabled" label="Enabled" defaultChecked={s.paypal_pay_enabled ?? true} />
+          </Row>
+          <Row
+            label="Card Convenience Fee (%)"
+            hint="Added on top of card/PayPal/Venmo payments and disclosed to the client. Zelle is free."
+          >
+            <input type="number" step="0.01" name="paypal_fee_pct" defaultValue={s.paypal_fee_pct ?? 4} className="input w-28" />
+          </Row>
+          <Row label="Accept Zelle">
+            <CheckBoxField name="zelle_pay_enabled" label="Enabled" defaultChecked={s.zelle_pay_enabled ?? true} />
+          </Row>
+          <Row label="Zelle Recipient Name">
+            <input name="zelle_display_name" defaultValue={s.zelle_display_name ?? ""} className="input w-full max-w-md" placeholder="Xpress Entertainment" />
+          </Row>
+          <Row label="Zelle Email or Phone" hint="The email/number your Zelle is registered to — shown to clients">
+            <input name="zelle_handle" defaultValue={s.zelle_handle ?? ""} className="input w-full max-w-md" placeholder="payments@xpressdjs.com" />
+          </Row>
+          <Row label="Zelle Memo Instruction">
+            <input name="zelle_memo" defaultValue={s.zelle_memo ?? ""} className="input w-full max-w-md" placeholder="Include your event date in the memo" />
+          </Row>
+          <Note>
+            Heads up: surcharging card payments has card-network (Visa caps card surcharges at 3%) and PayPal-policy
+            limits — check your processor&apos;s terms before setting a fee. The fee is always disclosed before payment.
           </Note>
         </Section>
 

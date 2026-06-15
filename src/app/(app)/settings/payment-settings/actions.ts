@@ -33,6 +33,13 @@ export async function savePaymentSettings(formData: FormData) {
       autofill_no_payments: clean(formData.get("autofill_no_payments")) ?? "disabled",
       autofill_after_payments: clean(formData.get("autofill_after_payments")) ?? "disabled",
       past_due_adjust_days: parseInt(clean(formData.get("past_due_adjust_days")) ?? "0", 10) || 0,
+      online_pay_enabled: formData.get("online_pay_enabled") === "on",
+      paypal_pay_enabled: formData.get("paypal_pay_enabled") === "on",
+      paypal_fee_pct: parseFloat(clean(formData.get("paypal_fee_pct")) ?? "4") || 0,
+      zelle_pay_enabled: formData.get("zelle_pay_enabled") === "on",
+      zelle_display_name: clean(formData.get("zelle_display_name")) ?? "Xpress Entertainment",
+      zelle_handle: clean(formData.get("zelle_handle")),
+      zelle_memo: clean(formData.get("zelle_memo")) ?? "Include your event date in the memo",
       updated_at: new Date().toISOString(),
     })
     .eq("id", true);

@@ -114,6 +114,34 @@ async function enrichMessage(
 
   if (!msg.event_id) return { html, attachments, branded };
 
+  // shared: this event's public pay token + whether the new proposal/confirm flow
+  // is on. When on, the e-sign CTA points to /proposal (couple confirms details +
+  // picks a plan first) instead of generating the doc and going straight to /sign.
+  const { data: ev } = await supabase
+    .from("events")
+    .select("pay_token, event_type_id")
+    .eq("id", msg.event_id)
+    .maybeSingle();
+  const payToken = (ev?.pay_token as string | null) ?? null;
+  const { data: js } = await supabase
+    .from("journey_settings")
+    .select("proposal_flow_enabled, proposal_doc_template_id")
+    .eq("id", true)
+    .maybeSingle();
+  const proposalFlow = js?.proposal_flow_enabled === true;
+  // resolve THIS event's proposal contract (per-type override → global) so the
+  // reroute guard only fires for the proposal contract, not other e-sign docs
+  let typeProposalTpl: string | null = null;
+  if (ev?.event_type_id) {
+    const { data: et } = await supabase
+      .from("event_types")
+      .select("proposal_doc_template_id")
+      .eq("id", ev.event_type_id)
+      .maybeSingle();
+    typeProposalTpl = (et?.proposal_doc_template_id as string | null) ?? null;
+  }
+  const proposalDocId = typeProposalTpl ?? (js?.proposal_doc_template_id as string | null) ?? null;
+
   // quote-style merge tags
   if (tagPresent(html, "quote_summary") || tagPresent(html, "payment_plan")) {
     const bundle = await loadEventBundle(supabase, msg.event_id);
@@ -121,6 +149,20 @@ async function enrichMessage(
       html = replaceTag(html, "quote_summary", quoteSummaryHtml(bundle));
       html = replaceTag(html, "payment_plan", paymentPlanHtml(bundle));
     }
+  }
+
+  // online payment link/button → the event's public /welcome page
+  if (tagPresent(html, "payment_link") || tagPresent(html, "payment_button")) {
+    const payUrl = payToken ? `${appUrl()}/welcome/${payToken}` : "";
+    html = replaceTag(html, "payment_link", payUrl);
+    html = replaceTag(html, "payment_button", payUrl ? signButtonHtml(payUrl, "Pay Online") : "");
+  }
+
+  // review & sign → the public /proposal confirm page (new journey)
+  if (tagPresent(html, "review_sign_link") || tagPresent(html, "review_sign_button")) {
+    const url = payToken ? `${appUrl()}/proposal/${payToken}` : "";
+    html = replaceTag(html, "review_sign_link", url);
+    html = replaceTag(html, "review_sign_button", url ? signButtonHtml(url, "Review & Sign") : "");
   }
 
   // document attached to the email template?
@@ -131,6 +173,18 @@ async function enrichMessage(
 
   const attachTemplateId = tmpl.attach_template_id as string;
   if ((tmpl.attach_mode ?? "esign_link") === "esign_link") {
+    // new journey: defer generation — send the couple to /proposal to confirm
+    // details + pick a plan; the contract is generated when they continue to sign.
+    // Only reroute the proposal contract itself — other e-sign docs go to /sign.
+    if (proposalFlow && payToken && (!proposalDocId || attachTemplateId === proposalDocId)) {
+      const url = `${appUrl()}/proposal/${payToken}`;
+      if (tagPresent(html, "document_sign_link")) {
+        html = replaceTag(html, "document_sign_link", url);
+      } else {
+        html += signButtonHtml(url, `Review & Sign ${docTypeClientLabel("contract")}`);
+      }
+      return { html: replaceTag(html, "document_sign_link", ""), attachments, branded };
+    }
     // reuse the latest unsigned document for this event+template, else generate fresh
     const { data: existing } = await supabase
       .from("documents")

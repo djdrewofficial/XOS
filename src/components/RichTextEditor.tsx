@@ -13,7 +13,8 @@ export const MERGE_TAGS: { group: string; tags: string[] }[] = [
   { group: "Event", tags: ["<event_name>", "<event_type>", "<event_date_long>", "<event_date_short>", "<event_date_countdown>", "<venue_name>", "<package_name>", "<start_time>", "<end_time>"] },
   { group: "Money", tags: ["<total_fee>", "<balance_due>", "<payments_received>", "<deposit_value>", "<retainer_amount>", "<retainer_due_date>", "<overtime_rate>"] },
   { group: "Company", tags: ["<company_name>", "<company_email_signature>", "<current_date>"] },
-  { group: "Documents", tags: ["<quote_summary>", "<payment_plan>", "<document_sign_link>"] },
+  { group: "Documents", tags: ["<quote_summary>", "<payment_plan>", "<document_sign_link>", "<review_sign_link>", "<review_sign_button>"] },
+  { group: "Payments", tags: ["<payment_button>", "<payment_link>"] },
 ];
 
 const TB_BTN =
