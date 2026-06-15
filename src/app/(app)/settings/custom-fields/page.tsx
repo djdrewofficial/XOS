@@ -1,19 +1,19 @@
 import { createClient } from "@/lib/supabase/server";
 import { Section, Row, Note } from "@/components/SettingsForm";
 import SaveButton from "@/components/SaveButton";
-import { createClientRole, updateClientRole } from "./actions";
+import { createClientRole, updateClientRole, createEventType, updateEventType } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 type Role = { id: string; name: string; is_active: boolean; sort_order: number };
+type EventType = { id: string; name: string; is_active: boolean };
 
 export default async function CustomFieldsPage() {
   const supabase = await createClient();
-  const { data: roles, error } = await supabase
-    .from("client_role_definitions")
-    .select("id, name, is_active, sort_order")
-    .order("sort_order")
-    .order("name");
+  const [{ data: roles, error }, { data: eventTypes }] = await Promise.all([
+    supabase.from("client_role_definitions").select("id, name, is_active, sort_order").order("sort_order").order("name"),
+    supabase.from("event_types").select("id, name, is_active").order("name"),
+  ]);
 
   if (error) {
     return (
@@ -71,6 +71,33 @@ export default async function CustomFieldsPage() {
           </form>
         </Row>
       </Section>
+
+      <div className="mt-5">
+        <Section title="Event Types">
+          <Note>
+            The event types you offer. Uncheck Active to hide one from the Add Event form. Weddings auto-name from
+            Partner A + Partner B.
+          </Note>
+          {((eventTypes as EventType[] | null) ?? []).map((t) => (
+            <Row key={t.id} label="">
+              <form action={updateEventType.bind(null, t.id)} className="flex flex-wrap items-center gap-2">
+                <input name="name" defaultValue={t.name} className="input w-52" />
+                <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <input type="checkbox" name="is_active" defaultChecked={t.is_active} className="size-4 accent-brand-light" />
+                  Active
+                </label>
+                <SaveButton className="btn-ghost px-3 py-1.5 text-xs">Save</SaveButton>
+              </form>
+            </Row>
+          ))}
+          <Row label="">
+            <form action={createEventType} className="flex flex-wrap items-center gap-2">
+              <input name="name" placeholder="New event type…" className="input w-52" required />
+              <SaveButton className="btn-primary px-3 py-1.5 text-xs" savedLabel="Added">Add Type</SaveButton>
+            </form>
+          </Row>
+        </Section>
+      </div>
     </div>
   );
 }

@@ -31,3 +31,25 @@ export async function updateClientRole(id: string, formData: FormData) {
   if (error) throw new Error(error.message);
   revalidatePath("/settings/custom-fields");
 }
+
+export async function createEventType(formData: FormData) {
+  const supabase = await createClient();
+  const name = clean(formData.get("name"));
+  if (!name) return;
+  const { error } = await supabase.from("event_types").insert({ name });
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/custom-fields");
+}
+
+export async function updateEventType(id: string, formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("event_types")
+    .update({
+      name: clean(formData.get("name")) ?? "Unnamed",
+      is_active: formData.get("is_active") === "on",
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/custom-fields");
+}

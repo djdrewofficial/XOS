@@ -138,7 +138,9 @@ export default function NewEventForm(props: NewEventFormProps) {
 
   // ---- Details ----
   const [name, setName] = useState("");
-  const [eventTypeId, setEventTypeId] = useState(props.eventTypes[0]?.id ?? "");
+  const [eventTypeId, setEventTypeId] = useState(
+    props.eventTypes.find((t) => /wedding/i.test(t.name))?.id ?? props.eventTypes[0]?.id ?? ""
+  );
   const [eventDate, setEventDate] = useState("");
   const typeName = props.eventTypes.find((t) => t.id === eventTypeId)?.name ?? null;
   const autoName = useMemo(
