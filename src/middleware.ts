@@ -42,6 +42,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/highlevel/") ||
     pathname.startsWith("/api/paypal/") ||
     pathname.startsWith("/api/pay/") ||
+    pathname.startsWith("/api/places") ||
     pathname.startsWith("/api/mobile/") ||
     pathname.startsWith("/api/cron/");
   if (isPublic) return response;

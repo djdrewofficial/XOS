@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { buildScheduleRows, type SchedulePlan, type ScheduleRow } from "@/lib/paymentSchedule";
 import type { ProposalLayout, PaymentChooser } from "@/lib/journeyConfig";
+import VenueAutocomplete from "@/components/VenueAutocomplete";
 import { confirmProposal } from "@/app/proposal/[token]/actions";
 
 const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -181,10 +182,7 @@ export default function ProposalForm(props: ProposalFormProps) {
       {/* ---- Venue ---- */}
       <div>
         <SectionLabel>Venue</SectionLabel>
-        <div className="space-y-3">
-          <Input label="Venue name" name="venue_name" defaultValue={props.venue.name} />
-          <Input label="Venue address" name="venue_address" defaultValue={props.venue.address} />
-        </div>
+        <VenueAutocomplete defaultName={props.venue.name} defaultAddress={props.venue.address} />
       </div>
 
       {/* ---- Timing ---- */}

@@ -95,16 +95,33 @@ export async function confirmProposal(token: string, formData: FormData) {
     }
   }
 
-  // Venue — update the attached venue, or create one if none is attached yet
+  // Venue — update the attached venue, or create one if none is attached yet.
+  // Google place fields are only written when the client actually re-picked a
+  // venue (place_id present), so existing city/state/geo isn't clobbered.
   if (formData.has("venue_name")) {
     const venueName = clean(formData.get("venue_name"));
     const venueAddress = clean(formData.get("venue_address"));
+    const placeId = clean(formData.get("venue_place_id"));
+    const num = (v: FormDataEntryValue | null) => {
+      const n = parseFloat((v ?? "").toString());
+      return Number.isFinite(n) ? n : null;
+    };
+    const geo = placeId
+      ? {
+          city: clean(formData.get("venue_city")),
+          state: clean(formData.get("venue_state")),
+          zip: clean(formData.get("venue_zip")),
+          lat: num(formData.get("venue_lat")),
+          lng: num(formData.get("venue_lng")),
+          google_place_id: placeId,
+        }
+      : {};
     if (event.venue_id) {
-      await supabase.from("venues").update({ name: venueName ?? "", address: venueAddress }).eq("id", event.venue_id);
+      await supabase.from("venues").update({ name: venueName ?? "", address: venueAddress, ...geo }).eq("id", event.venue_id);
     } else if (venueName) {
       const { data: newVenue } = await supabase
         .from("venues")
-        .insert({ name: venueName, address: venueAddress })
+        .insert({ name: venueName, address: venueAddress, ...geo })
         .select("id")
         .single();
       if (newVenue) await supabase.from("events").update({ venue_id: newVenue.id }).eq("id", eventId);
