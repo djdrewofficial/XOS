@@ -984,9 +984,41 @@ export async function updateEventDetails(eventId: string, formData: FormData) {
 
 export async function updateEventVenue(eventId: string, formData: FormData) {
   const supabase = await createClient();
+  let venueId = clean(formData.get("venue_id"));
+
+  // "Create New Venue" from Google → make the venue, then attach it
+  const nv = parseJson<{
+    name?: string;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+    place_id?: string | null;
+  } | null>(formData.get("new_venue_json"), null);
+  if (!venueId && nv?.name) {
+    const { data: v, error: vErr } = await supabase
+      .from("venues")
+      .insert({
+        name: nv.name,
+        address: nv.address ?? null,
+        city: nv.city ?? null,
+        state: nv.state ?? null,
+        zip: nv.zip ?? null,
+        lat: nv.lat ?? null,
+        lng: nv.lng ?? null,
+        google_place_id: nv.place_id ?? null,
+      })
+      .select("id")
+      .single();
+    if (vErr) throw new Error(vErr.message);
+    venueId = v.id;
+  }
+
   const { error } = await supabase
     .from("events")
-    .update({ venue_id: clean(formData.get("venue_id")) })
+    .update({ venue_id: venueId, venue_room_id: clean(formData.get("venue_room_id")) })
     .eq("id", eventId);
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);

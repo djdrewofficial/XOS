@@ -41,6 +41,7 @@ import InlineEditCard from "@/components/InlineEditCard";
 import ClientPicker from "@/components/ClientPicker";
 import BookingInfoEditor from "@/components/BookingInfoEditor";
 import AddonPicker from "@/components/AddonPicker";
+import EventVenueEditor from "@/components/EventVenueEditor";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffSection from "@/components/StaffSection";
 import UrlTabs from "@/components/UrlTabs";
@@ -150,7 +151,7 @@ export default async function EventDetailPage({
     supabase.from("vehicles").select("*").eq("is_active", true).order("name"),
     supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
     supabase.from("venues").select("id, name").order("name"),
-    supabase.from("packages").select("id, name").eq("is_active", true).order("display_order"),
+    supabase.from("packages").select("id, name, default_price").eq("is_active", true).order("display_order"),
     supabase
       .from("event_vendors")
       .select("*, vendor:vendors(id, company_name, category)")
@@ -482,20 +483,7 @@ export default async function EventDetailPage({
             </Link>
           )}
         </div>
-        <InlineEditCard
-          save={updateEventVenue.bind(null, id)}
-          editLabel={venue ? "Change Venue" : "Select Venue"}
-          fields={[
-            {
-              name: "venue_id",
-              label: "Venue",
-              type: "select",
-              value: event.venue_id,
-              span2: true,
-              options: (venuesList ?? []).map((v) => ({ value: v.id, label: v.name })),
-            },
-          ]}
-        >
+        <EventVenueEditor action={updateEventVenue.bind(null, id)} hasVenue={!!venue}>
           {venue ? (
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-zinc-500">Venue</dt><dd className="font-semibold">{venue.name}</dd></div>
@@ -517,7 +505,7 @@ export default async function EventDetailPage({
           ) : (
             <p className="text-sm text-zinc-500">No venue selected.</p>
           )}
-        </InlineEditCard>
+        </EventVenueEditor>
       </div>
 
       <div className="card p-5">
@@ -786,7 +774,13 @@ export default async function EventDetailPage({
                 type: "select",
                 value: event.package_id,
                 span2: true,
-                options: (packagesList ?? []).map((p) => ({ value: p.id, label: p.name })),
+                options: [
+                  { value: "", label: "— No package —" },
+                  ...(packagesList ?? []).map((p) => ({
+                    value: p.id,
+                    label: `${p.name}${(p as { default_price?: number }).default_price != null ? ` — ${money(Number((p as { default_price?: number }).default_price))}` : ""}`,
+                  })),
+                ],
               },
               { name: "package_price_override", label: "Package Price Override ($)", type: "number", step: "0.01", value: event.package_price_override, placeholder: "blank = default" },
               { name: "deposit_value", label: "Deposit ($)", type: "number", step: "0.01", value: event.deposit_value },
