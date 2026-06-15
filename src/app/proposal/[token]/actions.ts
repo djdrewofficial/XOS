@@ -128,13 +128,12 @@ export async function confirmProposal(token: string, formData: FormData) {
     }
   }
 
-  // Event timing
+  // Event timing — setup time is internal (not on the client form), so leave it untouched
   const newDate = clean(formData.get("event_date"));
   await supabase
     .from("events")
     .update({
       event_date: newDate,
-      setup_time: clean(formData.get("setup_time")),
       start_time: clean(formData.get("start_time")),
       end_time: clean(formData.get("end_time")),
       updated_at: new Date().toISOString(),

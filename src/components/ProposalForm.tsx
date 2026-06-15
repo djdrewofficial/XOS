@@ -185,10 +185,10 @@ export default function ProposalForm(props: ProposalFormProps) {
         <VenueAutocomplete defaultName={props.venue.name} defaultAddress={props.venue.address} />
       </div>
 
-      {/* ---- Timing ---- */}
+      {/* ---- Timing (setup time is internal — not shown to clients) ---- */}
       <div>
         <SectionLabel>Event Day</SectionLabel>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-zinc-500">Event date</span>
             <input
@@ -199,7 +199,6 @@ export default function ProposalForm(props: ProposalFormProps) {
               className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-brand dark:border-white/15 dark:bg-zinc-800 dark:text-white"
             />
           </label>
-          <Input label="Setup time" name="setup_time" defaultValue={props.timing.setup} type="time" />
           <Input label="Start time" name="start_time" defaultValue={props.timing.start} type="time" />
           <Input label="End time" name="end_time" defaultValue={props.timing.end} type="time" />
         </div>
