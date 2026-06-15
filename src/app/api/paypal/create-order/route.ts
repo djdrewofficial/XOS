@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createPaypalOrder, createVaultOrderRest, isPaypalConfigured } from "@/lib/paypal";
+import { createPaypalOrder, isPaypalConfigured } from "@/lib/paypal";
 import { loadPayInfo, withFee } from "@/lib/payInfo";
 
 /* PUBLIC (middleware-exempt). Creates a PayPal order for a pay_token's event.
@@ -41,24 +41,10 @@ export async function POST(req: Request) {
   if (!(base > 0)) return NextResponse.json({ error: "Invalid amount." }, { status: 400 });
   const charge = withFee(base, info.settings.paypalFeePct);
 
-  // arm autopay on the FIRST payment when the client consented and we haven't
-  // vaulted a method yet — the order saves the PayPal method on success
-  const { data: ev } = await supabase
-    .from("events")
-    .select("autopay_enabled, autopay_vault_id")
-    .eq("id", info.eventId)
-    .maybeSingle();
-  const vaultNow = ev?.autopay_enabled === true && !ev?.autopay_vault_id;
-
-  const result = vaultNow
-    ? await createVaultOrderRest(charge, {
-        customId: info.eventId,
-        description: `Payment for ${info.eventName ?? "your event"}`,
-      })
-    : await createPaypalOrder(charge, {
-        customId: info.eventId,
-        description: `Payment for ${info.eventName ?? "your event"}`,
-      });
+  const result = await createPaypalOrder(charge, {
+    customId: info.eventId,
+    description: `Payment for ${info.eventName ?? "your event"}`,
+  });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
   return NextResponse.json({ id: result.id });
 }

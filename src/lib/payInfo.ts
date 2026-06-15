@@ -28,8 +28,6 @@ export type PayInfo = {
   paid: number;
   balance: number;
   suggested: number; // prefill: the next uncovered scheduled payment, capped at balance
-  hasInstallments: boolean; // more than one scheduled payment → autopay is offerable
-  autopayArmed: boolean; // a card is already vaulted for this event
   settings: PaySettings;
 };
 
@@ -102,8 +100,6 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
     paid: round2(paid),
     balance: round2(balance),
     suggested: round2(suggested),
-    hasInstallments: (scheduled ?? []).length > 1,
-    autopayArmed: !!(event as { autopay_vault_id?: string | null }).autopay_vault_id,
     settings,
   };
 }

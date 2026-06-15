@@ -16,38 +16,30 @@ export default function PayButtons({
   suggested,
   balance,
   feePct,
-  autopay = false,
 }: {
   token: string;
   clientId: string;
   suggested: number;
   balance: number;
   feePct: number;
-  autopay?: boolean;
 }) {
   const [amount, setAmount] = useState(suggested);
   const [done, setDone] = useState<{ base: number; fee: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
-  // autopay mode pays the retainer now and saves the card; the rest is auto-charged
-  const showChoice = !autopay && balance > suggested + 0.005;
+  const showChoice = balance > suggested + 0.005;
   const charged = withFee(amount, feePct);
   const fee = Math.round((charged - amount) * 100) / 100;
 
   if (done) {
     return (
       <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center dark:border-emerald-500/30 dark:bg-emerald-500/10">
-        <div className="text-2xl">{autopay ? "🔁" : "🎉"}</div>
-        <div className="mt-1 text-lg font-bold text-emerald-800 dark:text-emerald-300">
-          {autopay ? "You're all set — autopay is on" : "Payment received"}
-        </div>
+        <div className="text-2xl">🎉</div>
+        <div className="mt-1 text-lg font-bold text-emerald-800 dark:text-emerald-300">Payment received</div>
         <div className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">
           {fmt(done.base)} applied to your balance
-          {done.fee > 0 ? ` (plus a ${fmt(done.fee)} card fee)` : ""}.
-          {autopay
-            ? " Your card is saved — we'll automatically charge each scheduled payment on its due date."
-            : " A receipt is on its way. Thank you!"}
+          {done.fee > 0 ? ` (plus a ${fmt(done.fee)} card fee)` : ""}. A receipt is on its way. Thank you!
         </div>
       </div>
     );
@@ -55,12 +47,6 @@ export default function PayButtons({
 
   return (
     <div className="space-y-4">
-      {autopay && (
-        <div className="rounded-lg bg-brand/5 px-3 py-2 text-xs text-zinc-600 dark:bg-white/[0.04] dark:text-zinc-300">
-          Paying your <strong>{fmt(suggested)}</strong> retainer now and saving this card. We&apos;ll automatically
-          charge each remaining scheduled payment on its due date — cancel anytime by contacting us.
-        </div>
-      )}
       {showChoice && (
         <div className="grid grid-cols-2 gap-2">
           {[

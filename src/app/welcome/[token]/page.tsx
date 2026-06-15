@@ -87,8 +87,6 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
             zelleDisplayName={info.settings.zelleDisplayName}
             zelleHandle={info.settings.zelleHandle}
             zelleMemo={info.settings.zelleMemo}
-            autopayEligible={info.hasInstallments}
-            autopayArmed={info.autopayArmed}
           />
 
           <p className="mt-4 text-center text-[11px] text-zinc-400">

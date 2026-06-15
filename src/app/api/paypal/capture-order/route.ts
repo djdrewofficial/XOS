@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { capturePaypalOrder, captureVaultOrderRest, isPaypalConfigured, type VaultCaptureResult } from "@/lib/paypal";
+import { capturePaypalOrder, isPaypalConfigured } from "@/lib/paypal";
 import { loadPayInfo } from "@/lib/payInfo";
 import { recordPaypalPayment } from "@/lib/paypalRecord";
 
@@ -28,34 +28,11 @@ export async function POST(req: Request) {
   const info = await loadPayInfo(supabase, token);
   if (!info) return NextResponse.json({ error: "This payment link isn't valid." }, { status: 404 });
 
-  // if we're arming autopay, capture via REST so we can read + store the vault id
-  const { data: ev } = await supabase
-    .from("events")
-    .select("autopay_enabled, autopay_vault_id")
-    .eq("id", info.eventId)
-    .maybeSingle();
-  const arming = ev?.autopay_enabled === true && !ev?.autopay_vault_id;
-
-  const result = arming ? await captureVaultOrderRest(orderId) : await capturePaypalOrder(orderId);
+  const result = await capturePaypalOrder(orderId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
   const { capture } = result;
   if (!capture.completed || !capture.captureId || capture.amount == null) {
     return NextResponse.json({ error: "Payment was not completed." }, { status: 402 });
-  }
-
-  // store the vaulted method so the autopay cron can charge future payments
-  if (arming) {
-    const vc = capture as VaultCaptureResult;
-    if (vc.vaultId) {
-      await supabase
-        .from("events")
-        .update({
-          autopay_vault_id: vc.vaultId,
-          autopay_customer_id: vc.customerId ?? null,
-          autopay_armed_at: new Date().toISOString(),
-        })
-        .eq("id", info.eventId);
-    }
   }
 
   // the captured amount includes the convenience fee — split it back out so the
