@@ -490,6 +490,47 @@ export default async function EditHelperPage({
           the event&apos;s log instead of blocking the event.
         </Note>
       </Section>
+
+      <Section title="Lifecycle Triggers">
+        <Note>
+          Run this helper automatically at these moments in the client journey. Combine with the one-shot setting in
+          Visibility so it only fires once per event.
+        </Note>
+        <Row label="When the proposal is confirmed">
+          <EnabledToggle name="auto_on_proposal_confirmed" defaultChecked={helper.auto_on_proposal_confirmed ?? false} />
+        </Row>
+        <Row label="When the contract is signed">
+          <EnabledToggle name="auto_on_signed" defaultChecked={helper.auto_on_signed ?? false} />
+        </Row>
+        <Row label="When a payment is received">
+          <EnabledToggle name="auto_on_payment" defaultChecked={helper.auto_on_payment ?? false} />
+        </Row>
+        <Row label="Only for these event types">
+          <RadioChecklist
+            name="event_type_ids"
+            items={(eventTypes ?? []).map((t) => ({ id: t.id, name: t.name }))}
+            selected={(helper.event_type_ids ?? []) as string[]}
+            allLabel="All event types"
+            onlyLabel="Only these event types:"
+          />
+        </Row>
+      </Section>
+
+      <Section title="Webhook (Zapier)">
+        <Note>
+          After this helper runs, POST the event details to this URL — use it to trigger a Zapier zap (create the Vibo
+          event, a Google Drive folder, etc.). Leave blank for none.
+        </Note>
+        <Row label="Webhook URL">
+          <input
+            name="webhook_url"
+            type="url"
+            defaultValue={helper.webhook_url ?? ""}
+            placeholder="https://hooks.zapier.com/…"
+            className="input w-full"
+          />
+        </Row>
+      </Section>
     </div>
   );
 

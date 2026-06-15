@@ -9,6 +9,7 @@ import { processSmsOutbox } from "@/lib/highlevel";
 import { sanitizeBlocks, docTypeClientLabel, type DocBlock } from "@/lib/documentBlocks";
 import { appUrl, signingEmailHtml } from "@/lib/signing";
 import { autoNameEvent } from "@/lib/eventName";
+import { runAutomations } from "@/lib/automations";
 
 export type SignResult = {
   ok: boolean;
@@ -123,6 +124,10 @@ export async function signDocument(
       }
     }
   }
+
+  // fire any "document signed" automations (configured per event type) — separate
+  // from the template's after_sign_helper above, which stays for back-compat
+  if (ev?.id) await runAutomations(supabase, ev.id, "document_signed");
 
   // office notification (respects the General settings allowlist)
   await supabase.rpc("create_notification", {

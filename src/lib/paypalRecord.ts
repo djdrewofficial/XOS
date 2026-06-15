@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { processOutbox } from "@/lib/mailgun";
 import { signingEmailHtml, appUrl } from "@/lib/signing";
+import { runAutomations } from "@/lib/automations";
 
 /* Records a completed PayPal capture into the payments table — idempotent on
    paypal_capture_id, so the capture endpoint and the webhook can both call it
@@ -80,6 +81,9 @@ export async function recordPaypalPayment(
     });
     await processOutbox(supabase);
   }
+
+  // fire any "payment received" automations (welcome email, etc.)
+  await runAutomations(supabase, params.eventId, "payment_received");
 
   return { recorded: true };
 }

@@ -8,6 +8,7 @@ import { processSmsOutbox } from "@/lib/highlevel";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
 import { loadEventBundle } from "@/lib/documentRender";
 import { buildEventName, type NamingClient } from "@/lib/eventName";
+import { runAutomations } from "@/lib/automations";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -426,6 +427,9 @@ export async function createEventOnboarding(formData: FormData) {
     .map((s) => ({ event_id: eventId, employee_id: s.employee_id, role: s.role || "DJ", flat_wage: s.flat_wage ?? 0 }));
   if (staffRows.length) await supabase.from("event_staff").insert(staffRows);
 
+  // fire any "event created" automations (configured per event type)
+  await runAutomations(supabase, eventId, "event_created");
+
   revalidatePath("/events");
   redirect(`/events/${eventId}`);
 }
@@ -458,6 +462,7 @@ export async function setEventStatus(id: string, statusId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("events").update({ status_id: statusId }).eq("id", id);
   if (error) throw new Error(error.message);
+  await runAutomations(supabase, id, "status_changed", { statusId });
   revalidatePath(`/events/${id}`);
   revalidatePath("/events");
 }
@@ -473,6 +478,7 @@ export async function addPayment(eventId: string, formData: FormData) {
     notes: clean(formData.get("notes")),
   });
   if (error) throw new Error(error.message);
+  await runAutomations(supabase, eventId, "payment_received");
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/payments");
 }
@@ -1076,15 +1082,20 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
 
 export async function updateBookingInfo(eventId: string, formData: FormData) {
   const supabase = await createClient();
+  const { data: before } = await supabase.from("events").select("status_id").eq("id", eventId).maybeSingle();
+  const statusId = clean(formData.get("status_id"));
   const { error } = await supabase
     .from("events")
     .update({
-      status_id: clean(formData.get("status_id")),
+      status_id: statusId,
       inquiry_source_id: clean(formData.get("inquiry_source_id")),
       salesperson_id: clean(formData.get("salesperson_id")),
     })
     .eq("id", eventId);
   if (error) throw new Error(error.message);
+  if (statusId && statusId !== before?.status_id) {
+    await runAutomations(supabase, eventId, "status_changed", { statusId });
+  }
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
 }

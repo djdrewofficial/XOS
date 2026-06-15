@@ -127,6 +127,11 @@ function buildHelperPayload(formData: FormData) {
     required_fields: formData.getAll("required_fields").map(String).filter(Boolean),
     auto_on_create: formData.get("auto_on_create") === "on",
     auto_status_ids: formData.getAll("auto_status_ids").map(String).filter(Boolean),
+    auto_on_proposal_confirmed: formData.get("auto_on_proposal_confirmed") === "on",
+    auto_on_signed: formData.get("auto_on_signed") === "on",
+    auto_on_payment: formData.get("auto_on_payment") === "on",
+    event_type_ids: formData.getAll("event_type_ids").map(String).filter(Boolean),
+    webhook_url: (formData.get("webhook_url") ?? "").toString().trim() || null,
     actions,
   };
 }

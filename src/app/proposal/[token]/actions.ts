@@ -6,6 +6,7 @@ import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { buildScheduleRows, type SchedulePlan } from "@/lib/paymentSchedule";
 import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConfig";
 import { autoNameEvent } from "@/lib/eventName";
+import { runAutomations } from "@/lib/automations";
 
 const BOOKING_AGREEMENT_ID = "e2ae8026-0d1a-4681-be90-f130d572aec4";
 
@@ -181,7 +182,8 @@ export async function confirmProposal(token: string, formData: FormData) {
   // auto-name the event now that the couple's info is in ("Alex & Sam's Wedding")
   await autoNameEvent(supabase, eventId);
 
-  // (autopay is chosen later, on the payment screen — not here)
+  // fire any "proposal confirmed" automations (configured per event type)
+  await runAutomations(supabase, eventId, "proposal_confirmed");
 
   // ---- 4) generate the per-type contract, then send them to sign -----------
   const templateId = journey.templateId ?? BOOKING_AGREEMENT_ID;
