@@ -97,10 +97,11 @@ export async function signDocument(
       .eq("id", doc.template_id)
       .maybeSingle();
     afterSignUrl = t?.after_sign_url ?? null;
-    // default forward: the "welcome to the family" page (warm welcome + payment)
+    // default forward: the payment page. Relative on purpose — the redirect is
+    // client-side same-origin, so it works no matter what NEXT_PUBLIC_APP_URL is.
     if (!afterSignUrl && ev?.id) {
       const { data: evp } = await supabase.from("events").select("pay_token").eq("id", ev.id).maybeSingle();
-      if (evp?.pay_token) afterSignUrl = `${appUrl()}/welcome/${evp.pay_token}`;
+      if (evp?.pay_token) afterSignUrl = `/welcome/${evp.pay_token}`;
     }
     if (t?.after_sign_helper_id && ev?.id) {
       const { error: helperError } = await supabase.rpc("run_booking_helper", {

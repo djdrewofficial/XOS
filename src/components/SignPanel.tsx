@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 import type { SignResult } from "@/app/sign/[token]/actions";
 
@@ -32,20 +32,19 @@ export default function SignPanel({
   documentTitle: string;
 }) {
   const [state, formAction] = useActionState(action, null);
-  const [countdown, setCountdown] = useState(6);
 
   const signed = state?.ok === true;
   const forward = signed ? state?.afterSignUrl : null;
 
+  // forward to the payment page promptly (single timer is more reliable on
+  // mobile than an interval countdown, which throttles when the tab blurs)
   useEffect(() => {
     if (!signed || !forward) return;
-    const t = setInterval(() => setCountdown((c) => c - 1), 1000);
-    return () => clearInterval(t);
+    const t = setTimeout(() => {
+      window.location.href = forward;
+    }, 1500);
+    return () => clearTimeout(t);
   }, [signed, forward]);
-
-  useEffect(() => {
-    if (signed && forward && countdown <= 0) window.location.href = forward;
-  }, [signed, forward, countdown]);
 
   if (signed) {
     return (
@@ -56,13 +55,15 @@ export default function SignPanel({
           Your <strong>{documentTitle}</strong> is signed and locked. A copy is on its way to your email — you can
           also print or save this page as a PDF.
         </p>
-        <p className="text-sm font-semibold text-zinc-700">We can&apos;t wait to celebrate with you! 🎉</p>
+        <p className="text-sm font-semibold text-zinc-700">
+          {forward ? "Taking you to your payment…" : "We can't wait to celebrate with you! 🎉"}
+        </p>
         {forward && (
           <a
             href={forward}
             className="mt-5 inline-block rounded-xl bg-gradient-to-r from-brand to-brand-light px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand/40"
           >
-            Continue ({Math.max(countdown, 0)}s)
+            Continue to payment →
           </a>
         )}
       </div>
