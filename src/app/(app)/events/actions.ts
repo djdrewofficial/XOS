@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
+import { loadEventBundle } from "@/lib/documentRender";
+import { buildEventName, type NamingClient } from "@/lib/eventName";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -187,6 +189,245 @@ export async function createEvent(formData: FormData) {
   }
   revalidatePath("/events");
   redirect(`/events/${data.id}`);
+}
+
+// ---- Tabbed onboarding: build the whole event from one submit ----
+type NewClient = {
+  mode: "existing" | "new";
+  client_id?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  cell_phone?: string;
+  role?: string;
+  is_primary?: boolean;
+};
+type NewDiscount = { label?: string; amount?: number };
+type NewAddon = { addon_id: string; quantity?: number; price_override?: number | null };
+type NewStaff = { employee_id: string; role?: string; flat_wage?: number };
+type NewDate = { definition_id: string; value?: string };
+type NewVenue = {
+  name?: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  place_id?: string | null;
+};
+
+function parseJson<T>(v: FormDataEntryValue | null, fallback: T): T {
+  try {
+    const s = (v ?? "").toString();
+    return s ? (JSON.parse(s) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function createEventOnboarding(formData: FormData) {
+  const supabase = await createClient();
+
+  const clients = parseJson<NewClient[]>(formData.get("clients_json"), []);
+  const discounts = parseJson<NewDiscount[]>(formData.get("discounts_json"), []);
+  const addons = parseJson<NewAddon[]>(formData.get("addons_json"), []);
+  const staff = parseJson<NewStaff[]>(formData.get("staff_json"), []);
+  const customDates = parseJson<NewDate[]>(formData.get("custom_dates_json"), []);
+  const newVenue = parseJson<NewVenue | null>(formData.get("new_venue_json"), null);
+
+  // 1) resolve clients (create the new ones) and figure out the primary
+  const resolved: { client_id: string; role: string | null; is_primary: boolean; naming: NamingClient }[] = [];
+  for (const c of clients) {
+    let id = c.client_id ?? null;
+    let first = c.first_name ?? "";
+    let last = c.last_name ?? "";
+    if (c.mode === "new" || !id) {
+      if (!first && !c.email && !c.cell_phone) continue; // skip empty rows
+      const { data: created, error } = await supabase
+        .from("clients")
+        .insert({ first_name: first || "Client", last_name: last, email: c.email ?? null, cell_phone: c.cell_phone ?? null })
+        .select("id, first_name, last_name")
+        .single();
+      if (error) throw new Error(error.message);
+      id = created.id;
+      first = created.first_name;
+      last = created.last_name;
+    } else {
+      const { data: existing } = await supabase.from("clients").select("first_name, last_name").eq("id", id).maybeSingle();
+      first = existing?.first_name ?? first;
+      last = existing?.last_name ?? last;
+    }
+    resolved.push({
+      client_id: id!,
+      role: c.role ?? null,
+      is_primary: !!c.is_primary,
+      naming: { first_name: first, last_name: last, role: c.role ?? null, is_primary: !!c.is_primary },
+    });
+  }
+  if (resolved.length && !resolved.some((r) => r.is_primary)) resolved[0].is_primary = true;
+  const primary = resolved.find((r) => r.is_primary) ?? resolved[0] ?? null;
+
+  // 2) resolve inquiry source (existing, or add new one-time/persisted)
+  let inquirySourceId = clean(formData.get("inquiry_source_id"));
+  const newSourceName = clean(formData.get("new_source_name"));
+  if (!inquirySourceId && newSourceName) {
+    const persist = formData.get("new_source_persist") === "true" || formData.get("new_source_persist") === "on";
+    const { data: src } = await supabase
+      .from("inquiry_sources")
+      .insert({ name: newSourceName, is_active: persist })
+      .select("id")
+      .single();
+    inquirySourceId = src?.id ?? null;
+  }
+
+  // 3) resolve venue (existing, newly-created-from-Google, or client address)
+  const useClientAddress = formData.get("use_client_address") === "true" || formData.get("use_client_address") === "on";
+  let venueId = clean(formData.get("venue_id"));
+  if (useClientAddress) {
+    venueId = null;
+    const addr = clean(formData.get("client_address"));
+    if (addr && primary) await supabase.from("clients").update({ mailing_address: addr }).eq("id", primary.client_id);
+  } else if (!venueId && newVenue?.name) {
+    const { data: v } = await supabase
+      .from("venues")
+      .insert({
+        name: newVenue.name,
+        address: newVenue.address ?? null,
+        city: newVenue.city ?? null,
+        state: newVenue.state ?? null,
+        zip: newVenue.zip ?? null,
+        lat: newVenue.lat ?? null,
+        lng: newVenue.lng ?? null,
+        google_place_id: newVenue.place_id ?? null,
+      })
+      .select("id")
+      .single();
+    venueId = v?.id ?? null;
+  }
+
+  // 4) event name — auto for unnamed weddings
+  const eventTypeId = clean(formData.get("event_type_id"));
+  let typeName: string | null = null;
+  if (eventTypeId) {
+    const { data: t } = await supabase.from("event_types").select("name").eq("id", eventTypeId).maybeSingle();
+    typeName = t?.name ?? null;
+  }
+  let name = clean(formData.get("name"));
+  if (!name) name = buildEventName(resolved.map((r) => r.naming), typeName) || "New Event";
+
+  // 5) insert the event
+  const depositInput = clean(formData.get("deposit_value"));
+  const priceOverride = clean(formData.get("package_price_override"));
+  const packageId = clean(formData.get("package_id"));
+  const { data: event, error: evErr } = await supabase
+    .from("events")
+    .insert({
+      name,
+      event_type_id: eventTypeId,
+      status_id: clean(formData.get("status_id")),
+      inquiry_source_id: inquirySourceId,
+      client_id: primary?.client_id ?? null,
+      event_date: clean(formData.get("event_date")),
+      setup_time: clean(formData.get("setup_time")),
+      start_time: clean(formData.get("start_time")),
+      end_time: clean(formData.get("end_time")),
+      guest_count: formData.get("guest_count") ? num(formData.get("guest_count")) : null,
+      venue_id: venueId,
+      venue_room_id: clean(formData.get("venue_room_id")),
+      use_client_address: useClientAddress,
+      package_id: packageId,
+      package_price_override: priceOverride ? num(formData.get("package_price_override")) : null,
+      deposit_value: depositInput ? num(formData.get("deposit_value")) : 0,
+      travel_fee: num(formData.get("travel_fee")),
+      discount1_label: clean(formData.get("d1l")) ?? (discounts[0]?.label ?? null),
+      discount1_amount: discounts[0]?.amount ?? 0,
+      discount2_label: discounts[1]?.label ?? null,
+      discount2_amount: discounts[1]?.amount ?? 0,
+      internal_notes: clean(formData.get("internal_notes")),
+    })
+    .select("id")
+    .single();
+  if (evErr) throw new Error(evErr.message);
+  const eventId = event.id as string;
+
+  // 6) event_clients
+  if (resolved.length) {
+    await supabase.from("event_clients").insert(
+      resolved.map((r) => ({ event_id: eventId, client_id: r.client_id, role: r.role ?? "Client", is_primary: r.is_primary }))
+    );
+  }
+
+  // 7) package selection (auto add-ons/equipment + price/deposit defaults)
+  if (packageId) {
+    await applyPackageSelection(supabase, eventId, packageId, clean(formData.get("event_date")), !!priceOverride);
+  }
+
+  // 8) explicit add-ons on top of package defaults
+  const addonRows = addons
+    .filter((a) => a.addon_id)
+    .map((a) => ({
+      event_id: eventId,
+      addon_id: a.addon_id,
+      quantity: a.quantity && a.quantity > 0 ? a.quantity : 1,
+      price_override: a.price_override ?? null,
+    }));
+  if (addonRows.length) await supabase.from("event_addons").insert(addonRows);
+
+  // 9) contract notes (internal notes already on the event row)
+  const contractNotes = clean(formData.get("contract_notes"));
+  if (contractNotes) {
+    await supabase.from("event_notes").insert({ event_id: eventId, body: contractNotes, kind: "contract" });
+  }
+
+  // 10) custom / important dates
+  const dateRows = customDates
+    .filter((d) => d.definition_id && d.value)
+    .map((d) => ({ event_id: eventId, definition_id: d.definition_id, value: d.value }));
+  if (dateRows.length) {
+    await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" });
+  }
+
+  // 11) payment schedule (deposit + split) — generated from current totals
+  const scheduleCount = formData.get("schedule_count") ? Math.max(1, Math.round(num(formData.get("schedule_count")))) : 0;
+  if (scheduleCount > 0) {
+    const bundle = await loadEventBundle(supabase, eventId);
+    const total = bundle?.total ?? 0;
+    const { data: evDep } = await supabase.from("events").select("deposit_value, event_date").eq("id", eventId).single();
+    const deposit = Number(evDep?.deposit_value ?? 0);
+    let terms: "days_before" | "net_days_after" = "days_before";
+    let termsDays = 30;
+    if (packageId) {
+      const { data: pkg } = await supabase
+        .from("packages")
+        .select("payment_terms, payment_terms_days")
+        .eq("id", packageId)
+        .maybeSingle();
+      if (pkg) {
+        terms = (pkg.payment_terms as typeof terms) ?? "days_before";
+        termsDays = pkg.payment_terms_days ?? 30;
+      }
+    }
+    const rows = buildScheduleRows({
+      total,
+      deposit,
+      eventDate: evDep?.event_date ?? null,
+      terms,
+      termsDays,
+      plan: { kind: "split", count: scheduleCount },
+      today: new Date().toISOString().slice(0, 10),
+    }).map((r) => ({ ...r, event_id: eventId }));
+    await supabase.from("scheduled_payments").insert(rows);
+  }
+
+  // 12) staff (optional — TBD by default)
+  const staffRows = staff
+    .filter((s) => s.employee_id)
+    .map((s) => ({ event_id: eventId, employee_id: s.employee_id, role: s.role || "DJ", flat_wage: s.flat_wage ?? 0 }));
+  if (staffRows.length) await supabase.from("event_staff").insert(staffRows);
+
+  revalidatePath("/events");
+  redirect(`/events/${eventId}`);
 }
 
 export async function updateEvent(id: string, formData: FormData) {

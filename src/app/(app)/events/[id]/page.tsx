@@ -50,6 +50,7 @@ import EventComms, { type EventThread, type StartableClient } from "@/components
 import type { ConvRow } from "@/components/InboxShell";
 import SigningChecklist from "@/components/SigningChecklist";
 import { resolveRequiredFields, getMissingSigningFields } from "@/lib/signingRequirements";
+import { summarizeHelperActions, type HelperAction } from "@/lib/helperSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +106,7 @@ export default async function EventDetailPage({
     { data: equipmentItems },
     { data: equipmentSystems },
     { data: journeySettings },
+    { data: emailTemplates },
   ] = await Promise.all([
     supabase
       .from("events")
@@ -162,6 +164,7 @@ export default async function EventDetailPage({
     supabase.from("equipment_items").select("id, name, category").eq("is_active", true).order("name"),
     supabase.from("equipment_systems").select("id, name").eq("is_active", true).order("name"),
     supabase.from("journey_settings").select("required_signing_fields").eq("id", true).maybeSingle(),
+    supabase.from("email_templates").select("id, name").eq("is_active", true),
   ]);
 
   if (!event) notFound();
@@ -274,6 +277,21 @@ export default async function EventDetailPage({
     })),
     scheduleCount: (schedule ?? []).length,
   });
+
+  // booking-helper action summaries (shown in the confirm dialog before running)
+  const emailTplMap = Object.fromEntries((emailTemplates ?? []).map((t) => [t.id, t.name]));
+  const statusMap = Object.fromEntries((statuses ?? []).map((s) => [s.id, s.name]));
+  const empMap = Object.fromEntries((employees ?? []).map((e) => [e.id, `${e.first_name} ${e.last_name}`.trim()]));
+  const dateDefMap = Object.fromEntries((dateDefs ?? []).map((d) => [d.id, d.name]));
+  const helpersWithSummary = (helpers ?? []).map((h) => ({
+    ...h,
+    summary: summarizeHelperActions(((h as { actions?: HelperAction[] }).actions ?? []) as HelperAction[], {
+      emailTemplates: emailTplMap,
+      statuses: statusMap,
+      employees: empMap,
+      dateDefs: dateDefMap,
+    }),
+  }));
 
   // payment-settings-driven add-payment defaults (configured in Settings → Payment Settings)
   const ps = paySettings as {
@@ -1631,7 +1649,7 @@ export default async function EventDetailPage({
       <BookingHelperBar
         eventId={id}
         statusId={event.status_id}
-        helpers={helpers ?? []}
+        helpers={helpersWithSummary}
         ranHelperIds={(helperRuns ?? []).map((r) => r.helper_id)}
         hasPayments={(payments ?? []).length > 0}
       />
