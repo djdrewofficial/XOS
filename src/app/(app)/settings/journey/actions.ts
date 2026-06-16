@@ -15,6 +15,11 @@ export async function saveJourneySettings(formData: FormData) {
       proposal_doc_template_id: (formData.get("proposal_doc_template_id") ?? "").toString().trim() || null,
       proposal_layout: (formData.get("proposal_layout") ?? "couple").toString().trim() || "couple",
       payment_chooser: (formData.get("payment_chooser") ?? "client").toString().trim() || "client",
+      vibo_intro: (formData.get("vibo_intro") ?? "").toString().trim() || null,
+      vibo_video_url: (formData.get("vibo_video_url") ?? "").toString().trim() || null,
+      vibo_ios_url: (formData.get("vibo_ios_url") ?? "").toString().trim() || null,
+      vibo_android_url: (formData.get("vibo_android_url") ?? "").toString().trim() || null,
+      vibo_web_url: (formData.get("vibo_web_url") ?? "").toString().trim() || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", true);

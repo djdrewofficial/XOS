@@ -14,6 +14,11 @@ type JourneySettings = {
   proposal_doc_template_id?: string | null;
   proposal_layout?: string | null;
   payment_chooser?: string | null;
+  vibo_intro?: string | null;
+  vibo_video_url?: string | null;
+  vibo_ios_url?: string | null;
+  vibo_android_url?: string | null;
+  vibo_web_url?: string | null;
 };
 
 export default async function JourneySettingsPage() {
@@ -118,6 +123,29 @@ export default async function JourneySettingsPage() {
               <code>&lt;event_date_long&gt;</code>) — they render per client.
             </Note>
           </div>
+        </Section>
+
+        <Section title="Vibo Planning Page">
+          <Note>
+            The post-payment page (<code>/vibo</code>) that explains Vibo, offers device-aware download links + the join
+            link, and lets clients text a partner/planner an invite. The join link itself is set per event by your
+            Zapier zap on signing.
+          </Note>
+          <Row label="Intro Text" hint="A short explanation of Vibo shown under the video">
+            <textarea name="vibo_intro" defaultValue={s.vibo_intro ?? ""} rows={3} className="input w-full" />
+          </Row>
+          <Row label="Vimeo Video URL" hint="Paste the Vimeo link or player URL — leave blank to hide the video">
+            <input name="vibo_video_url" defaultValue={s.vibo_video_url ?? ""} className="input w-full" placeholder="https://vimeo.com/123456789" />
+          </Row>
+          <Row label="iPhone Download URL">
+            <input name="vibo_ios_url" defaultValue={s.vibo_ios_url ?? ""} className="input w-full" placeholder="App Store link" />
+          </Row>
+          <Row label="Android Download URL">
+            <input name="vibo_android_url" defaultValue={s.vibo_android_url ?? ""} className="input w-full" placeholder="Google Play link" />
+          </Row>
+          <Row label="Web App URL">
+            <input name="vibo_web_url" defaultValue={s.vibo_web_url ?? ""} className="input w-full" placeholder="https://app.vibo.dj …" />
+          </Row>
         </Section>
 
         <div className="flex justify-end">

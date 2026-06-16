@@ -62,8 +62,14 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
           <div className="text-2xl">✅</div>
           <div className="mt-1 font-bold text-emerald-800 dark:text-emerald-300">You&apos;re all paid up</div>
           <div className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">
-            Nothing is owed right now. We&apos;ll be in touch with your planning details next!
+            Nothing is owed right now. Let&apos;s start planning!
           </div>
+          <a
+            href={`/vibo/${token}`}
+            className="mt-4 inline-block rounded-xl bg-gradient-to-r from-brand to-brand-light px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand/30"
+          >
+            Start planning in Vibo →
+          </a>
         </div>
       ) : (
         <>
@@ -89,9 +95,10 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
             zelleMemo={info.settings.zelleMemo}
           />
 
-          <p className="mt-4 text-center text-[11px] text-zinc-400">
-            A receipt is emailed once your payment completes. Your planning portal details are coming next.
-          </p>
+          <p className="mt-4 text-center text-[11px] text-zinc-400">A receipt is emailed once your payment completes.</p>
+          <a href={`/vibo/${token}`} className="mt-1 block text-center text-xs font-semibold text-brand underline dark:text-brand-lighter">
+            Skip to planning in Vibo →
+          </a>
         </>
       )}
     </Shell>
