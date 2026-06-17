@@ -72,6 +72,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
           { href: "/payments", label: "Received", icon: faMoneyBillWave },
           { href: "/payments/scheduled", label: "Scheduled", icon: faCalendarDays },
           { href: "/payments/summary", label: "Income & Expense", icon: faMoneyCheckDollar },
+          { href: "/payments/monthly", label: "Monthly Breakdown", icon: faTableColumns },
         ],
       },
       { href: "/payroll", label: "Payroll", icon: faMoneyCheckDollar },
