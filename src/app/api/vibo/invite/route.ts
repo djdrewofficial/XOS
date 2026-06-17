@@ -30,7 +30,9 @@ export async function POST(req: Request) {
 
   const c = ev.client as { first_name?: string; last_name?: string } | null;
   const clientName = `${c?.first_name ?? ""} ${c?.last_name ?? ""}`.trim() || "your partner";
-  const link = ((ev.custom_fields as Record<string, string>) ?? {}).vibo_link ?? "";
+  // invite a partner/planner → the GUEST link (fall back to host if not set)
+  const cf = (ev.custom_fields as Record<string, string>) ?? {};
+  const link = cf.vibo_guest_link || cf.vibo_link || "";
   const hi = name ? `Hey ${name}, ` : "Hi! ";
   const msg = `${hi}${clientName} is inviting you to join Vibo to plan ${ev.name || "the event"} entertainment together!${link ? ` Join here: ${link}` : ""}`;
 

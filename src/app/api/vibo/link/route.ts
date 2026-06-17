@@ -12,21 +12,24 @@ export async function POST(req: Request) {
   if (!secret || req.headers.get("x-xos-key") !== secret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  let body: { token?: string; host_link?: string; link?: string } = {};
+  let body: { token?: string; host_link?: string; guest_link?: string; link?: string } = {};
   try {
     body = await req.json();
   } catch {
     /* empty */
   }
   const token = (body.token ?? "").toString();
-  const link = (body.host_link ?? body.link ?? "").toString().trim();
-  if (!token || !link) return NextResponse.json({ error: "Missing token or host_link." }, { status: 400 });
+  const host = (body.host_link ?? body.link ?? "").toString().trim();
+  const guest = (body.guest_link ?? "").toString().trim();
+  if (!token || !host) return NextResponse.json({ error: "Missing token or host_link." }, { status: 400 });
 
   const supabase = createAdminClient();
   const { data: ev } = await supabase.from("events").select("id, custom_fields").eq("pay_token", token).maybeSingle();
   if (!ev) return NextResponse.json({ error: "Invalid token." }, { status: 404 });
 
-  const cf = { ...((ev.custom_fields as Record<string, string>) ?? {}), vibo_link: link };
+  // vibo_link = host (the client/owner); vibo_guest_link = guest (partner/planner)
+  const cf: Record<string, string> = { ...((ev.custom_fields as Record<string, string>) ?? {}), vibo_link: host };
+  if (guest) cf.vibo_guest_link = guest;
   const { error } = await supabase.from("events").update({ custom_fields: cf }).eq("id", ev.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
