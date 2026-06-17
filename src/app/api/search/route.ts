@@ -61,6 +61,7 @@ export async function GET(request: Request) {
     supabase
       .from("events")
       .select("id, name, event_date, status:event_statuses(name)")
+      .is("archived_at", null)
       .ilike("name", like)
       .order("event_date", { ascending: false })
       .limit(5),

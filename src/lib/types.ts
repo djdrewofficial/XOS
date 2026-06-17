@@ -101,6 +101,7 @@ export type XEvent = {
   contract_signed_date: string | null;
   custom_fields: Record<string, string>;
   internal_notes: string | null;
+  archived_at?: string | null; // non-null = archived: automations stopped, hidden from active lists
   created_at: string;
   // joined
   client?: Client | null;

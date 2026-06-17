@@ -35,10 +35,12 @@ export async function runAutomations(
 ): Promise<void> {
   const { data: ev } = await supabase
     .from("events")
-    .select("event_type_id, status_id")
+    .select("event_type_id, status_id, archived_at")
     .eq("id", eventId)
     .maybeSingle();
   if (!ev) return;
+  // archived events are frozen — no helper runs, webhooks, or queued sends
+  if (ev.archived_at) return;
 
   const { data: helpers } = await supabase
     .from("booking_helpers")

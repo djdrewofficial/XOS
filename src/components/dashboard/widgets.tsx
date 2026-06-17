@@ -98,6 +98,7 @@ export async function MonthCalendar({ m }: { m?: string }) {
     supabase
       .from("events")
       .select("id, name, event_date, client:clients(first_name, last_name), status:event_statuses(name, color, text_color)")
+      .is("archived_at", null)
       .gte("event_date", gridStartStr)
       .lte("event_date", gridEndStr)
       .order("event_date"),
@@ -219,6 +220,7 @@ export async function UpcomingEvents() {
   const { data: upcoming } = await supabase
     .from("events")
     .select("*, client:clients(first_name, last_name), status:event_statuses(name, color, text_color), venue:venues(name)")
+    .is("archived_at", null)
     .gte("event_date", todayStr())
     .order("event_date", { ascending: true })
     .limit(8);
@@ -376,13 +378,13 @@ export async function MyUpcomingEvents() {
 
   const { data: assignments } = await supabase
     .from("event_staff")
-    .select("id, role, event:events(id, name, event_date, start_time, status:event_statuses(name, color, text_color), venue:venues(name))")
+    .select("id, role, event:events(id, name, event_date, start_time, archived_at, status:event_statuses(name, color, text_color), venue:venues(name))")
     .eq("employee_id", me.id);
 
   const today = todayStr();
   const upcoming = (assignments ?? [])
-    .map((a) => ({ role: a.role, event: a.event as unknown as { id: string; name: string; event_date: string | null; status: { name: string; color: string; text_color: string } | null; venue: { name: string } | null } | null }))
-    .filter((a) => a.event?.event_date && a.event.event_date >= today)
+    .map((a) => ({ role: a.role, event: a.event as unknown as { id: string; name: string; event_date: string | null; archived_at: string | null; status: { name: string; color: string; text_color: string } | null; venue: { name: string } | null } | null }))
+    .filter((a) => a.event?.event_date && a.event.event_date >= today && !a.event.archived_at)
     .sort((a, b) => (a.event!.event_date! < b.event!.event_date! ? -1 : 1))
     .slice(0, 8);
 

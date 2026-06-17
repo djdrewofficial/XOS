@@ -33,6 +33,32 @@ async function actorName(supabase: Awaited<ReturnType<typeof createClient>>): Pr
   return user.email ?? "user";
 }
 
+type Tier = "master_admin" | "admin" | "salesperson" | "employee";
+
+/** Current signed-in user's permission tier. No employee row ⇒ treated as the
+    owner (master_admin), matching the dashboard's default (page.tsx). */
+async function currentTier(supabase: Awaited<ReturnType<typeof createClient>>): Promise<Tier> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return "employee";
+  const { data: emp } = await supabase
+    .from("employees")
+    .select("permission_tier")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+  return ((emp?.permission_tier as Tier | undefined) ?? "master_admin");
+}
+
+/** Throw unless the current user holds one of the allowed tiers. */
+async function requireTier(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  allowed: Tier[]
+): Promise<void> {
+  const tier = await currentTier(supabase);
+  if (!allowed.includes(tier)) throw new Error("Not authorized.");
+}
+
 function eventPayload(formData: FormData) {
   return {
     name: clean(formData.get("name")) ?? "",
@@ -756,10 +782,50 @@ export async function toggleStaffPortal(eventId: string, staffId: string, visibl
 
 export async function deleteEvent(eventId: string) {
   const supabase = await createClient();
+  // hard delete is master_admin only — everyone else archives instead
+  await requireTier(supabase, ["master_admin"]);
   const { error } = await supabase.from("events").delete().eq("id", eventId);
   if (error) throw new Error(error.message);
   revalidatePath("/events");
   redirect("/events");
+}
+
+/* Archive an event: keep its data but mark it archived, which stops all
+   automations (runAutomations no-ops on archived events) and drops it out of
+   the active Events list / dashboard. Also cancels any still-queued automated
+   emails/SMS so nothing already in the outbox fires. */
+export async function archiveEvent(eventId: string) {
+  const supabase = await createClient();
+  await requireTier(supabase, ["master_admin", "admin", "salesperson"]);
+
+  const { error } = await supabase
+    .from("events")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+
+  // stop anything already queued by automations from sending
+  await supabase.from("email_log").update({ status: "cancelled" }).eq("event_id", eventId).eq("status", "queued");
+  await supabase.from("sms_log").update({ status: "cancelled" }).eq("event_id", eventId).eq("status", "queued");
+
+  await supabase.from("event_logs").insert({ event_id: eventId, actor: await actorName(supabase), action: "Event archived" });
+
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+  redirect("/events");
+}
+
+export async function unarchiveEvent(eventId: string) {
+  const supabase = await createClient();
+  await requireTier(supabase, ["master_admin", "admin", "salesperson"]);
+
+  const { error } = await supabase.from("events").update({ archived_at: null }).eq("id", eventId);
+  if (error) throw new Error(error.message);
+
+  await supabase.from("event_logs").insert({ event_id: eventId, actor: await actorName(supabase), action: "Event unarchived" });
+
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
 }
 
 export async function addEventClient(eventId: string, formData: FormData) {

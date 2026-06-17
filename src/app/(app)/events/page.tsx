@@ -4,18 +4,24 @@ import EventsGrid, { type GridRow } from "@/components/EventsGrid";
 
 export const dynamic = "force-dynamic";
 
-export default async function EventsPage() {
+export default async function EventsPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
   const supabase = await createClient();
+  const showArchived = (await searchParams).show === "archived";
+
+  const eventsQuery = supabase
+    .from("events")
+    .select(
+      "*, client:clients(first_name, last_name, cell_phone, email), status:event_statuses(name, color, text_color), package:packages(name, default_price, deposit_value), venue:venues(name, city, state, setup_fee), event_type:event_types(name), salesperson:employees(first_name, last_name), inquiry_source:inquiry_sources(name)"
+    )
+    .order("event_date", { ascending: true })
+    .limit(1000);
+  // active by default; ?show=archived flips to archived-only
+  if (showArchived) eventsQuery.not("archived_at", "is", null);
+  else eventsQuery.is("archived_at", null);
 
   const [{ data: events }, { data: staff }, { data: vendors }, { data: addons }, { data: payments }] =
     await Promise.all([
-      supabase
-        .from("events")
-        .select(
-          "*, client:clients(first_name, last_name, cell_phone, email), status:event_statuses(name, color, text_color), package:packages(name, default_price, deposit_value), venue:venues(name, city, state, setup_fee), event_type:event_types(name), salesperson:employees(first_name, last_name), inquiry_source:inquiry_sources(name)"
-        )
-        .order("event_date", { ascending: true })
-        .limit(1000),
+      eventsQuery,
       supabase.from("event_staff").select("event_id, employee:employees(first_name, last_name)"),
       supabase.from("event_vendors").select("event_id, vendor:vendors(company_name)"),
       supabase.from("event_addons").select("event_id, quantity, price_override, price_locked, addon:addons(name, default_price)"),
@@ -111,10 +117,18 @@ export default async function EventsPage() {
   return (
     <div>
       <div className="mb-5 flex items-center justify-between">
-        <h1 className="page-title">Events List</h1>
-        <Link href="/events/new" className="btn-primary px-4 py-2 text-sm">
-          Add Event
-        </Link>
+        <h1 className="page-title">{showArchived ? "Archived Events" : "Events List"}</h1>
+        <div className="flex items-center gap-3">
+          <Link
+            href={showArchived ? "/events" : "/events?show=archived"}
+            className="text-xs font-semibold text-zinc-500 hover:text-zinc-700 hover:underline dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            {showArchived ? "← Active events" : "Show archived"}
+          </Link>
+          <Link href="/events/new" className="btn-primary px-4 py-2 text-sm">
+            Add Event
+          </Link>
+        </div>
       </div>
       <EventsGrid rows={rows} />
     </div>

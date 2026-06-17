@@ -37,6 +37,8 @@ import {
   addLogisticsNote,
   updateBillingTerms,
   deleteEvent,
+  archiveEvent,
+  unarchiveEvent,
 } from "../actions";
 import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/actions";
 import InlineEditCard from "@/components/InlineEditCard";
@@ -70,6 +72,15 @@ export default async function EventDetailPage({
   const { tab } = await searchParams;
   const activeTab = (EVENT_TABS as readonly string[]).includes(tab ?? "") ? (tab as string) : "client";
   const supabase = await createClient();
+
+  // current user's tier gates the destructive footer actions (delete vs archive)
+  const { data: authUser } = await supabase.auth.getUser();
+  const { data: meEmp } = authUser?.user
+    ? await supabase.from("employees").select("permission_tier").eq("auth_user_id", authUser.user.id).maybeSingle()
+    : { data: null };
+  const tier = (meEmp?.permission_tier as "master_admin" | "admin" | "salesperson" | "employee" | undefined) ?? "master_admin";
+  const canDelete = tier === "master_admin";
+  const canArchive = tier === "master_admin" || tier === "admin" || tier === "salesperson";
 
   // PERF: every query that depends only on the event id runs in ONE parallel
   // batch instead of 5 sequential groups — collapses ~30 round-trips into one
@@ -1667,6 +1678,11 @@ export default async function EventDetailPage({
               <h1 className="truncate text-lg font-bold text-zinc-900 dark:text-white">
                 {event.name || "(unnamed event)"}
                 {eventNumber && <span className="ml-2 text-xs font-semibold text-zinc-400 dark:text-zinc-600">#{eventNumber}</span>}
+                {event.archived_at && (
+                  <span className="ml-2 rounded bg-amber-200 px-1.5 py-0.5 align-middle text-[11px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-500/30 dark:text-amber-200">
+                    Archived
+                  </span>
+                )}
               </h1>
               <p className="text-xs text-zinc-500">
                 Event Date:{" "}
@@ -1777,12 +1793,33 @@ export default async function EventDetailPage({
         ]}
       />
 
-      <div className="mt-10 flex justify-end border-t border-zinc-200 pt-4 dark:border-white/[0.06]">
-        <form action={deleteEvent.bind(null, id)}>
-          <button className="text-xs font-semibold text-red-600 hover:underline dark:text-red-400">
-            Delete This Event
-          </button>
-        </form>
+      <div className="mt-10 flex items-center justify-end gap-4 border-t border-zinc-200 pt-4 dark:border-white/[0.06]">
+        {event.archived_at
+          ? canArchive && (
+              <form action={unarchiveEvent.bind(null, id)}>
+                <button className="text-xs font-semibold text-zinc-600 hover:underline dark:text-zinc-300">
+                  Unarchive Event
+                </button>
+              </form>
+            )
+          : (
+            <>
+              {canArchive && (
+                <form action={archiveEvent.bind(null, id)}>
+                  <button className="text-xs font-semibold text-amber-700 hover:underline dark:text-amber-300">
+                    Archive Event
+                  </button>
+                </form>
+              )}
+              {canDelete && (
+                <form action={deleteEvent.bind(null, id)}>
+                  <button className="text-xs font-semibold text-red-600 hover:underline dark:text-red-400">
+                    Delete This Event
+                  </button>
+                </form>
+              )}
+            </>
+          )}
       </div>
     </div>
   );
