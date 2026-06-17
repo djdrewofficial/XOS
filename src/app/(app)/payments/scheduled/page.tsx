@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
-import PrintButton from "@/components/PrintButton";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +64,7 @@ export default async function ScheduledPaymentsPage({ searchParams }: { searchPa
         <div className="flex items-center gap-2 text-sm">
           <Link href={`/payments/scheduled?year=${y - 1}`} className="btn-ghost px-3 py-1">← {y - 1}</Link>
           <Link href={`/payments/scheduled?year=${y + 1}`} className="btn-ghost px-3 py-1">{y + 1} →</Link>
-          <PrintButton label="🖨 Export PDF" className="btn-ghost px-3 py-1.5 text-sm" />
+          <a href={`/api/reports/scheduled?year=${y}`} target="_blank" rel="noopener" className="btn-ghost px-3 py-1.5 text-sm">🖨 Export PDF</a>
         </div>
       </div>
 

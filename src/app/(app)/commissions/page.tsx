@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent } from "@/lib/types";
-import PrintButton from "@/components/PrintButton";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +84,7 @@ export default async function CommissionsPage({ searchParams }: { searchParams: 
         <div className="flex items-center gap-2 text-sm">
           <Link href={`/commissions?year=${y - 1}`} className="btn-ghost px-3 py-1">← {y - 1}</Link>
           <Link href={`/commissions?year=${y + 1}`} className="btn-ghost px-3 py-1">{y + 1} →</Link>
-          <PrintButton label="🖨 Export PDF" className="btn-ghost px-3 py-1.5 text-sm" />
+          <a href={`/api/reports/commissions?year=${y}`} target="_blank" rel="noopener" className="btn-ghost px-3 py-1.5 text-sm">🖨 Export PDF</a>
         </div>
       </div>
       <p className="mb-4 text-xs text-zinc-500">Booked (Financials-counting) events by event date. Set rates per person on the employee&apos;s profile.</p>

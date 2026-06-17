@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent } from "@/lib/types";
-import PrintButton from "@/components/PrintButton";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +90,7 @@ export default async function OutstandingPage() {
     <div className="max-w-6xl">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Outstanding Balances</h1>
-        <PrintButton label="🖨 Export PDF" className="btn-ghost px-3 py-1.5 text-sm" />
+        <a href="/api/reports/outstanding" target="_blank" rel="noopener" className="btn-ghost px-3 py-1.5 text-sm">🖨 Export PDF</a>
       </div>
       <p className="mb-4 text-xs text-zinc-500">Locked-in events (Financials-counting statuses) with a balance due, aged by next unpaid scheduled payment.</p>
 
