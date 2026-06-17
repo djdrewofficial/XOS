@@ -877,8 +877,16 @@ export default async function EventDetailPage({
                 <span className="font-semibold">{money(sp.amount)}</span>
               </li>
             ))}
-            {(schedule ?? []).length === 0 && <li className="text-zinc-400 dark:text-zinc-600">No payment schedule yet — generate one below.</li>}
+            {(schedule ?? []).length === 0 && <li className="text-zinc-400 dark:text-zinc-600">No payment schedule yet — generate one under “Edit schedule &amp; billing terms”.</li>}
           </ul>
+
+          <details className="group rounded-lg border border-zinc-200 dark:border-white/10">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+              <span>Edit schedule &amp; billing terms</span>
+              <span className="text-base leading-none transition-transform group-open:rotate-90">›</span>
+            </summary>
+            <div className="hidden space-y-5 border-t border-zinc-200 px-3 py-3 group-open:block dark:border-white/10">
+          <div>
           <h3 className="label-xs">Generate Schedule</h3>
           <form action={addScheduleBound} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="total" value={total} />
@@ -900,14 +908,16 @@ export default async function EventDetailPage({
             <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Done">Generate</SaveButton>
           </form>
           <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-600">
-            Package rules: splits of {paymentRules.splits.join(" / ")} ·{" "}
+            Splits of {paymentRules.splits.join(" / ")} ·{" "}
             {paymentRules.terms === "net_days_after"
-              ? `Net ${paymentRules.days} — balance due ${paymentRules.days} days after the event`
-              : `balance due ${paymentRules.days} days before the event date`}
-            . These same limits will gate the client&apos;s schedule choice in the booking-agreement workflow.
+              ? `Net ${paymentRules.days} (due ${paymentRules.days} days after the event)`
+              : `balance due ${paymentRules.days} days before the event`}
+            . Gates the client&apos;s options in the booking agreement.
           </p>
+          </div>
 
-          <h3 className="label-xs mt-5">Client Billing Terms (office-set)</h3>
+          <div>
+          <h3 className="label-xs">Client Billing Terms (office-set)</h3>
           <form action={updateBillingTerms.bind(null, id)} className="flex flex-wrap items-end gap-2">
             <div>
               <label className="label-xs">Terms</label>
@@ -925,10 +935,12 @@ export default async function EventDetailPage({
             <SaveButton className="btn-ghost px-4 py-2 text-xs" savedLabel="Saved">Save Terms</SaveButton>
           </form>
           <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-600">
-            Used on the client&apos;s confirm page only for event types whose Payment Chooser is{" "}
-            <span className="font-semibold">Office sets</span> (Settings → Event Type Workflows). Couples who pick their
-            own plan ignore this.
+            Applies only when the event type&apos;s Payment Chooser is{" "}
+            <span className="font-semibold">Office sets</span>. Couples who pick their own plan ignore this.
           </p>
+          </div>
+            </div>
+          </details>
 
           {(() => {
             const ap = event as {
@@ -955,7 +967,8 @@ export default async function EventDetailPage({
             );
           })()}
 
-          <h3 className="label-xs mt-5">Payments Received</h3>
+          <hr className="my-4 border-zinc-100 dark:border-white/10" />
+          <h3 className="label-xs">Payments Received</h3>
           <form action={addPaymentBound} className="mb-3 flex flex-wrap items-end gap-2">
             <input
               type="number"
