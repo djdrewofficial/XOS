@@ -7,20 +7,26 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-/** Read a POST body whether it's JSON or form-encoded (Zapier can send either). */
-async function readBody(req: Request): Promise<Record<string, string>> {
-  const raw = await req.text();
-  if (!raw) return {};
+type AnyObj = Record<string, unknown>;
+
+/** Read a POST body whether it's JSON or form-encoded; dig one level into a
+    nested `data`/`body` wrapper too (Zapier shapes vary). */
+function extract(raw: string): { obj: AnyObj; token: string; host: string } {
+  let obj: AnyObj = {};
   try {
-    return JSON.parse(raw) as Record<string, string>;
+    obj = JSON.parse(raw) as AnyObj;
   } catch {
-    /* not json */
+    try {
+      obj = Object.fromEntries(new URLSearchParams(raw));
+    } catch {
+      obj = {};
+    }
   }
-  try {
-    return Object.fromEntries(new URLSearchParams(raw)) as Record<string, string>;
-  } catch {
-    return {};
-  }
+  const pick = (o: AnyObj, k: string) => (typeof o?.[k] === "string" ? (o[k] as string) : "");
+  const nested = (typeof obj.data === "object" ? (obj.data as AnyObj) : typeof obj.body === "object" ? (obj.body as AnyObj) : {}) as AnyObj;
+  const token = pick(obj, "token") || pick(nested, "token");
+  const host = (pick(obj, "host_link") || pick(obj, "link") || pick(nested, "host_link") || pick(nested, "link")).trim();
+  return { obj, token, host };
 }
 
 export async function POST(req: Request) {
@@ -28,10 +34,12 @@ export async function POST(req: Request) {
   if (!secret || req.headers.get("x-xos-key") !== secret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const body = await readBody(req);
-  const token = (body.token ?? "").toString();
-  const host = (body.host_link ?? body.link ?? "").toString().trim();
-  if (!token || !host) return NextResponse.json({ error: "Missing token or host_link." }, { status: 400 });
+  const raw = await req.text();
+  const { token, host } = extract(raw);
+  if (!token || !host) {
+    // echo what we received so a Zapier test shows the actual shape
+    return NextResponse.json({ error: "Missing token or host_link.", received: raw.slice(0, 400) }, { status: 400 });
+  }
 
   const supabase = createAdminClient();
   const { data: ev } = await supabase.from("events").select("id, custom_fields").eq("pay_token", token).maybeSingle();
