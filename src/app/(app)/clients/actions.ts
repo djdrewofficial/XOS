@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatPhone } from "@/lib/phone";
+import { findOrCreateClient } from "@/lib/clients";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -31,14 +32,10 @@ async function payload(supabase: Awaited<ReturnType<typeof createClient>>, formD
 
 export async function createClientRecord(formData: FormData) {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("clients")
-    .insert(await payload(supabase, formData))
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
+  // dedupe by email — if this email already exists, open that client instead
+  const { id } = await findOrCreateClient(supabase, await payload(supabase, formData));
   revalidatePath("/clients");
-  redirect(`/clients/${data.id}`);
+  redirect(`/clients/${id}`);
 }
 
 export async function updateClientRecord(id: string, formData: FormData) {

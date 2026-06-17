@@ -7,6 +7,7 @@ import { buildScheduleRows, type SchedulePlan } from "@/lib/paymentSchedule";
 import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConfig";
 import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations } from "@/lib/automations";
+import { findOrCreateClient } from "@/lib/clients";
 
 const BOOKING_AGREEMENT_ID = "e2ae8026-0d1a-4681-be90-f130d572aec4";
 
@@ -83,16 +84,11 @@ export async function confirmProposal(token: string, formData: FormData) {
         .update({ first_name: bFirst ?? "", last_name: bLast ?? "", email: bEmail, cell_phone: bCell })
         .eq("id", partnerB.client_id);
     } else if (hasB) {
-      const { data: newClient } = await supabase
-        .from("clients")
-        .insert({ first_name: bFirst ?? "", last_name: bLast ?? "", email: bEmail, cell_phone: bCell })
-        .select("id")
-        .single();
-      if (newClient) {
-        await supabase
-          .from("event_clients")
-          .insert({ event_id: eventId, client_id: newClient.id, role: "Partner", is_primary: false });
-      }
+      // dedupe by email — reuse an existing client if Partner B is already one
+      const found = await findOrCreateClient(supabase, { first_name: bFirst ?? "", last_name: bLast ?? "", email: bEmail, cell_phone: bCell });
+      await supabase
+        .from("event_clients")
+        .insert({ event_id: eventId, client_id: found.id, role: "Partner", is_primary: false });
     }
   }
 
