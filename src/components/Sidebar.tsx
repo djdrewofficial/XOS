@@ -118,7 +118,8 @@ export default function Sidebar() {
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
     if (href === "/events") return pathname === "/events" || /^\/events\/(?!new)/.test(pathname);
-    return pathname.startsWith(href);
+    if (href === "/payments") return pathname === "/payments"; // has /payments/* siblings (Scheduled, Income & Expense)
+    return pathname === href || pathname.startsWith(`${href}/`);
   }
 
   function NavLink({ item, nested = false }: { item: NavItem; nested?: boolean }) {
