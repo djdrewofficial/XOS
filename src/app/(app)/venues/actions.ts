@@ -42,6 +42,7 @@ export async function updateVenue(id: string, formData: FormData) {
       travel_fee: num(formData.get("travel_fee")),
       setup_fee: num(formData.get("setup_fee")),
       distance_miles: formData.get("distance_miles") ? num(formData.get("distance_miles")) : null,
+      travel_minutes: formData.get("travel_minutes") ? num(formData.get("travel_minutes")) : null,
       load_in_details: clean(formData.get("load_in_details")),
       driving_notes: clean(formData.get("driving_notes")),
       notes: clean(formData.get("notes")),

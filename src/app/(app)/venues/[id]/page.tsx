@@ -98,6 +98,10 @@ export default async function VenueDetailPage({
               <label className="label-xs">Distance (mi)</label>
               <input type="number" step="0.1" name="distance_miles" defaultValue={venue.distance_miles ?? ""} className="input w-full" />
             </div>
+            <div>
+              <label className="label-xs">Travel time (min, one-way)</label>
+              <input type="number" step="1" name="travel_minutes" defaultValue={(venue as { travel_minutes?: number | null }).travel_minutes ?? ""} className="input w-full" />
+            </div>
             <div className="flex items-end gap-2 pb-2">
               <input type="checkbox" name="is_one_time" id="one_time" defaultChecked={venue.is_one_time} className="size-4 accent-brand-light" />
               <label htmlFor="one_time" className="text-sm text-zinc-600 dark:text-zinc-400">One-time venue</label>

@@ -19,6 +19,7 @@ import {
   faSliders,
   faUserGroup,
   faMoneyBillWave,
+  faMoneyCheckDollar,
   faGear,
   faBolt,
   faTableColumns,
@@ -63,7 +64,10 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
   },
   {
     heading: "Money",
-    items: [{ href: "/payments", label: "Payments", icon: faMoneyBillWave }],
+    items: [
+      { href: "/payments", label: "Payments", icon: faMoneyBillWave },
+      { href: "/payroll", label: "Payroll", icon: faMoneyCheckDollar },
+    ],
   },
   {
     heading: "XOS Settings",

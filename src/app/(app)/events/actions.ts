@@ -727,6 +727,44 @@ export async function markStaff(
   revalidatePath(`/events/${eventId}`);
 }
 
+/* Staff self-service: a signed-in employee checks themselves in/out of their own
+   assignment (verified by auth_user_id → employee_id → event_staff.employee_id). */
+export async function selfCheckInOut(eventStaffId: string, field: "checked_in_at" | "checked_out_at") {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in.");
+  const { data: emp } = await supabase.from("employees").select("id").eq("auth_user_id", user.id).maybeSingle();
+  const { data: row } = await supabase.from("event_staff").select("id, employee_id").eq("id", eventStaffId).maybeSingle();
+  if (!emp || !row || row.employee_id !== emp.id) throw new Error("Not authorized.");
+  const { error } = await supabase.from("event_staff").update({ [field]: new Date().toISOString() }).eq("id", eventStaffId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+}
+
+/* Staff request a correction to their recorded times — admins approve on /payroll. */
+export async function requestTimesheetChange(eventStaffId: string, formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in.");
+  const { data: emp } = await supabase.from("employees").select("id").eq("auth_user_id", user.id).maybeSingle();
+  const { data: row } = await supabase.from("event_staff").select("id, employee_id").eq("id", eventStaffId).maybeSingle();
+  if (!emp || !row || row.employee_id !== emp.id) throw new Error("Not authorized.");
+  const ci = clean(formData.get("check_in"));
+  const co = clean(formData.get("check_out"));
+  const { error } = await supabase.from("timesheet_change_requests").insert({
+    event_staff_id: eventStaffId,
+    requested_check_in: ci ? new Date(ci).toISOString() : null,
+    requested_check_out: co ? new Date(co).toISOString() : null,
+    reason: clean(formData.get("reason")),
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/");
+}
+
 export async function addEventEquipment(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const ref = clean(formData.get("equipment_ref")); // "item:<id>" or "system:<id>"

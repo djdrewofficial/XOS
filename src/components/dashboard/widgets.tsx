@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { money, type XEvent } from "@/lib/types";
 import { holidaysForYear } from "@/lib/holidays";
 import MonthCalendarClient, { type CalDetailedEvent } from "@/components/dashboard/MonthCalendarClient";
+import StaffCheckIn from "@/components/StaffCheckIn";
 
 /* Dashboard widgets — each is a self-contained async server component that
    fetches its own data. Registered in src/lib/dashboardWidgets.ts; placed
@@ -358,12 +359,12 @@ export async function MyUpcomingEvents() {
 
   const { data: assignments } = await supabase
     .from("event_staff")
-    .select("id, role, event:events(id, name, event_date, start_time, archived_at, status:event_statuses(name, color, text_color), venue:venues(name))")
+    .select("id, role, checked_in_at, checked_out_at, event:events(id, name, event_date, start_time, archived_at, status:event_statuses(name, color, text_color), venue:venues(name))")
     .eq("employee_id", me.id);
 
   const today = todayStr();
   const upcoming = (assignments ?? [])
-    .map((a) => ({ role: a.role, event: a.event as unknown as { id: string; name: string; event_date: string | null; archived_at: string | null; status: { name: string; color: string; text_color: string } | null; venue: { name: string } | null } | null }))
+    .map((a) => ({ id: a.id, role: a.role, checked_in_at: a.checked_in_at as string | null, checked_out_at: a.checked_out_at as string | null, event: a.event as unknown as { id: string; name: string; event_date: string | null; archived_at: string | null; status: { name: string; color: string; text_color: string } | null; venue: { name: string } | null } | null }))
     .filter((a) => a.event?.event_date && a.event.event_date >= today && !a.event.archived_at)
     .sort((a, b) => (a.event!.event_date! < b.event!.event_date! ? -1 : 1))
     .slice(0, 8);
@@ -379,6 +380,7 @@ export async function MyUpcomingEvents() {
               <th className="px-4 py-2">Event</th>
               <th className="px-4 py-2">My Role</th>
               <th className="px-4 py-2">Venue</th>
+              <th className="px-4 py-2">Time Clock</th>
             </tr>
           </thead>
           <tbody>
@@ -392,11 +394,12 @@ export async function MyUpcomingEvents() {
                 </td>
                 <td className="px-4 py-2">{a.role}</td>
                 <td className="px-4 py-2">{a.event!.venue?.name ?? "—"}</td>
+                <td className="px-4 py-2"><StaffCheckIn eventStaffId={a.id} checkedInAt={a.checked_in_at} checkedOutAt={a.checked_out_at} /></td>
               </tr>
             ))}
             {upcoming.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-zinc-500">No upcoming assignments.</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">No upcoming assignments.</td>
               </tr>
             )}
           </tbody>
