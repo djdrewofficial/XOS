@@ -66,7 +66,7 @@ export async function renderReportPdf(supabase: SupabaseClient, doc: ReportDoc):
     .ftr { margin-top: 18px; border-top: 1px solid #ccc; padding-top: 6px; font-size: 9px; color: #666; display: flex; justify-content: space-between; }
   </style></head><body>
     <div class="head">
-      <img src="${appUrl()}/logo-dark.png" alt="${esc(company)}" />
+      <img src="${appUrl()}/logo-light.png" alt="${esc(company)}" />
       <div class="meta"><div class="co">${esc(company)}</div><div>Generated ${esc(generated)}</div></div>
     </div>
     <h1>${esc(doc.title)}</h1>
