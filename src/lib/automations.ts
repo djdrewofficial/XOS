@@ -100,8 +100,22 @@ export async function runAutomations(
 
 type ClientLite = { first_name?: string; last_name?: string; email?: string | null; cell_phone?: string | null } | null;
 
+/** Fire a single helper's webhook (used when a helper is run manually — handy
+    for testing a Zap from the event page without signing a contract). */
+export async function fireHelperWebhook(supabase: SupabaseClient, helperId: string, eventId: string): Promise<void> {
+  const { data: h } = await supabase.from("booking_helpers").select("webhook_url").eq("id", helperId).maybeSingle();
+  const url = (h?.webhook_url as string | null) ?? null;
+  if (url) {
+    try {
+      await fireWebhook(supabase, url, eventId, "manual");
+    } catch {
+      /* fire-and-forget */
+    }
+  }
+}
+
 /** POST a useful event snapshot to a Zapier hook (powers Vibo, Drive, etc.). */
-async function fireWebhook(supabase: SupabaseClient, url: string, eventId: string, trigger: AutomationTrigger): Promise<void> {
+async function fireWebhook(supabase: SupabaseClient, url: string, eventId: string, trigger: string): Promise<void> {
   const { data: e } = await supabase
     .from("events")
     .select(

@@ -8,7 +8,7 @@ import { processSmsOutbox } from "@/lib/highlevel";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
 import { loadEventBundle } from "@/lib/documentRender";
 import { buildEventName, type NamingClient } from "@/lib/eventName";
-import { runAutomations } from "@/lib/automations";
+import { runAutomations, fireHelperWebhook } from "@/lib/automations";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -554,6 +554,8 @@ export async function runBookingHelper(eventId: string, helperId: string) {
     p_event_id: eventId,
   });
   if (error) throw new Error(error.message);
+  // fire this helper's webhook too (so a manual click can test the Zap)
+  await fireHelperWebhook(supabase, helperId, eventId);
   // deliver anything the helper queued right away (attachments/sign links
   // are handled at send time) instead of waiting for the 10-minute cron
   await processOutbox();
