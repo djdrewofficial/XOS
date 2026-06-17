@@ -139,6 +139,7 @@ export default function NewEventForm(props: NewEventFormProps) {
     { key: nextKey(), mode: "new", client_id: "", label: "", first_name: "", last_name: "", email: "", cell_phone: "", role: props.roles[0]?.name ?? "Contract Holder", is_primary: true, is_contract_holder: true },
   ]);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
   const setClient = (key: number, patch: Partial<ClientRow>) =>
     setClients((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)));
   const setPrimary = (key: number) => setClients((cs) => cs.map((c) => ({ ...c, is_primary: c.key === key })));
@@ -542,26 +543,41 @@ export default function NewEventForm(props: NewEventFormProps) {
     </div>
   );
 
+  // ---- step wizard ----
+  const steps = [
+    { id: "client", label: "Client Information" },
+    { id: "details", label: "Details" },
+    { id: "booking", label: "Booking" },
+    { id: "financial", label: "Financial" },
+    { id: "venue", label: "Venue" },
+    { id: "staff", label: "Staff" },
+  ];
+  const lastStep = steps.length - 1;
+  const safeStep = Math.min(step, lastStep);
+
+  // the only hard requirement: name/email/cell on the primary client
+  const primaryRow = clients.find((c) => c.is_primary) ?? clients[0] ?? null;
+  const requiredMissing: string[] = [];
+  if (!primaryRow) requiredMissing.push("a primary client");
+  else {
+    if (!primaryRow.first_name.trim()) requiredMissing.push("first name");
+    if (!primaryRow.last_name.trim()) requiredMissing.push("last name");
+    const em = primaryRow.email.trim();
+    if (!em || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) requiredMissing.push("a valid email");
+    if (!primaryRow.cell_phone.trim()) requiredMissing.push("cell phone");
+  }
+  const requiredValid = requiredMissing.length === 0;
+
   return (
     <form
       action={(fd) => {
         // ---- require name/email/cell on the primary client (new or existing) ----
-        const primary = clients.find((c) => c.is_primary) ?? clients[0];
-        const missing: string[] = [];
-        if (!primary) {
-          missing.push("a primary client");
-        } else {
-          if (!primary.first_name.trim()) missing.push("first name");
-          if (!primary.last_name.trim()) missing.push("last name");
-          if (!primary.email.trim()) missing.push("email");
-          else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(primary.email.trim())) missing.push("a valid email");
-          if (!primary.cell_phone.trim()) missing.push("cell phone");
-        }
-        if (missing.length) {
+        if (requiredMissing.length) {
           setClientError(
-            `Primary client needs: ${missing.join(", ")}.` +
-              (primary && primary.mode === "existing" ? " Update that client's profile, then re-select them." : "")
+            `Primary client needs: ${requiredMissing.join(", ")}.` +
+              (primaryRow?.mode === "existing" ? " Update that client's profile, then re-select them." : "")
           );
+          setStep(0); // jump back to the Client step so they can fix it
           return; // abort — do not submit
         }
         setClientError(null);
@@ -598,7 +614,17 @@ export default function NewEventForm(props: NewEventFormProps) {
         return props.action(fd);
       }}
     >
+      {/* step indicator + Create (appears top-right once the required client info is in) */}
+      <div className="mb-4 flex min-h-[40px] items-center justify-between gap-3">
+        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          Step {safeStep + 1} of {steps.length} · {steps[safeStep].label}
+        </span>
+        {requiredValid && <Submit />}
+      </div>
+
       <Tabs
+        active={steps[safeStep].id}
+        onChange={(id) => setStep(Math.max(0, steps.findIndex((s) => s.id === id)))}
         tabs={[
           { id: "client", label: "Client Information", content: clientTab },
           { id: "details", label: "Details", content: detailsTab },
@@ -613,9 +639,42 @@ export default function NewEventForm(props: NewEventFormProps) {
           {clientError}
         </div>
       )}
-      <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-white/10">
-        <span className="text-xs text-zinc-400">{autoName && !name ? `Will be named "${autoName}"` : ""}</span>
-        <Submit />
+
+      {/* footer: Back · auto-name hint · Next / Create */}
+      <div className="mt-6 flex items-center justify-between gap-3 border-t border-zinc-200 pt-4 dark:border-white/10">
+        <div>
+          {safeStep > 0 && (
+            <button
+              type="button"
+              onClick={() => setStep(safeStep - 1)}
+              className="rounded-lg px-4 py-2.5 text-sm font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-white/10"
+            >
+              ← Back
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs text-zinc-400 sm:inline">{autoName && !name ? `Will be named "${autoName}"` : ""}</span>
+          {safeStep < lastStep ? (
+            <button
+              type="button"
+              onClick={() => setStep(safeStep + 1)}
+              className="rounded-lg bg-gradient-to-r from-brand to-brand-light px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand/30 transition-all hover:brightness-110"
+            >
+              Next →
+            </button>
+          ) : requiredValid ? (
+            <Submit />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setStep(0)}
+              className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+            >
+              Complete client info to create →
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );

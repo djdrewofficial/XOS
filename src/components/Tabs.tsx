@@ -4,10 +4,19 @@ import { useState, type ReactNode } from "react";
 
 export default function Tabs({
   tabs,
+  active: activeProp,
+  onChange,
 }: {
   tabs: { id: string; label: string; badge?: string | number; content: ReactNode }[];
+  active?: string; // controlled active tab (optional — omit for self-managed)
+  onChange?: (id: string) => void;
 }) {
-  const [active, setActive] = useState(tabs[0]?.id);
+  const [internal, setInternal] = useState(tabs[0]?.id);
+  const active = activeProp ?? internal;
+  const setActive = (id: string) => {
+    setInternal(id);
+    onChange?.(id);
+  };
 
   return (
     <div>
