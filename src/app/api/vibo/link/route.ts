@@ -7,17 +7,28 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
+/** Read a POST body whether it's JSON or form-encoded (Zapier can send either). */
+async function readBody(req: Request): Promise<Record<string, string>> {
+  const raw = await req.text();
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    /* not json */
+  }
+  try {
+    return Object.fromEntries(new URLSearchParams(raw)) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || req.headers.get("x-xos-key") !== secret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  let body: { token?: string; host_link?: string; link?: string } = {};
-  try {
-    body = await req.json();
-  } catch {
-    /* empty */
-  }
+  const body = await readBody(req);
   const token = (body.token ?? "").toString();
   const host = (body.host_link ?? body.link ?? "").toString().trim();
   if (!token || !host) return NextResponse.json({ error: "Missing token or host_link." }, { status: 400 });
