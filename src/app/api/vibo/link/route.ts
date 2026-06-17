@@ -11,21 +11,32 @@ type AnyObj = Record<string, unknown>;
 
 /** Read a POST body whether it's JSON or form-encoded; dig one level into a
     nested `data`/`body` wrapper too (Zapier shapes vary). */
+/** Trim whitespace off every key (Zapier sometimes leaves a trailing space in
+    a data key, e.g. "token "), recursing one level. */
+function normalizeKeys(o: AnyObj): AnyObj {
+  const out: AnyObj = {};
+  for (const [k, v] of Object.entries(o ?? {})) {
+    out[k.trim()] = v && typeof v === "object" && !Array.isArray(v) ? normalizeKeys(v as AnyObj) : v;
+  }
+  return out;
+}
+
 function extract(raw: string): { obj: AnyObj; token: string; host: string } {
-  let obj: AnyObj = {};
+  let parsed: AnyObj = {};
   try {
-    obj = JSON.parse(raw) as AnyObj;
+    parsed = JSON.parse(raw) as AnyObj;
   } catch {
     try {
-      obj = Object.fromEntries(new URLSearchParams(raw));
+      parsed = Object.fromEntries(new URLSearchParams(raw));
     } catch {
-      obj = {};
+      parsed = {};
     }
   }
-  const pick = (o: AnyObj, k: string) => (typeof o?.[k] === "string" ? (o[k] as string) : "");
+  const obj = normalizeKeys(parsed);
+  const pick = (o: AnyObj, k: string) => (typeof o?.[k] === "string" ? (o[k] as string).trim() : "");
   const nested = (typeof obj.data === "object" ? (obj.data as AnyObj) : typeof obj.body === "object" ? (obj.body as AnyObj) : {}) as AnyObj;
   const token = pick(obj, "token") || pick(nested, "token");
-  const host = (pick(obj, "host_link") || pick(obj, "link") || pick(nested, "host_link") || pick(nested, "link")).trim();
+  const host = pick(obj, "host_link") || pick(obj, "link") || pick(nested, "host_link") || pick(nested, "link");
   return { obj, token, host };
 }
 
