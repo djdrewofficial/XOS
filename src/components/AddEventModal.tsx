@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { usePathname } from "next/navigation";
 import NewEventForm from "@/components/NewEventForm";
 import { createEventOnboarding, loadNewEventFormData } from "@/app/(app)/events/actions";
 
@@ -13,6 +15,14 @@ export default function AddEventModal({ className, children }: { className?: str
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<FormData | null>(null);
   const [loading, setLoading] = useState(false);
+  const pathname = usePathname();
+
+  // This component lives in the persistent layout (TopBar), so its open state
+  // survives client-side navigation. Close it on any route change — including
+  // the redirect after a successful create — so the overlay never lingers.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
 
   async function openModal() {
     setOpen(true);
@@ -40,7 +50,9 @@ export default function AddEventModal({ className, children }: { className?: str
         {children}
       </button>
 
-      {open && (
+      {open && createPortal(
+        // portal to <body>: the TopBar header uses backdrop-blur, which would
+        // otherwise clip this fixed overlay to the header's box
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-3 backdrop-blur-sm sm:p-6">
           <div className="my-4 w-full max-w-3xl rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">
             <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-zinc-200 bg-white px-5 py-3.5 dark:border-white/10 dark:bg-zinc-900">
@@ -65,7 +77,8 @@ export default function AddEventModal({ className, children }: { className?: str
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
