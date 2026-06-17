@@ -45,11 +45,18 @@ export async function autoNameEvent(supabase: SupabaseClient, eventId: string): 
     .eq("id", eventId)
     .maybeSingle();
   const currentName = (full?.name ?? "").trim();
-  if (!NAME_PLACEHOLDERS.has(currentName.toLowerCase())) return;
   const clients: NamingClient[] = ((full?.event_clients ?? []) as { is_primary: boolean; role: string | null; client: { first_name?: string; last_name?: string } | null }[]).map(
     (ec) => ({ first_name: ec.client?.first_name, last_name: ec.client?.last_name, role: ec.role, is_primary: ec.is_primary })
   );
   const typeName = (full?.event_type as { name?: string } | null)?.name ?? null;
   const newName = buildEventName(clients, typeName);
-  if (newName) await supabase.from("events").update({ name: newName }).eq("id", eventId);
+  if (!newName || newName === currentName) return;
+
+  const isPlaceholder = NAME_PLACEHOLDERS.has(currentName.toLowerCase());
+  // also upgrade a single-partner wedding name once a second partner is added
+  // ("Erick's Wedding" → "Erick & Jaden's Wedding") without touching custom names
+  const upgradeWedding = /wedding/i.test(typeName ?? "") && newName.includes(" & ") && !currentName.includes("&");
+  if (isPlaceholder || upgradeWedding) {
+    await supabase.from("events").update({ name: newName }).eq("id", eventId);
+  }
 }

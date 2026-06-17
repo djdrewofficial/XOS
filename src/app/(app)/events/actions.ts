@@ -7,7 +7,7 @@ import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
 import { loadEventBundle } from "@/lib/documentRender";
-import { buildEventName, type NamingClient } from "@/lib/eventName";
+import { buildEventName, autoNameEvent, type NamingClient } from "@/lib/eventName";
 import { runAutomations, fireHelperWebhook } from "@/lib/automations";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -741,6 +741,7 @@ export async function addEventClient(eventId: string, formData: FormData) {
   if (isFirst) {
     await supabase.from("events").update({ client_id: clientId }).eq("id", eventId);
   }
+  await autoNameEvent(supabase, eventId);
   revalidatePath(`/events/${eventId}`);
 }
 
@@ -776,6 +777,7 @@ export async function createClientAndAttach(eventId: string, formData: FormData)
   if (isFirst) {
     await supabase.from("events").update({ client_id: newClient.id }).eq("id", eventId);
   }
+  await autoNameEvent(supabase, eventId);
   revalidatePath(`/events/${eventId}`);
 }
 
