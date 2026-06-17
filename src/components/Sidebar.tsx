@@ -71,6 +71,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
         items: [
           { href: "/payments", label: "Received", icon: faMoneyBillWave },
           { href: "/payments/scheduled", label: "Scheduled", icon: faCalendarDays },
+          { href: "/payments/summary", label: "Income & Expense", icon: faMoneyCheckDollar },
         ],
       },
       { href: "/payroll", label: "Payroll", icon: faMoneyCheckDollar },
