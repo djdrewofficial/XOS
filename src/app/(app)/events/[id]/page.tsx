@@ -42,6 +42,7 @@ import {
 } from "../actions";
 import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/actions";
 import InlineEditCard from "@/components/InlineEditCard";
+import ConfirmCodeButton from "@/components/ConfirmCodeButton";
 import ClientPicker from "@/components/ClientPicker";
 import BookingInfoEditor from "@/components/BookingInfoEditor";
 import AddonPicker from "@/components/AddonPicker";
@@ -1805,18 +1806,26 @@ export default async function EventDetailPage({
           : (
             <>
               {canArchive && (
-                <form action={archiveEvent.bind(null, id)}>
-                  <button className="text-xs font-semibold text-amber-700 hover:underline dark:text-amber-300">
-                    Archive Event
-                  </button>
-                </form>
+                <ConfirmCodeButton
+                  action={archiveEvent.bind(null, id)}
+                  label="Archive Event"
+                  triggerClassName="text-xs font-semibold text-amber-700 hover:underline dark:text-amber-300"
+                  title="Archive this event?"
+                  description="Archiving stops all automations for this event and removes it from active lists. You can unarchive it later."
+                  confirmLabel="Archive event"
+                  variant="warn"
+                />
               )}
               {canDelete && (
-                <form action={deleteEvent.bind(null, id)}>
-                  <button className="text-xs font-semibold text-red-600 hover:underline dark:text-red-400">
-                    Delete This Event
-                  </button>
-                </form>
+                <ConfirmCodeButton
+                  action={deleteEvent.bind(null, id)}
+                  label="Delete This Event"
+                  triggerClassName="text-xs font-semibold text-red-600 hover:underline dark:text-red-400"
+                  title="Permanently delete this event?"
+                  description="This permanently deletes the event and ALL its data — payments, documents, notes, staffing. This cannot be undone."
+                  confirmLabel="Delete forever"
+                  variant="danger"
+                />
               )}
             </>
           )}
