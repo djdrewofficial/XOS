@@ -13,6 +13,7 @@ import {
   createClientAndAttach,
   removeEventClient,
   setPrimaryEventClient,
+  toggleContractHolder,
   addClientNote,
   updateBookingInfo,
   updateBookingDates,
@@ -293,6 +294,7 @@ export default async function EventDetailPage({
     venue: event.venue as { name?: string | null; address?: string | null } | null,
     eventClients: (eventClients ?? []).map((ec) => ({
       is_primary: ec.is_primary,
+      is_contract_holder: (ec as { is_contract_holder?: boolean }).is_contract_holder,
       client: ec.client as { first_name?: string | null; last_name?: string | null; email?: string | null; cell_phone?: string | null } | null,
     })),
     scheduleCount: (schedule ?? []).length,
@@ -390,9 +392,19 @@ export default async function EventDetailPage({
                         Primary
                       </span>
                     )}
+                    {(ec as { is_contract_holder?: boolean }).is_contract_holder && (
+                      <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                        Contract Holder
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-2 text-xs">
+                  <form action={toggleContractHolder.bind(null, id, ec.id, !(ec as { is_contract_holder?: boolean }).is_contract_holder)}>
+                    <button className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline">
+                      {(ec as { is_contract_holder?: boolean }).is_contract_holder ? "Unset holder" : "Mark holder"}
+                    </button>
+                  </form>
                   {!ec.is_primary && (
                     <form action={setPrimaryEventClient.bind(null, id, ec.id)}>
                       <button className="font-semibold text-brand dark:text-brand-lighter hover:underline">Make Primary</button>

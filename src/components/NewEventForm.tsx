@@ -41,6 +41,7 @@ type ClientRow = {
   cell_phone: string;
   role: string;
   is_primary: boolean;
+  is_contract_holder: boolean;
 };
 
 let _k = 0;
@@ -75,9 +76,13 @@ function Submit() {
 }
 
 /** Inline existing-client search (browser client, mirrors EntityPicker). */
-function ClientSearch({ onPick }: { onPick: (c: { id: string; label: string }) => void }) {
+function ClientSearch({
+  onPick,
+}: {
+  onPick: (c: { id: string; label: string; first_name: string; last_name: string; email: string; cell_phone: string }) => void;
+}) {
   const [q, setQ] = useState("");
-  const [res, setRes] = useState<{ id: string; first_name: string; last_name: string; email: string | null }[]>([]);
+  const [res, setRes] = useState<{ id: string; first_name: string; last_name: string; email: string | null; cell_phone: string | null }[]>([]);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (q.trim().length < 2) {
@@ -88,7 +93,7 @@ function ClientSearch({ onPick }: { onPick: (c: { id: string; label: string }) =
       const supabase = createClient();
       const { data } = await supabase
         .from("clients")
-        .select("id, first_name, last_name, email")
+        .select("id, first_name, last_name, email, cell_phone")
         .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`)
         .limit(8);
       setRes(data ?? []);
@@ -106,7 +111,14 @@ function ClientSearch({ onPick }: { onPick: (c: { id: string; label: string }) =
               key={c.id}
               type="button"
               onClick={() => {
-                onPick({ id: c.id, label: `${c.first_name} ${c.last_name}`.trim() });
+                onPick({
+                  id: c.id,
+                  label: `${c.first_name} ${c.last_name}`.trim(),
+                  first_name: c.first_name ?? "",
+                  last_name: c.last_name ?? "",
+                  email: c.email ?? "",
+                  cell_phone: c.cell_phone ?? "",
+                });
                 setOpen(false);
                 setQ("");
               }}
@@ -124,15 +136,16 @@ function ClientSearch({ onPick }: { onPick: (c: { id: string; label: string }) =
 export default function NewEventForm(props: NewEventFormProps) {
   // ---- Client tab ----
   const [clients, setClients] = useState<ClientRow[]>([
-    { key: nextKey(), mode: "new", client_id: "", label: "", first_name: "", last_name: "", email: "", cell_phone: "", role: props.roles[0]?.name ?? "Contract Holder", is_primary: true },
+    { key: nextKey(), mode: "new", client_id: "", label: "", first_name: "", last_name: "", email: "", cell_phone: "", role: props.roles[0]?.name ?? "Contract Holder", is_primary: true, is_contract_holder: true },
   ]);
+  const [clientError, setClientError] = useState<string | null>(null);
   const setClient = (key: number, patch: Partial<ClientRow>) =>
     setClients((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)));
   const setPrimary = (key: number) => setClients((cs) => cs.map((c) => ({ ...c, is_primary: c.key === key })));
   const addClient = () =>
     setClients((cs) => [
       ...cs,
-      { key: nextKey(), mode: "new", client_id: "", label: "", first_name: "", last_name: "", email: "", cell_phone: "", role: props.roles[1]?.name ?? "Partner B", is_primary: false },
+      { key: nextKey(), mode: "new", client_id: "", label: "", first_name: "", last_name: "", email: "", cell_phone: "", role: props.roles[1]?.name ?? "Partner B", is_primary: false, is_contract_holder: false },
     ]);
   const removeClient = (key: number) => setClients((cs) => cs.filter((c) => c.key !== key));
 
@@ -230,6 +243,7 @@ export default function NewEventForm(props: NewEventFormProps) {
       cell_phone: c.cell_phone,
       role: c.role,
       is_primary: c.is_primary,
+      is_contract_holder: c.is_contract_holder,
     }))
   );
   const discountsJson = JSON.stringify(discounts.filter((d) => d.amount).map((d) => ({ label: d.label || "Discount", amount: Number(d.amount) || 0 })));
@@ -271,31 +285,48 @@ export default function NewEventForm(props: NewEventFormProps) {
 
           {c.mode === "existing" ? (
             c.client_id ? (
-              <div className="flex items-center justify-between rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm dark:border-white/15 dark:bg-white/[0.03]">
-                <span className="font-semibold">{c.label}</span>
-                <button type="button" onClick={() => setClient(c.key, { client_id: "", label: "" })} className="text-xs text-brand underline">
-                  Change
-                </button>
-              </div>
+              <>
+                <div className="flex items-center justify-between rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm dark:border-white/15 dark:bg-white/[0.03]">
+                  <span className="font-semibold">{c.label}</span>
+                  <button type="button" onClick={() => setClient(c.key, { client_id: "", label: "" })} className="text-xs text-brand underline">
+                    Change
+                  </button>
+                </div>
+                {c.is_primary && [["last name", c.last_name], ["email", c.email], ["cell", c.cell_phone]].some(([, v]) => !v) && (
+                  <p className="mt-2 text-xs text-red-500">
+                    Missing {[!c.last_name && "last name", !c.email && "email", !c.cell_phone && "cell"].filter(Boolean).join(", ")} — update this client&apos;s profile before creating the event.
+                  </p>
+                )}
+              </>
             ) : (
-              <ClientSearch onPick={(p) => setClient(c.key, { client_id: p.id, label: p.label })} />
+              <ClientSearch
+                onPick={(p) =>
+                  setClient(c.key, { client_id: p.id, label: p.label, first_name: p.first_name, last_name: p.last_name, email: p.email, cell_phone: p.cell_phone })
+                }
+              />
             )
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              <label className="block"><Label>First name</Label><input value={c.first_name} onChange={(e) => setClient(c.key, { first_name: e.target.value })} className={inputCls} /></label>
-              <label className="block"><Label>Last name</Label><input value={c.last_name} onChange={(e) => setClient(c.key, { last_name: e.target.value })} className={inputCls} /></label>
-              <label className="block"><Label>Email</Label><input value={c.email} onChange={(e) => setClient(c.key, { email: e.target.value })} className={inputCls} /></label>
-              <label className="block"><Label>Cell</Label><input value={c.cell_phone} onChange={(e) => setClient(c.key, { cell_phone: e.target.value })} className={inputCls} /></label>
+              <label className="block"><Label>First name{c.is_primary && <span className="text-red-500"> *</span>}</Label><input value={c.first_name} onChange={(e) => setClient(c.key, { first_name: e.target.value })} className={inputCls} /></label>
+              <label className="block"><Label>Last name{c.is_primary && <span className="text-red-500"> *</span>}</Label><input value={c.last_name} onChange={(e) => setClient(c.key, { last_name: e.target.value })} className={inputCls} /></label>
+              <label className="block"><Label>Email{c.is_primary && <span className="text-red-500"> *</span>}</Label><input type="email" value={c.email} onChange={(e) => setClient(c.key, { email: e.target.value })} className={inputCls} /></label>
+              <label className="block"><Label>Cell{c.is_primary && <span className="text-red-500"> *</span>}</Label><input value={c.cell_phone} onChange={(e) => setClient(c.key, { cell_phone: e.target.value })} className={inputCls} /></label>
             </div>
           )}
 
-          <div className="mt-3 max-w-xs">
-            <Label>Role</Label>
-            <select value={c.role} onChange={(e) => setClient(c.key, { role: e.target.value })} className={inputCls}>
-              {props.roles.map((r) => (
-                <option key={r.id} value={r.name}>{r.name}</option>
-              ))}
-            </select>
+          <div className="mt-3 flex flex-wrap items-end gap-4">
+            <div className="max-w-xs flex-1">
+              <Label>Role</Label>
+              <select value={c.role} onChange={(e) => setClient(c.key, { role: e.target.value })} className={inputCls}>
+                {props.roles.map((r) => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 pb-2 text-sm">
+              <input type="checkbox" checked={c.is_contract_holder} onChange={(e) => setClient(c.key, { is_contract_holder: e.target.checked })} className="size-4 accent-brand-light" />
+              <span className="text-zinc-600 dark:text-zinc-300">Contract holder</span>
+            </label>
           </div>
         </div>
       ))}
@@ -514,6 +545,35 @@ export default function NewEventForm(props: NewEventFormProps) {
   return (
     <form
       action={(fd) => {
+        // ---- require name/email/cell on the primary client (new or existing) ----
+        const primary = clients.find((c) => c.is_primary) ?? clients[0];
+        const missing: string[] = [];
+        if (!primary) {
+          missing.push("a primary client");
+        } else {
+          if (!primary.first_name.trim()) missing.push("first name");
+          if (!primary.last_name.trim()) missing.push("last name");
+          if (!primary.email.trim()) missing.push("email");
+          else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(primary.email.trim())) missing.push("a valid email");
+          if (!primary.cell_phone.trim()) missing.push("cell phone");
+        }
+        if (missing.length) {
+          setClientError(
+            `Primary client needs: ${missing.join(", ")}.` +
+              (primary && primary.mode === "existing" ? " Update that client's profile, then re-select them." : "")
+          );
+          return; // abort — do not submit
+        }
+        setClientError(null);
+
+        // ---- warn (but don't block) on a missing or past event date ----
+        const today = new Date().toISOString().slice(0, 10);
+        if (!eventDate) {
+          if (!window.confirm("No event date is set. Create the event anyway?")) return;
+        } else if (eventDate < today) {
+          if (!window.confirm("The event date is in the past. Create the event anyway?")) return;
+        }
+
         // serialize dynamic state into the FormData the action reads
         fd.set("clients_json", clientsJson);
         fd.set("discounts_json", discountsJson);
@@ -548,6 +608,11 @@ export default function NewEventForm(props: NewEventFormProps) {
           { id: "staff", label: "Staff", content: staffTab },
         ]}
       />
+      {clientError && (
+        <div className="mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+          {clientError}
+        </div>
+      )}
       <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-white/10">
         <span className="text-xs text-zinc-400">{autoName && !name ? `Will be named "${autoName}"` : ""}</span>
         <Submit />

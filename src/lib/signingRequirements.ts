@@ -68,7 +68,7 @@ export type SigningBundle = {
     venue_id?: string | null;
   };
   venue: { name?: string | null; address?: string | null } | null;
-  eventClients: { is_primary: boolean; client: ClientLite }[];
+  eventClients: { is_primary: boolean; is_contract_holder?: boolean; client: ClientLite }[];
   scheduleCount: number;
 };
 
@@ -76,7 +76,11 @@ const has = (v: unknown) => typeof v === "string" && v.trim() !== "";
 const hasContact = (c: ClientLite) => has(c?.email) || has(c?.cell_phone);
 
 const CHECKS: Record<SigningFieldKey, (b: SigningBundle) => boolean> = {
-  contract_holder: (b) => b.eventClients.some((ec) => ec.is_primary && ec.client != null),
+  // explicit contract-holder flag, falling back to the primary client for events
+  // created before the flag existed
+  contract_holder: (b) =>
+    b.eventClients.some((ec) => ec.is_contract_holder && ec.client != null) ||
+    b.eventClients.some((ec) => ec.is_primary && ec.client != null),
   partner_a_name: (b) => {
     const p = b.eventClients.find((ec) => ec.is_primary)?.client;
     return has(p?.first_name) && has(p?.last_name);

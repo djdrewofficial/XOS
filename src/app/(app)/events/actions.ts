@@ -228,6 +228,7 @@ type NewClient = {
   cell_phone?: string;
   role?: string;
   is_primary?: boolean;
+  is_contract_holder?: boolean;
 };
 type NewDiscount = { label?: string; amount?: number };
 type NewAddon = { addon_id: string; quantity?: number; price_override?: number | null };
@@ -257,6 +258,29 @@ export async function createEventOnboarding(formData: FormData) {
   const supabase = await createClient();
 
   const clients = parseJson<NewClient[]>(formData.get("clients_json"), []);
+
+  // Required-field guard on the primary client (backstop for the form's own
+  // client-side validation): first name, last name, email, and cell must be set,
+  // whether the primary is a new or an existing client.
+  const primaryIn = clients.find((c) => c.is_primary) ?? clients[0];
+  if (!primaryIn) throw new Error("Add a primary client before creating the event.");
+  let pf = primaryIn.first_name, pl = primaryIn.last_name, pe = primaryIn.email, pc = primaryIn.cell_phone;
+  if (primaryIn.mode === "existing" && primaryIn.client_id) {
+    const { data: pc0 } = await supabase
+      .from("clients")
+      .select("first_name, last_name, email, cell_phone")
+      .eq("id", primaryIn.client_id)
+      .maybeSingle();
+    pf = pc0?.first_name ?? pf; pl = pc0?.last_name ?? pl; pe = pc0?.email ?? pe; pc = pc0?.cell_phone ?? pc;
+  }
+  const missingPrimary = [
+    !pf?.trim() && "first name",
+    !pl?.trim() && "last name",
+    !pe?.trim() && "email",
+    !pc?.trim() && "cell phone",
+  ].filter(Boolean);
+  if (missingPrimary.length) throw new Error(`Primary client is missing: ${missingPrimary.join(", ")}.`);
+
   const discounts = parseJson<NewDiscount[]>(formData.get("discounts_json"), []);
   const addons = parseJson<NewAddon[]>(formData.get("addons_json"), []);
   const staff = parseJson<NewStaff[]>(formData.get("staff_json"), []);
@@ -264,7 +288,7 @@ export async function createEventOnboarding(formData: FormData) {
   const newVenue = parseJson<NewVenue | null>(formData.get("new_venue_json"), null);
 
   // 1) resolve clients (create the new ones) and figure out the primary
-  const resolved: { client_id: string; role: string | null; is_primary: boolean; naming: NamingClient }[] = [];
+  const resolved: { client_id: string; role: string | null; is_primary: boolean; is_contract_holder: boolean; naming: NamingClient }[] = [];
   for (const c of clients) {
     let id = c.client_id ?? null;
     let first = c.first_name ?? "";
@@ -289,6 +313,7 @@ export async function createEventOnboarding(formData: FormData) {
       client_id: id!,
       role: c.role ?? null,
       is_primary: !!c.is_primary,
+      is_contract_holder: !!c.is_contract_holder,
       naming: { first_name: first, last_name: last, role: c.role ?? null, is_primary: !!c.is_primary },
     });
   }
@@ -381,7 +406,7 @@ export async function createEventOnboarding(formData: FormData) {
   // 6) event_clients
   if (resolved.length) {
     await supabase.from("event_clients").insert(
-      resolved.map((r) => ({ event_id: eventId, client_id: r.client_id, role: r.role ?? "Client", is_primary: r.is_primary }))
+      resolved.map((r) => ({ event_id: eventId, client_id: r.client_id, role: r.role ?? "Client", is_primary: r.is_primary, is_contract_holder: r.is_contract_holder }))
     );
   }
 
@@ -919,6 +944,13 @@ export async function setPrimaryEventClient(eventId: string, eventClientId: stri
   await supabase.from("event_clients").update({ is_primary: false }).eq("event_id", eventId);
   await supabase.from("event_clients").update({ is_primary: true }).eq("id", eventClientId);
   await supabase.from("events").update({ client_id: link.client_id }).eq("id", eventId);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function toggleContractHolder(eventId: string, eventClientId: string, value: boolean) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("event_clients").update({ is_contract_holder: value }).eq("id", eventClientId);
+  if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
 }
 
