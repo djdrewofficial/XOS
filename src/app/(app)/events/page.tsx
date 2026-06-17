@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import EventsGrid, { type GridRow } from "@/components/EventsGrid";
+import AddEventModal from "@/components/AddEventModal";
 
 export const dynamic = "force-dynamic";
 
@@ -125,9 +126,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
           >
             {showArchived ? "← Active events" : "Show archived"}
           </Link>
-          <Link href="/events/new" className="btn-primary px-4 py-2 text-sm">
-            Add Event
-          </Link>
+          <AddEventModal className="btn-primary px-4 py-2 text-sm">Add Event</AddEventModal>
         </div>
       </div>
       <EventsGrid rows={rows} />

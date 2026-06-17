@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AddEventModal from "@/components/AddEventModal";
 import { createClient } from "@/lib/supabase/server";
 import { money, type XEvent } from "@/lib/types";
 import { holidaysForYear } from "@/lib/holidays";
@@ -336,7 +337,6 @@ export async function RecentNotifications() {
 /* ---------------- Quick Actions ---------------- */
 export function QuickActions() {
   const actions = [
-    { href: "/events/new", label: "+ Add Event" },
     { href: "/events", label: "Events List" },
     { href: "/clients", label: "Clients" },
     { href: "/payments", label: "Payments" },
@@ -347,6 +347,7 @@ export function QuickActions() {
     <div>
       <h2 className="card-title">Quick Actions</h2>
       <div className="card grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
+        <AddEventModal className="btn-ghost justify-center py-3 text-sm">+ Add Event</AddEventModal>
         {actions.map((a) => (
           <Link key={a.href} href={a.href} className="btn-ghost justify-center py-3 text-sm">
             {a.label}

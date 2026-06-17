@@ -254,6 +254,41 @@ function parseJson<T>(v: FormDataEntryValue | null, fallback: T): T {
   }
 }
 
+/* Reference data the New Event form needs — fetched on demand so the form can
+   open in a modal from anywhere (mirrors what /events/new loads server-side). */
+export async function loadNewEventFormData() {
+  const supabase = await createClient();
+  const [
+    { data: roles },
+    { data: types },
+    { data: statuses },
+    { data: sources },
+    { data: packages },
+    { data: addons },
+    { data: employees },
+    { data: dateDefs },
+  ] = await Promise.all([
+    supabase.from("client_role_definitions").select("id, name").eq("is_active", true).order("sort_order"),
+    supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("event_statuses").select("id, name").eq("is_active", true).order("sort_order"),
+    supabase.from("inquiry_sources").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("packages").select("id, name, default_price, deposit_value, allowed_splits").eq("is_active", true).order("display_order"),
+    supabase.from("addons").select("id, name, default_price").eq("is_active", true).order("display_order"),
+    supabase.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name"),
+    supabase.from("custom_date_definitions").select("id, name").eq("is_active", true).order("sort_order"),
+  ]);
+  return {
+    roles: (roles ?? []) as { id: string; name: string }[],
+    eventTypes: (types ?? []) as { id: string; name: string }[],
+    statuses: (statuses ?? []) as { id: string; name: string }[],
+    inquirySources: (sources ?? []) as { id: string; name: string }[],
+    packages: (packages ?? []) as { id: string; name: string; default_price: number; deposit_value: number; allowed_splits: number[] | null }[],
+    addons: (addons ?? []) as { id: string; name: string; default_price: number }[],
+    employees: (employees ?? []) as { id: string; first_name: string; last_name: string }[],
+    customDateDefs: (dateDefs ?? []) as { id: string; name: string }[],
+  };
+}
+
 export async function createEventOnboarding(formData: FormData) {
   const supabase = await createClient();
 

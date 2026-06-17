@@ -7,6 +7,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import NotificationBell from "@/components/NotificationBell";
 import { useMobileNav } from "@/components/MobileNav";
+import AddEventModal from "@/components/AddEventModal";
 import {
   faGauge,
   faCalendarDays,
@@ -22,7 +23,6 @@ import {
 const QUICK_NAV: { href: string; label: string; icon: IconDefinition }[] = [
   { href: "/", label: "Dashboard", icon: faGauge },
   { href: "/events", label: "Events List", icon: faCalendarDays },
-  { href: "/events/new", label: "Add Event", icon: faCalendarPlus },
 ];
 
 type SearchResult = { type: string; label: string; sublabel?: string; href: string };
@@ -198,6 +198,13 @@ export default function TopBar() {
       <nav className="ml-auto flex items-center gap-1">
         <NotificationBell />
         <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-white/10" />
+        <AddEventModal className="group relative hidden size-9 items-center justify-center rounded-lg text-zinc-500 transition-all hover:bg-black/[0.05] hover:text-brand dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-brand-lighter sm:flex">
+          <FontAwesomeIcon icon={faCalendarPlus} className="text-[15px]" />
+          <span className="pointer-events-none absolute top-full mt-2 hidden whitespace-nowrap rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-white shadow-lg group-hover:block dark:bg-white dark:text-zinc-900">
+            Add Event
+            <span className="absolute -top-1 left-1/2 size-2 -translate-x-1/2 rotate-45 bg-zinc-900 dark:bg-white" />
+          </span>
+        </AddEventModal>
         {QUICK_NAV.map((item) => {
           const active = isActive(item.href);
           return (
