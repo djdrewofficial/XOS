@@ -22,6 +22,7 @@ import {
   faMoneyCheckDollar,
   faFileInvoiceDollar,
   faPercent,
+  faChartLine,
   faGear,
   faBolt,
   faTableColumns,
@@ -81,6 +82,10 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
       { href: "/commissions", label: "Sales & Commissions", icon: faPercent },
       { href: "/payroll", label: "Payroll", icon: faMoneyCheckDollar },
     ],
+  },
+  {
+    heading: "Reports",
+    items: [{ href: "/reports/leads", label: "Leads & Sales", icon: faChartLine }],
   },
   {
     heading: "XOS Settings",
