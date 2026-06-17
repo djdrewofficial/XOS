@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import PrintButton from "@/components/PrintButton";
 
 export const dynamic = "force-dynamic";
 
@@ -108,7 +109,10 @@ export default async function LeadsReportPage({ searchParams }: { searchParams: 
 
   return (
     <div className="max-w-6xl space-y-6">
-      <h1 className="text-2xl font-bold">Leads &amp; Sales — {y}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Leads &amp; Sales — {y}</h1>
+        <PrintButton label="🖨 Export PDF" className="btn-ghost px-3 py-1.5 text-sm" />
+      </div>
 
       {/* filters */}
       <form className="flex flex-wrap items-end gap-3">

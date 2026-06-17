@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent } from "@/lib/types";
+import PrintButton from "@/components/PrintButton";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,10 @@ export default async function MonthlyBreakdownPage() {
 
   return (
     <div className="max-w-full">
-      <h1 className="mb-1 text-2xl font-bold">Monthly Breakdown</h1>
+      <div className="mb-1 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Monthly Breakdown</h1>
+        <PrintButton label="🖨 Export PDF" className="btn-ghost px-3 py-1.5 text-sm" />
+      </div>
       <p className="mb-4 text-xs text-zinc-500">Event income by event date · Financials-counting statuses only.</p>
 
       <div className="card overflow-x-auto">

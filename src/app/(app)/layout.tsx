@@ -18,10 +18,14 @@ export default async function AppLayout({
     <div className="flex min-h-screen">
       <AutoCompleteControl enabled={Boolean(cs?.browser_autocomplete)} />
       <MobileNavProvider>
-        <Sidebar />
+        <div className="print:hidden">
+          <Sidebar />
+        </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar />
-          <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+          <div className="print:hidden">
+            <TopBar />
+          </div>
+          <main className="min-w-0 flex-1 p-4 md:p-6 print:p-0">{children}</main>
         </div>
       </MobileNavProvider>
     </div>
