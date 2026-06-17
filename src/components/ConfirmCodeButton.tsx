@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useFormStatus } from "react-dom";
 
 /* A destructive-action button that requires typing a randomly generated 5-char
    code to confirm. Wraps a server action: the trigger opens a modal showing a
@@ -13,6 +14,23 @@ function genCode(): string {
   let c = "";
   for (let i = 0; i < 5; i++) c += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
   return c;
+}
+
+/* Submit button driven by the form's own pending state. Using useFormStatus
+   (rather than manual onClick state) is critical: it flips to disabled AFTER
+   the submission starts, so it never cancels the submit the way a self-disabling
+   onClick handler would. */
+function SubmitButton({ disabled, label, colorClass }: { disabled: boolean; label: string; colorClass: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={disabled || pending}
+      className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${colorClass}`}
+    >
+      {pending ? "Working…" : label}
+    </button>
+  );
 }
 
 export default function ConfirmCodeButton({
@@ -35,18 +53,13 @@ export default function ConfirmCodeButton({
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
   const [input, setInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   const matches = input.trim().toUpperCase() === code;
-  const confirmColor =
-    variant === "danger"
-      ? "bg-red-600 hover:bg-red-700"
-      : "bg-amber-600 hover:bg-amber-700";
+  const colorClass = variant === "danger" ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700";
 
   function openModal() {
     setCode(genCode());
     setInput("");
-    setSubmitting(false);
     setOpen(true);
   }
 
@@ -68,9 +81,7 @@ export default function ConfirmCodeButton({
             <h3 className="text-base font-bold text-zinc-900 dark:text-white">{title}</h3>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>
 
-            <p className="mt-4 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-              Type this code to confirm:
-            </p>
+            <p className="mt-4 text-xs font-medium text-zinc-500 dark:text-zinc-400">Type this code to confirm:</p>
             <div className="mt-1 select-none rounded-lg bg-zinc-100 px-3 py-2 text-center font-mono text-2xl font-bold tracking-[0.4em] text-zinc-900 dark:bg-white/10 dark:text-white">
               {code}
             </div>
@@ -83,7 +94,7 @@ export default function ConfirmCodeButton({
               maxLength={5}
             />
 
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -92,14 +103,7 @@ export default function ConfirmCodeButton({
                 Cancel
               </button>
               <form action={action}>
-                <button
-                  type="submit"
-                  disabled={!matches || submitting}
-                  onClick={() => setSubmitting(true)}
-                  className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${confirmColor}`}
-                >
-                  {submitting ? "Working…" : confirmLabel}
-                </button>
+                <SubmitButton disabled={!matches} label={confirmLabel} colorClass={colorClass} />
               </form>
             </div>
           </div>
