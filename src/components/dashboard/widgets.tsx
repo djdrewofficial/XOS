@@ -3,7 +3,7 @@ import AddEventModal from "@/components/AddEventModal";
 import { createClient } from "@/lib/supabase/server";
 import { money, type XEvent } from "@/lib/types";
 import { holidaysForYear } from "@/lib/holidays";
-import EventChip from "@/components/EventChip";
+import MonthCalendarClient, { type CalDetailedEvent } from "@/components/dashboard/MonthCalendarClient";
 
 /* Dashboard widgets — each is a self-contained async server component that
    fetches its own data. Registered in src/lib/dashboardWidgets.ts; placed
@@ -98,7 +98,9 @@ export async function MonthCalendar({ m }: { m?: string }) {
   const [{ data: monthEvents }, { data: timeOff }] = await Promise.all([
     supabase
       .from("events")
-      .select("id, name, event_date, client:clients(first_name, last_name), status:event_statuses(name, color, text_color)")
+      .select(
+        "id, name, event_date, start_time, end_time, client:clients(first_name, last_name, cell_phone), venue:venues(name, city, state), package:packages(name), event_type:event_types(name), status:event_statuses(name, color, text_color)"
+      )
       .is("archived_at", null)
       .gte("event_date", gridStartStr)
       .lte("event_date", gridEndStr)
@@ -111,11 +113,46 @@ export async function MonthCalendar({ m }: { m?: string }) {
       .gte("end_date", gridStartStr),
   ]);
 
-  const eventsByDate = new Map<string, typeof monthEvents>();
+  // add-ons + staff for the month's events, grouped by event_id (for the day panel)
+  const ids = (monthEvents ?? []).map((e) => e.id);
+  const [{ data: addonRows }, { data: staffRows }] = ids.length
+    ? await Promise.all([
+        supabase.from("event_addons").select("event_id, quantity, addon:addons(name)").in("event_id", ids),
+        supabase.from("event_staff").select("event_id, role, employee:employees(first_name, last_name)").in("event_id", ids),
+      ])
+    : [{ data: [] as { event_id: string; quantity: number; addon: unknown }[] }, { data: [] as { event_id: string; role: string | null; employee: unknown }[] }];
+
+  const addonsByEvent = new Map<string, { name: string; quantity: number }[]>();
+  (addonRows ?? []).forEach((a) => {
+    const name = (a.addon as unknown as { name?: string } | null)?.name;
+    if (!name) return;
+    (addonsByEvent.get(a.event_id) ?? addonsByEvent.set(a.event_id, []).get(a.event_id)!).push({ name, quantity: Number(a.quantity) || 1 });
+  });
+  const staffByEvent = new Map<string, { name: string; role: string | null }[]>();
+  (staffRows ?? []).forEach((s) => {
+    const emp = s.employee as unknown as { first_name?: string; last_name?: string } | null;
+    const name = `${emp?.first_name ?? ""} ${emp?.last_name ?? ""}`.trim();
+    if (!name) return;
+    (staffByEvent.get(s.event_id) ?? staffByEvent.set(s.event_id, []).get(s.event_id)!).push({ name, role: s.role ?? null });
+  });
+
+  const eventsByDate: Record<string, CalDetailedEvent[]> = {};
   (monthEvents ?? []).forEach((e) => {
     if (!e.event_date) return;
-    if (!eventsByDate.has(e.event_date)) eventsByDate.set(e.event_date, []);
-    eventsByDate.get(e.event_date)!.push(e);
+    const det: CalDetailedEvent = {
+      id: e.id,
+      name: e.name ?? null,
+      start_time: (e as { start_time?: string | null }).start_time ?? null,
+      end_time: (e as { end_time?: string | null }).end_time ?? null,
+      status: e.status as unknown as CalDetailedEvent["status"],
+      client: e.client as unknown as CalDetailedEvent["client"],
+      venue: e.venue as unknown as CalDetailedEvent["venue"],
+      package_name: (e.package as unknown as { name?: string } | null)?.name ?? null,
+      event_type_name: (e.event_type as unknown as { name?: string } | null)?.name ?? null,
+      addons: addonsByEvent.get(e.id) ?? [],
+      staff: staffByEvent.get(e.id) ?? [],
+    };
+    (eventsByDate[e.event_date] ??= []).push(det);
   });
 
   const holidays = new Map<string, string>([
@@ -123,95 +160,37 @@ export async function MonthCalendar({ m }: { m?: string }) {
     ...holidaysForYear(year),
     ...holidaysForYear(year + 1),
   ]);
+  const holidaysByDate: Record<string, string> = {};
+  cells.forEach((c) => {
+    const h = holidays.get(c.date);
+    if (h) holidaysByDate[c.date] = h;
+  });
 
-  const timeOffOn = (date: string) =>
-    (timeOff ?? []).filter((t) => t.start_date <= date && t.end_date >= date);
+  const timeOffByDate: Record<string, string[]> = {};
+  cells.forEach((c) => {
+    const names = (timeOff ?? [])
+      .filter((t) => t.start_date <= c.date && t.end_date >= c.date)
+      .map((t) => (t.employee as unknown as { first_name?: string } | null)?.first_name ?? "?");
+    if (names.length) timeOffByDate[c.date] = names;
+  });
 
   const monthLabel = new Date(year, month, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
   const prev = month === 0 ? `${year - 1}-12` : `${year}-${pad(month)}`;
   const next = month === 11 ? `${year + 1}-01` : `${year}-${pad(month + 2)}`;
+  const eventsThisMonth = (monthEvents ?? []).filter((e) => e.event_date && e.event_date >= monthStart && e.event_date <= monthEnd).length;
 
   return (
-    <div className="card overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 dark:border-white/[0.06] px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          <Link href={`/?m=${prev}`} className="btn-ghost px-3 py-1.5 text-xs">←</Link>
-          <Link href={`/?m=${next}`} className="btn-ghost px-3 py-1.5 text-xs">→</Link>
-          <Link href="/" className="btn-ghost px-3 py-1.5 text-xs">today</Link>
-        </div>
-        <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{monthLabel}</h2>
-        <div className="text-xs text-zinc-500">
-          {(monthEvents ?? []).filter((e) => e.event_date && e.event_date >= monthStart && e.event_date <= monthEnd).length}{" "}
-          events this month
-        </div>
-      </div>
-
-      <div className="grid grid-cols-7 border-b border-zinc-200 dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03]">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-          <div key={d} className="px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
-            {d}
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-7">
-        {cells.map((cell, i) => {
-          const dayEvents = eventsByDate.get(cell.date) ?? [];
-          const off = timeOffOn(cell.date);
-          const holiday = holidays.get(cell.date);
-          const isToday = cell.date === today;
-          return (
-            <div
-              key={cell.date}
-              className={`min-h-28 border-zinc-100 dark:border-white/[0.05] p-1 ${i % 7 !== 0 ? "border-l" : ""} ${i >= 7 ? "border-t" : ""} ${
-                cell.inMonth ? "" : "bg-zinc-100/80 dark:bg-black/30"
-              } ${isToday ? "bg-brand/25 ring-1 ring-inset ring-brand-light/50" : ""}`}
-            >
-              <div
-                className={`mb-1 px-1 text-right text-xs font-semibold ${
-                  isToday ? "text-brand dark:text-brand-lighter" : cell.inMonth ? "text-zinc-600 dark:text-zinc-400" : "text-zinc-400 dark:text-zinc-700"
-                }`}
-              >
-                {cell.dayNum}
-              </div>
-              <div className="space-y-0.5">
-                {holiday && (
-                  <div className="truncate rounded bg-sky-700/70 px-1.5 py-0.5 text-[10px] font-semibold text-white dark:text-sky-100">
-                    {holiday}
-                  </div>
-                )}
-                {dayEvents.map((e) => {
-                  const st = e.status as unknown as { name: string; color: string; text_color: string } | null;
-                  const client = e.client as unknown as { first_name: string; last_name: string } | null;
-                  const label = `${st?.name ?? ""} - ${client ? `${client.first_name} ${client.last_name}` : e.name || "Event"}`;
-                  return (
-                    <EventChip
-                      key={e.id}
-                      eventId={e.id}
-                      label={label}
-                      bg={st?.color ?? "#97CC9A"}
-                      fg={st?.text_color ?? "#000"}
-                    />
-                  );
-                })}
-                {off.map((t) => {
-                  const emp = t.employee as unknown as { first_name: string; last_name: string } | null;
-                  return (
-                    <div
-                      key={t.id}
-                      className="truncate rounded bg-zinc-300 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-700 dark:text-zinc-300"
-                      title={`Time off: ${emp?.first_name} ${emp?.last_name}`}
-                    >
-                      Time Off - {emp?.first_name ?? "?"}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <MonthCalendarClient
+      cells={cells}
+      eventsByDate={eventsByDate}
+      holidaysByDate={holidaysByDate}
+      timeOffByDate={timeOffByDate}
+      today={today}
+      monthLabel={monthLabel}
+      prevHref={`/?m=${prev}`}
+      nextHref={`/?m=${next}`}
+      eventsThisMonth={eventsThisMonth}
+    />
   );
 }
 
