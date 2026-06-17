@@ -77,7 +77,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const { data: events } = await supabase
     .from("events")
     .select(
-      "id, name, event_date, setup_time, start_time, end_time, venue:venues(name, travel_minutes), event_staff(id, role, pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees(first_name, last_name, hourly_rate))"
+      "id, name, event_date, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(name, travel_minutes), event_staff(id, role, pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees(first_name, last_name, hourly_rate))"
     )
     .is("archived_at", null)
     .gte("event_date", period.periodStart)
@@ -87,6 +87,8 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   type EstRow = { staff: string; event: string; eventId: string; date: string; hours: number; rate: string; cost: number; actual: boolean };
   const estRows: EstRow[] = [];
   for (const ev of events ?? []) {
+    // only statuses flagged "Counts toward Payroll" generate payroll
+    if (!(ev.status as unknown as { counts_payroll?: boolean } | null)?.counts_payroll) continue;
     const travel = (ev.venue as unknown as { travel_minutes?: number | null } | null)?.travel_minutes ?? 0;
     for (const es of (ev.event_staff ?? []) as Array<Record<string, unknown>>) {
       const emp = es.employee as { first_name?: string; last_name?: string; hourly_rate?: number | null } | null;

@@ -44,7 +44,7 @@ export async function generatePayables(payday: string, periodStart: string, peri
   const { data: events } = await supabase
     .from("events")
     .select(
-      "id, setup_time, start_time, end_time, venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate))"
+      "id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate))"
     )
     .is("archived_at", null)
     .gte("event_date", periodStart)
@@ -59,6 +59,7 @@ export async function generatePayables(payday: string, periodStart: string, peri
 
   const toInsert: Record<string, unknown>[] = [];
   for (const ev of events ?? []) {
+    if (!(ev.status as unknown as { counts_payroll?: boolean } | null)?.counts_payroll) continue;
     const travel = (ev.venue as unknown as { travel_minutes?: number | null } | null)?.travel_minutes ?? 0;
     for (const es of (ev.event_staff ?? []) as Array<{
       id: string;

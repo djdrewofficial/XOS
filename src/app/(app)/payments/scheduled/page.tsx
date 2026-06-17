@@ -15,7 +15,7 @@ type SchedRow = {
     event_date: string | null;
     archived_at: string | null;
     client: { first_name: string; last_name: string } | null;
-    status: { name: string; color: string; text_color: string } | null;
+    status: { name: string; color: string; text_color: string; counts_financial: boolean } | null;
   } | null;
 };
 
@@ -29,13 +29,17 @@ export default async function ScheduledPaymentsPage({ searchParams }: { searchPa
   const { data } = await supabase
     .from("scheduled_payments")
     .select(
-      "id, due_date, amount, label, event:events(id, name, event_date, archived_at, client:clients(first_name, last_name), status:event_statuses(name, color, text_color))"
+      "id, due_date, amount, label, event:events(id, name, event_date, archived_at, client:clients(first_name, last_name), status:event_statuses(name, color, text_color, counts_financial))"
     )
     .gte("due_date", `${y}-01-01`)
     .lte("due_date", `${y}-12-31`)
     .order("due_date");
 
-  const rows = ((data ?? []) as unknown as SchedRow[]).filter((r) => r.due_date && !r.event?.archived_at);
+  // projected income only counts statuses flagged "Counts toward Financials"
+  // (an event that isn't locked in yet shouldn't inflate expected income)
+  const rows = ((data ?? []) as unknown as SchedRow[]).filter(
+    (r) => r.due_date && !r.event?.archived_at && r.event?.status?.counts_financial
+  );
 
   const months = Array.from({ length: 12 }, (_, i) => ({
     month: i,
@@ -68,6 +72,7 @@ export default async function ScheduledPaymentsPage({ searchParams }: { searchPa
         <div className="text-3xl font-black">{money(yearTotal)}</div>
         <div className="text-xs opacity-80">{yearCount} scheduled payments</div>
       </div>
+      <p className="mb-4 -mt-3 text-xs text-zinc-500">Includes only statuses set to count toward Financials (Settings → Event Statuses).</p>
 
       <div className="card overflow-hidden">
         <div className={`${cols} border-b border-zinc-200 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:border-white/[0.08]`}>
