@@ -16,6 +16,7 @@ export default async function PaymentsPage({
   const { data: payments } = await supabase
     .from("payments")
     .select("*, event:events(id, name, event_date)")
+    .eq("status", "approved")
     .gte("paid_at", `${y}-01-01T00:00:00`)
     .lte("paid_at", `${y}-12-31T23:59:59`)
     .order("paid_at", { ascending: false });

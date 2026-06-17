@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
 import {
   addPayment,
+  confirmPayment,
+  removePayment,
   addScheduledPayments,
   addEventNote,
   addContractNote,
@@ -260,7 +262,12 @@ export default async function EventDetailPage({
   );
 
   const total = eventTotal(event) + addonsTotal + venueSetupFee;
-  const paid = (payments ?? []).reduce((s: number, p: Payment) => s + Number(p.amount), 0);
+  // only confirmed (approved) payments count toward what's been paid; pending
+  // client-reported claims (e.g. Zelle) show in the log but don't reduce balance
+  const approvedPayments = (payments ?? []).filter((p: Payment) => p.status !== "pending");
+  const pendingPayments = (payments ?? []).filter((p: Payment) => p.status === "pending");
+  const paid = approvedPayments.reduce((s: number, p: Payment) => s + Number(p.amount), 0);
+  const pendingTotal = pendingPayments.reduce((s: number, p: Payment) => s + Number(p.amount), 0);
   const balance = total - paid;
   const cf = (event.custom_fields ?? {}) as Record<string, string>;
 
@@ -307,9 +314,9 @@ export default async function EventDetailPage({
   const expenseMethodOptions = ps?.expense_payment_methods ?? [];
   const methodOptions =
     ps?.payment_methods?.length ? ps.payment_methods : ["Cash", "Credit Card", "Zelle", "Other"];
-  const autofillMode = (payments ?? []).length === 0 ? ps?.autofill_no_payments : ps?.autofill_after_payments;
+  const autofillMode = approvedPayments.length === 0 ? ps?.autofill_no_payments : ps?.autofill_after_payments;
   const scheduleRows = (schedule ?? []) as ScheduledPayment[];
-  const paidSoFarCount = (payments ?? []).length;
+  const paidSoFarCount = approvedPayments.length;
   let autofillAmount: number | undefined;
   if (autofillMode === "retainer_fee") {
     autofillAmount = Number(scheduleRows[0]?.amount) || undefined;
@@ -973,19 +980,69 @@ export default async function EventDetailPage({
             <input type="date" name="paid_at" className="input w-40" />
             <SaveButton className="btn-ghost px-4 py-2 text-xs" savedLabel="Added">Add Payment</SaveButton>
           </form>
+          {pendingPayments.length > 0 && (
+            <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              ⏳ {pendingPayments.length} pending {pendingPayments.length === 1 ? "claim" : "claims"} awaiting confirmation
+              ({money(pendingTotal)}). These are <strong>not</strong> counted toward the balance until you confirm them.
+            </div>
+          )}
           <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06] text-sm">
-            {(payments ?? []).map((p: Payment) => (
-              <li key={p.id} className="flex justify-between py-2">
-                <span className="text-zinc-600 dark:text-zinc-400">
-                  {new Date(p.paid_at).toLocaleDateString()} · {p.method}
-                  {(p as Payment & { reason?: string | null }).reason
-                    ? ` · ${(p as Payment & { reason?: string | null }).reason}`
-                    : ""}
-                  {p.notes ? ` · ${p.notes}` : ""}
-                </span>
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400">{money(p.amount)}</span>
-              </li>
-            ))}
+            {(payments ?? []).map((p: Payment) => {
+              const isPending = p.status === "pending";
+              const details = [
+                p.reason,
+                p.payer_name ? `Name: ${p.payer_name}` : null,
+                p.paypal_capture_id ? `PayPal #${p.paypal_capture_id}` : null,
+                p.bank_deposit_ref ? `Deposit: ${p.bank_deposit_ref}` : null,
+                p.processing_fee ? `+${money(p.processing_fee)} fee` : null,
+                p.notes,
+              ].filter(Boolean) as string[];
+              return (
+                <li key={p.id} className={`py-2.5 ${isPending ? "rounded-lg bg-amber-50/60 px-2 dark:bg-amber-500/[0.06]" : ""}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                          {new Date(p.paid_at).toLocaleDateString()}
+                        </span>
+                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
+                          {p.method}
+                        </span>
+                        {isPending ? (
+                          <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-500/30 dark:text-amber-200">
+                            Pending — confirm
+                          </span>
+                        ) : (
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                            Received
+                          </span>
+                        )}
+                      </div>
+                      {details.length > 0 && (
+                        <div className="mt-0.5 break-words text-xs text-zinc-500 dark:text-zinc-400">
+                          {details.join(" · ")}
+                        </div>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className={`font-semibold ${isPending ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                        {money(p.amount)}
+                      </div>
+                      {isPending && (
+                        <div className="mt-1 flex justify-end gap-1.5">
+                          <form action={confirmPayment.bind(null, p.id, id)}>
+                            <SaveButton className="btn-ghost px-2 py-1 text-[11px]" savedLabel="✓">Confirm received</SaveButton>
+                          </form>
+                          <form action={removePayment.bind(null, p.id, id)}>
+                            <SaveButton className="px-2 py-1 text-[11px] text-red-600 hover:underline dark:text-red-400" savedLabel="Removed">Remove</SaveButton>
+                          </form>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
             {(payments ?? []).length === 0 && <li className="py-2 text-zinc-500">No payments yet.</li>}
           </ul>
         </div>
@@ -1645,7 +1702,7 @@ export default async function EventDetailPage({
         statusId={event.status_id}
         helpers={helpersWithSummary}
         ranHelperIds={(helperRuns ?? []).map((r) => r.helper_id)}
-        hasPayments={(payments ?? []).length > 0}
+        hasPayments={approvedPayments.length > 0}
       />
 
       {/* ---------- OVERVIEW PANELS ---------- */}

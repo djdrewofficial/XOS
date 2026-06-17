@@ -273,6 +273,7 @@ export async function RecentPayments() {
   const { data: recentPayments } = await supabase
     .from("payments")
     .select("*, event:events(id, name)")
+    .eq("status", "approved")
     .order("paid_at", { ascending: false })
     .limit(6);
 

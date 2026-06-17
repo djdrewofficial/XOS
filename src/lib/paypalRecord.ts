@@ -9,7 +9,7 @@ import { runAutomations } from "@/lib/automations";
    scheduled payment and emails the client a receipt. */
 export async function recordPaypalPayment(
   supabase: SupabaseClient,
-  params: { eventId: string; amount: number; captureId: string; payerEmail: string | null; processingFee?: number }
+  params: { eventId: string; amount: number; captureId: string; payerEmail: string | null; payerName?: string | null; processingFee?: number }
 ): Promise<{ recorded: boolean; duplicate?: boolean }> {
   // already recorded? (capture endpoint or webhook beat us here)
   const { data: existing } = await supabase
@@ -28,7 +28,7 @@ export async function recordPaypalPayment(
   // link to the earliest scheduled payment that has no payment against it yet
   const [{ data: scheduled }, { data: priorPayments }] = await Promise.all([
     supabase.from("scheduled_payments").select("id, seq").eq("event_id", params.eventId).order("seq"),
-    supabase.from("payments").select("scheduled_payment_id").eq("event_id", params.eventId),
+    supabase.from("payments").select("scheduled_payment_id").eq("event_id", params.eventId).eq("status", "approved"),
   ]);
   const taken = new Set((priorPayments ?? []).map((p) => p.scheduled_payment_id).filter(Boolean));
   const scheduledId = (scheduled ?? []).find((s) => !taken.has(s.id))?.id ?? null;
@@ -41,6 +41,7 @@ export async function recordPaypalPayment(
     method: "paypal",
     status: "approved",
     paypal_capture_id: params.captureId,
+    payer_name: params.payerName ?? null,
     notes: params.payerEmail
       ? `PayPal · ${params.payerEmail}${params.processingFee ? ` · +${params.processingFee.toFixed(2)} fee` : ""}`
       : "PayPal",

@@ -23,6 +23,7 @@ export type PayInfo = {
   eventName: string | null;
   eventDate: string | null;
   firstName: string | null;
+  lastName: string | null;
   clientEmail: string | null;
   total: number;
   paid: number;
@@ -54,7 +55,9 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
         .from("event_addons")
         .select("quantity, price_override, price_locked, addon:addons(default_price)")
         .eq("event_id", event.id),
-      supabase.from("payments").select("amount, scheduled_payment_id").eq("event_id", event.id),
+      // only confirmed (approved) payments reduce the balance — a pending Zelle
+      // claim is recorded but must not lower what the client still owes
+      supabase.from("payments").select("amount, scheduled_payment_id").eq("event_id", event.id).eq("status", "approved"),
       supabase.from("scheduled_payments").select("id, seq, amount").eq("event_id", event.id).order("seq"),
       supabase.from("payment_settings").select("*").eq("id", true).maybeSingle(),
       supabase.from("journey_settings").select("*").eq("id", true).maybeSingle(),
@@ -95,6 +98,7 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
     eventName: (event.name as string) ?? null,
     eventDate: (event.event_date as string) ?? null,
     firstName: client?.first_name ?? null,
+    lastName: client?.last_name ?? null,
     clientEmail: client?.email ?? null,
     total: round2(total),
     paid: round2(paid),

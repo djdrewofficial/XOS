@@ -20,6 +20,7 @@ const NOTIF_TYPES = [
   { value: "time_off_requests", label: "Employee Time Off Requests" },
   { value: "unassigned_pending_payments", label: "Unassigned Pending Payments" },
   { value: "new_payment_received", label: "New Payment Received" },
+  { value: "zelle_pending", label: "Zelle Marked Sent (confirm & record)" },
   { value: "email_bounced", label: "Bounced / Complained Emails" },
   { value: "document_signed", label: "Document Signed (e-sign)" },
 ];

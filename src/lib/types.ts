@@ -128,6 +128,11 @@ export type Payment = {
   paid_at: string;
   status: "approved" | "pending";
   notes: string | null;
+  reason?: string | null;
+  payer_name?: string | null;
+  paypal_capture_id?: string | null;
+  processing_fee?: number | null;
+  bank_deposit_ref?: string | null;
 };
 
 export function money(n: number | null | undefined): string {

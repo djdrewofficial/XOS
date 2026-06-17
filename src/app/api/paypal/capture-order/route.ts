@@ -47,6 +47,7 @@ export async function POST(req: Request) {
     processingFee: fee,
     captureId: capture.captureId,
     payerEmail: capture.payerEmail,
+    payerName: capture.payerName,
   });
 
   return NextResponse.json({ ok: true, amount: base, fee, charged: capture.amount });
