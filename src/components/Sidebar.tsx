@@ -39,6 +39,7 @@ import {
   faLock,
   faRobot,
   faPowerOff,
+  faMusic,
 } from "@fortawesome/free-solid-svg-icons";
 
 type NavItem = { href: string; label: string; icon: IconDefinition; module: string };
@@ -100,6 +101,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
         items: [
           { href: "/settings/general", label: "General", icon: faGear, module: "settings" },
           { href: "/settings/helpers", label: "Booking Helpers", icon: faBolt, module: "settings" },
+          { href: "/settings/planner", label: "XOS Planner", icon: faMusic, module: "settings" },
           { href: "/settings/dashboard", label: "Dashboard Layout", icon: faTableColumns, module: "settings" },
           { href: "/settings/permissions", label: "Permissions", icon: faLock, module: "settings" },
           { href: "/settings/assistant", label: "AI Assistant", icon: faRobot, module: "settings" },

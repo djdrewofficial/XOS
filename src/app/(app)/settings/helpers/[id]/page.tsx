@@ -144,6 +144,7 @@ export default async function EditHelperPage({
     { data: sources },
     { data: employees },
     { data: dateDefs },
+    { data: planningTemplates },
   ] = await Promise.all([
     supabase.from("booking_helpers").select("*").eq("id", id).single(),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
@@ -153,6 +154,7 @@ export default async function EditHelperPage({
     supabase.from("inquiry_sources").select("id, name").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name"),
     supabase.from("custom_date_definitions").select("id, name").eq("is_active", true).order("sort_order"),
+    supabase.from("planning_templates").select("id, name").order("name"),
   ]);
 
   if (!helper) notFound();
@@ -529,6 +531,24 @@ export default async function EditHelperPage({
             placeholder="https://hooks.zapier.com/…"
             className="input w-full"
           />
+        </Row>
+      </Section>
+
+      <Section title="XOS Planner Template">
+        <Note>
+          When this helper runs, assign this planning template to the event (sets up the couple&apos;s music &amp;
+          timeline sections). Applied once — it won&apos;t overwrite an event that already uses this template.
+          Manage templates in <strong>Settings → XOS Planner</strong>.
+        </Note>
+        <Row label="Assign template">
+          <select name="planning_template_id" defaultValue={helper.planning_template_id ?? ""} className="input w-full">
+            <option value="">— None —</option>
+            {(planningTemplates ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
         </Row>
       </Section>
     </div>

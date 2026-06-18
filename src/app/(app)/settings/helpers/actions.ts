@@ -132,6 +132,7 @@ function buildHelperPayload(formData: FormData) {
     auto_on_payment: formData.get("auto_on_payment") === "on",
     event_type_ids: formData.getAll("event_type_ids").map(String).filter(Boolean),
     webhook_url: (formData.get("webhook_url") ?? "").toString().trim() || null,
+    planning_template_id: (formData.get("planning_template_id") ?? "").toString().trim() || null,
     actions,
   };
 }

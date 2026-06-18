@@ -48,6 +48,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/vibo/") ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/api/vibo/") ||
+    pathname.startsWith("/api/spotify/") ||
     pathname.startsWith("/api/mailgun/") ||
     pathname.startsWith("/api/highlevel/") ||
     pathname.startsWith("/api/paypal/") ||

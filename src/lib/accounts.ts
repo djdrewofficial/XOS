@@ -13,6 +13,11 @@ export type AccountType = "staff" | "client" | "event_guest";
 type Admin = ReturnType<typeof createAdminClient>;
 
 const SET_PASSWORD_URL = `${appUrl()}/auth/set-password`;
+/* Client/guest invites deep-link into the Xpress Entertainment app so couples
+   set their password in-app (works on a phone — the web URL may be localhost in
+   dev / unreachable). Configurable via CLIENT_APP_REDIRECT. */
+const CLIENT_SET_PASSWORD_URL = process.env.CLIENT_APP_REDIRECT || "xpressclient://auth/set-password";
+const setPasswordUrlFor = (type: AccountType) => (type === "staff" ? SET_PASSWORD_URL : CLIENT_SET_PASSWORD_URL);
 
 /** Find an existing auth user id by email (paged scan — fine at our scale). */
 async function findAuthUserByEmail(admin: Admin, email: string): Promise<string | null> {
@@ -38,11 +43,11 @@ async function ensureAuthUser(admin: Admin, email: string): Promise<string> {
 }
 
 /** A recovery link that lands on /auth/set-password (used for both invite and reset). */
-async function recoveryActionLink(admin: Admin, email: string): Promise<string> {
+async function recoveryActionLink(admin: Admin, email: string, redirectTo: string = SET_PASSWORD_URL): Promise<string> {
   const { data, error } = await admin.auth.admin.generateLink({
     type: "recovery",
     email,
-    options: { redirectTo: SET_PASSWORD_URL },
+    options: { redirectTo },
   });
   const link = data?.properties?.action_link;
   if (error || !link) throw new Error(error?.message ?? "Could not generate the link.");
@@ -107,7 +112,7 @@ export async function sendAccountInvite(args: {
       await admin.from("employees").update({ auth_user_id: userId }).eq("id", args.employeeId);
     }
 
-    const link = await recoveryActionLink(admin, email);
+    const link = await recoveryActionLink(admin, email, setPasswordUrlFor(args.type));
     const greeting = args.name ? `Hi ${args.name},` : "Hello,";
     return await sendBrandedEmail({
       to: email,
@@ -129,7 +134,8 @@ export async function sendPasswordReset(
   try {
     const userId = await findAuthUserByEmail(admin, addr);
     if (!userId) return { ok: false, error: "No XOS login exists for that email yet — send an invite first." };
-    const link = await recoveryActionLink(admin, addr);
+    const { data: acct } = await admin.from("accounts").select("account_type").eq("auth_user_id", userId).maybeSingle();
+    const link = await recoveryActionLink(admin, addr, setPasswordUrlFor((acct?.account_type as AccountType) ?? "staff"));
     return await sendBrandedEmail({
       to: addr,
       subject: "Reset your XOS password",

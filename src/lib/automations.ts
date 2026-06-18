@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
+import { reseedEventPlanning } from "@/lib/planning";
 
 /* Automation dispatcher — the keystone of the trigger→action engine. Lifecycle
    moments (event created, proposal confirmed, document signed, payment received,
@@ -25,6 +26,7 @@ type HelperRow = {
   auto_on_proposal_confirmed: boolean;
   auto_on_signed: boolean;
   auto_on_payment: boolean;
+  planning_template_id: string | null;
 };
 
 export async function runAutomations(
@@ -35,7 +37,7 @@ export async function runAutomations(
 ): Promise<void> {
   const { data: ev } = await supabase
     .from("events")
-    .select("event_type_id, status_id, archived_at")
+    .select("event_type_id, status_id, archived_at, planning_template_id")
     .eq("id", eventId)
     .maybeSingle();
   if (!ev) return;
@@ -45,7 +47,7 @@ export async function runAutomations(
   const { data: helpers } = await supabase
     .from("booking_helpers")
     .select(
-      "id, webhook_url, event_type_ids, auto_on_create, auto_status_ids, auto_on_proposal_confirmed, auto_on_signed, auto_on_payment"
+      "id, webhook_url, event_type_ids, auto_on_create, auto_status_ids, auto_on_proposal_confirmed, auto_on_signed, auto_on_payment, planning_template_id"
     )
     .eq("is_active", true);
 
@@ -71,6 +73,17 @@ export async function runAutomations(
   if (matched.length === 0) return;
 
   let ran = false;
+  // A matched helper can assign a planning template. Apply once: only reseed when
+  // it actually changes the event's template (so it never wipes planning twice).
+  const desiredTemplate = matched.find((h) => h.planning_template_id)?.planning_template_id ?? null;
+  if (desiredTemplate && desiredTemplate !== ev.planning_template_id) {
+    try {
+      await reseedEventPlanning(eventId, desiredTemplate);
+    } catch {
+      /* template assignment is best-effort */
+    }
+  }
+
   for (const h of matched) {
     try {
       // run_booking_helper enforces its own visibility + one-shot guards (raises

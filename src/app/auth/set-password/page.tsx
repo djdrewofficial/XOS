@@ -27,6 +27,19 @@ export default function SetPasswordPage() {
         } catch {
           /* fall through to session check */
         }
+      } else if (window.location.hash.includes("access_token")) {
+        // Implicit recovery link: tokens arrive in the URL hash. The PKCE client
+        // won't auto-consume them, so establish the session explicitly.
+        const hp = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const access_token = hp.get("access_token");
+        const refresh_token = hp.get("refresh_token");
+        if (access_token && refresh_token) {
+          try {
+            await supabase.auth.setSession({ access_token, refresh_token });
+          } catch {
+            /* fall through to session check */
+          }
+        }
       }
       const { data } = await supabase.auth.getSession();
       if (active && data.session) setStatus("ready");

@@ -27,6 +27,7 @@ import {
   updateEventDetails,
   updateEventVenue,
   updateEventLinks,
+  setEventPlanningTemplate,
   updateEventFinancials,
   addEventVendor,
   removeEventVendor,
@@ -184,6 +185,11 @@ export default async function EventDetailPage({
   ]);
 
   if (!event) notFound();
+
+  const { data: planningTemplates } = await supabase
+    .from("planning_templates")
+    .select("id, name")
+    .order("name");
 
   // PERF: second tier — queries/work that need the first batch's results, all
   // run together. The comms threads used to fire one query PER event client
@@ -537,6 +543,31 @@ export default async function EventDetailPage({
             <p className="text-sm text-zinc-500">No venue selected.</p>
           )}
         </EventVenueEditor>
+      </div>
+
+      <div className="card p-5">
+        <h2 className="card-title">XOS Planner <span className="ml-1 rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand dark:text-brand-lighter">BETA</span></h2>
+        <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
+          The in-house client planning experience (music search + timeline + questions). Not yet part of the live client workflow.
+        </p>
+
+        <form action={setEventPlanningTemplate.bind(null, id)} className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
+          <div className="flex-1 min-w-50">
+            <label className="mb-1 block text-xs font-medium text-zinc-500">Planning template</label>
+            <select name="planning_template_id" defaultValue={(event as { planning_template_id?: string | null }).planning_template_id ?? ""} className="input w-full">
+              <option value="">Auto (by event type / default)</option>
+              {(planningTemplates ?? []).map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <SaveButton className="btn-ghost px-4 py-2 text-xs" savedLabel="Applied">Apply &amp; re-seed</SaveButton>
+          <p className="w-full text-[11px] text-zinc-400">Choosing a template rebuilds this event&apos;s planner from it (clears current planner sections).</p>
+        </form>
+
+        <a href={`/portal/plan/${id}`} target="_blank" className="btn-primary">
+          Open planner ↗
+        </a>
       </div>
 
       <div className="card p-5">

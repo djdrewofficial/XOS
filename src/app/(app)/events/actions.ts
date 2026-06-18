@@ -10,6 +10,8 @@ import { loadEventBundle } from "@/lib/documentRender";
 import { buildEventName, autoNameEvent, type NamingClient } from "@/lib/eventName";
 import { runAutomations, fireHelperWebhook } from "@/lib/automations";
 import { findOrCreateClient } from "@/lib/clients";
+import { reseedEventPlanning } from "@/lib/planning";
+import { requireModule } from "@/lib/auth";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -1258,6 +1260,20 @@ export async function updateEventLinks(eventId: string, formData: FormData) {
   cf.photobooth_gallery = clean(formData.get("photobooth_gallery")) ?? "";
   const { error } = await supabase.from("events").update({ custom_fields: cf }).eq("id", eventId);
   if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+/** Assign / switch the XOS Planner template for an event. Picking a template
+    RE-SEEDS the planner from it (clears the event's current planner sections). */
+export async function setEventPlanningTemplate(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const templateId = clean(formData.get("planning_template_id"));
+  const supabase = await createClient();
+  if (!templateId) {
+    await supabase.from("events").update({ planning_template_id: null }).eq("id", eventId);
+  } else {
+    await reseedEventPlanning(eventId, templateId);
+  }
   revalidatePath(`/events/${eventId}`);
 }
 

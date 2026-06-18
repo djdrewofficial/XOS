@@ -147,3 +147,10 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(139, 111, 214, 0.55);
 }
+
+/* Planner guided-journey step transition */
+@keyframes plannerStep {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.planner-step { animation: plannerStep 0.35s ease both; }
