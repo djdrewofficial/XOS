@@ -70,6 +70,20 @@ export async function createPackage(formData: FormData) {
   redirect(`/packages/${data.id}`);
 }
 
+export async function deletePackage(id: string) {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("events")
+    .select("id", { count: "exact", head: true })
+    .eq("package_id", id);
+  if ((count ?? 0) > 0) {
+    throw new Error("Package is used on events — deactivate it instead of deleting.");
+  }
+  const { error } = await supabase.from("packages").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/packages");
+}
+
 export async function createPackageCategory(packageId: string | null, formData: FormData) {
   const supabase = await createClient();
   const name = clean(formData.get("name"));
