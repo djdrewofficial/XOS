@@ -1,7 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import VenuesDirectory from "@/components/VenuesDirectory";
 import SaveButton from "@/components/SaveButton";
-import { createVenue, createVenueCategory, toggleVenueCategory } from "./actions";
+import {
+  createVenue,
+  createVenueCategory,
+  toggleVenueCategory,
+  archiveVenues,
+  deleteVenues,
+  mergeVenues,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +39,9 @@ export default async function VenuesPage() {
         categories={categories ?? []}
         eventCounts={eventCounts}
         createVenue={createVenue}
+        archiveVenues={archiveVenues}
+        deleteVenues={deleteVenues}
+        mergeVenues={mergeVenues}
       />
 
       {/* ---------- VENUE SETTINGS: CATEGORIES ---------- */}

@@ -37,6 +37,7 @@ import {
   faEnvelope,
   faBullseye,
   faLock,
+  faRobot,
   faPowerOff,
 } from "@fortawesome/free-solid-svg-icons";
 
@@ -101,6 +102,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
           { href: "/settings/helpers", label: "Booking Helpers", icon: faBolt, module: "settings" },
           { href: "/settings/dashboard", label: "Dashboard Layout", icon: faTableColumns, module: "settings" },
           { href: "/settings/permissions", label: "Permissions", icon: faLock, module: "settings" },
+          { href: "/settings/assistant", label: "AI Assistant", icon: faRobot, module: "settings" },
           { href: "/events?settings=1", label: "Event List Settings", icon: faListCheck, module: "settings" },
           { href: "/settings/statuses", label: "Event Statuses", icon: faCircleHalfStroke, module: "settings" },
           { href: "/settings/staff", label: "Staff Settings", icon: faIdBadge, module: "settings" },

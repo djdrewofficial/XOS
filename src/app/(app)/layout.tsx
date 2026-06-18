@@ -1,6 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import AutoCompleteControl from "@/components/AutoCompleteControl";
+import AssistantBubble from "@/components/AssistantBubble";
 import { MobileNavProvider } from "@/components/MobileNav";
 import { createClient } from "@/lib/supabase/server";
 import { getMe } from "@/lib/auth";
@@ -34,6 +35,8 @@ export default async function AppLayout({
           </div>
           <main className="min-w-0 flex-1 p-4 md:p-6 print:p-0">{children}</main>
         </div>
+        {/* Assistant — Master Admin only while it's in training */}
+        {me?.accountType === "staff" && me.role === "master_admin" && <AssistantBubble />}
       </MobileNavProvider>
     </div>
   );

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule } from "@/lib/auth";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -11,6 +12,97 @@ function clean(v: FormDataEntryValue | null): string | null {
 function num(v: FormDataEntryValue | null): number {
   const n = parseFloat((v ?? "0").toString());
   return Number.isFinite(n) ? n : 0;
+}
+
+/* ---------------- Bulk actions (Venues directory) ---------------- */
+
+/** Archive (or restore) venues — hides them from the directory without deleting. */
+export async function archiveVenues(ids: string[], archive: boolean): Promise<void> {
+  if (!ids.length) return;
+  const supabase = await createClient();
+  await requireModule("venues", "edit", { mode: "throw", supabase });
+  const { error } = await supabase
+    .from("venues")
+    .update({ archived_at: archive ? new Date().toISOString() : null })
+    .in("id", ids);
+  if (error) throw new Error(error.message);
+  revalidatePath("/venues");
+}
+
+/** Permanently delete venues. Venues still attached to events can't be deleted
+    (that would orphan the events) — those are skipped and reported back. */
+export async function deleteVenues(
+  ids: string[],
+): Promise<{ deleted: number; skipped: { id: string; name: string; events: number }[] }> {
+  const skipped: { id: string; name: string; events: number }[] = [];
+  if (!ids.length) return { deleted: 0, skipped };
+  const supabase = await createClient();
+  await requireModule("venues", "edit", { mode: "throw", supabase });
+
+  const { data: evRows } = await supabase.from("events").select("venue_id").in("venue_id", ids);
+  const counts: Record<string, number> = {};
+  (evRows ?? []).forEach((e) => {
+    if (e.venue_id) counts[e.venue_id] = (counts[e.venue_id] ?? 0) + 1;
+  });
+  const blocked = new Set(Object.keys(counts));
+  const deletable = ids.filter((id) => !blocked.has(id));
+
+  if (blocked.size) {
+    const { data: vs } = await supabase.from("venues").select("id, name").in("id", [...blocked]);
+    (vs ?? []).forEach((v) => skipped.push({ id: v.id, name: v.name, events: counts[v.id] ?? 0 }));
+  }
+
+  if (deletable.length) {
+    // inquiry_sources.venue_id is NO ACTION — detach before deleting; contacts /
+    // rooms / djep_map cascade away with the venue.
+    await supabase.from("inquiry_sources").update({ venue_id: null }).in("venue_id", deletable);
+    const { error } = await supabase.from("venues").delete().in("id", deletable);
+    if (error) throw new Error(error.message);
+  }
+  revalidatePath("/venues");
+  return { deleted: deletable.length, skipped };
+}
+
+const MERGE_FIELDS = new Set([
+  "name", "address", "city", "state", "zip", "category_id", "travel_fee", "setup_fee",
+  "distance_miles", "driving_notes", "load_in_details", "notes", "is_one_time", "auto_mileage",
+]);
+
+/** Merge loser venues into a survivor: reassign every reference (events,
+    inquiry_sources, contacts, rooms) onto the survivor, repoint the legacy DJEP
+    map so the survivor "owns" the losers' DJEP ids too (events never
+    dis-associate), apply the chosen field values, then delete the losers. */
+export async function mergeVenues(
+  survivorId: string,
+  loserIds: string[],
+  fields: Record<string, unknown>,
+): Promise<void> {
+  const losers = [...new Set(loserIds)].filter((id) => id && id !== survivorId);
+  if (!losers.length) return;
+  const supabase = await createClient();
+  await requireModule("venues", "edit", { mode: "throw", supabase });
+
+  // 1) reassign all references loser -> survivor (this includes venue_djep_map,
+  //    which is how the survivor inherits the losers' DJEP ids).
+  for (const table of ["events", "inquiry_sources", "venue_contacts", "venue_rooms", "venue_djep_map"]) {
+    const { error } = await supabase.from(table).update({ venue_id: survivorId }).in("venue_id", losers);
+    if (error) throw new Error(`${table}: ${error.message}`);
+  }
+
+  // 2) apply the chosen "keep" values to the survivor (whitelisted columns only)
+  const patch: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields ?? {})) if (MERGE_FIELDS.has(k)) patch[k] = v;
+  if (Object.keys(patch).length) {
+    const { error } = await supabase.from("venues").update(patch).eq("id", survivorId);
+    if (error) throw new Error(error.message);
+  }
+
+  // 3) delete the now-detached losers
+  const { error: delErr } = await supabase.from("venues").delete().in("id", losers);
+  if (delErr) throw new Error(delErr.message);
+
+  revalidatePath("/venues");
+  revalidatePath(`/venues/${survivorId}`);
 }
 
 export async function createVenueCategory(formData: FormData) {

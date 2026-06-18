@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 export type CalDetailedEvent = {
   id: string;
@@ -37,6 +43,8 @@ export default function MonthCalendarClient({
   timeOffByDate,
   today,
   monthLabel,
+  year,
+  month,
   prevHref,
   nextHref,
   eventsThisMonth,
@@ -47,12 +55,29 @@ export default function MonthCalendarClient({
   timeOffByDate: Record<string, string[]>;
   today: string;
   monthLabel: string;
+  year: number;
+  /** 0-based month of the displayed calendar. */
+  month: number;
   prevHref: string;
   nextHref: string;
   eventsThisMonth: number;
 }) {
+  const router = useRouter();
   const [selected, setSelected] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // guard against a missing/invalid prop so the dropdowns never render NaN
+  const safeYear = Number.isFinite(year) ? year : new Date().getFullYear();
+  const safeMonth = Number.isFinite(month) ? month : new Date().getMonth();
+
+  const jump = (y: number, m: number) =>
+    router.push(`/?m=${y}-${String(m + 1).padStart(2, "0")}`);
+
+  // years run from 2022 up to a few years past whatever month is on screen
+  const START_YEAR = 2022;
+  const endYear = Math.max(safeYear + 5, 2030);
+  const years: number[] = [];
+  for (let y = START_YEAR; y <= endYear; y++) years.push(y);
 
   const selectDay = (date: string) => {
     setSelected(date);
@@ -66,10 +91,30 @@ export default function MonthCalendarClient({
   return (
     <div className="card overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-white/[0.06]">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Link href={prevHref} className="btn-ghost px-3 py-1.5 text-xs">←</Link>
           <Link href={nextHref} className="btn-ghost px-3 py-1.5 text-xs">→</Link>
           <Link href="/" className="btn-ghost px-3 py-1.5 text-xs">today</Link>
+          <select
+            aria-label="Jump to month"
+            value={safeMonth}
+            onChange={(e) => jump(safeYear, Number(e.target.value))}
+            className="input px-2 py-1.5 text-xs"
+          >
+            {MONTH_NAMES.map((name, i) => (
+              <option key={name} value={i}>{name}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Jump to year"
+            value={safeYear}
+            onChange={(e) => jump(Number(e.target.value), safeMonth)}
+            className="input px-2 py-1.5 text-xs"
+          >
+            {years.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
         </div>
         <h2 className="text-lg font-bold text-zinc-900 dark:text-white">{monthLabel}</h2>
         <div className="text-xs text-zinc-500">{eventsThisMonth} events this month</div>

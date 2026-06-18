@@ -188,6 +188,8 @@ export async function MonthCalendar({ m }: { m?: string }) {
       timeOffByDate={timeOffByDate}
       today={today}
       monthLabel={monthLabel}
+      year={year}
+      month={month}
       prevHref={`/?m=${prev}`}
       nextHref={`/?m=${next}`}
       eventsThisMonth={eventsThisMonth}
