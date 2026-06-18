@@ -2,10 +2,44 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule } from "@/lib/auth";
+import { sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
   return s === "" ? null : s;
+}
+
+/** Create/ensure this employee's XOS login and email them a set-password link. */
+export async function inviteEmployee(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  await requireModule("employees", "edit", { mode: "throw", supabase });
+  const { data: e } = await supabase
+    .from("employees")
+    .select("email, first_name")
+    .eq("id", id)
+    .maybeSingle();
+  if (!e?.email) return { ok: false, error: "Add an email to this employee first." };
+  const res = await sendAccountInvite({
+    type: "staff",
+    email: e.email,
+    name: e.first_name,
+    employeeId: id,
+  });
+  if (res.ok) {
+    revalidatePath(`/employees/${id}`);
+    revalidatePath("/employees");
+  }
+  return res;
+}
+
+/** Email this employee a password-reset link (login must already exist). */
+export async function resetEmployeePassword(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  await requireModule("employees", "edit", { mode: "throw", supabase });
+  const { data: e } = await supabase.from("employees").select("email").eq("id", id).maybeSingle();
+  if (!e?.email) return { ok: false, error: "No email on file." };
+  return await sendPasswordReset(e.email);
 }
 
 export async function createEmployee(formData: FormData) {

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule } from "@/lib/auth";
 import { staffHours, staffCost } from "@/lib/payroll";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -13,14 +14,13 @@ function num(v: FormDataEntryValue | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Payroll writes require Edit access to the Payroll screen (Settings → Permissions). */
 async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authorized.");
-  const { data: emp } = await supabase.from("employees").select("permission_tier").eq("auth_user_id", user.id).maybeSingle();
-  const tier = (emp?.permission_tier as string | undefined) ?? "master_admin"; // no employee row ⇒ owner
-  if (tier !== "master_admin" && tier !== "admin") throw new Error("Not authorized.");
+  await requireModule("payroll", "edit", { mode: "throw", supabase });
   return user.id;
 }
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule } from "@/lib/auth";
 import { money } from "@/lib/types";
 import { staffHours, staffCost, payPeriodFor, fmtPeriod } from "@/lib/payroll";
 import {
@@ -21,13 +21,8 @@ const fmtDT = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-US
 export default async function PayrollPage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
   const supabase = await createClient();
 
-  // guard — admins only
-  const { data: auth } = await supabase.auth.getUser();
-  const { data: me } = auth?.user
-    ? await supabase.from("employees").select("permission_tier").eq("auth_user_id", auth.user.id).maybeSingle()
-    : { data: null };
-  const tier = (me?.permission_tier as string | undefined) ?? "master_admin";
-  if (tier !== "master_admin" && tier !== "admin") redirect("/");
+  // guard — needs Payroll access (set in Settings → Permissions)
+  await requireModule("payroll", "view", { supabase });
 
   const { period: periodParam } = await searchParams;
   const { data: settings } = await supabase.from("payroll_settings").select("*").eq("id", true).maybeSingle();

@@ -16,19 +16,43 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: signIn, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message);
       setLoading(false);
       return;
     }
-    // land on the page chosen in General settings
-    const { data: cs } = await supabase
-      .from("company_settings")
-      .select("landing_page")
-      .eq("id", true)
-      .maybeSingle();
-    router.push(cs?.landing_page || "/");
+    // Resolve landing: per-user override → per-role default → company fallback.
+    const userId = signIn.user?.id;
+    let landing = "/";
+    const { data: emp } = userId
+      ? await supabase
+          .from("employees")
+          .select("permission_tier, landing_page")
+          .eq("auth_user_id", userId)
+          .maybeSingle()
+      : { data: null };
+    if (emp?.landing_page) {
+      landing = emp.landing_page;
+    } else {
+      const role = emp?.permission_tier || "master_admin";
+      const { data: rs } = await supabase
+        .from("role_settings")
+        .select("landing_page")
+        .eq("role", role)
+        .maybeSingle();
+      if (rs?.landing_page) {
+        landing = rs.landing_page;
+      } else {
+        const { data: cs } = await supabase
+          .from("company_settings")
+          .select("landing_page")
+          .eq("id", true)
+          .maybeSingle();
+        landing = cs?.landing_page || "/";
+      }
+    }
+    router.push(landing);
     router.refresh();
   }
 

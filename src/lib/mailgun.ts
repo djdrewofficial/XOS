@@ -349,6 +349,56 @@ export async function processOutbox(
 }
 
 /** Sends a one-off test email and records it in the outbox/log. */
+/** Send a one-off email wrapped in the branded XOS shell, logged to email_log.
+    Used for account invites and password resets (and any future transactional
+    mail that isn't a template). Sends immediately (not via the outbox). */
+export async function sendBrandedEmail(opts: {
+  to: string;
+  subject: string;
+  /** Inner HTML placed inside the white card body of the branded shell. */
+  contentHtml: string;
+  supabase?: SupabaseClient;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { domain } = mailgunConfig();
+  if (!isMailgunConfigured()) return { ok: false, error: "Mailgun not configured" };
+
+  const supabase = opts.supabase ?? (await createClient());
+  const { data: cs } = await supabase
+    .from("company_settings")
+    .select("from_name, from_email, reply_to, company_name")
+    .eq("id", true)
+    .maybeSingle();
+
+  const fromName = cs?.from_name ?? "Xpress Entertainment";
+  const fromEmail = cs?.from_email ?? `events@${domain}`;
+  const companyName = cs?.company_name ?? "Xpress Entertainment";
+  const html = emailShell(companyName, `<div style="padding:30px;">${opts.contentHtml}</div>`);
+
+  const result = await mailgunSend({
+    from: fmtSender(fromName, fromEmail),
+    to: opts.to,
+    subject: opts.subject,
+    html,
+    replyTo: cs?.reply_to ?? fromEmail,
+    tags: ["xos", "account"],
+  });
+
+  await supabase.from("email_log").insert({
+    to_address: opts.to,
+    from_name: fromName,
+    from_address: fromEmail,
+    reply_to: cs?.reply_to ?? fromEmail,
+    subject: opts.subject,
+    body_html: html,
+    status: result.ok ? "sent" : "failed",
+    sent_at: result.ok ? new Date().toISOString() : null,
+    provider_message_id: result.ok ? result.id || null : null,
+    error: result.ok ? null : result.error,
+  });
+
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
+}
+
 export async function sendTestEmail(to: string): Promise<{ ok: boolean; error?: string }> {
   const { domain } = mailgunConfig();
   if (!isMailgunConfigured()) return { ok: false, error: "Mailgun not configured" };

@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +34,7 @@ const mo = (days: number) => `${(days / 30.44).toFixed(1)} mo`;
 export default async function LeadsReportPage({ searchParams }: { searchParams: Promise<{ year?: string; type?: string; status?: string }> }) {
   const supabase = await createClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-  const { data: me } = auth?.user
-    ? await supabase.from("employees").select("permission_tier").eq("auth_user_id", auth.user.id).maybeSingle()
-    : { data: null };
-  const tier = (me?.permission_tier as string | undefined) ?? "master_admin";
-  if (tier !== "master_admin" && tier !== "admin") redirect("/");
+  await requireModule("reports", "view", { supabase });
 
   const sp = await searchParams;
   const y = parseInt(sp.year ?? "") || new Date().getFullYear();

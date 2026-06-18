@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ClientForm from "@/components/ClientForm";
-import { updateClientRecord } from "../actions";
+import LoginAccess from "@/components/LoginAccess";
+import { updateClientRecord, inviteClient, resetClientPassword } from "../actions";
 import { money, eventTotal, type XEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -15,13 +16,14 @@ export default async function ClientDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: client }, { data: events }] = await Promise.all([
+  const [{ data: client }, { data: events }, { data: account }] = await Promise.all([
     supabase.from("clients").select("*").eq("id", id).single(),
     supabase
       .from("events")
       .select("*, status:event_statuses(*), package:packages(*), venue:venues(*)")
       .eq("client_id", id)
       .order("event_date", { ascending: false }),
+    supabase.from("accounts").select("auth_user_id").eq("client_id", id).maybeSingle(),
   ]);
 
   if (!client) notFound();
@@ -83,6 +85,24 @@ export default async function ClientDetailPage({
 
       <h2 className="card-title">Edit Client</h2>
       <ClientForm client={client} action={updateClientRecord.bind(null, id)} />
+
+      <div className="mt-6">
+        <LoginAccess
+          subjectId={id}
+          linked={!!account?.auth_user_id}
+          email={client.email ?? null}
+          invite={inviteClient}
+          reset={resetClientPassword}
+          hasLoginLabel="Has a planning-portal login"
+          noLoginLabel="No portal login yet"
+          footer={
+            <>
+              Invites email a secure link to set a password and sign in to the client planning portal
+              (music &amp; timeline).
+            </>
+          }
+        />
+      </div>
     </div>
   );
 }

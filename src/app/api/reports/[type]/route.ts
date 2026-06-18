@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { moduleAccess } from "@/lib/auth";
+import { accessAtLeast } from "@/lib/permissions";
 import { renderReportPdf, type ReportDoc } from "@/lib/reportPdf";
 import {
   buildReceived,
@@ -19,14 +21,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ type: st
   const url = new URL(req.url);
   const year = parseInt(url.searchParams.get("year") ?? "") || new Date().getFullYear();
 
-  // admin-only reports
+  // Leads & Sales report needs Reports access (Settings → Permissions)
   if (type === "leads") {
-    const { data: auth } = await supabase.auth.getUser();
-    const { data: me } = auth?.user
-      ? await supabase.from("employees").select("permission_tier").eq("auth_user_id", auth.user.id).maybeSingle()
-      : { data: null };
-    const tier = (me?.permission_tier as string | undefined) ?? "master_admin";
-    if (tier !== "master_admin" && tier !== "admin") return new NextResponse("Forbidden", { status: 403 });
+    const access = await moduleAccess("reports", supabase);
+    if (!accessAtLeast(access, "view")) return new NextResponse("Forbidden", { status: 403 });
   }
 
   let doc: ReportDoc;

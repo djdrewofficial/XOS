@@ -1,5 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  moduleForPath,
+  resolveAccessMap,
+  accessAtLeast,
+  type Access,
+  type Role,
+} from "@/lib/permissions";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -39,6 +46,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/welcome/") ||
     pathname.startsWith("/proposal/") ||
     pathname.startsWith("/vibo/") ||
+    pathname.startsWith("/auth/") ||
     pathname.startsWith("/api/vibo/") ||
     pathname.startsWith("/api/mailgun/") ||
     pathname.startsWith("/api/highlevel/") ||
@@ -59,6 +67,63 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
+  }
+
+  // Permission gate: block screens the signed-in user lacks "view" access to.
+  // Master Admin (and anyone with no employee row) bypasses. /no-access maps to
+  // no module, so redirecting there can never loop. The gate fails OPEN on any
+  // unexpected error — a guard must never take the whole app down (sensitive
+  // money/reports pages re-check server-side anyway).
+  if (user) {
+    try {
+      // External users (client / event guest) live in the planning portal only.
+      const { data: acct } = await supabase
+        .from("accounts")
+        .select("account_type")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+      if (acct && acct.account_type !== "staff") {
+        if (!pathname.startsWith("/portal")) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/portal";
+          url.search = "";
+          return NextResponse.redirect(url);
+        }
+        return response; // external user inside the portal — allowed
+      }
+
+      const moduleKey = moduleForPath(pathname);
+      if (moduleKey) {
+        const { data: emp } = await supabase
+          .from("employees")
+          .select("id, permission_tier")
+          .eq("auth_user_id", user.id)
+          .maybeSingle();
+        const role = ((emp?.permission_tier as Role | undefined) ?? "master_admin") as Role;
+        if (role !== "master_admin") {
+          const empId = (emp?.id as string | undefined) ?? null;
+          const [{ data: roleRows }, { data: userRows }] = await Promise.all([
+            supabase.from("role_permissions").select("module, access").eq("role", role),
+            empId
+              ? supabase.from("employee_permissions").select("module, access").eq("employee_id", empId)
+              : Promise.resolve({ data: [] as { module: string; access: Access }[] }),
+          ]);
+          const can = resolveAccessMap(
+            role,
+            (roleRows ?? []) as { module: string; access: Access }[],
+            (userRows ?? []) as { module: string; access: Access }[],
+          );
+          if (!accessAtLeast(can[moduleKey] ?? "none", "view")) {
+            const url = request.nextUrl.clone();
+            url.pathname = "/no-access";
+            url.search = "";
+            return NextResponse.redirect(url);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("permission gate error (failing open):", err);
+    }
   }
 
   return response;

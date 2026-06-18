@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { money } from "@/lib/types";
 import Tabs from "@/components/Tabs";
 import SaveButton from "@/components/SaveButton";
+import LoginAccess from "@/components/LoginAccess";
 import {
   updateEmployeeGeneral,
   updateEmployeeContact,
@@ -12,6 +13,8 @@ import {
   addTimeOff,
   setTimeOffStatus,
   deleteTimeOff,
+  inviteEmployee,
+  resetEmployeePassword,
 } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -219,6 +222,7 @@ export default async function EmployeeProfilePage({
 
   /* ---------- TAB: Contact ---------- */
   const contactTab = (
+    <div className="space-y-5">
     <div className="card max-w-2xl p-5">
       <h2 className="card-title">Contact &amp; Personal</h2>
       <form action={updateEmployeeContact.bind(null, id)} className="grid grid-cols-2 gap-3">
@@ -250,6 +254,24 @@ export default async function EmployeeProfilePage({
           <SaveButton>Save</SaveButton>
         </div>
       </form>
+    </div>
+    <LoginAccess
+      subjectId={id}
+      linked={!!emp.auth_user_id}
+      email={emp.email ?? null}
+      invite={inviteEmployee}
+      reset={resetEmployeePassword}
+      footer={
+        <>
+          Invites and resets email a secure link to set a password. Screen access is controlled by
+          tier on the General tab and in{" "}
+          <a href="/settings/permissions" className="font-semibold text-brand underline dark:text-brand-lighter">
+            Settings → Permissions
+          </a>
+          .
+        </>
+      }
+    />
     </div>
   );
 

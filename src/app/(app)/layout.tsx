@@ -3,23 +3,30 @@ import TopBar from "@/components/TopBar";
 import AutoCompleteControl from "@/components/AutoCompleteControl";
 import { MobileNavProvider } from "@/components/MobileNav";
 import { createClient } from "@/lib/supabase/server";
+import { getMe } from "@/lib/auth";
 
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const supabase = await createClient();
-  const { data: cs } = await supabase
-    .from("company_settings")
-    .select("browser_autocomplete")
-    .eq("id", true)
-    .maybeSingle();
+  const [{ data: cs }, me] = await Promise.all([
+    supabase
+      .from("company_settings")
+      .select("browser_autocomplete")
+      .eq("id", true)
+      .maybeSingle(),
+    getMe(supabase).catch((err) => {
+      console.error("getMe failed (sidebar will show all):", err);
+      return null;
+    }),
+  ]);
 
   return (
     <div className="flex min-h-screen">
       <AutoCompleteControl enabled={Boolean(cs?.browser_autocomplete)} />
       <MobileNavProvider>
         <div className="print:hidden">
-          <Sidebar />
+          <Sidebar can={me?.can} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="print:hidden">

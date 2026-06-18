@@ -36,11 +36,12 @@ import {
   faPenToSquare,
   faEnvelope,
   faBullseye,
+  faLock,
   faPowerOff,
 } from "@fortawesome/free-solid-svg-icons";
 
-type NavItem = { href: string; label: string; icon: IconDefinition };
-type NavGroup = { group: string; icon: IconDefinition; items: NavItem[] };
+type NavItem = { href: string; label: string; icon: IconDefinition; module: string };
+type NavGroup = { group: string; icon: IconDefinition; module: string; items: NavItem[] };
 type Entry = NavItem | NavGroup;
 const isGroup = (e: Entry): e is NavGroup => "group" in e;
 
@@ -48,21 +49,21 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
   {
     heading: "Operations",
     items: [
-      { href: "/", label: "Dashboard", icon: faGauge },
-      { href: "/inbox", label: "Inbox", icon: faInbox },
-      { href: "/events", label: "Events", icon: faCalendarDays },
-      { href: "/clients", label: "Clients", icon: faUsers },
-      { href: "/documents", label: "Documents", icon: faFileSignature },
+      { href: "/", label: "Dashboard", icon: faGauge, module: "dashboard" },
+      { href: "/inbox", label: "Inbox", icon: faInbox, module: "inbox" },
+      { href: "/events", label: "Events", icon: faCalendarDays, module: "events" },
+      { href: "/clients", label: "Clients", icon: faUsers, module: "clients" },
+      { href: "/documents", label: "Documents", icon: faFileSignature, module: "documents" },
     ],
   },
   {
     heading: "Directory",
     items: [
-      { href: "/venues", label: "Venues", icon: faBuilding },
-      { href: "/vendors", label: "Vendors", icon: faHandshake },
-      { href: "/packages", label: "Packages", icon: faBoxOpen },
-      { href: "/equipment", label: "Equipment", icon: faSliders },
-      { href: "/employees", label: "Employees", icon: faUserGroup },
+      { href: "/venues", label: "Venues", icon: faBuilding, module: "venues" },
+      { href: "/vendors", label: "Vendors", icon: faHandshake, module: "vendors" },
+      { href: "/packages", label: "Packages", icon: faBoxOpen, module: "packages" },
+      { href: "/equipment", label: "Equipment", icon: faSliders, module: "equipment" },
+      { href: "/employees", label: "Employees", icon: faUserGroup, module: "employees" },
     ],
   },
   {
@@ -71,21 +72,22 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
       {
         group: "Payments",
         icon: faMoneyBillWave,
+        module: "payments",
         items: [
-          { href: "/payments", label: "Received", icon: faMoneyBillWave },
-          { href: "/payments/scheduled", label: "Scheduled", icon: faCalendarDays },
-          { href: "/payments/summary", label: "Income & Expense", icon: faMoneyCheckDollar },
-          { href: "/payments/monthly", label: "Monthly Breakdown", icon: faTableColumns },
-          { href: "/payments/outstanding", label: "Outstanding Balances", icon: faFileInvoiceDollar },
+          { href: "/payments", label: "Received", icon: faMoneyBillWave, module: "payments" },
+          { href: "/payments/scheduled", label: "Scheduled", icon: faCalendarDays, module: "payments" },
+          { href: "/payments/summary", label: "Income & Expense", icon: faMoneyCheckDollar, module: "payments" },
+          { href: "/payments/monthly", label: "Monthly Breakdown", icon: faTableColumns, module: "payments" },
+          { href: "/payments/outstanding", label: "Outstanding Balances", icon: faFileInvoiceDollar, module: "payments" },
         ],
       },
-      { href: "/commissions", label: "Sales & Commissions", icon: faPercent },
-      { href: "/payroll", label: "Payroll", icon: faMoneyCheckDollar },
+      { href: "/commissions", label: "Sales & Commissions", icon: faPercent, module: "commissions" },
+      { href: "/payroll", label: "Payroll", icon: faMoneyCheckDollar, module: "payroll" },
     ],
   },
   {
     heading: "Reports",
-    items: [{ href: "/reports/leads", label: "Leads & Sales", icon: faChartLine }],
+    items: [{ href: "/reports/leads", label: "Leads & Sales", icon: faChartLine, module: "reports" }],
   },
   {
     heading: "XOS Settings",
@@ -93,27 +95,36 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
       {
         group: "Application",
         icon: faGear,
+        module: "settings",
         items: [
-          { href: "/settings/general", label: "General", icon: faGear },
-          { href: "/settings/helpers", label: "Booking Helpers", icon: faBolt },
-          { href: "/settings/dashboard", label: "Dashboard Layout", icon: faTableColumns },
-          { href: "/events?settings=1", label: "Event List Settings", icon: faListCheck },
-          { href: "/settings/statuses", label: "Event Statuses", icon: faCircleHalfStroke },
-          { href: "/settings/staff", label: "Staff Settings", icon: faIdBadge },
-          { href: "/settings/payment-settings", label: "Payment Settings", icon: faCreditCard },
-          { href: "/settings/journey", label: "Client Journey", icon: faRoute },
-          { href: "/settings/signing", label: "Event Type Workflows", icon: faListCheck },
-          { href: "/settings/expenses", label: "Expenses", icon: faReceipt },
-          { href: "/settings/custom-fields", label: "Custom Fields", icon: faPenToSquare },
+          { href: "/settings/general", label: "General", icon: faGear, module: "settings" },
+          { href: "/settings/helpers", label: "Booking Helpers", icon: faBolt, module: "settings" },
+          { href: "/settings/dashboard", label: "Dashboard Layout", icon: faTableColumns, module: "settings" },
+          { href: "/settings/permissions", label: "Permissions", icon: faLock, module: "settings" },
+          { href: "/events?settings=1", label: "Event List Settings", icon: faListCheck, module: "settings" },
+          { href: "/settings/statuses", label: "Event Statuses", icon: faCircleHalfStroke, module: "settings" },
+          { href: "/settings/staff", label: "Staff Settings", icon: faIdBadge, module: "settings" },
+          { href: "/settings/payment-settings", label: "Payment Settings", icon: faCreditCard, module: "settings" },
+          { href: "/settings/journey", label: "Client Journey", icon: faRoute, module: "settings" },
+          { href: "/settings/signing", label: "Event Type Workflows", icon: faListCheck, module: "settings" },
+          { href: "/settings/expenses", label: "Expenses", icon: faReceipt, module: "settings" },
+          { href: "/settings/custom-fields", label: "Custom Fields", icon: faPenToSquare, module: "settings" },
         ],
       },
-      { href: "/settings/email", label: "Email", icon: faEnvelope },
-      { href: "/settings/sources", label: "Inquiry Sources", icon: faBullseye },
+      { href: "/settings/email", label: "Email", icon: faEnvelope, module: "settings" },
+      { href: "/settings/sources", label: "Inquiry Sources", icon: faBullseye, module: "settings" },
     ],
   },
 ];
 
-export default function Sidebar() {
+/** A user can see a nav entry when they have at least "view" on its module. */
+function canSee(can: Record<string, string> | undefined, module: string): boolean {
+  if (!can) return true; // no map yet (e.g. pre-migration) → show everything
+  const a = can[module];
+  return a === "view" || a === "edit";
+}
+
+export default function Sidebar({ can }: { can?: Record<string, string> }) {
   const pathname = usePathname();
   const router = useRouter();
   const { open, setOpen } = useMobileNav();
@@ -209,22 +220,37 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
-        {SECTIONS.map((section) => (
-          <div key={section.heading}>
-            <div className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-600">
-              {section.heading}
+        {SECTIONS.map((section) => {
+          // Filter entries (and group children) by the user's effective access.
+          const visible = section.items
+            .map((entry) =>
+              isGroup(entry)
+                ? { ...entry, items: entry.items.filter((i) => canSee(can, i.module)) }
+                : entry
+            )
+            .filter((entry) =>
+              isGroup(entry)
+                ? canSee(can, entry.module) && entry.items.length > 0
+                : canSee(can, entry.module)
+            );
+          if (visible.length === 0) return null;
+          return (
+            <div key={section.heading}>
+              <div className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-600">
+                {section.heading}
+              </div>
+              <div className="space-y-0.5">
+                {visible.map((entry) =>
+                  isGroup(entry) ? (
+                    <NavGroupBlock key={entry.group} group={entry} />
+                  ) : (
+                    <NavLink key={entry.href} item={entry} />
+                  )
+                )}
+              </div>
             </div>
-            <div className="space-y-0.5">
-              {section.items.map((entry) =>
-                isGroup(entry) ? (
-                  <NavGroupBlock key={entry.group} group={entry} />
-                ) : (
-                  <NavLink key={entry.href} item={entry} />
-                )
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="border-t border-zinc-200 dark:border-white/[0.06] p-3">
