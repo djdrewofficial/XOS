@@ -38,7 +38,29 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "lookup_pricing",
+      description:
+        "Get the CURRENT price of an XOS package or add-on — the single source of truth for pricing. Use this for ANY pricing/cost/'how much' question instead of quoting from memory. Searches the live catalog by name. Returns matching items with their current price; if nothing matches it returns the full catalog so you can help.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Item or package name, e.g. 'Dancing on the Clouds', 'uplighting', or 'Xpress package'. Use an empty string to list everything." },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
+
+const STOP = new Set([
+  "package", "packages", "addon", "addons", "add-on", "extra", "extras", "price", "pricing",
+  "prices", "cost", "costs", "much", "how", "the", "for", "our", "with", "and", "what", "does",
+  "your", "have", "this", "that", "rental", "experience",
+]);
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -118,5 +140,57 @@ export async function runAssistantTool(
     return { start, end, count: events.length, truncated: rows.length >= 150, events };
   }
 
+  if (name === "lookup_pricing") {
+    return lookupPricing(supabase, String(args.query ?? ""));
+  }
+
   return { error: `Unknown tool: ${name}` };
+}
+
+type AddonRow = { name: string; client_facing_name: string | null; default_price: string | number };
+type PackageRow = AddonRow & {
+  included_hours: number | null; is_hourly: boolean | null; hourly_rate: string | number | null;
+  overtime_hourly: string | number | null; deposit_value: string | number | null;
+};
+
+async function lookupPricing(supabase: SupabaseClient, query: string) {
+  const tokens = query.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !STOP.has(w)).map((w) => w.slice(0, 5));
+  const [{ data: addons }, { data: packages }] = await Promise.all([
+    supabase.from("addons").select("name, client_facing_name, default_price").eq("is_active", true).order("display_order"),
+    supabase
+      .from("packages")
+      .select("name, client_facing_name, default_price, included_hours, is_hourly, hourly_rate, overtime_hourly, deposit_value")
+      .eq("is_active", true)
+      .order("display_order"),
+  ]);
+
+  const hit = (r: AddonRow) => {
+    const n = `${r.name} ${r.client_facing_name ?? ""}`.toLowerCase();
+    return tokens.length === 0 ? true : tokens.some((t) => n.includes(t));
+  };
+  const money = (v: string | number | null) => (v == null ? null : Number(v));
+  const addonOut = (r: AddonRow) => ({ kind: "add-on", name: r.name, price: money(r.default_price) });
+  const pkgOut = (r: PackageRow) => ({
+    kind: "package", name: r.name, price: money(r.default_price),
+    included_hours: r.included_hours ?? undefined,
+    hourly: r.is_hourly ? money(r.hourly_rate) : undefined,
+    overtime_per_hour: money(r.overtime_hourly) ?? undefined,
+    deposit: money(r.deposit_value) ?? undefined,
+  });
+
+  const matchedAddons = ((addons ?? []) as AddonRow[]).filter(hit).map(addonOut);
+  const matchedPackages = ((packages ?? []) as PackageRow[]).filter(hit).map(pkgOut);
+  const matches = [...matchedPackages, ...matchedAddons];
+
+  if (matches.length === 0) {
+    return {
+      matches: [],
+      note: "No catalog item matched — its price may not be set up in XOS yet. Here is the full current catalog.",
+      all_items: [
+        ...((packages ?? []) as PackageRow[]).map(pkgOut),
+        ...((addons ?? []) as AddonRow[]).map(addonOut),
+      ],
+    };
+  }
+  return { matches, note: "Prices are the current XOS defaults (USD); a specific event may differ if a custom price was set on that booking." };
 }
