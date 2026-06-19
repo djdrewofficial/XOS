@@ -48,6 +48,28 @@ export default function ClientForm({
           <input name="tiktok" defaultValue={client?.tiktok ?? ""} placeholder="@handle" className={input} />
         </div>
       </div>
+      <div className="border-t border-zinc-200 pt-4 dark:border-white/10">
+        <p className="label-xs mb-1">Authorized Representative <span className="font-normal text-zinc-400">(corporate agreements)</span></p>
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">The person authorized to sign and bind the company on contracts.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className={label}>Representative Name</label>
+            <input name="authorized_rep_name" defaultValue={client?.authorized_rep_name ?? ""} className={input} />
+          </div>
+          <div>
+            <label className={label}>Title / Role</label>
+            <input name="authorized_rep_title" defaultValue={client?.authorized_rep_title ?? ""} className={input} />
+          </div>
+          <div>
+            <label className={label}>Representative Email</label>
+            <input type="email" name="authorized_rep_email" defaultValue={client?.authorized_rep_email ?? ""} className={input} />
+          </div>
+          <div>
+            <label className={label}>Representative Phone</label>
+            <input name="authorized_rep_phone" defaultValue={client?.authorized_rep_phone ?? ""} className={input} />
+          </div>
+        </div>
+      </div>
       <div>
         <label className={label}>Notes</label>
         <textarea name="notes" rows={3} defaultValue={client?.notes ?? ""} className={input} />

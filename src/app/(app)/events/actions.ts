@@ -88,6 +88,9 @@ function eventPayload(formData: FormData) {
     contract_sent_date: clean(formData.get("contract_sent_date")),
     contract_due_date: clean(formData.get("contract_due_date")),
     contract_signed_date: clean(formData.get("contract_signed_date")),
+    decision_maker_name: clean(formData.get("decision_maker_name")),
+    decision_maker_phone: clean(formData.get("decision_maker_phone")),
+    decision_maker_email: clean(formData.get("decision_maker_email")),
     internal_notes: clean(formData.get("internal_notes")),
     hide_financials: ((): boolean | null => {
       const v = clean(formData.get("hide_financials"));

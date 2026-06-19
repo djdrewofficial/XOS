@@ -9,10 +9,10 @@ import { Placeholder } from "@tiptap/extension-placeholder";
 import { useState } from "react";
 
 export const MERGE_TAGS: { group: string; tags: string[] }[] = [
-  { group: "Client", tags: ["<first_name>", "<last_name>", "<client_name>", "<client_email>", "<client_cell>"] },
-  { group: "Event", tags: ["<event_name>", "<event_type>", "<event_date_long>", "<event_date_short>", "<event_date_countdown>", "<venue_name>", "<package_name>", "<start_time>", "<end_time>"] },
+  { group: "Client", tags: ["<first_name>", "<last_name>", "<client_name>", "<client_organization>", "<client_email>", "<client_cell>", "<client_address>", "<authorized_rep_name>", "<authorized_rep_title>", "<authorized_rep_email>", "<authorized_rep_phone>"] },
+  { group: "Event", tags: ["<event_name>", "<event_type>", "<event_date_long>", "<event_date_short>", "<event_date_countdown>", "<venue_name>", "<venue_address>", "<package_name>", "<setup_time>", "<start_time>", "<end_time>", "<guest_count>", "<billing_terms>", "<decision_maker_name>", "<decision_maker_phone>", "<decision_maker_email>"] },
   { group: "Money", tags: ["<total_fee>", "<balance_due>", "<payments_received>", "<deposit_value>", "<retainer_amount>", "<retainer_due_date>", "<overtime_rate>"] },
-  { group: "Company", tags: ["<company_name>", "<company_email_signature>", "<current_date>"] },
+  { group: "Company", tags: ["<company_name>", "<company_email_signature>", "<legal_venue>", "<current_date>"] },
   { group: "Documents", tags: ["<quote_summary>", "<payment_plan>", "<document_sign_link>", "<review_sign_link>", "<review_sign_button>"] },
   { group: "Payments", tags: ["<payment_button>", "<payment_link>"] },
 ];

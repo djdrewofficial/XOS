@@ -43,6 +43,7 @@ type GeneralSettings = {
   inbox_show_counter: boolean;
   default_template_event_id: string | null;
   landing_page: string;
+  legal_venue: string | null;
 };
 
 export default async function GeneralSettingsPage() {
@@ -108,6 +109,20 @@ export default async function GeneralSettingsPage() {
             hint="Off by default — keeps the browser from autofilling saved personal info into CRM forms"
           >
             <CheckBoxField name="browser_autocomplete" label="Enable browser autocomplete on forms" defaultChecked={s.browser_autocomplete} />
+          </Row>
+        </Section>
+
+        <Section title="Legal & Contracts">
+          <Row
+            label="Legal Venue / Jurisdiction"
+            hint="Used by the &lt;legal_venue&gt; merge tag in contracts (governing-law clause). Defaults to Broward County, Florida if left blank."
+          >
+            <input
+              name="legal_venue"
+              defaultValue={s.legal_venue ?? ""}
+              placeholder="Broward County, Florida"
+              className="input w-full max-w-md"
+            />
           </Row>
         </Section>
               </div>

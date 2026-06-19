@@ -22,6 +22,7 @@ export async function saveGeneralSettings(formData: FormData) {
       inbox_show_counter: formData.get("inbox_show_counter") === "on",
       default_template_event_id: clean(formData.get("default_template_event_id")),
       landing_page: clean(formData.get("landing_page")) ?? "/",
+      legal_venue: clean(formData.get("legal_venue")),
       updated_at: new Date().toISOString(),
     })
     .eq("id", true);

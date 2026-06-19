@@ -54,6 +54,10 @@ async function payload(supabase: Awaited<ReturnType<typeof createClient>>, formD
     mailing_address: clean(formData.get("mailing_address")),
     instagram: normalizeHandle(clean(formData.get("instagram"))),
     tiktok: normalizeHandle(clean(formData.get("tiktok"))),
+    authorized_rep_name: clean(formData.get("authorized_rep_name")),
+    authorized_rep_title: clean(formData.get("authorized_rep_title")),
+    authorized_rep_email: clean(formData.get("authorized_rep_email")),
+    authorized_rep_phone: clean(formData.get("authorized_rep_phone")),
     notes: clean(formData.get("notes")),
   };
 }

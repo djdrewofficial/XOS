@@ -195,6 +195,29 @@ export default function EventForm({
 
       <section className="card p-5">
         <h2 className="card-title border-b border-zinc-300 dark:border-white/10 pb-2">
+          Authorized Decision-Maker
+        </h2>
+        <p className="mt-1 mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          On-site contact who can approve changes, overtime, and add-ons for this event (corporate agreements).
+        </p>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <label className={label}>Name</label>
+            <input name="decision_maker_name" defaultValue={event?.decision_maker_name ?? ""} className={input} />
+          </div>
+          <div>
+            <label className={label}>Phone</label>
+            <input name="decision_maker_phone" defaultValue={event?.decision_maker_phone ?? ""} className={input} />
+          </div>
+          <div>
+            <label className={label}>Email</label>
+            <input type="email" name="decision_maker_email" defaultValue={event?.decision_maker_email ?? ""} className={input} />
+          </div>
+        </div>
+      </section>
+
+      <section className="card p-5">
+        <h2 className="card-title border-b border-zinc-300 dark:border-white/10 pb-2">
           Custom Fields
         </h2>
         <div className="grid gap-4 md:grid-cols-2">

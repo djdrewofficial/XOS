@@ -8,6 +8,10 @@ export type ClientInput = {
   organization?: string | null;
   mailing_address?: string | null;
   notes?: string | null;
+  authorized_rep_name?: string | null;
+  authorized_rep_title?: string | null;
+  authorized_rep_email?: string | null;
+  authorized_rep_phone?: string | null;
 };
 
 /* Dedupe clients by email. If a client with the same email already exists
@@ -42,6 +46,10 @@ export async function findOrCreateClient(
   if (input.organization !== undefined) row.organization = input.organization;
   if (input.mailing_address !== undefined) row.mailing_address = input.mailing_address;
   if (input.notes !== undefined) row.notes = input.notes;
+  if (input.authorized_rep_name !== undefined) row.authorized_rep_name = input.authorized_rep_name;
+  if (input.authorized_rep_title !== undefined) row.authorized_rep_title = input.authorized_rep_title;
+  if (input.authorized_rep_email !== undefined) row.authorized_rep_email = input.authorized_rep_email;
+  if (input.authorized_rep_phone !== undefined) row.authorized_rep_phone = input.authorized_rep_phone;
 
   const { data: created, error } = await supabase.from("clients").insert(row).select("id, first_name, last_name").single();
   if (error) throw new Error(error.message);

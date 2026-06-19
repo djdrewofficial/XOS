@@ -22,6 +22,11 @@ export type Client = {
   instagram: string | null;
   tiktok: string | null;
   notes: string | null;
+  // corporate-agreement signer: the person who binds the company
+  authorized_rep_name: string | null;
+  authorized_rep_title: string | null;
+  authorized_rep_email: string | null;
+  authorized_rep_phone: string | null;
   sms_opt_in: boolean;
   created_at: string;
 };
@@ -101,6 +106,10 @@ export type XEvent = {
   contract_sent_date: string | null;
   contract_due_date: string | null;
   contract_signed_date: string | null;
+  // on-site approver for this event's changes / overtime (corporate agreement)
+  decision_maker_name: string | null;
+  decision_maker_phone: string | null;
+  decision_maker_email: string | null;
   custom_fields: Record<string, string>;
   internal_notes: string | null;
   hide_financials?: boolean | null; // null = inherit event-type default
