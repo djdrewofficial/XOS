@@ -12,6 +12,17 @@ export async function GET(request: Request) {
   const error = searchParams.get("error");
 
   const parsed = state ? verifyState(state) : null;
+
+  // Mobile app flow: bounce back into the app via its deep link so
+  // WebBrowser.openAuthSessionAsync resolves and the app refreshes its status.
+  if (parsed?.mobile) {
+    const ret = parsed.ret || "xpressclient://spotify-callback";
+    const sep = ret.includes("?") ? "&" : "?";
+    if (error || !code) return NextResponse.redirect(`${ret}${sep}spotify=error`);
+    const ok = await exchangeAndStore(code, spotifyRedirectUri(origin), parsed.uid);
+    return NextResponse.redirect(`${ret}${sep}spotify=${ok ? "connected" : "error"}`);
+  }
+
   const ret = parsed?.ret || origin;
   const back = parsed?.eventId ? `${ret}/portal/plan/${parsed.eventId}` : `${ret}/portal`;
 

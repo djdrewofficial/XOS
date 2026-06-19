@@ -23,7 +23,7 @@ export function spotifyRedirectUri(origin: string): string {
 }
 
 // ── CSRF-safe state (carries who/where, HMAC-signed) ──
-type StatePayload = { uid: string; eventId: string; section?: string; ret?: string };
+type StatePayload = { uid: string; eventId: string; section?: string; ret?: string; mobile?: boolean };
 const stateKey = () => process.env.CRON_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "xos-spotify";
 
 export function signState(p: StatePayload): string {
