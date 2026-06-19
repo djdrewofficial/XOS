@@ -96,8 +96,16 @@ export default async function EmployeeProfilePage({
             <input name="last_name" defaultValue={emp.last_name} className="input w-full" />
           </div>
           <div>
+            <label className="label-xs">Middle Name</label>
+            <input name="middle_name" defaultValue={emp.middle_name ?? ""} className="input w-full" />
+          </div>
+          <div>
             <label className="label-xs">Stage Name</label>
             <input name="stage_name" defaultValue={emp.stage_name ?? ""} className="input w-full" placeholder="DJ Drew Segura" />
+          </div>
+          <div>
+            <label className="label-xs">Type of Employment</label>
+            <input name="employment_type" defaultValue={emp.employment_type ?? ""} className="input w-full" placeholder="W2 / 1099 / Subcontractor" />
           </div>
           <div>
             <label className="label-xs">Access Level</label>
@@ -233,6 +241,14 @@ export default async function EmployeeProfilePage({
         <div>
           <label className="label-xs">Phone</label>
           <input name="phone" defaultValue={emp.phone ?? ""} className="input w-full" />
+        </div>
+        <div>
+          <label className="label-xs">Website</label>
+          <input name="website" defaultValue={emp.website ?? ""} className="input w-full" placeholder="https://…" />
+        </div>
+        <div>
+          <label className="label-xs">Planning Meeting URL</label>
+          <input name="planning_meeting_url" defaultValue={emp.planning_meeting_url ?? ""} className="input w-full" placeholder="Booking link" />
         </div>
         <label className="col-span-2 flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
           <input type="checkbox" name="can_send_as_self" defaultChecked={emp.can_send_as_self ?? true} className="size-4 accent-brand-light" />

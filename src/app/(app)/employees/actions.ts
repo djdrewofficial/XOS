@@ -66,7 +66,9 @@ export async function updateEmployeeGeneral(id: string, formData: FormData) {
     .update({
       first_name: clean(formData.get("first_name")) ?? "",
       last_name: clean(formData.get("last_name")) ?? "",
+      middle_name: clean(formData.get("middle_name")),
       stage_name: clean(formData.get("stage_name")),
+      employment_type: clean(formData.get("employment_type")),
       permission_tier: clean(formData.get("permission_tier")) ?? "employee",
       staff_category: clean(formData.get("staff_category")) ?? "Production",
       hired_date: clean(formData.get("hired_date")),
@@ -90,6 +92,8 @@ export async function updateEmployeeContact(id: string, formData: FormData) {
     .update({
       email: clean(formData.get("email")),
       phone: clean(formData.get("phone")),
+      website: clean(formData.get("website")),
+      planning_meeting_url: clean(formData.get("planning_meeting_url")),
       address: clean(formData.get("address")),
       emergency_contact: clean(formData.get("emergency_contact")),
       birthday: clean(formData.get("birthday")),
