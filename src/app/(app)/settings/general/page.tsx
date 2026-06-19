@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Section, Row, Note, CheckBoxField, CheckGroup } from "@/components/SettingsForm";
 import SaveButton from "@/components/SaveButton";
+import Tabs from "@/components/Tabs";
 import { saveGeneralSettings } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +77,10 @@ export default async function GeneralSettingsPage() {
     <div className="max-w-5xl">
       <h1 className="page-title mb-5">General</h1>
       <form action={saveGeneralSettings} className="space-y-5">
+        <Tabs
+          tabs={[
+            { id: "general", label: "General", content: (
+              <div className="space-y-5">
         <Section title="Time Zone">
           <Row label="Time Zone" hint="Drives scheduled email send times and date handling">
             <select name="timezone" defaultValue={s.timezone ?? "America/New_York"} className="input w-full max-w-md">
@@ -105,7 +110,10 @@ export default async function GeneralSettingsPage() {
             <CheckBoxField name="browser_autocomplete" label="Enable browser autocomplete on forms" defaultChecked={s.browser_autocomplete} />
           </Row>
         </Section>
-
+              </div>
+            ) },
+            { id: "notifications", label: "Notifications", content: (
+              <div className="space-y-5">
         <Section title="Notifications On Main Nav Bar">
           <Row label="Alert Sound">
             <CheckBoxField name="notif_sound" label="Play Sound for new notifications" defaultChecked={s.notif_sound} />
@@ -121,7 +129,10 @@ export default async function GeneralSettingsPage() {
             <CheckBoxField name="inbox_show_counter" label="Show Message Counter" defaultChecked={s.inbox_show_counter} />
           </Row>
         </Section>
-
+              </div>
+            ) },
+            { id: "defaults", label: "Defaults", content: (
+              <div className="space-y-5">
         <Section title="Event Based Templates">
           <Row
             label="Default Preview Event"
@@ -147,6 +158,10 @@ export default async function GeneralSettingsPage() {
             </select>
           </Row>
         </Section>
+              </div>
+            ) },
+          ]}
+        />
 
         <div className="flex justify-end">
           <SaveButton>Save Settings</SaveButton>
