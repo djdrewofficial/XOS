@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { resolveApiUser } from "@/lib/apiAuth";
+
+export const dynamic = "force-dynamic";
 
 /* Resolve a 30-second preview for a song via Apple's free iTunes Search API
    (no key, covers nearly everything). Used when a provider didn't supply a
@@ -10,11 +12,8 @@ export async function GET(request: Request) {
   const artist = (searchParams.get("artist") ?? "").trim();
   if (!title) return NextResponse.json({ url: null });
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ url: null }, { status: 401 });
+  const { userId } = await resolveApiUser(request);
+  if (!userId) return NextResponse.json({ url: null }, { status: 401 });
 
   // Strip noise that hurts matching ("(Official Video)", "[Remastered]", etc.).
   const clean = (s: string) => s.replace(/\s*[([].*?[)\]]\s*/g, " ").replace(/\s+/g, " ").trim();

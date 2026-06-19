@@ -196,6 +196,7 @@ async function seedFromTemplate(admin: Admin, eventId: string, templateId: strin
         questions_enabled: ts.questions_enabled,
         notes_enabled: ts.notes_enabled,
         time_enabled: ts.time_enabled,
+        ai_picks_enabled: ts.ai_picks_enabled,
         section_cover_url: ts.section_cover_url,
         permissions: ts.permissions,
         module: ts.module,

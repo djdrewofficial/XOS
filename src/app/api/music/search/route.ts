@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { resolveApiUser } from "@/lib/apiAuth";
 import { searchMusic, type MusicProvider } from "@/lib/music";
+
+export const dynamic = "force-dynamic";
 
 /* Music search for the planner's "Add songs" popover. Any signed-in user
    (staff or client/guest) may search; results are normalized across
@@ -13,11 +15,8 @@ export async function GET(request: Request) {
   const q = (searchParams.get("q") ?? "").trim();
   if (q.length < 2) return NextResponse.json({ results: [], providers: {} });
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ results: [], providers: {} }, { status: 401 });
+  const { userId } = await resolveApiUser(request);
+  if (!userId) return NextResponse.json({ results: [], providers: {} }, { status: 401 });
 
   const requested = (searchParams.get("providers") ?? "")
     .split(",")

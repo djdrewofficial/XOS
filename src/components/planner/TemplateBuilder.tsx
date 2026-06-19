@@ -17,6 +17,7 @@ import {
   faUserGroup,
   faHeading,
   faFilter,
+  faWandMagicSparkles,
 } from "@fortawesome/free-solid-svg-icons";
 import {
   DndContext,
@@ -59,6 +60,7 @@ export type BuilderSection = {
   questions_enabled: boolean;
   notes_enabled: boolean;
   time_enabled: boolean;
+  ai_picks_enabled: boolean;
   song_limit: number | null;
   must_play_limit: number | null;
   module: string | null;
@@ -356,6 +358,7 @@ function SectionCard({
               <FeatureToggle icon={faListCheck} label="Questions" on={section.questions_enabled} onChange={(v) => patch({ questions_enabled: v })} />
               <FeatureToggle icon={faNoteSticky} label="Notes" on={section.notes_enabled} onChange={(v) => patch({ notes_enabled: v })} />
               <FeatureToggle icon={faClock} label="Time" on={section.time_enabled} onChange={(v) => patch({ time_enabled: v })} />
+              {section.songs_enabled && <FeatureToggle icon={faWandMagicSparkles} label="For You picks" on={section.ai_picks_enabled} onChange={(v) => patch({ ai_picks_enabled: v })} />}
               <FeatureToggle icon={faUserGroup} label="Guests can answer" on={section.guest_enabled} onChange={(v) => patch({ guest_enabled: v })} amber />
             </div>
           </div>

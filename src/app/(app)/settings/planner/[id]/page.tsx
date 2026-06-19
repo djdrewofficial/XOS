@@ -48,6 +48,7 @@ export default async function TemplateBuilderPage({ params }: { params: Promise<
     questions_enabled: s.questions_enabled,
     notes_enabled: s.notes_enabled,
     time_enabled: s.time_enabled,
+    ai_picks_enabled: s.ai_picks_enabled,
     song_limit: s.song_limit,
     must_play_limit: s.must_play_limit,
     module: s.module ?? null,

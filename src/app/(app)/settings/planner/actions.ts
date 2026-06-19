@@ -84,8 +84,8 @@ export async function duplicateTemplate(id: string) {
         title: s.title, icon: s.icon, section_type: s.section_type, intro: s.intro, time_label: s.time_label,
         client_editable: s.client_editable, guest_enabled: s.guest_enabled, song_limit: s.song_limit,
         must_play_limit: s.must_play_limit, songs_enabled: s.songs_enabled, questions_enabled: s.questions_enabled,
-        notes_enabled: s.notes_enabled, time_enabled: s.time_enabled, section_cover_url: s.section_cover_url,
-        permissions: s.permissions, sort_order: s.sort_order,
+        notes_enabled: s.notes_enabled, time_enabled: s.time_enabled, ai_picks_enabled: s.ai_picks_enabled,
+        section_cover_url: s.section_cover_url, permissions: s.permissions, sort_order: s.sort_order,
       })
       .select("id")
       .single();
@@ -116,6 +116,7 @@ type TSectionPatch = {
   questions_enabled?: boolean;
   notes_enabled?: boolean;
   time_enabled?: boolean;
+  ai_picks_enabled?: boolean;
   song_limit?: number | null;
   must_play_limit?: number | null;
   module?: string | null;
