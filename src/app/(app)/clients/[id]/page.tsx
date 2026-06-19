@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import ClientForm from "@/components/ClientForm";
+import ClientProfileCard from "@/components/ClientProfileCard";
 import LoginAccess from "@/components/LoginAccess";
 import { updateClientRecord, inviteClient, resetClientPassword } from "../actions";
-import { money, eventTotal, type XEvent } from "@/lib/types";
+import { money, eventTotal, type Client, type XEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,16 +29,12 @@ export default async function ClientDetailPage({
   if (!client) notFound();
 
   return (
-    <div className="max-w-4xl">
-      <h1 className="mb-5 text-2xl font-bold">
-        {client.first_name} {client.last_name}
-        {client.organization && (
-          <span className="ml-2 text-base font-normal text-zinc-500">{client.organization}</span>
-        )}
-      </h1>
+    <div className="max-w-4xl space-y-6">
+      <ClientProfileCard client={client as Client} action={updateClientRecord.bind(null, id)} />
 
+      <div>
       <h2 className="card-title">Events</h2>
-      <div className="mb-6 card overflow-hidden">
+      <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="table-head">
             <tr>
@@ -82,27 +78,23 @@ export default async function ClientDetailPage({
           </tbody>
         </table>
       </div>
-
-      <h2 className="card-title">Edit Client</h2>
-      <ClientForm client={client} action={updateClientRecord.bind(null, id)} />
-
-      <div className="mt-6">
-        <LoginAccess
-          subjectId={id}
-          linked={!!account?.auth_user_id}
-          email={client.email ?? null}
-          invite={inviteClient}
-          reset={resetClientPassword}
-          hasLoginLabel="Has a planning-portal login"
-          noLoginLabel="No portal login yet"
-          footer={
-            <>
-              Invites email a secure link to set a password and sign in to the client planning portal
-              (music &amp; timeline).
-            </>
-          }
-        />
       </div>
+
+      <LoginAccess
+        subjectId={id}
+        linked={!!account?.auth_user_id}
+        email={client.email ?? null}
+        invite={inviteClient}
+        reset={resetClientPassword}
+        hasLoginLabel="Has a planning-portal login"
+        noLoginLabel="No portal login yet"
+        footer={
+          <>
+            Invites email a secure link to set a password and sign in to the client planning portal
+            (music &amp; timeline).
+          </>
+        }
+      />
     </div>
   );
 }

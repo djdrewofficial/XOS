@@ -39,6 +39,14 @@ export default function ClientForm({
           <label className={label}>Mailing Address</label>
           <input name="mailing_address" defaultValue={client?.mailing_address ?? ""} className={input} />
         </div>
+        <div>
+          <label className={label}>Instagram</label>
+          <input name="instagram" defaultValue={client?.instagram ?? ""} placeholder="@handle" className={input} />
+        </div>
+        <div>
+          <label className={label}>TikTok</label>
+          <input name="tiktok" defaultValue={client?.tiktok ?? ""} placeholder="@handle" className={input} />
+        </div>
       </div>
       <div>
         <label className={label}>Notes</label>

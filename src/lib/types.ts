@@ -19,6 +19,8 @@ export type Client = {
   cell_phone: string | null;
   email: string | null;
   mailing_address: string | null;
+  instagram: string | null;
+  tiktok: string | null;
   notes: string | null;
   sms_opt_in: boolean;
   created_at: string;

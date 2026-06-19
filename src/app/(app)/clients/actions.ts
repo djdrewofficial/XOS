@@ -52,8 +52,19 @@ async function payload(supabase: Awaited<ReturnType<typeof createClient>>, formD
     cell_phone: cs?.phone_format_enabled === false ? phone : formatPhone(phone),
     email: clean(formData.get("email")),
     mailing_address: clean(formData.get("mailing_address")),
+    instagram: normalizeHandle(clean(formData.get("instagram"))),
+    tiktok: normalizeHandle(clean(formData.get("tiktok"))),
     notes: clean(formData.get("notes")),
   };
+}
+
+/** Store social handles as a bare @handle (strip URLs / leading @). */
+function normalizeHandle(v: string | null): string | null {
+  if (!v) return null;
+  let h = v.trim();
+  h = h.replace(/^https?:\/\/(www\.)?(instagram|tiktok)\.com\//i, "");
+  h = h.replace(/[/?#].*$/, "").replace(/^@+/, "").trim();
+  return h ? `@${h}` : null;
 }
 
 export async function createClientRecord(formData: FormData) {
