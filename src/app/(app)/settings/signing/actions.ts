@@ -25,6 +25,7 @@ export async function saveSigningRequirements(formData: FormData) {
     const tpl = (formData.get(`type_${t.id}_template`) ?? "").toString().trim() || null;
     const layout = (formData.get(`type_${t.id}_layout`) ?? "").toString().trim() || null;
     const chooser = (formData.get(`type_${t.id}_chooser`) ?? "").toString().trim() || null;
+    const hideFinancials = formData.get(`type_${t.id}_hide_financials`) === "on";
     const { error } = await supabase
       .from("event_types")
       .update({
@@ -32,6 +33,7 @@ export async function saveSigningRequirements(formData: FormData) {
         proposal_doc_template_id: tpl,
         proposal_layout: layout,
         payment_chooser: chooser,
+        hide_financials: hideFinancials,
       })
       .eq("id", t.id);
     if (error) throw new Error(error.message);

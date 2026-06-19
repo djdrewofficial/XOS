@@ -165,6 +165,14 @@ export default function EventForm({
             <label className={label}>Discount 2 ($)</label>
             <input type="number" step="0.01" name="discount2_amount" defaultValue={event?.discount2_amount ?? 0} className={input} />
           </div>
+          <div>
+            <label className={label}>Financials in client app</label>
+            <select name="hide_financials" defaultValue={event?.hide_financials === true ? "true" : event?.hide_financials === false ? "false" : ""} className={input}>
+              <option value="">Use event-type default</option>
+              <option value="false">Show to client</option>
+              <option value="true">Hide from client</option>
+            </select>
+          </div>
         </div>
       </section>
 

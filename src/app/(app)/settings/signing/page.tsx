@@ -45,7 +45,7 @@ export default async function EventTypeWorkflowsPage() {
   const [{ data: types }, { data: docTemplates }] = await Promise.all([
     supabase
       .from("event_types")
-      .select("id, name, required_signing_fields, proposal_doc_template_id, proposal_layout, payment_chooser")
+      .select("id, name, required_signing_fields, proposal_doc_template_id, proposal_layout, payment_chooser, hide_financials")
       .eq("is_active", true)
       .order("name"),
     supabase.from("document_templates").select("id, name").eq("is_active", true).order("name"),
@@ -124,6 +124,11 @@ export default async function EventTypeWorkflowsPage() {
                     </label>
                   </div>
                   <div>
+                    <CheckBoxField
+                      name={`type_${t.id}_hide_financials`}
+                      label="Hide financials from client app"
+                      defaultChecked={!!t.hide_financials}
+                    />
                     <CheckBoxField
                       name={`type_${t.id}_override`}
                       label="Override required fields"

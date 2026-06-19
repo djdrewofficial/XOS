@@ -89,6 +89,10 @@ function eventPayload(formData: FormData) {
     contract_due_date: clean(formData.get("contract_due_date")),
     contract_signed_date: clean(formData.get("contract_signed_date")),
     internal_notes: clean(formData.get("internal_notes")),
+    hide_financials: ((): boolean | null => {
+      const v = clean(formData.get("hide_financials"));
+      return v === "true" ? true : v === "false" ? false : null;
+    })(),
     custom_fields: {
       gdrive_timeline: clean(formData.get("cf_gdrive_timeline")) ?? "",
       gdrive_folder: clean(formData.get("cf_gdrive_folder")) ?? "",
