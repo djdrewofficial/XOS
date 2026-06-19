@@ -9,6 +9,26 @@ import {
 } from "@/lib/permissions";
 
 export async function middleware(request: NextRequest) {
+  // Origin lock: force all human/staff traffic through Cloudflare's WAF. A
+  // Cloudflare Transform Rule stamps a secret header on every proxied request;
+  // direct hits to the raw *.netlify.app origin lack it and are refused, so an
+  // attacker can't reach the app around the firewall. Fails OPEN when the secret
+  // isn't set (inert until configured) and skips machine endpoints (webhooks /
+  // cron / mobile) that self-authenticate and may be invoked off-Cloudflare.
+  const originSecret = process.env.ORIGIN_VERIFY_SECRET;
+  if (originSecret) {
+    const p = request.nextUrl.pathname;
+    const machineEndpoint =
+      p.startsWith("/api/vibo/") || p.startsWith("/api/spotify/") ||
+      p.startsWith("/api/mailgun/") || p.startsWith("/api/highlevel/") ||
+      p.startsWith("/api/paypal/") || p.startsWith("/api/pay/") ||
+      p.startsWith("/api/places") || p.startsWith("/api/mobile/") ||
+      p.startsWith("/api/music/") || p.startsWith("/api/cron/");
+    if (!machineEndpoint && request.headers.get("x-origin-verify") !== originSecret) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
