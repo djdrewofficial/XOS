@@ -1,0 +1,16 @@
+# Automated dependency-update PRs + security alerts for the XOS app.
+# GitHub also needs "Dependabot alerts" + "Dependabot security updates" turned on
+# under Settings → Code security (free) — this file drives the weekly version PRs.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # batch low-risk minor/patch bumps into one PR to cut noise
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    labels:
+      - "dependencies"
