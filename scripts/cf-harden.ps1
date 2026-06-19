@@ -20,6 +20,14 @@ if (-not $Token) {
 $api = "https://api.cloudflare.com/client/v4"
 $headers = @{ Authorization = "Bearer $Token" }
 
+function Get-CFError($err) {
+  if ($err.ErrorDetails -and $err.ErrorDetails.Message) { return $err.ErrorDetails.Message }
+  try {
+    $s = New-Object System.IO.StreamReader($err.Exception.Response.GetResponseStream())
+    return $s.ReadToEnd()
+  } catch { return $err.Exception.Message }
+}
+
 function Set-CFSetting($name, $value) {
   $body = @{ value = $value } | ConvertTo-Json
   try {
@@ -42,8 +50,8 @@ Set-CFSetting "browser_check" "on"
 Set-CFSetting "security_level" "medium"
 
 Write-Host "== 2. Deploy managed WAF rulesets (Pro) =="
+# Entrypoint update takes only { rules: [...] } — no top-level name.
 $body = @{
-  name  = "XOS managed WAF"
   rules = @(
     @{ action="execute"; expression="true"; description="Cloudflare Managed Ruleset";
        action_parameters=@{ id="efb7b8c949ac4650a09736fc376e9aee" } },
@@ -58,8 +66,7 @@ try {
   if ($r.success) { Write-Host "  OK  Managed + OWASP rulesets deployed" -ForegroundColor Green }
   else { Write-Host "  ERR $($r.errors.message)" -ForegroundColor Red }
 } catch {
-  $msg = if ($_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
-  Write-Host "  ERR managed rulesets -> $msg" -ForegroundColor Red
+  Write-Host "  ERR managed rulesets -> $(Get-CFError $_)" -ForegroundColor Red
 }
 
 Write-Host ""
