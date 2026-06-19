@@ -25,6 +25,7 @@ type ReqBody = {
   section?: string;
   limit?: number;
   style?: string;
+  exclude?: string[];
   context?: ReqContext;
 };
 type Suggestion = { title: string; artist: string; reason?: string };
@@ -80,12 +81,16 @@ export async function POST(req: Request) {
     'Respond with ONLY a JSON object, no markdown: {"songs":[{"title","artist","reason"}]}. ' +
     "`reason` is at most 12 words explaining why it fits THIS couple. Use real, existing songs and correct artist names.";
 
+  const exclude = (body.exclude ?? []).filter((e) => typeof e === "string" && e.trim()).slice(0, 200);
   const user =
     `Moment: ${section}\n` +
     `Number of songs: ${limit}\n\n` +
     (facts.length
       ? `What we know about the couple:\n${facts.join("\n")}`
-      : "We don't have details about the couple yet — pick broadly-loved songs for this moment.");
+      : "We don't have details about the couple yet — pick broadly-loved songs for this moment.") +
+    (exclude.length
+      ? `\n\nDo NOT suggest any of these — they're already chosen or were already shown:\n${exclude.join("; ")}`
+      : "");
 
   let suggestions: Suggestion[];
   try {
