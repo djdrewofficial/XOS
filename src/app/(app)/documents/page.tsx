@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import SaveButton from "@/components/SaveButton";
+import Tabs from "@/components/Tabs";
 import { DOC_TYPES } from "@/lib/documentBlocks";
 import { createTemplate, duplicateTemplate, deleteTemplate, generateDocument } from "./actions";
 
@@ -45,12 +46,7 @@ export default async function DocumentsPage() {
     );
   }
 
-  return (
-    <div className="max-w-6xl">
-      <h1 className="page-title mb-5">Documents</h1>
-
-      <div className="mb-8 grid gap-5 lg:grid-cols-2">
-        {/* ---------- templates ---------- */}
+  const templatesTab = (
         <div>
           <h2 className="card-title">Templates</h2>
           <div className="card overflow-hidden">
@@ -92,8 +88,10 @@ export default async function DocumentsPage() {
             <SaveButton className="btn-primary px-5 py-2 text-xs" savedLabel="Added">+ Create Template</SaveButton>
           </form>
         </div>
+  );
 
-        {/* ---------- generate ---------- */}
+  const generateTab = (
+      <div className="space-y-6">
         <div>
           <h2 className="card-title">Generate A Document</h2>
           <form action={generateDocument} className="card space-y-3 p-4">
@@ -127,11 +125,10 @@ export default async function DocumentsPage() {
             <SaveButton savedLabel="Done">Generate Document</SaveButton>
           </form>
         </div>
-      </div>
 
-      {/* ---------- generated documents ---------- */}
-      <h2 className="card-title">Generated Documents</h2>
-      <div className="card overflow-hidden">
+        <div>
+        <h2 className="card-title">Generated Documents</h2>
+        <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="table-head">
             <tr>
@@ -174,7 +171,20 @@ export default async function DocumentsPage() {
             )}
           </tbody>
         </table>
+        </div>
+        </div>
       </div>
+  );
+
+  return (
+    <div className="max-w-6xl">
+      <h1 className="page-title mb-5">Documents</h1>
+      <Tabs
+        tabs={[
+          { id: "templates", label: "Templates", badge: (templates ?? []).length || undefined, content: templatesTab },
+          { id: "generate", label: "Generate & History", badge: (docs ?? []).length || undefined, content: generateTab },
+        ]}
+      />
     </div>
   );
 }
