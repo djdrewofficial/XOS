@@ -55,6 +55,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/pay/") ||
     pathname.startsWith("/api/places") ||
     pathname.startsWith("/api/mobile/") ||
+    pathname.startsWith("/api/music/") ||
     pathname.startsWith("/api/cron/");
   if (isPublic) return response;
 
