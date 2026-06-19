@@ -66,6 +66,7 @@ export async function deleteVenues(
 const MERGE_FIELDS = new Set([
   "name", "address", "city", "state", "zip", "category_id", "travel_fee", "setup_fee",
   "distance_miles", "driving_notes", "load_in_details", "notes", "is_one_time", "auto_mileage",
+  "contact_name", "phone", "email", "website",
 ]);
 
 /** Merge loser venues into a survivor: reassign every reference (events,
@@ -131,6 +132,10 @@ export async function updateVenue(id: string, formData: FormData) {
       city: clean(formData.get("city")),
       state: clean(formData.get("state")),
       category_id: clean(formData.get("category_id")),
+      contact_name: clean(formData.get("contact_name")),
+      phone: clean(formData.get("phone")),
+      email: clean(formData.get("email")),
+      website: clean(formData.get("website")),
       travel_fee: num(formData.get("travel_fee")),
       setup_fee: num(formData.get("setup_fee")),
       distance_miles: formData.get("distance_miles") ? num(formData.get("distance_miles")) : null,
@@ -189,6 +194,10 @@ export async function createVenue(formData: FormData) {
       city: clean(formData.get("city")),
       state: clean(formData.get("state")),
       category_id: clean(formData.get("category_id")),
+      contact_name: clean(formData.get("contact_name")),
+      phone: clean(formData.get("phone")),
+      email: clean(formData.get("email")),
+      website: clean(formData.get("website")),
       travel_fee: num(formData.get("travel_fee")),
       setup_fee: num(formData.get("setup_fee")),
       load_in_details: clean(formData.get("load_in_details")),

@@ -11,6 +11,10 @@ type Venue = {
   city: string | null;
   state: string | null;
   zip: string | null;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
   category_id: string | null;
   travel_fee: number;
   setup_fee: number;
@@ -37,6 +41,10 @@ const MERGE_FIELDS: { key: keyof Venue; label: string; kind: "text" | "money" | 
   { key: "city", label: "City", kind: "text" },
   { key: "state", label: "State", kind: "text" },
   { key: "zip", label: "Zip", kind: "text" },
+  { key: "contact_name", label: "Contact Name", kind: "text" },
+  { key: "phone", label: "Phone", kind: "text" },
+  { key: "email", label: "Email", kind: "text" },
+  { key: "website", label: "Website", kind: "text" },
   { key: "category_id", label: "Category", kind: "category" },
   { key: "travel_fee", label: "Travel Fee", kind: "money" },
   { key: "setup_fee", label: "Setup Fee", kind: "money" },
@@ -88,7 +96,7 @@ export default function VenuesDirectory({
       if (!showOneTime && v.is_one_time) return false;
       if (categoryFilter && v.category_id !== categoryFilter) return false;
       if (!q) return true;
-      const hay = [v.name, v.address, v.city, v.state, v.category_id ? catName.get(v.category_id) : "", v.notes]
+      const hay = [v.name, v.address, v.city, v.state, v.contact_name, v.phone, v.email, v.category_id ? catName.get(v.category_id) : "", v.notes]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -452,6 +460,22 @@ function AddVenueModal({
           <div>
             <label className="label-xs">State</label>
             <input name="state" defaultValue="FL" className="input w-full" />
+          </div>
+          <div className="col-span-2">
+            <label className="label-xs">Contact Name</label>
+            <input name="contact_name" className="input w-full" placeholder="Main venue contact" />
+          </div>
+          <div>
+            <label className="label-xs">Phone</label>
+            <input name="phone" className="input w-full" />
+          </div>
+          <div>
+            <label className="label-xs">Email</label>
+            <input type="email" name="email" className="input w-full" />
+          </div>
+          <div className="col-span-2">
+            <label className="label-xs">Website</label>
+            <input name="website" className="input w-full" placeholder="https://…" />
           </div>
           <div>
             <label className="label-xs">Travel Fee ($)</label>

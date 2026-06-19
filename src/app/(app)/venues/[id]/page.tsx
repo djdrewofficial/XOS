@@ -43,6 +43,18 @@ export default async function VenueDetailPage({
             {[venue.address, venue.city, venue.state].filter(Boolean).join(", ") || "no address"}
             {venue.is_one_time && <span className="ml-2 rounded bg-black/[0.07] dark:bg-white/10 px-1.5 py-0.5 text-[10px] uppercase">one-time</span>}
           </p>
+          {(venue.contact_name || venue.phone || venue.email || venue.website) && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
+              {venue.contact_name && <span className="font-medium text-zinc-600 dark:text-zinc-400">{venue.contact_name}</span>}
+              {venue.phone && <a href={`tel:${venue.phone}`} className="text-brand dark:text-brand-lighter hover:underline">{venue.phone}</a>}
+              {venue.email && <a href={`mailto:${venue.email}`} className="text-brand dark:text-brand-lighter hover:underline">{venue.email}</a>}
+              {venue.website && (
+                <a href={venue.website.startsWith("http") ? venue.website : `https://${venue.website}`} target="_blank" className="text-brand dark:text-brand-lighter hover:underline">
+                  Website ↗
+                </a>
+              )}
+            </p>
+          )}
         </div>
         <div className="flex gap-2 text-sm">
           <span className="rounded-lg border border-zinc-300 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-3 py-1.5">
@@ -85,6 +97,22 @@ export default async function VenueDetailPage({
             <div>
               <label className="label-xs">State</label>
               <input name="state" defaultValue={venue.state ?? ""} className="input w-full" />
+            </div>
+            <div className="col-span-2">
+              <label className="label-xs">Contact Name</label>
+              <input name="contact_name" defaultValue={venue.contact_name ?? ""} className="input w-full" placeholder="Main venue contact" />
+            </div>
+            <div>
+              <label className="label-xs">Phone</label>
+              <input name="phone" defaultValue={venue.phone ?? ""} className="input w-full" />
+            </div>
+            <div>
+              <label className="label-xs">Email</label>
+              <input type="email" name="email" defaultValue={venue.email ?? ""} className="input w-full" />
+            </div>
+            <div className="col-span-2">
+              <label className="label-xs">Website</label>
+              <input name="website" defaultValue={venue.website ?? ""} className="input w-full" placeholder="https://…" />
             </div>
             <div>
               <label className="label-xs">Travel Fee ($)</label>

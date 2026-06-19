@@ -37,6 +37,10 @@ export type Venue = {
   address: string | null;
   city: string | null;
   state: string | null;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
   travel_fee: number;
   setup_fee: number;
   load_in_details: string | null;
