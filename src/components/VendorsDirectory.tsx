@@ -20,10 +20,9 @@ type Vendor = {
 type Category = { id: string; name: string; is_active: boolean };
 
 const COLLAB_LABEL: Record<string, string> = {
-  collab: "Invite to Collab",
-  tag: "Just Tag",
-  either: "Either",
-  none: "No Tag or Collab",
+  collab: "Collab",
+  tag: "Tag",
+  none: "No Tag / No Collab",
 };
 
 export default function VendorsDirectory({
@@ -208,13 +207,12 @@ export default function VendorsDirectory({
                 <input name="youtube" className="input w-full" placeholder="@channel or URL" />
               </div>
               <div className="col-span-2">
-                <label className="label-xs">When We Post About Shared Events</label>
+                <label className="label-xs">Social Tagging</label>
                 <select name="social_collab" className="input w-full">
                   <option value="">—</option>
-                  <option value="collab">Invite to Collab</option>
-                  <option value="tag">Just Tag</option>
-                  <option value="either">Either</option>
-                  <option value="none">No Tag or Collab</option>
+                  <option value="tag">Tag</option>
+                  <option value="collab">Collab</option>
+                  <option value="none">No Tag / No Collab</option>
                 </select>
               </div>
               <div className="col-span-2">

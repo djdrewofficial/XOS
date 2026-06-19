@@ -45,19 +45,35 @@ const CAT = {
   "DJ / Entertainment Company": "6d55b975-3b8a-4e98-a7c0-5ebc7f47db52", // Other
 };
 function collab(v) {
+  // tagging field — three states; "TBD"/blank stays undecided (null)
   if (/Yes - Invite to collab/i.test(v)) return "collab";
   if (/Tag Only/i.test(v)) return "tag";
   if (/NO Tag \/ NO Collab/i.test(v)) return "none";
-  return null; // "TBD" / blank
+  return null;
 }
 function normHandle(v) {
   if (!v) return null;
   let h = v.trim();
-  h = h.replace(/^https?:\/\/(www\.)?(instagram|tiktok)\.com\//i, "");
-  h = h.replace(/[/?#].*$/, "").replace(/^@+/, "").trim();
+  h = h.replace(/^https?:\/\//i, "");                       // drop protocol
+  h = h.replace(/^(www\.)?(instagram|tiktok)\.com\//i, ""); // drop domain (with or without protocol)
+  h = h.replace(/[/?#].*$/, "").replace(/^@+/, "").trim();  // drop path/query, leading @
   return h ? `@${h}` : null;
 }
-const isEmail = (v) => /@/.test(v) && !/\s/.test(v) && /\.[a-z]{2,}/i.test(v);
+function normWebsite(v) {
+  if (!v) return null;
+  let w = v.trim();
+  if (!w) return null;
+  if (!/^https?:\/\//i.test(w)) w = "https://" + w.replace(/^\/+/, "");
+  return w;
+}
+// "12/30/2021" -> "2021-12-30" (the original date the contact was added in DJEP)
+function isoDate(v) {
+  const m = (v || "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const [, mo, d, y] = m;
+  return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+}
+const isEmail = (v) => /@/.test(v) && !/\s/.test(v) && /\.[a-z]{2,}/i.test(v) && !/instagram\.com/i.test(v);
 const isUrlish = (v) => /\.[a-z]{2,}/i.test(v) && !/@/.test(v);
 
 // ---- build vendor groups keyed by normalized company name ----
@@ -75,14 +91,27 @@ for (const r of rows) {
 
   const emailRaw = col(r, "Email Address");
   const igRaw = col(r, "Instagram");
+  let instagram = igRaw || null;
   let website = col(r, "Website URL") || null;
-  // some rows stash a URL in the email or instagram field — recover it as website
-  if (!website && isUrlish(emailRaw)) website = emailRaw;
-  if (!website && isUrlish(igRaw)) website = igRaw;
+  let email = null;
 
-  const email = isEmail(emailRaw) ? emailRaw : null;
+  // recover data from fields where DJEP stashed the wrong thing:
+  //  - a real email stays an email
+  //  - an instagram URL in the email/ig slot becomes the instagram handle
+  //  - any other URL becomes the website
+  if (isEmail(emailRaw)) email = emailRaw;
+  else if (/instagram\.com/i.test(emailRaw)) instagram = instagram || emailRaw;
+  else if (isUrlish(emailRaw) && !website) website = emailRaw;
+  if (instagram && /^https?:\/\//i.test(instagram) && !/instagram\.com/i.test(instagram)) {
+    if (!website) website = instagram; // a non-IG URL parked in the IG column
+    instagram = null;
+  }
+  instagram = normHandle(instagram);
+  website = normWebsite(website);
+
   const phone = col(r, "Business Phone") || col(r, "Mobile Phone") || col(r, "Home Phone") || null;
   const role = col(r, "Job Title") || null;
+  const added = isoDate(col(r, "Date Added"));
 
   let g = groups.get(key);
   if (!g) {
@@ -90,19 +119,21 @@ for (const r of rows) {
       company_name: companyName,
       category_id: CAT[col(r, "Categories")] ?? null,
       website: website,
-      instagram: normHandle(igRaw),
+      instagram: instagram,
       tiktok: normHandle(col(r, "TikTok")),
       social_collab: collab(col(r, "Invite This Vendor to Collab?")),
+      created_at: added,
       contacts: [],
     };
     groups.set(key, g);
   } else {
-    // fill blanks on the shared vendor from later rows
+    // fill blanks on the shared vendor from later rows; keep earliest add date
     g.category_id ??= CAT[col(r, "Categories")] ?? null;
     g.website ??= website;
-    g.instagram ??= normHandle(igRaw);
+    g.instagram ??= instagram;
     g.tiktok ??= normHandle(col(r, "TikTok"));
     g.social_collab ??= collab(col(r, "Invite This Vendor to Collab?"));
+    if (added && (!g.created_at || added < g.created_at)) g.created_at = added;
   }
   // a contact carries the phone/email (the vendor row has neither)
   const name = person || companyName;
@@ -121,6 +152,9 @@ out.push("-- Grouped by company: one vendors row per company, one vendor_contact
 out.push("-- person. Idempotent — skips a vendor that already exists (by name) and only");
 out.push("-- adds contacts not already present, so it is safe to re-run.");
 out.push("");
+out.push("-- retire the deprecated 'either' tagging value (UI is now tag/collab/none)");
+out.push("update vendors set social_collab = null where social_collab = 'either';");
+out.push("");
 
 let nVendors = 0, nContacts = 0;
 for (const g of groups.values()) {
@@ -128,8 +162,8 @@ for (const g of groups.values()) {
   nContacts += g.contacts.length;
   out.push(`-- ${g.company_name}`);
   out.push("with v as (");
-  out.push("  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)");
-  out.push(`  select ${q(g.company_name)}, ${g.category_id ? q(g.category_id) + "::uuid" : "null"}, false, ${q(g.website)}, ${q(g.instagram)}, ${q(g.tiktok)}, ${q(g.social_collab)}`);
+  out.push("  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)");
+  out.push(`  select ${q(g.company_name)}, ${g.category_id ? q(g.category_id) + "::uuid" : "null"}, false, ${q(g.website)}, ${q(g.instagram)}, ${q(g.tiktok)}, ${q(g.social_collab)}, ${g.created_at ? q(g.created_at) + "::timestamptz" : "now()"}`);
   out.push(`  where not exists (select 1 from vendors where lower(company_name) = lower(${q(g.company_name)}))`);
   out.push("  returning id");
   out.push("), vid as (");

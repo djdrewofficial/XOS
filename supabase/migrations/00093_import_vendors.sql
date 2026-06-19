@@ -3,10 +3,13 @@
 -- person. Idempotent — skips a vendor that already exists (by name) and only
 -- adds contacts not already present, so it is safe to re-run.
 
+-- retire the deprecated 'either' tagging value (UI is now tag/collab/none)
+update vendors set social_collab = null where social_collab = 'either';
+
 -- 7th Creations
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select '7th Creations', '6d55b975-3b8a-4e98-a7c0-5ebc7f47db52'::uuid, false, '7thcreations.com', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select '7th Creations', '6d55b975-3b8a-4e98-a7c0-5ebc7f47db52'::uuid, false, 'https://7thcreations.com', null, null, null, '2021-12-30'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('7th Creations'))
   returning id
 ), vid as (
@@ -27,8 +30,8 @@ where not exists (
 
 -- Uplight Miami
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Uplight Miami', '752a1d1b-a92b-4ec9-86dd-8a842f8833b9'::uuid, false, 'uplightmiami.com', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Uplight Miami', '752a1d1b-a92b-4ec9-86dd-8a842f8833b9'::uuid, false, 'https://uplightmiami.com', null, null, null, '2022-01-12'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Uplight Miami'))
   returning id
 ), vid as (
@@ -49,8 +52,8 @@ where not exists (
 
 -- Naqeeb Shoots
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Naqeeb Shoots', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Naqeeb Shoots', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, null, '2025-04-12'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Naqeeb Shoots'))
   returning id
 ), vid as (
@@ -71,8 +74,8 @@ where not exists (
 
 -- Golden Events by Annie Perez
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Golden Events by Annie Perez', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Golden Events by Annie Perez', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2025-07-07'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Golden Events by Annie Perez'))
   returning id
 ), vid as (
@@ -93,8 +96,8 @@ where not exists (
 
 -- Floraland Media
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Floraland Media', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'http://floralandnewyork.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Floraland Media', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'http://floralandnewyork.com/', null, null, null, '2025-07-07'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Floraland Media'))
   returning id
 ), vid as (
@@ -115,8 +118,8 @@ where not exists (
 
 -- Out of Box Weddings
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Out of Box Weddings', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://outofboxwedding.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Out of Box Weddings', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://outofboxwedding.com/', null, null, null, '2025-07-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Out of Box Weddings'))
   returning id
 ), vid as (
@@ -137,8 +140,8 @@ where not exists (
 
 -- Christy Clark Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Christy Clark Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.christyclarkphotos.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Christy Clark Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.christyclarkphotos.com/', null, null, null, '2025-07-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Christy Clark Photography'))
   returning id
 ), vid as (
@@ -159,8 +162,8 @@ where not exists (
 
 -- Everlasting Edits
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Everlasting Edits', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Everlasting Edits', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, null, '2025-07-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Everlasting Edits'))
   returning id
 ), vid as (
@@ -181,8 +184,8 @@ where not exists (
 
 -- Rosche Event Buro
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Rosche Event Buro', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://roscheeventburo.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Rosche Event Buro', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://roscheeventburo.com/', null, null, null, '2025-07-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Rosche Event Buro'))
   returning id
 ), vid as (
@@ -203,8 +206,8 @@ where not exists (
 
 -- Sebastiani Studios
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Sebastiani Studios', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Sebastiani Studios', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, null, '2025-07-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Sebastiani Studios'))
   returning id
 ), vid as (
@@ -225,8 +228,8 @@ where not exists (
 
 -- Experience Love Events
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Experience Love Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Experience Love Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2025-07-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Experience Love Events'))
   returning id
 ), vid as (
@@ -247,8 +250,8 @@ where not exists (
 
 -- Shots by Xyan
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Shots by Xyan', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.shotsbyxyan.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Shots by Xyan', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.shotsbyxyan.com/', null, null, null, '2025-07-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Shots by Xyan'))
   returning id
 ), vid as (
@@ -269,8 +272,8 @@ where not exists (
 
 -- Amarena Productions
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Amarena Productions', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'amarenaproductions.com', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Amarena Productions', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://amarenaproductions.com', null, null, null, '2025-07-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Amarena Productions'))
   returning id
 ), vid as (
@@ -291,8 +294,8 @@ where not exists (
 
 -- A Christy Event
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'A Christy Event', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.achristyevent.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'A Christy Event', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.achristyevent.com/', '@achristyevent', null, null, '2025-09-11'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('A Christy Event'))
   returning id
 ), vid as (
@@ -313,8 +316,8 @@ where not exists (
 
 -- Molmar Events
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Molmar Events', '80478e1c-6012-4398-ae7b-4e50c369efb1'::uuid, false, 'molmargroup.com', '@instagram.com', null, 'collab'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Molmar Events', '80478e1c-6012-4398-ae7b-4e50c369efb1'::uuid, false, 'https://molmargroup.com', '@molmarevents', null, 'collab', '2025-09-11'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Molmar Events'))
   returning id
 ), vid as (
@@ -335,8 +338,8 @@ where not exists (
 
 -- Bells & Whistles
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Bells & Whistles', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'bellswhistlesphoto.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Bells & Whistles', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://bellswhistlesphoto.com/', '@bellswhistlesphoto', null, null, '2025-09-12'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Bells & Whistles'))
   returning id
 ), vid as (
@@ -357,8 +360,8 @@ where not exists (
 
 -- The Palms Hotel
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'The Palms Hotel', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'thepalmshotel.com', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'The Palms Hotel', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'https://thepalmshotel.com', null, null, null, '2025-09-12'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('The Palms Hotel'))
   returning id
 ), vid as (
@@ -379,8 +382,8 @@ where not exists (
 
 -- Weddings By Danny
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Weddings By Danny', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, 'https://www.weddingsbydanny.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Weddings By Danny', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, 'https://www.weddingsbydanny.com/', '@weddingsbydanny', null, 'tag', '2025-09-12'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Weddings By Danny'))
   returning id
 ), vid as (
@@ -401,8 +404,8 @@ where not exists (
 
 -- Dream a Little Dream Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Dream a Little Dream Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Dream a Little Dream Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, null, '2025-09-12'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Dream a Little Dream Photography'))
   returning id
 ), vid as (
@@ -423,8 +426,8 @@ where not exists (
 
 -- iRock Your Party
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'iRock Your Party', '6d55b975-3b8a-4e98-a7c0-5ebc7f47db52'::uuid, false, 'irockyourparty.com', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'iRock Your Party', '6d55b975-3b8a-4e98-a7c0-5ebc7f47db52'::uuid, false, 'https://irockyourparty.com', '@irockyourparty', null, null, '2025-09-13'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('iRock Your Party'))
   returning id
 ), vid as (
@@ -445,8 +448,8 @@ where not exists (
 
 -- Ledd Lens Photo and Film
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Ledd Lens Photo and Film', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://leddlens.com/', '@leddlens', null, 'collab'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Ledd Lens Photo and Film', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://leddlens.com/', '@leddlens', null, 'collab', '2025-09-24'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Ledd Lens Photo and Film'))
   returning id
 ), vid as (
@@ -467,8 +470,8 @@ where not exists (
 
 -- Passionate Edge
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Passionate Edge', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'passionate-edge.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Passionate Edge', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://passionate-edge.com/', '@passionateedgellc', null, 'tag', '2025-09-24'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Passionate Edge'))
   returning id
 ), vid as (
@@ -489,8 +492,8 @@ where not exists (
 
 -- Flavio Wedding Photography Studios
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Flavio Wedding Photography Studios', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'flaviophotographystudios.com', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Flavio Wedding Photography Studios', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://flaviophotographystudios.com', '@flaviostudios', null, null, '2025-09-24'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Flavio Wedding Photography Studios'))
   returning id
 ), vid as (
@@ -511,8 +514,8 @@ where not exists (
 
 -- CoFilmer
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'CoFilmer', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'cofilmer.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'CoFilmer', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://cofilmer.com/', '@cofilmer_us', null, null, '2025-09-24'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('CoFilmer'))
   returning id
 ), vid as (
@@ -533,8 +536,8 @@ where not exists (
 
 -- jupiter wedding photo
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'jupiter wedding photo', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.instagram.com/jupiterweddingphoto', '@jupiterweddingphoto', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'jupiter wedding photo', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, '@jupiterweddingphoto', null, null, '2025-10-23'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('jupiter wedding photo'))
   returning id
 ), vid as (
@@ -555,8 +558,8 @@ where not exists (
 
 -- GM Productions
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'GM Productions', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.gmproductions.tv/', '@gmproductions.tv', '@gmproductions.tv', 'collab'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'GM Productions', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.gmproductions.tv/', '@gmproductions.tv', '@gmproductions.tv', 'collab', '2025-10-23'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('GM Productions'))
   returning id
 ), vid as (
@@ -577,8 +580,8 @@ where not exists (
 
 -- Love and Heirloom Films
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Love and Heirloom Films', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'instagram.com/loveandheirloomfilms', '@instagram.com', null, 'collab'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Love and Heirloom Films', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, '@loveandheirloomfilms', null, 'collab', '2025-10-23'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Love and Heirloom Films'))
   returning id
 ), vid as (
@@ -599,8 +602,8 @@ where not exists (
 
 -- Sylvia Rose Photo
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Sylvia Rose Photo', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://sylviarosephoto.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Sylvia Rose Photo', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://sylviarosephoto.com/', '@sylviarosephoto', null, 'tag', '2025-10-23'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Sylvia Rose Photo'))
   returning id
 ), vid as (
@@ -621,8 +624,8 @@ where not exists (
 
 -- Villa Toscana Miami
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Villa Toscana Miami', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Villa Toscana Miami', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2025-12-02'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Villa Toscana Miami'))
   returning id
 ), vid as (
@@ -643,8 +646,8 @@ where not exists (
 
 -- Simply Captivating
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Simply Captivating', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://simplycaptivating.com', '@simplycaptivating', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Simply Captivating', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://simplycaptivating.com', '@simplycaptivating', null, null, '2026-01-06'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Simply Captivating'))
   returning id
 ), vid as (
@@ -665,8 +668,8 @@ where not exists (
 
 -- Quality Media Photo & Video
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Quality Media Photo & Video', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'qualitymediafl.com', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Quality Media Photo & Video', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://qualitymediafl.com', '@that_misha_guy', null, 'tag', '2026-01-06'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Quality Media Photo & Video'))
   returning id
 ), vid as (
@@ -687,8 +690,8 @@ where not exists (
 
 -- Yes to Wed - Planning Agency
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Yes to Wed - Planning Agency', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.yestowed.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Yes to Wed - Planning Agency', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.yestowed.com/', '@yestowed', null, 'tag', '2026-01-28'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Yes to Wed - Planning Agency'))
   returning id
 ), vid as (
@@ -709,8 +712,8 @@ where not exists (
 
 -- Sabrina Michelle Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Sabrina Michelle Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'http://sabrinamichellephotography.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Sabrina Michelle Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'http://sabrinamichellephotography.com/', '@sabrinamichellephotos', null, 'tag', '2026-01-28'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Sabrina Michelle Photography'))
   returning id
 ), vid as (
@@ -731,8 +734,8 @@ where not exists (
 
 -- Sush Digital Media
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Sush Digital Media', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://sushdigitalmedia.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Sush Digital Media', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://sushdigitalmedia.com/', '@sushdigitalmedia', null, null, '2026-01-28'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Sush Digital Media'))
   returning id
 ), vid as (
@@ -753,8 +756,8 @@ where not exists (
 
 -- Events by BBG
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Events by BBG', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.eventsbybbg.com/', '@Instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Events by BBG', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.eventsbybbg.com/', '@eventsbybbg', null, null, '2026-01-28'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Events by BBG'))
   returning id
 ), vid as (
@@ -775,8 +778,8 @@ where not exists (
 
 -- GC Media Miami
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'GC Media Miami', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.gcmediamiami.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'GC Media Miami', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.gcmediamiami.com/', '@gcmediamiami', null, null, '2026-01-28'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('GC Media Miami'))
   returning id
 ), vid as (
@@ -797,8 +800,8 @@ where not exists (
 
 -- Villa Toscana
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Villa Toscana', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Villa Toscana', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2026-01-28'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Villa Toscana'))
   returning id
 ), vid as (
@@ -823,8 +826,8 @@ where not exists (
 
 -- Love Story Collective
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Love Story Collective', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.lovestorycollective.co/', '@lovestorycollectiveco', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Love Story Collective', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.lovestorycollective.co/', '@lovestorycollectiveco', null, null, '2026-01-28'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Love Story Collective'))
   returning id
 ), vid as (
@@ -845,8 +848,8 @@ where not exists (
 
 -- My Personal Cantor & Rabbi Debbi Ballard, Jewish Interfaith Officiant, Weddings, Bar Mitzvahs
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'My Personal Cantor & Rabbi Debbi Ballard, Jewish Interfaith Officiant, Weddings, Bar Mitzvahs', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, 'https://mypersonalcantor.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'My Personal Cantor & Rabbi Debbi Ballard, Jewish Interfaith Officiant, Weddings, Bar Mitzvahs', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, 'https://mypersonalcantor.com/', '@mypersonalcantor', null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('My Personal Cantor & Rabbi Debbi Ballard, Jewish Interfaith Officiant, Weddings, Bar Mitzvahs'))
   returning id
 ), vid as (
@@ -867,8 +870,8 @@ where not exists (
 
 -- The Palms Hotel & Spa
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'The Palms Hotel & Spa', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'https://www.thepalmshotel.com/es', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'The Palms Hotel & Spa', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'https://www.thepalmshotel.com/es', null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('The Palms Hotel & Spa'))
   returning id
 ), vid as (
@@ -889,8 +892,8 @@ where not exists (
 
 -- Peter J. Reinoso
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Peter J. Reinoso', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Peter J. Reinoso', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, null, null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Peter J. Reinoso'))
   returning id
 ), vid as (
@@ -911,8 +914,8 @@ where not exists (
 
 -- Zoom Wedding Studio
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Zoom Wedding Studio', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://zoomweddingstudio.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Zoom Wedding Studio', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://zoomweddingstudio.com/', null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Zoom Wedding Studio'))
   returning id
 ), vid as (
@@ -933,8 +936,8 @@ where not exists (
 
 -- Robert Hallstrom
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Robert Hallstrom', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Robert Hallstrom', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, null, null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Robert Hallstrom'))
   returning id
 ), vid as (
@@ -955,8 +958,8 @@ where not exists (
 
 -- Scribbled Moments Photography - Miami Wedding Photography - Palm Beach Wedding Photography - Orlando
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Scribbled Moments Photography - Miami Wedding Photography - Palm Beach Wedding Photography - Orlando', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'www.scribbledmomentsphotography.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Scribbled Moments Photography - Miami Wedding Photography - Palm Beach Wedding Photography - Orlando', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.scribbledmomentsphotography.com/', null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Scribbled Moments Photography - Miami Wedding Photography - Palm Beach Wedding Photography - Orlando'))
   returning id
 ), vid as (
@@ -977,8 +980,8 @@ where not exists (
 
 -- We Do Too Planning
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'We Do Too Planning', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.wedotooplanning.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'We Do Too Planning', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.wedotooplanning.com/', '@wedotooplanning', null, 'tag', '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('We Do Too Planning'))
   returning id
 ), vid as (
@@ -999,8 +1002,8 @@ where not exists (
 
 -- Danielle Margherite Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Danielle Margherite Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://dmargherite.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Danielle Margherite Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://dmargherite.com/', '@dmargherite', null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Danielle Margherite Photography'))
   returning id
 ), vid as (
@@ -1021,8 +1024,8 @@ where not exists (
 
 -- GoDariaFilms
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'GoDariaFilms', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://godariafilms.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'GoDariaFilms', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://godariafilms.com/', null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('GoDariaFilms'))
   returning id
 ), vid as (
@@ -1043,8 +1046,8 @@ where not exists (
 
 -- Until Forever Films LLC
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Until Forever Films LLC', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://untilforeverphotography.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Until Forever Films LLC', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://untilforeverphotography.com/', '@untilforeverfilms', null, 'tag', '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Until Forever Films LLC'))
   returning id
 ), vid as (
@@ -1065,8 +1068,8 @@ where not exists (
 
 -- Stephanie Sheehan
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Stephanie Sheehan', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Stephanie Sheehan', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Stephanie Sheehan'))
   returning id
 ), vid as (
@@ -1087,8 +1090,8 @@ where not exists (
 
 -- Baker's Cay Resort Key Largo, Curio Collection by Hilton
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Baker''s Cay Resort Key Largo, Curio Collection by Hilton', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Baker''s Cay Resort Key Largo, Curio Collection by Hilton', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Baker''s Cay Resort Key Largo, Curio Collection by Hilton'))
   returning id
 ), vid as (
@@ -1109,8 +1112,8 @@ where not exists (
 
 -- Waterman Events
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Waterman Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.watermanevents.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Waterman Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.watermanevents.com/', '@waterman.events', null, 'tag', '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Waterman Events'))
   returning id
 ), vid as (
@@ -1131,8 +1134,8 @@ where not exists (
 
 -- Meandering Media
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Meandering Media', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://meanderingmedia.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Meandering Media', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://meanderingmedia.com/', '@meanderingmedia', null, 'tag', '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Meandering Media'))
   returning id
 ), vid as (
@@ -1153,8 +1156,8 @@ where not exists (
 
 -- Richardson Historic Park & Nature Preserve
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Richardson Historic Park & Nature Preserve', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Richardson Historic Park & Nature Preserve', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Richardson Historic Park & Nature Preserve'))
   returning id
 ), vid as (
@@ -1175,8 +1178,8 @@ where not exists (
 
 -- Catering By Mark
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Catering By Mark', '80478e1c-6012-4398-ae7b-4e50c369efb1'::uuid, false, 'cateringbymark.com', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Catering By Mark', '80478e1c-6012-4398-ae7b-4e50c369efb1'::uuid, false, 'https://cateringbymark.com', null, null, null, '2026-01-29'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Catering By Mark'))
   returning id
 ), vid as (
@@ -1197,8 +1200,8 @@ where not exists (
 
 -- Loveland Venue
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Loveland Venue', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'https://www.lovelandvenue.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Loveland Venue', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'https://www.lovelandvenue.com/', '@lovelandvenuemiami', null, null, '2026-01-30'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Loveland Venue'))
   returning id
 ), vid as (
@@ -1219,8 +1222,8 @@ where not exists (
 
 -- Evoke Photo and Film
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Evoke Photo and Film', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://evokephotoandfilm.com/', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Evoke Photo and Film', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://evokephotoandfilm.com/', '@evokephotoandfilm', null, null, '2026-01-30'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Evoke Photo and Film'))
   returning id
 ), vid as (
@@ -1241,8 +1244,8 @@ where not exists (
 
 -- Eden Regal Ballroom & Catering
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Eden Regal Ballroom & Catering', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'http://www.cateringbyeden.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Eden Regal Ballroom & Catering', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'http://www.cateringbyeden.com/', '@eden_regal_ballroom_catering', null, 'tag', '2026-02-02'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Eden Regal Ballroom & Catering'))
   returning id
 ), vid as (
@@ -1263,8 +1266,8 @@ where not exists (
 
 -- Alex Ruane
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Alex Ruane', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Alex Ruane', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2026-02-02'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Alex Ruane'))
   returning id
 ), vid as (
@@ -1285,8 +1288,8 @@ where not exists (
 
 -- Kristin Rose
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Kristin Rose', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Kristin Rose', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, 'tag', '2026-02-02'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Kristin Rose'))
   returning id
 ), vid as (
@@ -1307,8 +1310,8 @@ where not exists (
 
 -- Susana Hernandez
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Susana Hernandez', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'instagram.com/_timelesseventsandco/?hl=en', '@instagram.com', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Susana Hernandez', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, '@_timelesseventsandco', null, null, '2026-02-03'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Susana Hernandez'))
   returning id
 ), vid as (
@@ -1329,8 +1332,8 @@ where not exists (
 
 -- Victoria Babum
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Victoria Babum', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Victoria Babum', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2026-02-04'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Victoria Babum'))
   returning id
 ), vid as (
@@ -1351,8 +1354,8 @@ where not exists (
 
 -- Paige Davis Photo
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Paige Davis Photo', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.paigedavisphoto.com/', '@paigedavisphoto', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Paige Davis Photo', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.paigedavisphoto.com/', '@paigedavisphoto', null, 'tag', '2026-02-05'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Paige Davis Photo'))
   returning id
 ), vid as (
@@ -1373,8 +1376,8 @@ where not exists (
 
 -- Dana Lynn Photos
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Dana Lynn Photos', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.danalynnphotos.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Dana Lynn Photos', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.danalynnphotos.com/', null, null, null, '2026-02-05'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Dana Lynn Photos'))
   returning id
 ), vid as (
@@ -1395,8 +1398,8 @@ where not exists (
 
 -- Solo Mio Photography LLC
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Solo Mio Photography LLC', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.solomiophoto.com/', '@instagram.com', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Solo Mio Photography LLC', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.solomiophoto.com/', '@solomiophoto', null, 'tag', '2026-02-06'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Solo Mio Photography LLC'))
   returning id
 ), vid as (
@@ -1417,8 +1420,8 @@ where not exists (
 
 -- Courtney Clauser
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Courtney Clauser', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Courtney Clauser', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2026-02-16'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Courtney Clauser'))
   returning id
 ), vid as (
@@ -1439,8 +1442,8 @@ where not exists (
 
 -- Stephen Luttinger Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Stephen Luttinger Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.stephenluttingerphotography.com/', '@stephen_luttinger', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Stephen Luttinger Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.stephenluttingerphotography.com/', '@stephen_luttinger', null, null, '2026-02-17'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Stephen Luttinger Photography'))
   returning id
 ), vid as (
@@ -1461,8 +1464,8 @@ where not exists (
 
 -- Islamorada Fish Company
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Islamorada Fish Company', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'islamoradafishco.com', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Islamorada Fish Company', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, 'https://islamoradafishco.com', null, null, null, '2026-02-20'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Islamorada Fish Company'))
   returning id
 ), vid as (
@@ -1483,8 +1486,8 @@ where not exists (
 
 -- Jill Stewart
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Jill Stewart', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Jill Stewart', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2026-02-20'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Jill Stewart'))
   returning id
 ), vid as (
@@ -1505,8 +1508,8 @@ where not exists (
 
 -- Lenisse Komatsu Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Lenisse Komatsu Photography', null, false, 'https://lenisse.com/', '@lenissekphoto', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Lenisse Komatsu Photography', null, false, 'https://lenisse.com/', '@lenissekphoto', null, 'tag', '2026-02-20'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Lenisse Komatsu Photography'))
   returning id
 ), vid as (
@@ -1527,8 +1530,8 @@ where not exists (
 
 -- Lucid Events
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Lucid Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.lucideventdesign.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Lucid Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.lucideventdesign.com/', null, null, null, '2026-02-20'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Lucid Events'))
   returning id
 ), vid as (
@@ -1549,8 +1552,8 @@ where not exists (
 
 -- Baylie Krutchik Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Baylie Krutchik Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://bayliekrutchik.me/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Baylie Krutchik Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://bayliekrutchik.me/', null, null, null, '2026-02-20'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Baylie Krutchik Photography'))
   returning id
 ), vid as (
@@ -1571,8 +1574,8 @@ where not exists (
 
 -- Famed Weddings
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Famed Weddings', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.instagram.com/famedweddings/', '@famedweddings', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Famed Weddings', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, '@famedweddings', null, 'tag', '2026-02-25'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Famed Weddings'))
   returning id
 ), vid as (
@@ -1593,8 +1596,8 @@ where not exists (
 
 -- Vibe Events
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Vibe Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Vibe Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2026-03-03'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Vibe Events'))
   returning id
 ), vid as (
@@ -1615,8 +1618,8 @@ where not exists (
 
 -- Sabatinos Catering
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Sabatinos Catering', null, false, 'https://sabatinoscatering.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Sabatinos Catering', null, false, 'https://sabatinoscatering.com/', null, null, null, '2026-03-03'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Sabatinos Catering'))
   returning id
 ), vid as (
@@ -1637,8 +1640,8 @@ where not exists (
 
 -- Jim Scrima
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Jim Scrima', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Jim Scrima', 'cf8836c1-9fdd-4590-8a94-0a8e8e88e102'::uuid, false, null, null, null, null, '2026-03-12'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Jim Scrima'))
   returning id
 ), vid as (
@@ -1659,8 +1662,8 @@ where not exists (
 
 -- Xenia SM Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Xenia SM Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.instagram.com/xeniasmphotography/', '@xeniasmphotography', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Xenia SM Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, '@xeniasmphotography', null, 'tag', '2026-03-16'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Xenia SM Photography'))
   returning id
 ), vid as (
@@ -1681,8 +1684,8 @@ where not exists (
 
 -- Rusty Pelican
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Rusty Pelican', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Rusty Pelican', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2026-03-19'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Rusty Pelican'))
   returning id
 ), vid as (
@@ -1703,8 +1706,8 @@ where not exists (
 
 -- Jannette Alvarez Designs
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Jannette Alvarez Designs', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.jannettealvarezdesigns.com/', '@jannettealvarezdesigns', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Jannette Alvarez Designs', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.jannettealvarezdesigns.com/', '@jannettealvarezdesigns', null, 'tag', '2026-03-19'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Jannette Alvarez Designs'))
   returning id
 ), vid as (
@@ -1725,8 +1728,8 @@ where not exists (
 
 -- Melannie Morfa Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Melannie Morfa Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.melanniemorfa.com/', '@melanniemorfaphoto', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Melannie Morfa Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.melanniemorfa.com/', '@melanniemorfaphoto', null, 'tag', '2026-03-19'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Melannie Morfa Photography'))
   returning id
 ), vid as (
@@ -1747,8 +1750,8 @@ where not exists (
 
 -- Ilse Marie Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Ilse Marie Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.instagram.com/ilse_marie_photography/?hl=en', '@ilse_marie_photography', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Ilse Marie Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, '@ilse_marie_photography', null, null, '2026-03-20'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Ilse Marie Photography'))
   returning id
 ), vid as (
@@ -1769,8 +1772,8 @@ where not exists (
 
 -- Mission BBQ
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Mission BBQ', '80478e1c-6012-4398-ae7b-4e50c369efb1'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Mission BBQ', '80478e1c-6012-4398-ae7b-4e50c369efb1'::uuid, false, null, null, null, null, '2026-03-24'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Mission BBQ'))
   returning id
 ), vid as (
@@ -1791,8 +1794,8 @@ where not exists (
 
 -- Massy Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Massy Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.massylopezphotography.com/', '@massylopezweddingphotography', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Massy Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.massylopezphotography.com/', '@massylopezweddingphotography', null, 'tag', '2026-03-24'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Massy Photography'))
   returning id
 ), vid as (
@@ -1813,8 +1816,8 @@ where not exists (
 
 -- Miami Wedding Cinema
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Miami Wedding Cinema', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Miami Wedding Cinema', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, 'tag', '2026-03-25'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Miami Wedding Cinema'))
   returning id
 ), vid as (
@@ -1835,8 +1838,8 @@ where not exists (
 
 -- Amanda De Arrastia
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Amanda De Arrastia', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Amanda De Arrastia', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2026-03-31'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Amanda De Arrastia'))
   returning id
 ), vid as (
@@ -1857,8 +1860,8 @@ where not exists (
 
 -- Yolanda Hill Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Yolanda Hill Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.instagram.com/yolandahillphotography/', '@yolandahillphotography', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Yolanda Hill Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, '@yolandahillphotography', null, 'tag', '2026-03-31'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Yolanda Hill Photography'))
   returning id
 ), vid as (
@@ -1879,8 +1882,8 @@ where not exists (
 
 -- Griselda Vasquez
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Griselda Vasquez', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Griselda Vasquez', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2026-04-06'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Griselda Vasquez'))
   returning id
 ), vid as (
@@ -1901,8 +1904,8 @@ where not exists (
 
 -- C & C Catering Events
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'C & C Catering Events', '80478e1c-6012-4398-ae7b-4e50c369efb1'::uuid, false, 'candccateringevents.com', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'C & C Catering Events', '80478e1c-6012-4398-ae7b-4e50c369efb1'::uuid, false, 'https://candccateringevents.com', null, null, null, '2026-04-06'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('C & C Catering Events'))
   returning id
 ), vid as (
@@ -1923,8 +1926,8 @@ where not exists (
 
 -- Rimas Films
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Rimas Films', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.rimasfilms.com/', '@rimasfilms', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Rimas Films', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.rimasfilms.com/', '@rimasfilms', null, 'tag', '2026-04-06'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Rimas Films'))
   returning id
 ), vid as (
@@ -1945,8 +1948,8 @@ where not exists (
 
 -- Amarena Productions LLC
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Amarena Productions LLC', null, false, 'https://amarenaproductions.com/', '@amarena.productions', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Amarena Productions LLC', null, false, 'https://amarenaproductions.com/', '@amarena.productions', null, 'tag', '2026-04-06'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Amarena Productions LLC'))
   returning id
 ), vid as (
@@ -1967,8 +1970,8 @@ where not exists (
 
 -- Double Tree by Hilton Grande Hotel Biscayne Bay
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Double Tree by Hilton Grande Hotel Biscayne Bay', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Double Tree by Hilton Grande Hotel Biscayne Bay', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2026-04-09'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Double Tree by Hilton Grande Hotel Biscayne Bay'))
   returning id
 ), vid as (
@@ -1989,8 +1992,8 @@ where not exists (
 
 -- Adrian Mata Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Adrian Mata Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://adrianmataweddings.com/', '@adrianmataweddings', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Adrian Mata Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://adrianmataweddings.com/', '@adrianmataweddings', null, 'tag', '2026-04-09'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Adrian Mata Photography'))
   returning id
 ), vid as (
@@ -2011,8 +2014,8 @@ where not exists (
 
 -- Caro Velasco
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Caro Velasco', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, '@katsaenzproductions', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Caro Velasco', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, '@katsaenzproductions', null, null, '2026-04-15'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Caro Velasco'))
   returning id
 ), vid as (
@@ -2033,8 +2036,8 @@ where not exists (
 
 -- Megan Kuhn Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Megan Kuhn Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://megankuhnphotography.com/', '@megankuhnphotography', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Megan Kuhn Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://megankuhnphotography.com/', '@megankuhnphotography', null, 'tag', '2026-04-15'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Megan Kuhn Photography'))
   returning id
 ), vid as (
@@ -2055,8 +2058,8 @@ where not exists (
 
 -- Elvira Mk Films Wedding Videographer
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Elvira Mk Films Wedding Videographer', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Elvira Mk Films Wedding Videographer', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, null, null, 'tag', '2026-04-15'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Elvira Mk Films Wedding Videographer'))
   returning id
 ), vid as (
@@ -2077,8 +2080,8 @@ where not exists (
 
 -- Dipp Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Dipp Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.dippphotography.com/', null, null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Dipp Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.dippphotography.com/', null, null, 'tag', '2026-04-27'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Dipp Photography'))
   returning id
 ), vid as (
@@ -2099,8 +2102,8 @@ where not exists (
 
 -- NickFlicks Film + Photo
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'NickFlicks Film + Photo', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.nickflicksfilms.com/', null, null, 'none'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'NickFlicks Film + Photo', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.nickflicksfilms.com/', null, null, 'none', '2026-05-05'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('NickFlicks Film + Photo'))
   returning id
 ), vid as (
@@ -2121,8 +2124,8 @@ where not exists (
 
 -- Ceremonies By Chrissy
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Ceremonies By Chrissy', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.ceremoniesbychrissy.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Ceremonies By Chrissy', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.ceremoniesbychrissy.com/', null, null, null, '2026-05-05'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Ceremonies By Chrissy'))
   returning id
 ), vid as (
@@ -2143,8 +2146,8 @@ where not exists (
 
 -- Darlene DeLuca
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Darlene DeLuca', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Darlene DeLuca', 'cc5b0e00-cecc-42d5-9013-445224465721'::uuid, false, null, null, null, null, '2026-05-08'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Darlene DeLuca'))
   returning id
 ), vid as (
@@ -2165,8 +2168,8 @@ where not exists (
 
 -- Wattley Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Wattley Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.wattleyph.com/', null, null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Wattley Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.wattleyph.com/', null, null, 'tag', '2026-05-21'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Wattley Photography'))
   returning id
 ), vid as (
@@ -2187,8 +2190,8 @@ where not exists (
 
 -- CARRILLO FILMS
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'CARRILLO FILMS', null, false, 'https://www.instagram.com/carrilloweddingfilms/', '@carrilloweddingfilms', null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'CARRILLO FILMS', null, false, null, '@carrilloweddingfilms', null, null, '2026-05-28'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('CARRILLO FILMS'))
   returning id
 ), vid as (
@@ -2209,8 +2212,8 @@ where not exists (
 
 -- Jessica Perez
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Jessica Perez', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Jessica Perez', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, null, null, null, null, '2026-06-01'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Jessica Perez'))
   returning id
 ), vid as (
@@ -2231,8 +2234,8 @@ where not exists (
 
 -- Bridal On Cord
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Bridal On Cord', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://bridaloncord.com/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Bridal On Cord', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://bridaloncord.com/', null, null, null, '2026-06-01'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Bridal On Cord'))
   returning id
 ), vid as (
@@ -2253,8 +2256,8 @@ where not exists (
 
 -- Meza Events
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Meza Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.mezaevents.net/', null, null, null
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Meza Events', 'b583c923-9cb6-4778-99d6-3455da91850d'::uuid, false, 'https://www.mezaevents.net/', null, null, null, '2026-06-01'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Meza Events'))
   returning id
 ), vid as (
@@ -2275,8 +2278,8 @@ where not exists (
 
 -- Audrey Uhing Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Audrey Uhing Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.audreyuhingphotography.com/', null, null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Audrey Uhing Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.audreyuhingphotography.com/', null, null, 'tag', '2026-06-02'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Audrey Uhing Photography'))
   returning id
 ), vid as (
@@ -2297,8 +2300,8 @@ where not exists (
 
 -- Carolina Plaz Photography
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Carolina Plaz Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://carolinaplazphotography.mypixieset.com/', '@carolinaplazphotography', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Carolina Plaz Photography', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://carolinaplazphotography.mypixieset.com/', '@carolinaplazphotography', null, 'tag', '2026-06-08'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Carolina Plaz Photography'))
   returning id
 ), vid as (
@@ -2319,8 +2322,8 @@ where not exists (
 
 -- Captivated Films
 with v as (
-  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab)
-  select 'Captivated Films', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, 'https://www.instagram.com/captivatedfilms/?hl=en', '@captivatedfilms', null, 'tag'
+  insert into vendors (company_name, category_id, is_preferred, website, instagram, tiktok, social_collab, created_at)
+  select 'Captivated Films', 'cfe90f87-f3d1-4ec7-a453-fb47d51ff738'::uuid, false, null, '@captivatedfilms', null, 'tag', '2026-06-15'::timestamptz
   where not exists (select 1 from vendors where lower(company_name) = lower('Captivated Films'))
   returning id
 ), vid as (
