@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getMe } from "@/lib/auth";
+import { sendMorningBriefing } from "@/lib/morningBriefing";
+import { runVendorMatching } from "@/lib/vendorMatch";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -15,6 +18,40 @@ async function requireMaster(supabase: Awaited<ReturnType<typeof createClient>>)
   if (!me || me.accountType !== "staff" || me.role !== "master_admin") {
     throw new Error("Not authorized.");
   }
+}
+
+// ───────────────────────── Daily AI tasks ─────────────────────────
+
+export async function saveAiTask(key: string, formData: FormData) {
+  const supabase = await createClient();
+  await requireMaster(supabase);
+  const enabled = formData.get("enabled") === "on";
+  const hourRaw = Number(formData.get("hour"));
+  const hour = Number.isFinite(hourRaw) ? Math.min(23, Math.max(0, Math.trunc(hourRaw))) : 7;
+  const recipients = clean(formData.get("recipients"));
+  const config: Record<string, unknown> = { hour };
+  if (recipients) config.recipients = recipients;
+  const { error } = await supabase
+    .from("ai_tasks")
+    .update({ enabled, config, updated_at: new Date().toISOString() })
+    .eq("key", key);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/assistant");
+}
+
+/** Run a task immediately (ignores enabled/schedule). Master-Admin only. */
+export async function runAiTaskNow(key: string) {
+  const supabase = await createClient();
+  await requireMaster(supabase);
+  const { data: t } = await supabase.from("ai_tasks").select("config").eq("key", key).maybeSingle();
+  const cfg = (t?.config ?? {}) as { recipients?: string };
+  const admin = createAdminClient();
+  if (key === "morning_briefing") {
+    await sendMorningBriefing(admin, cfg.recipients || "events@xpressdjs.com");
+  } else if (key === "vendor_matching") {
+    await runVendorMatching(admin);
+  }
+  revalidatePath("/settings/assistant");
 }
 
 export async function createArticle(formData: FormData) {
