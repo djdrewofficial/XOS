@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Section, Row, Note, CheckBoxField } from "@/components/SettingsForm";
 import SaveButton from "@/components/SaveButton";
+import Tabs from "@/components/Tabs";
 import { savePaymentSettings } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,10 @@ export default async function PaymentSettingsPage() {
     <div className="max-w-5xl">
       <h1 className="page-title mb-5">Payment Settings</h1>
       <form action={savePaymentSettings} className="space-y-5">
+        <Tabs
+          tabs={[
+            { id: "recording", label: "Recording Payments", content: (
+              <div className="space-y-5">
         <Section title="Payment Methods">
           <Row
             label="Client Payment Methods"
@@ -148,6 +153,10 @@ export default async function PaymentSettingsPage() {
           </Note>
         </Section>
 
+              </div>
+            ) },
+            { id: "online", label: "Online Payment Page", content: (
+              <div className="space-y-5">
         <Section title="Online Payment Page (Client-Facing)">
           <Note>
             Controls the public <code className="rounded bg-black/5 px-1 dark:bg-white/10">/welcome</code> page clients
@@ -182,6 +191,10 @@ export default async function PaymentSettingsPage() {
             limits — check your processor&apos;s terms before setting a fee. The fee is always disclosed before payment.
           </Note>
         </Section>
+              </div>
+            ) },
+          ]}
+        />
 
         <div className="flex justify-end">
           <SaveButton>Save Settings</SaveButton>

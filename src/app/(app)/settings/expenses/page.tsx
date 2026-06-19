@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Section, Row, Note, CheckBoxField } from "@/components/SettingsForm";
 import SaveButton from "@/components/SaveButton";
+import Tabs from "@/components/Tabs";
 import {
   saveExpenseLists,
   addExpenseCategory,
@@ -59,8 +60,10 @@ export default async function ExpensesSettingsPage() {
   return (
     <div className="max-w-5xl">
       <h1 className="page-title mb-5">Expenses</h1>
-      <div className="space-y-8">
-        {/* ---------- option lists (DJEP Add Expense Options) ---------- */}
+      <Tabs
+        tabs={[
+          { id: "options", label: "Options & Categories", content: (
+            <div className="space-y-8">
         <form action={saveExpenseLists} className="space-y-5">
           <Section title="Expense Option Lists">
             <Row label="Payees" hint="One per line — suggested in the Payee field when entering an expense">
@@ -119,8 +122,10 @@ export default async function ExpensesSettingsPage() {
           </div>
           <Note>Click a category to deactivate it (kept on old expenses, hidden from new ones).</Note>
         </Section>
-
-        {/* ---------- auto mileage ---------- */}
+            </div>
+          ) },
+          { id: "mileage", label: "Mileage", content: (
+            <div className="space-y-8">
         <form action={saveAutoMileage} className="space-y-5">
           <Section title="Automatic Mileage Expenses">
             <Row label="Auto Mileage" hint="Create a mileage expense automatically when an event books at a flagged venue">
@@ -201,7 +206,10 @@ export default async function ExpensesSettingsPage() {
             </SaveButton>
           </form>
         </div>
-      </div>
+            </div>
+          ) },
+        ]}
+      />
     </div>
   );
 }
