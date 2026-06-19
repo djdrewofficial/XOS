@@ -46,6 +46,22 @@ export async function GET(request: Request) {
   const like = `%${q}%`;
   const lower = q.toLowerCase();
 
+  // Match full names like "Laura Smith" across first_name + last_name (in either
+  // order), plus the whole string against the other columns. PostgREST parses
+  // the nested and(...) groups inside .or().
+  const esc = (s: string) => s.replace(/[%,()]/g, "").trim();
+  const parts = q.split(/\s+/).map(esc).filter(Boolean);
+  const nameOr = (cols: string[]) => {
+    const branches = cols.map((col) => `${col}.ilike.%${esc(q)}%`);
+    if (parts.length >= 2) {
+      const a = parts[0];
+      const b = parts.slice(1).join(" ");
+      branches.push(`and(first_name.ilike.%${a}%,last_name.ilike.%${b}%)`);
+      branches.push(`and(first_name.ilike.%${b}%,last_name.ilike.%${a}%)`);
+    }
+    return branches.join(",");
+  };
+
   const pageHits: SearchResult[] = PAGES.filter(
     (p) => p.label.toLowerCase().includes(lower) || p.keywords.includes(lower)
   )
@@ -56,7 +72,7 @@ export async function GET(request: Request) {
     supabase
       .from("clients")
       .select("id, first_name, last_name, email, cell_phone")
-      .or(`first_name.ilike.${like},last_name.ilike.${like},email.ilike.${like},cell_phone.ilike.${like}`)
+      .or(nameOr(["first_name", "last_name", "email", "cell_phone"]))
       .limit(5),
     supabase
       .from("events")
@@ -70,7 +86,7 @@ export async function GET(request: Request) {
     supabase
       .from("employees")
       .select("id, first_name, last_name, permission_tier")
-      .or(`first_name.ilike.${like},last_name.ilike.${like}`)
+      .or(nameOr(["first_name", "last_name"]))
       .limit(4),
     supabase.from("packages").select("id, name").ilike("name", like).limit(4),
   ]);
@@ -81,7 +97,7 @@ export async function GET(request: Request) {
       type: "Client",
       label: `${c.first_name} ${c.last_name ?? ""}`.trim(),
       sublabel: c.email ?? c.cell_phone ?? undefined,
-      href: `/clients?q=${encodeURIComponent(`${c.first_name} ${c.last_name ?? ""}`.trim())}`,
+      href: `/clients/${c.id}`,
     })),
     ...(events.data ?? []).map((e) => ({
       type: "Event",

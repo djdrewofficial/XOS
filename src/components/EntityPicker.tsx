@@ -106,10 +106,19 @@ export default function EntityPicker({
       setSearching(true);
       const supabase = createClient();
       const q = query.trim().replace(/[%,()]/g, "");
+      const branches = cfg.search.map((col) => `${col}.ilike.%${q}%`);
+      // Full-name search ("Laura Smith") across first_name + last_name, either order.
+      const parts = q.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2 && cfg.search.includes("first_name") && cfg.search.includes("last_name")) {
+        const a = parts[0];
+        const b = parts.slice(1).join(" ");
+        branches.push(`and(first_name.ilike.%${a}%,last_name.ilike.%${b}%)`);
+        branches.push(`and(first_name.ilike.%${b}%,last_name.ilike.%${a}%)`);
+      }
       const { data } = await supabase
         .from(cfg.table)
         .select(cfg.select)
-        .or(cfg.search.map((c) => `${c}.ilike.%${q}%`).join(","))
+        .or(branches.join(","))
         .order(cfg.order)
         .limit(8);
       const rows = ((data as unknown as Row[]) ?? []).filter((r) => !excludeIds.includes(r.id));
