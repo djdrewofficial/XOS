@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import VendorsDirectory from "@/components/VendorsDirectory";
 import SaveButton from "@/components/SaveButton";
@@ -7,11 +8,12 @@ export const dynamic = "force-dynamic";
 
 export default async function VendorsPage() {
   const supabase = await createClient();
-  const [{ data: vendors }, { data: categories }, { data: contacts }, { data: links }] = await Promise.all([
+  const [{ data: vendors }, { data: categories }, { data: contacts }, { data: links }, { count: reviewCount }] = await Promise.all([
     supabase.from("vendors").select("*").order("company_name"),
     supabase.from("vendor_categories").select("*").order("name"),
     supabase.from("vendor_contacts").select("vendor_id"),
     supabase.from("event_vendors").select("vendor_id"),
+    supabase.from("vendor_match_suggestions").select("id", { count: "exact", head: true }).eq("status", "pending"),
   ]);
 
   const contactCounts: Record<string, number> = {};
@@ -29,7 +31,16 @@ export default async function VendorsPage() {
 
   return (
     <div className="max-w-6xl">
-      <h1 className="page-title mb-5">Vendors</h1>
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <h1 className="page-title">Vendors</h1>
+        <Link
+          href="/vendors/review"
+          className="inline-flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-white/15 dark:text-zinc-200 dark:hover:bg-white/5"
+        >
+          Review queue
+          {reviewCount ? <span className="rounded-full bg-brand px-2 py-0.5 text-xs text-white">{reviewCount}</span> : null}
+        </Link>
+      </div>
 
       <VendorsDirectory
         vendors={vendors ?? []}

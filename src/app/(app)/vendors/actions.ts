@@ -85,3 +85,56 @@ export async function removeVendorContact(vendorId: string, contactId: string) {
   if (error) throw new Error(error.message);
   revalidatePath(`/vendors/${vendorId}`);
 }
+
+// ───────────────────── GPT vendor-match review queue ─────────────────────
+
+export async function dismissVendorSuggestion(id: string) {
+  const supabase = await createClient();
+  await supabase.from("vendor_match_suggestions").update({ status: "dismissed" }).eq("id", id);
+  revalidatePath("/vendors/review");
+}
+
+export async function applyVendorSuggestion(id: string) {
+  const supabase = await createClient();
+  const { data: s } = await supabase.from("vendor_match_suggestions").select("*").eq("id", id).maybeSingle();
+  if (!s || s.status !== "pending") return;
+  const proposed = (s.proposed ?? {}) as { corrected_name?: string; contact_name?: string; contact_phone?: string; contact_email?: string };
+
+  const { data: ev } = await supabase
+    .from("event_vendors")
+    .select("id, vendor_id, contact_name, contact_phone, contact_email")
+    .eq("id", s.event_vendor_id)
+    .maybeSingle();
+  if (!ev) {
+    await supabase.from("vendor_match_suggestions").update({ status: "dismissed" }).eq("id", id);
+    return;
+  }
+
+  // Only fill blanks — never overwrite what the couple typed.
+  const evUpdate: Record<string, string> = {};
+  if (proposed.contact_name && !ev.contact_name) evUpdate.contact_name = proposed.contact_name;
+  if (proposed.contact_phone && !ev.contact_phone) evUpdate.contact_phone = proposed.contact_phone;
+  if (proposed.contact_email && !ev.contact_email) evUpdate.contact_email = proposed.contact_email;
+
+  if (s.kind === "merge" && s.matched_vendor_id && s.matched_vendor_id !== ev.vendor_id) {
+    const oldVendorId = ev.vendor_id as string;
+    await supabase.from("event_vendors").update({ ...evUpdate, vendor_id: s.matched_vendor_id }).eq("id", ev.id);
+    // Remove the couple's duplicate vendor row if nothing else references it.
+    const [{ count: evRefs }, { count: vcRefs }] = await Promise.all([
+      supabase.from("event_vendors").select("id", { count: "exact", head: true }).eq("vendor_id", oldVendorId),
+      supabase.from("vendor_contacts").select("id", { count: "exact", head: true }).eq("vendor_id", oldVendorId),
+    ]);
+    if ((evRefs ?? 0) === 0 && (vcRefs ?? 0) === 0) {
+      await supabase.from("vendors").delete().eq("id", oldVendorId);
+    }
+  } else {
+    if (Object.keys(evUpdate).length) await supabase.from("event_vendors").update(evUpdate).eq("id", ev.id);
+    if (proposed.corrected_name && ev.vendor_id) {
+      await supabase.from("vendors").update({ company_name: proposed.corrected_name }).eq("id", ev.vendor_id);
+    }
+  }
+
+  await supabase.from("vendor_match_suggestions").update({ status: "applied" }).eq("id", id);
+  revalidatePath("/vendors/review");
+  revalidatePath("/vendors");
+}
