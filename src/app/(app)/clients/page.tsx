@@ -113,7 +113,12 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   return (
     <div className="max-w-4xl">
       <div className="mb-5 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Clients</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Clients</h1>
+          <span className="rounded-full bg-black/[0.06] px-2.5 py-0.5 text-sm font-semibold text-zinc-500 dark:bg-white/[0.08] dark:text-zinc-400">
+            {clients.length}
+          </span>
+        </div>
         <Link href="/clients/new" className="btn-primary px-4 py-2">
           Add Client
         </Link>

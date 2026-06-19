@@ -32,7 +32,12 @@ export default async function VendorsPage() {
   return (
     <div className="max-w-6xl">
       <div className="mb-5 flex items-center justify-between gap-3">
-        <h1 className="page-title">Vendors</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="page-title">Vendors</h1>
+          <span className="rounded-full bg-black/[0.06] px-2.5 py-0.5 text-sm font-semibold text-zinc-500 dark:bg-white/[0.08] dark:text-zinc-400">
+            {(vendors ?? []).length}
+          </span>
+        </div>
         <Link
           href="/vendors/review"
           className="inline-flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-white/15 dark:text-zinc-200 dark:hover:bg-white/5"
