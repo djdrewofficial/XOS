@@ -22,6 +22,12 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
+    // If this account has 2FA enrolled, finish the second step before landing.
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal && aal.currentLevel === "aal1" && aal.nextLevel === "aal2") {
+      router.push("/2fa");
+      return;
+    }
     // Resolve landing: per-user override → per-role default → company fallback.
     const userId = signIn.user?.id;
     let landing = "/";

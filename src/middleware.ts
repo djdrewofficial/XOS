@@ -114,6 +114,21 @@ export async function middleware(request: NextRequest) {
         return response; // external user inside the portal — allowed
       }
 
+      // 2FA gate: a staff member with an enrolled factor must complete the TOTP
+      // challenge (aal1 -> aal2) before reaching the app. Fails open on a lookup
+      // error so an MFA hiccup can never lock staff out.
+      try {
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aal && aal.currentLevel === "aal1" && aal.nextLevel === "aal2" && !pathname.startsWith("/2fa")) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/2fa";
+          url.search = "";
+          return NextResponse.redirect(url);
+        }
+      } catch {
+        /* never block on an MFA lookup failure */
+      }
+
       const moduleKey = moduleForPath(pathname);
       if (moduleKey) {
         const { data: emp } = await supabase
