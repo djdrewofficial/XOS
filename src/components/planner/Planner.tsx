@@ -59,6 +59,7 @@ import CoverPhoto from "@/components/planner/CoverPhoto";
 import PeoplePanel from "@/components/planner/PeoplePanel";
 import SectionSettings from "@/components/planner/SectionSettings";
 import VendorTeamModule from "@/components/planner/VendorTeamModule";
+import PhotoBoothModule from "@/components/planner/PhotoBoothModule";
 import SpotifyImport from "@/components/planner/SpotifyImport";
 import { PreviewButton } from "@/components/planner/previewPlayer";
 import {
@@ -678,12 +679,14 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
     for (const q of section.questions) m[q.id] = q.answer ?? "";
     return m;
   });
+  const isPhotoBooth = section.module === "photobooth";
   const canEditSongs =
     section.songs_enabled &&
     !isGuest &&
     (isStaff || (role === "host" && section.client_editable && !section.locked));
-  const showSongs = section.songs_enabled && !isGuest && section.section_type !== "headline";
-  const showQuestions = section.questions_enabled && section.questions.length >= 0;
+  // Photo Booth is a special module — its own layout replaces songs + questions.
+  const showSongs = !isPhotoBooth && section.songs_enabled && !isGuest && section.section_type !== "headline";
+  const showQuestions = !isPhotoBooth && section.questions_enabled && section.questions.length >= 0;
   const atLimit = section.song_limit != null && section.songs.length >= section.song_limit;
   const mustPlayFull = section.must_play_limit != null && section.must_play_count >= section.must_play_limit;
   const canMustPlay = !isGuest && (isStaff || role === "host");
@@ -730,6 +733,8 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
         {section.module === "vendors" && (
           <VendorTeamModule eventId={eventId} vendors={vendors} canEdit={isStaff || role === "host"} />
         )}
+
+        {isPhotoBooth && <PhotoBoothModule eventId={eventId} canEdit={isStaff || role === "host"} />}
 
         {showSongs && (
           <section className="mb-6">

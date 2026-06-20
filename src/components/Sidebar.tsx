@@ -41,6 +41,7 @@ import {
   faPowerOff,
   faShieldHalved,
   faMusic,
+  faCamera,
 } from "@fortawesome/free-solid-svg-icons";
 
 type NavItem = { href: string; label: string; icon: IconDefinition; module: string };
@@ -118,6 +119,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
           { href: "/settings/journey", label: "Client Journey", icon: faRoute, module: "settings" },
           { href: "/settings/helpers", label: "Booking Helpers", icon: faBolt, module: "settings" },
           { href: "/settings/planner", label: "XOS Planner", icon: faMusic, module: "settings" },
+          { href: "/settings/photobooth", label: "Photo Booth", icon: faCamera, module: "settings" },
         ],
       },
       {

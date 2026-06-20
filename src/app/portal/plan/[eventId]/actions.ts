@@ -13,6 +13,7 @@ import {
   disconnectSpotify,
   type SpotifyPlaylistLite,
 } from "@/lib/spotifyAuth";
+import { boothTemplates, boothFilters } from "@/lib/templatesbooth";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Me } from "@/lib/auth";
 
@@ -651,6 +652,89 @@ export async function importSpotifyPlaylist(eventId: string, sectionId: string, 
   await logAction(supabase, eventId, me, "Imported Spotify playlist", `${rows.length} songs`);
   revalidate();
   return { ok: true, count: rows.length };
+}
+
+// ─────────────────── Photo Booth module (backdrops + designs) ───────────────────
+
+export type BoothBackdrop = { id: string; name: string; image_url: string; category: string | null };
+export type BoothDesign = {
+  src: string;
+  post_url: string | null;
+  layout_size: string | null;
+  image_type: string | null;
+  no_of_images: string | null;
+  type: string | null;
+  type_name: string | null;
+  video_url?: string | null;
+  poster?: string | null;
+};
+export type BoothSelection = { backdrop_id: string | null; design: BoothDesign | null } | null;
+
+/** Active backdrops + this event's saved selection (RLS-scoped). */
+export async function loadPhotoBooth(
+  eventId: string,
+): Promise<{ backdrops: BoothBackdrop[]; selection: BoothSelection }> {
+  const { supabase } = await ctx(eventId);
+  const [{ data: backdrops }, { data: sel }] = await Promise.all([
+    supabase
+      .from("photobooth_backdrops")
+      .select("id, name, image_url, category")
+      .eq("is_active", true)
+      .order("sort_order"),
+    supabase
+      .from("event_photobooth_selection")
+      .select("backdrop_id, design")
+      .eq("event_id", eventId)
+      .maybeSingle(),
+  ]);
+  return {
+    backdrops: (backdrops ?? []) as BoothBackdrop[],
+    selection: (sel as BoothSelection) ?? null,
+  };
+}
+
+export async function selectBackdrop(eventId: string, backdropId: string | null) {
+  const { supabase, me, revalidate } = await requireHost(eventId);
+  const { error } = await supabase
+    .from("event_photobooth_selection")
+    .upsert(
+      { event_id: eventId, backdrop_id: backdropId, updated_by: me.userId, updated_at: new Date().toISOString() },
+      { onConflict: "event_id" },
+    );
+  if (error) return { ok: false, error: error.message };
+  await logAction(supabase, eventId, me, "Selected photo-booth backdrop");
+  revalidate();
+  return { ok: true };
+}
+
+export async function selectBoothDesign(eventId: string, design: BoothDesign | null) {
+  const { supabase, me, revalidate } = await requireHost(eventId);
+  const { error } = await supabase
+    .from("event_photobooth_selection")
+    .upsert(
+      { event_id: eventId, design, updated_by: me.userId, updated_at: new Date().toISOString() },
+      { onConflict: "event_id" },
+    );
+  if (error) return { ok: false, error: error.message };
+  await logAction(supabase, eventId, me, "Selected photo-booth design", design?.type_name ?? undefined);
+  revalidate();
+  return { ok: true };
+}
+
+/** Proxy TemplatesBooth /templates (key stays server-side). Host/staff only. */
+export async function fetchBoothTemplates(eventId: string, params: Record<string, string | number>) {
+  await requireHost(eventId);
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== "" && v != null) sp.set(k, String(v));
+  const res = await boothTemplates(sp);
+  return res.ok ? { ok: true as const, data: res.data } : { ok: false as const, error: res.error };
+}
+
+/** Proxy TemplatesBooth /filters. Host/staff only. */
+export async function fetchBoothFilters(eventId: string) {
+  await requireHost(eventId);
+  const res = await boothFilters();
+  return res.ok ? { ok: true as const, data: res.data } : { ok: false as const, error: res.error };
 }
 
 export async function uploadSectionCover(eventId: string, sectionId: string, formData: FormData) {
