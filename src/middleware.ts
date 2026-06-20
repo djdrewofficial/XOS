@@ -8,6 +8,10 @@ import {
   type Role,
 } from "@/lib/permissions";
 
+// Roles that MUST use 2FA — they handle client PII, money, and contracts.
+// Regular "employee" stays opt-in.
+const TWO_FA_REQUIRED_ROLES = new Set<Role>(["master_admin", "admin", "salesperson"]);
+
 export async function middleware(request: NextRequest) {
   // Origin lock: force all human/staff traffic through Cloudflare's WAF. A
   // Cloudflare Transform Rule stamps a secret header on every proxied request;
@@ -114,16 +118,36 @@ export async function middleware(request: NextRequest) {
         return response; // external user inside the portal — allowed
       }
 
-      // 2FA gate: a staff member with an enrolled factor must complete the TOTP
-      // challenge (aal1 -> aal2) before reaching the app. Fails open on a lookup
-      // error so an MFA hiccup can never lock staff out.
+      // This staff member's role drives both 2FA enforcement and the perm gate.
+      const { data: emp } = await supabase
+        .from("employees")
+        .select("id, permission_tier")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+      const role = ((emp?.permission_tier as Role | undefined) ?? "master_admin") as Role;
+      const empId = (emp?.id as string | undefined) ?? null;
+
+      // 2FA gate. Anyone with an enrolled factor must complete the TOTP challenge
+      // (aal1 -> aal2). Master admins, admins, and salespeople MUST have 2FA — if
+      // they haven't set it up, force them to the setup page first. Regular
+      // employees may opt in. Fails open on a lookup error so an MFA hiccup can
+      // never lock staff out.
       try {
         const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        if (aal && aal.currentLevel === "aal1" && aal.nextLevel === "aal2" && !pathname.startsWith("/2fa")) {
-          const url = request.nextUrl.clone();
-          url.pathname = "/2fa";
-          url.search = "";
-          return NextResponse.redirect(url);
+        if (aal) {
+          const hasFactor = aal.nextLevel === "aal2";
+          if (hasFactor && aal.currentLevel === "aal1" && !pathname.startsWith("/2fa")) {
+            const url = request.nextUrl.clone();
+            url.pathname = "/2fa";
+            url.search = "";
+            return NextResponse.redirect(url);
+          }
+          if (!hasFactor && TWO_FA_REQUIRED_ROLES.has(role) && !pathname.startsWith("/account/security")) {
+            const url = request.nextUrl.clone();
+            url.pathname = "/account/security";
+            url.search = "";
+            return NextResponse.redirect(url);
+          }
         }
       } catch {
         /* never block on an MFA lookup failure */
@@ -131,14 +155,7 @@ export async function middleware(request: NextRequest) {
 
       const moduleKey = moduleForPath(pathname);
       if (moduleKey) {
-        const { data: emp } = await supabase
-          .from("employees")
-          .select("id, permission_tier")
-          .eq("auth_user_id", user.id)
-          .maybeSingle();
-        const role = ((emp?.permission_tier as Role | undefined) ?? "master_admin") as Role;
         if (role !== "master_admin") {
-          const empId = (emp?.id as string | undefined) ?? null;
           const [{ data: roleRows }, { data: userRows }] = await Promise.all([
             supabase.from("role_permissions").select("module, access").eq("role", role),
             empId

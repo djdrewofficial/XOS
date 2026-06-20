@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 /* Self-service TOTP two-factor setup for a staff member. Uses Supabase Auth MFA:
    enroll -> show QR/secret -> challenge+verify the first code -> factor active.
    Verifying also elevates the current session to aal2. */
-export default function TwoFactorSetup() {
+export default function TwoFactorSetup({ required = false }: { required?: boolean }) {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
   const [state, setState] = useState<"loading" | "enabled" | "idle" | "enrolling">("loading");
@@ -153,6 +153,11 @@ export default function TwoFactorSetup() {
   // idle
   return (
     <div className="space-y-3">
+      {required && (
+        <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
+          Your role requires two-factor authentication. Set it up below to continue using XOS.
+        </p>
+      )}
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
         Add a second step to your login: a one-time code from an authenticator app on your phone.
         Strongly recommended for anyone with access to client or financial data.
