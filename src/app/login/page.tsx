@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { requestPasswordReset } from "./actions";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,6 +11,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"login" | "reset">("login");
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    await requestPasswordReset(email);
+    setLoading(false);
+    setResetMsg("If an account exists for that email, a password reset link is on its way — check your inbox.");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,7 +82,7 @@ export default function LoginPage() {
       {/* darken the photo so the card + inputs stay legible */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-black/75" />
       <form
-        onSubmit={handleSubmit}
+        onSubmit={mode === "reset" ? handleReset : handleSubmit}
         className="relative z-10 w-full max-w-sm rounded-2xl border border-white/20 bg-white/95 p-8 shadow-2xl backdrop-blur-md dark:bg-zinc-900/90"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -86,24 +98,51 @@ export default function LoginPage() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="input mb-4 w-full"
+          className={`input w-full ${mode === "reset" ? "mb-5" : "mb-4"}`}
         />
-        <label className="label-xs">Password</label>
-        <input
-          type="password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="input mb-5 w-full"
-        />
-        {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="btn-primary w-full disabled:opacity-50"
-        >
-          {loading ? "Signing in…" : "Log On"}
-        </button>
+
+        {mode === "login" ? (
+          <>
+            <label className="label-xs">Password</label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="input mb-5 w-full"
+            />
+            {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+            <button type="submit" disabled={loading} className="btn-primary w-full disabled:opacity-50">
+              {loading ? "Signing in…" : "Log On"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode("reset"); setError(null); setResetMsg(null); }}
+              className="mt-4 w-full text-center text-xs text-zinc-500 hover:underline"
+            >
+              Forgot your password?
+            </button>
+          </>
+        ) : (
+          <>
+            {resetMsg ? (
+              <p className="mb-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+                {resetMsg}
+              </p>
+            ) : (
+              <button type="submit" disabled={loading} className="btn-primary w-full disabled:opacity-50">
+                {loading ? "Sending…" : "Send password reset link"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setMode("login"); setResetMsg(null); setError(null); }}
+              className="mt-4 w-full text-center text-xs text-zinc-500 hover:underline"
+            >
+              ← Back to sign in
+            </button>
+          </>
+        )}
       </form>
     </div>
   );
