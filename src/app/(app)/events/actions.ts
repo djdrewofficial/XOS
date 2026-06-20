@@ -10,7 +10,7 @@ import { loadEventBundle } from "@/lib/documentRender";
 import { buildEventName, autoNameEvent, type NamingClient } from "@/lib/eventName";
 import { runAutomations, fireHelperWebhook } from "@/lib/automations";
 import { findOrCreateClient } from "@/lib/clients";
-import { reseedEventPlanning } from "@/lib/planning";
+import { reseedEventPlanning, assignAddonSections } from "@/lib/planning";
 import { requireModule } from "@/lib/auth";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -179,6 +179,7 @@ async function applyPackageSelection(
     // pull each auto-added add-on's equipment onto the logistics checklist too
     for (const r of rows) {
       await assignAddonEquipment(supabase, eventId, r.addon_id);
+      await assignAddonSections(eventId, r.addon_id);
     }
   }
 
@@ -1089,6 +1090,7 @@ export async function addEventAddon(eventId: string, formData: FormData) {
   });
   if (error) throw new Error(error.message);
   await assignAddonEquipment(supabase, eventId, addonId);
+  await assignAddonSections(eventId, addonId);
   revalidatePath(`/events/${eventId}`);
 }
 

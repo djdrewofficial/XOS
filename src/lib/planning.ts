@@ -290,6 +290,114 @@ export async function reseedEventPlanning(eventId: string, templateId: string): 
   return ok;
 }
 
+/** Clone ONE template section (+ its questions, with intra-section conditional
+    remapping) into an event's planner. Returns the new section id. Used to add a
+    reusable section on demand and to auto-add an add-on's mapped sections. */
+async function seedTemplateSection(
+  admin: Admin,
+  eventId: string,
+  ts: Record<string, unknown>,
+  sortOrder?: number,
+): Promise<string | null> {
+  const { data: section } = await admin
+    .from("planning_sections")
+    .insert({
+      event_id: eventId,
+      template_section_id: ts.id,
+      title: ts.title,
+      icon: ts.icon,
+      section_type: ts.section_type,
+      intro: ts.intro,
+      time_label: ts.time_label,
+      client_editable: ts.client_editable,
+      guest_enabled: ts.guest_enabled,
+      song_limit: ts.song_limit,
+      must_play_limit: ts.must_play_limit,
+      songs_enabled: ts.songs_enabled,
+      questions_enabled: ts.questions_enabled,
+      notes_enabled: ts.notes_enabled,
+      time_enabled: ts.time_enabled,
+      ai_picks_enabled: ts.ai_picks_enabled,
+      section_cover_url: ts.section_cover_url,
+      permissions: ts.permissions,
+      module: ts.module,
+      sort_order: sortOrder ?? ts.sort_order,
+    })
+    .select("id")
+    .single();
+  if (!section) return null;
+
+  const { data: tQuestions } = await admin
+    .from("planning_template_questions")
+    .select("*")
+    .eq("template_section_id", ts.id as string)
+    .order("sort_order");
+
+  if (tQuestions?.length) {
+    const { data: inserted } = await admin
+      .from("planning_questions")
+      .insert(
+        tQuestions.map((q) => ({
+          section_id: section.id,
+          event_id: eventId,
+          prompt: q.prompt,
+          help_text: q.help_text,
+          answer_type: q.answer_type,
+          options: q.options,
+          required: q.required,
+          sort_order: q.sort_order,
+          condition_values: q.condition_values ?? [],
+        })),
+      )
+      .select("id"); // single INSERT preserves VALUES order
+    const idMap = new Map<string, string>();
+    (inserted ?? []).forEach((row, idx) => idMap.set(tQuestions[idx].id, row.id));
+    await Promise.all(
+      (inserted ?? [])
+        .map((row, idx) => {
+          const cond = tQuestions[idx].condition_question_id;
+          return cond
+            ? admin.from("planning_questions").update({ condition_question_id: idMap.get(cond) ?? null }).eq("id", row.id)
+            : null;
+        })
+        .filter(Boolean),
+    );
+  }
+  return section.id;
+}
+
+/** Auto-add an add-on's mapped section templates to an event's planner. Skips
+    any the event already has (deduped by template_section_id), and appends to
+    the end. No-op when the add-on has no mapped sections. Admin-scoped — runs
+    whenever an add-on is attached to an event. */
+export async function assignAddonSections(eventId: string, addonId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { data: maps } = await admin
+    .from("addon_section_templates")
+    .select("template_section_id")
+    .eq("addon_id", addonId);
+  if (!maps?.length) return;
+
+  const { data: existing } = await admin
+    .from("planning_sections")
+    .select("template_section_id, sort_order")
+    .eq("event_id", eventId);
+  const have = new Set((existing ?? []).map((s) => s.template_section_id).filter(Boolean));
+  let nextSort = Math.max(0, ...(existing ?? []).map((s) => (s.sort_order as number) ?? 0)) + 1;
+
+  for (const m of maps) {
+    if (have.has(m.template_section_id)) continue;
+    const { data: ts } = await admin
+      .from("planning_template_sections")
+      .select("*")
+      .eq("id", m.template_section_id)
+      .maybeSingle();
+    if (!ts) continue;
+    await seedTemplateSection(admin, eventId, ts, nextSort++);
+    have.add(m.template_section_id);
+  }
+}
+
 /** Load the full planning tree for an event, scoped by the caller's RLS client.
     `role` shapes visibility: hosts/guests never see host-deleted sections; only
     staff get the host-deleted list and the audit log. */

@@ -231,6 +231,24 @@ export async function saveAddonEquipmentDefaults(addonId: string, formData: Form
   revalidatePath(`/addons/${addonId}`);
 }
 
+/** Which reusable planning sections auto-add to an event when this add-on is
+    attached (mapped to planning_template_sections). */
+export async function saveAddonPlanningSections(addonId: string, formData: FormData) {
+  const supabase = await createClient();
+  await supabase.from("addon_section_templates").delete().eq("addon_id", addonId);
+  const rows: { addon_id: string; template_section_id: string }[] = [];
+  for (const [key, raw] of formData.entries()) {
+    if (key.startsWith("sec_") && raw === "on") {
+      rows.push({ addon_id: addonId, template_section_id: key.slice(4) });
+    }
+  }
+  if (rows.length) {
+    const { error } = await supabase.from("addon_section_templates").insert(rows);
+    if (error) throw new Error(error.message);
+  }
+  revalidatePath(`/addons/${addonId}`);
+}
+
 export async function updatePackageGeneral(id: string, formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase
