@@ -25,7 +25,7 @@ export default async function AddonDetailPage({
       supabase.from("equipment_items").select("*").eq("is_active", true).is("system_id", null).order("name"),
       supabase.from("equipment_systems").select("*").eq("is_active", true).order("name"),
       supabase.from("event_addons").select("id", { count: "exact", head: true }).eq("addon_id", id),
-      supabase.from("planning_template_sections").select("id, title, icon, sort_order, template:planning_templates(name)").order("sort_order"),
+      supabase.from("planning_template_sections").select("id, title, icon, sort_order, planning_templates!inner(is_library)").eq("planning_templates.is_library", true).order("sort_order"),
       supabase.from("addon_section_templates").select("template_section_id").eq("addon_id", id),
     ]);
 
@@ -172,35 +172,23 @@ export default async function AddonDetailPage({
 
   /* ---------- TAB: Planning Sections ---------- */
   const assignedSet = new Set((assignedSections ?? []).map((r) => r.template_section_id));
-  const sectionsByTemplate = new Map<string, { id: string; title: string; icon: string | null }[]>();
-  (templateSections ?? []).forEach((s) => {
-    const tname = (s.template as { name?: string } | null)?.name ?? "Other";
-    if (!sectionsByTemplate.has(tname)) sectionsByTemplate.set(tname, []);
-    sectionsByTemplate.get(tname)!.push({ id: s.id, title: s.title, icon: s.icon });
-  });
 
   const sectionsTab = (
     <form action={saveAddonPlanningSections.bind(null, id)}>
       <p className="mb-4 max-w-2xl text-sm text-zinc-500">
         Planner sections auto-added to an event whenever this add-on is attached — e.g. a Photo Booth add-on dropping in a
-        &ldquo;Your Photo-booth Xperience&rdquo; section. Build these sections inside a Planning Template
-        (<Link href="/settings/planner" className="font-semibold text-brand hover:underline dark:text-brand-lighter">Settings → Planner</Link>);
-        keep reusable add-on sections in a separate, non-default template so they only appear when the add-on is present.
+        &ldquo;Your Photo-booth Xperience&rdquo; section. Build these in{" "}
+        <Link href="/settings/planner" className="font-semibold text-brand hover:underline dark:text-brand-lighter">Settings → Planner → Section Templates</Link>.
       </p>
-      <div className="card max-w-2xl space-y-4 p-5">
-        {[...sectionsByTemplate.keys()].map((tname) => (
-          <div key={tname}>
-            <div className="mb-1 border-b border-zinc-200 pb-1 text-xs font-bold dark:border-white/10">{tname}</div>
-            {sectionsByTemplate.get(tname)!.map((s) => (
-              <label key={s.id} className="flex items-center gap-2.5 py-1.5 text-sm">
-                <input type="checkbox" name={`sec_${s.id}`} defaultChecked={assignedSet.has(s.id)} className="size-4 accent-brand-light" />
-                <span>{s.icon ? `${s.icon} ` : ""}{s.title}</span>
-              </label>
-            ))}
-          </div>
+      <div className="card max-w-2xl space-y-1 p-5">
+        {(templateSections ?? []).map((s) => (
+          <label key={s.id} className="flex items-center gap-2.5 py-1.5 text-sm">
+            <input type="checkbox" name={`sec_${s.id}`} defaultChecked={assignedSet.has(s.id)} className="size-4 accent-brand-light" />
+            <span>{s.icon ? `${s.icon} ` : ""}{s.title}</span>
+          </label>
         ))}
         {(templateSections ?? []).length === 0 && (
-          <p className="text-sm text-zinc-500">No planning template sections yet — create some in Settings → Planner.</p>
+          <p className="text-sm text-zinc-500">No section templates yet — create some in Settings → Planner → Section Templates.</p>
         )}
       </div>
       <SaveButton className="btn-primary mt-4">Save Planning Sections</SaveButton>

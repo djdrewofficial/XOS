@@ -154,7 +154,7 @@ export default async function EditHelperPage({
     supabase.from("inquiry_sources").select("id, name").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name"),
     supabase.from("custom_date_definitions").select("id, name").eq("is_active", true).order("sort_order"),
-    supabase.from("planning_templates").select("id, name").order("name"),
+    supabase.from("planning_templates").select("id, name").eq("is_library", false).order("name"),
   ]);
 
   if (!helper) notFound();

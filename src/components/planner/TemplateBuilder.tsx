@@ -84,10 +84,14 @@ export default function TemplateBuilder({
   template,
   sections,
   eventTypes,
+  library = false,
 }: {
   template: BuilderTemplate;
   sections: BuilderSection[];
   eventTypes: { id: string; name: string }[];
+  /** Editing the reusable Section Templates library — hides template-level meta
+      (name/event-type/default/duplicate/delete) since it's a fixed singleton. */
+  library?: boolean;
 }) {
   const tId = template.id;
   const [, start] = useTransition();
@@ -118,19 +122,24 @@ export default function TemplateBuilder({
       {/* Header */}
       <div className="overflow-hidden rounded-3xl border border-zinc-200 bg-gradient-to-br from-brand/5 to-transparent dark:border-white/[0.08]">
         <div className="p-6">
-          <input
-            className="w-full border-0 bg-transparent p-0 text-2xl font-bold text-zinc-900 outline-none placeholder:text-zinc-300 focus:ring-0 dark:text-zinc-50"
-            defaultValue={template.name}
-            placeholder="Template name"
-            onBlur={(e) => {
-              if (e.target.value.trim() && e.target.value !== template.name)
-                start(() => updateTemplate(tId, { name: e.target.value.trim() }).then(() => undefined));
-            }}
-          />
+          {library ? (
+            <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Section Templates</h2>
+          ) : (
+            <input
+              className="w-full border-0 bg-transparent p-0 text-2xl font-bold text-zinc-900 outline-none placeholder:text-zinc-300 focus:ring-0 dark:text-zinc-50"
+              defaultValue={template.name}
+              placeholder="Template name"
+              onBlur={(e) => {
+                if (e.target.value.trim() && e.target.value !== template.name)
+                  start(() => updateTemplate(tId, { name: e.target.value.trim() }).then(() => undefined));
+              }}
+            />
+          )}
           <p className="mt-1 text-sm text-zinc-500">
             {contentCount} section{contentCount === 1 ? "" : "s"} · {totalQuestions} question{totalQuestions === 1 ? "" : "s"}
           </p>
 
+          {!library && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm dark:border-white/10 dark:bg-white/[0.04]">
               <span className="text-zinc-400">Event type</span>
@@ -165,6 +174,7 @@ export default function TemplateBuilder({
               <FontAwesomeIcon icon={faTrash} />
             </button>
           </div>
+          )}
         </div>
       </div>
 

@@ -152,6 +152,7 @@ async function pickTemplateId(admin: Admin, eventId: string, eventTypeId: string
       .from("planning_templates")
       .select("id")
       .eq("event_type_id", eventTypeId)
+      .eq("is_library", false)
       .limit(1)
       .maybeSingle();
     if (data?.id) return data.id as string;
@@ -160,6 +161,7 @@ async function pickTemplateId(admin: Admin, eventId: string, eventTypeId: string
     .from("planning_templates")
     .select("id")
     .eq("is_default", true)
+    .eq("is_library", false)
     .limit(1)
     .maybeSingle();
   return (def?.id as string | undefined) ?? null;

@@ -189,6 +189,7 @@ export default async function EventDetailPage({
   const { data: planningTemplates } = await supabase
     .from("planning_templates")
     .select("id, name")
+    .eq("is_library", false)
     .order("name");
 
   // PERF: second tier — queries/work that need the first batch's results, all
