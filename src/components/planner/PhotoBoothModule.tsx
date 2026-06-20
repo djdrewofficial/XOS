@@ -47,30 +47,37 @@ function pickArray(payload: unknown): unknown[] {
   return [];
 }
 
-type FilterValues = {
-  no_of_images: string[];
-  layout: string[];
-  type: { value: string; label: string }[];
-};
+type Opt = { value: string; label: string };
+type FilterValues = { no_of_images: Opt[]; layout: Opt[]; type: Opt[] };
+
+/** TemplatesBooth /filters returns value→label maps (layout_size/image_type/
+    no_of_images/type/text_display) and an array for tags. Normalize all to
+    {value,label}[] — tolerant of either shape. */
+function toOpts(v: unknown): Opt[] {
+  if (Array.isArray(v)) {
+    return v
+      .map((x) =>
+        x && typeof x === "object"
+          ? {
+              value: String((x as Record<string, unknown>).value ?? (x as Record<string, unknown>).slug ?? ""),
+              label: String((x as Record<string, unknown>).label ?? (x as Record<string, unknown>).name ?? (x as Record<string, unknown>).value ?? ""),
+            }
+          : { value: String(x), label: String(x) },
+      )
+      .filter((o) => o.value);
+  }
+  if (v && typeof v === "object") {
+    return Object.entries(v as Record<string, unknown>).map(([value, label]) => ({ value, label: String(label) }));
+  }
+  return [];
+}
 
 function normalizeFilters(payload: unknown): FilterValues {
   const o = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
-  const list = (v: unknown): string[] =>
-    Array.isArray(v) ? v.map((x) => (x && typeof x === "object" && "value" in x ? String((x as { value: unknown }).value) : String(x))).filter(Boolean) : [];
-  const typed = (v: unknown): { value: string; label: string }[] =>
-    Array.isArray(v)
-      ? v
-          .map((x) =>
-            x && typeof x === "object"
-              ? { value: String((x as Record<string, unknown>).value ?? (x as Record<string, unknown>).slug ?? ""), label: String((x as Record<string, unknown>).label ?? (x as Record<string, unknown>).name ?? (x as Record<string, unknown>).value ?? "") }
-              : { value: String(x), label: String(x) },
-          )
-          .filter((t) => t.value)
-      : [];
   return {
-    no_of_images: list(o.no_of_images),
-    layout: list(o.layout_size ?? o.layout),
-    type: typed(o.type),
+    no_of_images: toOpts(o.no_of_images),
+    layout: toOpts(o.layout_size ?? o.layout),
+    type: toOpts(o.type),
   };
 }
 
@@ -210,15 +217,9 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
 
         {/* Filters */}
         <div className="mb-4 space-y-2">
-          <FilterRow label="Photos" values={filters.no_of_images} active={activeFilters.no_of_images} onPick={(v) => toggleFilter("no_of_images", v)} />
-          <FilterRow label="Layout" values={filters.layout} active={activeFilters.layout} onPick={(v) => toggleFilter("layout", v)} />
-          <FilterRow
-            label="Type"
-            values={filters.type.map((t) => t.value)}
-            labels={Object.fromEntries(filters.type.map((t) => [t.value, t.label]))}
-            active={activeFilters.type}
-            onPick={(v) => toggleFilter("type", v)}
-          />
+          <FilterRow label="Photos" options={filters.no_of_images} active={activeFilters.no_of_images} onPick={(v) => toggleFilter("no_of_images", v)} />
+          <FilterRow label="Layout" options={filters.layout} active={activeFilters.layout} onPick={(v) => toggleFilter("layout", v)} />
+          <FilterRow label="Type" options={filters.type} active={activeFilters.type} onPick={(v) => toggleFilter("type", v)} />
         </div>
 
         {designError ? (
@@ -287,32 +288,30 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
 
 function FilterRow({
   label,
-  values,
-  labels,
+  options,
   active,
   onPick,
 }: {
   label: string;
-  values: string[];
-  labels?: Record<string, string>;
+  options: Opt[];
   active: string | undefined;
   onPick: (v: string) => void;
 }) {
-  if (values.length === 0) return null;
+  if (options.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="mr-1 w-14 shrink-0 text-[11px] font-bold uppercase tracking-wide text-zinc-400">{label}</span>
-      {values.map((v) => {
-        const on = active === v;
+      {options.map((o) => {
+        const on = active === o.value;
         return (
           <button
-            key={v}
-            onClick={() => onPick(v)}
+            key={o.value}
+            onClick={() => onPick(o.value)}
             className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
               on ? "border-brand bg-brand text-white" : "border-zinc-300 text-zinc-600 hover:border-brand dark:border-white/10 dark:text-zinc-300"
             }`}
           >
-            {labels?.[v] ?? v}
+            {o.label}
           </button>
         );
       })}
