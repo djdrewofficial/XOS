@@ -29,9 +29,15 @@ export default function TwoFactorChallengePage() {
     init();
   }, [init]);
 
-  async function verify(e: React.FormEvent) {
-    e.preventDefault();
-    if (!factorId) return;
+  // auto-submit as soon as a full 6-digit code is entered
+  useEffect(() => {
+    if (code.length === 6 && factorId && !busy) verify();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
+
+  async function verify(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!factorId || busy) return;
     setError(null);
     setBusy(true);
     const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId });

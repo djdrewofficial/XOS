@@ -33,6 +33,12 @@ export default function TwoFactorSetup({ required = false }: { required?: boolea
     refresh();
   }, [refresh]);
 
+  // auto-submit the confirmation code once 6 digits are entered
+  useEffect(() => {
+    if (state === "enrolling" && code.length === 6 && factorId && !busy) verify();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, state]);
+
   async function startEnroll() {
     setError(null);
     setBusy(true);
@@ -54,7 +60,7 @@ export default function TwoFactorSetup({ required = false }: { required?: boolea
   }
 
   async function verify() {
-    if (!factorId) return;
+    if (!factorId || busy) return;
     setError(null);
     setBusy(true);
     const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId });
