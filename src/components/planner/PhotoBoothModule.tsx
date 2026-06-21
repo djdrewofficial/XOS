@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCheck, faCamera, faImages, faSpinner, faArrowRotateRight } from "@fortawesome/free-solid-svg-icons";
+import { faCheck, faCamera, faImages, faSpinner, faArrowRotateRight, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 import {
   loadPhotoBooth,
   selectBackdrop,
@@ -13,29 +13,20 @@ import {
   type BoothDesign,
 } from "@/app/portal/plan/[eventId]/actions";
 
-const PER_PAGE = 24;
+const PER_PAGE = 12; // grid page size
 
-/** Pull the design array out of whatever envelope TemplatesBooth returns
-    (array, {data}, {templates}, {items}, {results}). Maps to our BoothDesign. */
-function normalizeDesigns(payload: unknown): BoothDesign[] {
-  const arr = pickArray(payload);
-  return arr.map((raw) => {
-    const o = (raw ?? {}) as Record<string, unknown>;
-    const str = (k: string) => (o[k] == null ? null : String(o[k]));
-    return {
-      src: str("src") ?? str("thumbnail") ?? str("image") ?? "",
-      post_url: str("post_url"),
-      layout_size: str("layout_size"),
-      image_type: str("image_type"),
-      no_of_images: str("no_of_images"),
-      type: str("type"),
-      type_name: str("type_name"),
-      video_url: str("video_url"),
-      poster: str("poster"),
-    };
-  }).filter((d) => d.src);
-}
+// Categories we expose (TemplatesBooth `tags`), default Wedding. Welcome screens
+// and animated overlays are excluded entirely by forcing type = "static".
+const CATEGORIES = [
+  { value: "wedding", label: "Wedding" },
+  { value: "minimalist", label: "Minimalist" },
+  { value: "corporate", label: "Corporate" },
+] as const;
 
+type Opt = { value: string; label: string };
+type FilterValues = { layout: Opt[]; image_type: Opt[]; no_of_images: Opt[] };
+
+/** Pull the design array out of whatever envelope TemplatesBooth returns. */
 function pickArray(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   if (payload && typeof payload === "object") {
@@ -47,12 +38,35 @@ function pickArray(payload: unknown): unknown[] {
   return [];
 }
 
-type Opt = { value: string; label: string };
-type FilterValues = { no_of_images: Opt[]; layout: Opt[]; type: Opt[] };
+function normalizeDesigns(payload: unknown): BoothDesign[] {
+  return pickArray(payload)
+    .map((raw) => {
+      const o = (raw ?? {}) as Record<string, unknown>;
+      const str = (k: string) => (o[k] == null ? null : String(o[k]));
+      return {
+        src: str("src") ?? str("thumbnail") ?? str("image") ?? "",
+        post_url: str("post_url"),
+        layout_size: str("layout_size"),
+        image_type: str("image_type"),
+        no_of_images: str("no_of_images"),
+        type: str("type"),
+        type_name: str("type_name"),
+        video_url: str("video_url"),
+        poster: str("poster"),
+      };
+    })
+    .filter((d) => d.src);
+}
 
-/** TemplatesBooth /filters returns value→label maps (layout_size/image_type/
-    no_of_images/type/text_display) and an array for tags. Normalize all to
-    {value,label}[] — tolerant of either shape. */
+function totalPagesOf(payload: unknown): number {
+  if (payload && typeof payload === "object") {
+    const tp = (payload as Record<string, unknown>).total_pages;
+    if (typeof tp === "number" && tp > 0) return tp;
+  }
+  return 1;
+}
+
+/** TemplatesBooth /filters returns value→label maps; normalize either shape. */
 function toOpts(v: unknown): Opt[] {
   if (Array.isArray(v)) {
     return v
@@ -75,9 +89,9 @@ function toOpts(v: unknown): Opt[] {
 function normalizeFilters(payload: unknown): FilterValues {
   const o = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
   return {
-    no_of_images: toOpts(o.no_of_images),
     layout: toOpts(o.layout_size ?? o.layout),
-    type: toOpts(o.type),
+    image_type: toOpts(o.image_type),
+    no_of_images: toOpts(o.no_of_images),
   };
 }
 
@@ -86,13 +100,15 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
   const [backdropId, setBackdropId] = useState<string | null>(null);
   const [design, setDesign] = useState<BoothDesign | null>(null);
 
-  const [filters, setFilters] = useState<FilterValues>({ no_of_images: [], layout: [], type: [] });
-  const [activeFilters, setActiveFilters] = useState<{ no_of_images?: string; layout?: string; type?: string }>({});
+  const [filters, setFilters] = useState<FilterValues>({ layout: [], image_type: [], no_of_images: [] });
+  const [active, setActive] = useState<{ tags: string; layout?: string; image_type?: string; no_of_images?: string }>({
+    tags: "wedding",
+  });
 
   const [designs, setDesigns] = useState<BoothDesign[]>([]);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingDesigns, setLoadingDesigns] = useState(true);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
   const [designError, setDesignError] = useState<string | null>(null);
   const reqId = useRef(0);
 
@@ -112,42 +128,45 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
     return () => { alive = false; };
   }, [eventId]);
 
-  // (Re)load designs whenever filters change.
   const loadDesigns = useCallback(
-    async (nextPage: number, replace: boolean) => {
+    async (nextPage: number) => {
       const id = ++reqId.current;
-      setLoadingDesigns(true);
+      setLoading(true);
       setDesignError(null);
       const res = await fetchBoothTemplates(eventId, {
         page: nextPage,
         per_page: PER_PAGE,
-        ...(activeFilters.no_of_images ? { no_of_images: activeFilters.no_of_images } : {}),
-        ...(activeFilters.layout ? { layout: activeFilters.layout } : {}),
-        ...(activeFilters.type ? { type: activeFilters.type } : {}),
+        type: "static", // exclude welcome screens + animated overlays
+        tags: active.tags,
+        ...(active.layout ? { layout: active.layout } : {}),
+        ...(active.image_type ? { image_type: active.image_type } : {}),
+        ...(active.no_of_images ? { no_of_images: active.no_of_images } : {}),
       });
-      if (id !== reqId.current) return; // a newer request superseded this one
+      if (id !== reqId.current) return; // superseded
       if (!res.ok) {
         setDesignError(res.error);
-        setLoadingDesigns(false);
-        if (replace) setDesigns([]);
+        setDesigns([]);
+        setLoading(false);
         return;
       }
-      const items = normalizeDesigns(res.data);
-      setHasMore(items.length >= PER_PAGE);
-      setDesigns((prev) => (replace ? items : [...prev, ...items]));
+      setDesigns(normalizeDesigns(res.data));
+      setTotalPages(totalPagesOf(res.data));
       setPage(nextPage);
-      setLoadingDesigns(false);
+      setLoading(false);
     },
-    [eventId, activeFilters],
+    [eventId, active],
   );
 
-  useEffect(() => {
-    loadDesigns(1, true);
-  }, [loadDesigns]);
+  // Reload page 1 whenever filters change.
+  useEffect(() => { loadDesigns(1); }, [loadDesigns]);
 
-  function toggleFilter(key: "no_of_images" | "layout" | "type", value: string) {
+  function setCategory(v: string) {
     if (!canEdit) return;
-    setActiveFilters((prev) => ({ ...prev, [key]: prev[key] === value ? undefined : value }));
+    setActive((p) => ({ ...p, tags: v }));
+  }
+  function toggleFilter(key: "layout" | "image_type" | "no_of_images", value: string) {
+    if (!canEdit) return;
+    setActive((p) => ({ ...p, [key]: p[key] === value ? undefined : value }));
   }
 
   function chooseBackdrop(b: BoothBackdrop) {
@@ -178,21 +197,21 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
             No backdrops available yet — check back soon!
           </p>
         ) : (
-          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-3 [scrollbar-width:thin]">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {backdrops.map((b) => {
-              const active = b.id === backdropId;
+              const sel = b.id === backdropId;
               return (
                 <button
                   key={b.id}
                   onClick={() => chooseBackdrop(b)}
                   disabled={!canEdit}
-                  className={`group relative w-40 shrink-0 snap-start overflow-hidden rounded-2xl border-2 text-left transition disabled:cursor-default ${
-                    active ? "border-brand ring-2 ring-brand/30" : "border-zinc-200 hover:border-brand/50 dark:border-white/10"
+                  className={`group relative overflow-hidden rounded-2xl border-2 text-left transition disabled:cursor-default ${
+                    sel ? "border-brand ring-2 ring-brand/30" : "border-zinc-200 hover:border-brand/50 dark:border-white/10"
                   }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={b.image_url} alt={b.name} className="h-52 w-full object-cover" />
-                  {active && (
+                  <img src={b.image_url} alt={b.name} className="h-44 w-full object-cover" />
+                  {sel && (
                     <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-brand text-white shadow">
                       <FontAwesomeIcon icon={faCheck} />
                     </span>
@@ -215,70 +234,96 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
           {design && <span className="text-zinc-400">· {design.type_name ?? "selected"}</span>}
         </h3>
 
-        {/* Filters */}
+        {/* Category (single-select, always one) */}
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 w-16 shrink-0 text-[11px] font-bold uppercase tracking-wide text-zinc-400">Category</span>
+          {CATEGORIES.map((cat) => {
+            const on = active.tags === cat.value;
+            return (
+              <button
+                key={cat.value}
+                onClick={() => setCategory(cat.value)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                  on ? "border-brand bg-brand text-white" : "border-zinc-300 text-zinc-600 hover:border-brand dark:border-white/10 dark:text-zinc-300"
+                }`}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Other filters (single-select, clearable) */}
         <div className="mb-4 space-y-2">
-          <FilterRow label="Photos" options={filters.no_of_images} active={activeFilters.no_of_images} onPick={(v) => toggleFilter("no_of_images", v)} />
-          <FilterRow label="Layout" options={filters.layout} active={activeFilters.layout} onPick={(v) => toggleFilter("layout", v)} />
-          <FilterRow label="Type" options={filters.type} active={activeFilters.type} onPick={(v) => toggleFilter("type", v)} />
+          <FilterRow label="Layout" options={filters.layout} active={active.layout} onPick={(v) => toggleFilter("layout", v)} />
+          <FilterRow label="Image" options={filters.image_type} active={active.image_type} onPick={(v) => toggleFilter("image_type", v)} />
+          <FilterRow label="Photos" options={filters.no_of_images} active={active.no_of_images} onPick={(v) => toggleFilter("no_of_images", v)} />
         </div>
 
         {designError ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-center text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
             <p>Couldn&apos;t load designs: {designError}</p>
-            <button onClick={() => loadDesigns(1, true)} className="mt-2 inline-flex items-center gap-2 font-semibold underline">
+            <button onClick={() => loadDesigns(1)} className="mt-2 inline-flex items-center gap-2 font-semibold underline">
               <FontAwesomeIcon icon={faArrowRotateRight} /> Try again
             </button>
           </div>
+        ) : loading ? (
+          <div className="flex h-64 items-center justify-center text-zinc-400">
+            <FontAwesomeIcon icon={faSpinner} spin size="lg" />
+          </div>
+        ) : designs.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-400 dark:border-white/10">
+            No designs match these filters.
+          </p>
         ) : (
           <>
-            <div className="flex snap-x gap-3 overflow-x-auto pb-3 [scrollbar-width:thin]">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {designs.map((d, i) => {
-                const active = design?.src === d.src;
+                const sel = design?.src === d.src;
                 return (
                   <button
                     key={`${d.src}-${i}`}
                     onClick={() => chooseDesign(d)}
                     disabled={!canEdit}
-                    className={`group relative w-36 shrink-0 snap-start overflow-hidden rounded-2xl border-2 bg-zinc-50 transition disabled:cursor-default dark:bg-white/5 ${
-                      active ? "border-brand ring-2 ring-brand/30" : "border-zinc-200 hover:border-brand/50 dark:border-white/10"
+                    className={`group relative overflow-hidden rounded-2xl border-2 bg-zinc-50 transition disabled:cursor-default dark:bg-white/5 ${
+                      sel ? "border-brand ring-2 ring-brand/30" : "border-zinc-200 hover:border-brand/50 dark:border-white/10"
                     }`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={d.src} alt={d.type_name ?? "Design"} className="h-56 w-full object-contain" />
-                    {active && (
+                    <img src={d.src} alt={d.type_name ?? "Design"} className="h-56 w-full bg-white object-contain dark:bg-zinc-900" />
+                    {sel && (
                       <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-brand text-white shadow">
                         <FontAwesomeIcon icon={faCheck} />
                       </span>
                     )}
-                    {(d.no_of_images || d.type_name) && (
+                    {d.no_of_images && (
                       <div className="absolute inset-x-0 bottom-0 flex flex-wrap gap-1 bg-gradient-to-t from-black/70 to-transparent p-1.5">
-                        {d.no_of_images && <span className="rounded bg-white/20 px-1 text-[9px] font-semibold text-white">{d.no_of_images}</span>}
-                        {d.type_name && <span className="rounded bg-white/20 px-1 text-[9px] font-semibold text-white">{d.type_name}</span>}
+                        <span className="rounded bg-white/20 px-1 text-[9px] font-semibold text-white">{d.no_of_images}</span>
                       </div>
                     )}
                   </button>
                 );
               })}
-              {loadingDesigns && (
-                <div className="flex w-36 shrink-0 items-center justify-center rounded-2xl border border-dashed border-zinc-200 text-zinc-400 dark:border-white/10">
-                  <FontAwesomeIcon icon={faSpinner} spin />
-                </div>
-              )}
             </div>
 
-            {!loadingDesigns && designs.length === 0 && (
-              <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-400 dark:border-white/10">
-                No designs match these filters.
-              </p>
-            )}
-
-            {hasMore && designs.length > 0 && !loadingDesigns && (
-              <div className="mt-2 text-center">
-                <button onClick={() => loadDesigns(page + 1, false)} className="btn-ghost px-4 py-2 text-sm">
-                  Load more designs
-                </button>
-              </div>
-            )}
+            {/* Pager */}
+            <div className="mt-5 flex items-center justify-center gap-4">
+              <button
+                onClick={() => loadDesigns(page - 1)}
+                disabled={page <= 1}
+                className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-30"
+              >
+                <FontAwesomeIcon icon={faChevronLeft} className="mr-1.5" /> Prev
+              </button>
+              <span className="text-sm font-medium text-zinc-500">Page {page} of {totalPages}</span>
+              <button
+                onClick={() => loadDesigns(page + 1)}
+                disabled={page >= totalPages}
+                className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-30"
+              >
+                Next <FontAwesomeIcon icon={faChevronRight} className="ml-1.5" />
+              </button>
+            </div>
           </>
         )}
       </section>
@@ -300,7 +345,7 @@ function FilterRow({
   if (options.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 w-14 shrink-0 text-[11px] font-bold uppercase tracking-wide text-zinc-400">{label}</span>
+      <span className="mr-1 w-16 shrink-0 text-[11px] font-bold uppercase tracking-wide text-zinc-400">{label}</span>
       {options.map((o) => {
         const on = active === o.value;
         return (
