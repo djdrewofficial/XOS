@@ -794,9 +794,10 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
   const atLimit = section.song_limit != null && section.songs.length >= section.song_limit;
   const mustPlayFull = section.must_play_limit != null && section.must_play_count >= section.must_play_limit;
   const canMustPlay = !isGuest && (isStaff || role === "host");
-  // Long song lists collapse so they don't bury the questions; auto-collapsed
-  // when there are a lot of songs.
-  const [songsOpen, setSongsOpen] = useState(section.songs.length <= 12);
+  // Long song lists show a short preview with a prominent "show all" expander so
+  // they don't bury the questions. songsOpen = show the full (scroll-capped) list.
+  const [songsOpen, setSongsOpen] = useState(false);
+  const SONG_PREVIEW = 4;
 
   if (section.section_type === "headline") {
     return (
@@ -877,59 +878,59 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
           />
         )}
 
-        {/* Songs — collapsible + scroll-capped so a big list stays contained. */}
+        {/* Songs — preview a few; prominent expander reveals the rest (scroll-capped). */}
         {showSongs && (
           <section>
-            <button
-              onClick={() => setSongsOpen((o) => !o)}
-              className="mb-3 flex w-full items-center justify-between gap-2 text-left"
-            >
-              <h3 className="text-xs font-bold uppercase tracking-wider text-brand dark:text-brand-lighter">
-                Songs <span className="text-zinc-400">{section.songs.length}{section.song_limit != null ? `/${section.song_limit}` : ""}</span>
-                {section.must_play_limit != null && (
-                  <span className="ml-2 text-zinc-400">· {section.must_play_count}/{section.must_play_limit} must-play</span>
-                )}
-              </h3>
-              <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
-                {songsOpen ? "Hide" : "Show"}
-                <FontAwesomeIcon icon={songsOpen ? faChevronUp : faChevronDown} />
-              </span>
-            </button>
+            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-brand dark:text-brand-lighter">
+              Songs <span className="text-zinc-400">{section.songs.length}{section.song_limit != null ? `/${section.song_limit}` : ""}</span>
+              {section.must_play_limit != null && (
+                <span className="ml-2 text-zinc-400">· {section.must_play_count}/{section.must_play_limit} must-play</span>
+              )}
+            </h3>
 
-            {songsOpen && (
-              <>
-                {section.songs.length === 0 && (
-                  <p className="mb-3 rounded-xl border border-dashed border-zinc-300 p-5 text-center text-sm text-zinc-400 dark:border-white/10">No songs yet.</p>
-                )}
+            {section.songs.length === 0 && (
+              <p className="mb-3 rounded-xl border border-dashed border-zinc-300 p-5 text-center text-sm text-zinc-400 dark:border-white/10">No songs yet.</p>
+            )}
 
-                <ul className="max-h-[28rem] space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
-                  {section.songs.map((song, i) => (
-                    <SongRow
-                      key={song.id}
-                      eventId={eventId}
-                      song={song}
-                      index={i}
-                      total={section.songs.length}
-                      orderedIds={section.songs.map((s) => s.id)}
-                      sectionId={section.id}
-                      canEdit={canEditSongs}
-                      canMustPlay={canMustPlay}
-                      mustPlayFull={mustPlayFull}
-                      showWhoAdded={isStaff || role === "host"}
-                    />
-                  ))}
-                </ul>
+            <ul className={`space-y-2 ${songsOpen ? "max-h-[28rem] overflow-y-auto pr-1 [scrollbar-width:thin]" : ""}`}>
+              {(songsOpen ? section.songs : section.songs.slice(0, SONG_PREVIEW)).map((song, i) => (
+                <SongRow
+                  key={song.id}
+                  eventId={eventId}
+                  song={song}
+                  index={i}
+                  total={section.songs.length}
+                  orderedIds={section.songs.map((s) => s.id)}
+                  sectionId={section.id}
+                  canEdit={canEditSongs}
+                  canMustPlay={canMustPlay}
+                  mustPlayFull={mustPlayFull}
+                  showWhoAdded={isStaff || role === "host"}
+                />
+              ))}
+            </ul>
 
-                {canEditSongs && !atLimit && (
-                  <div className="mt-4 flex flex-wrap items-start gap-2">
-                    <MusicSearch eventId={eventId} sectionId={section.id} onAdd={addSong} />
-                    <SpotifyImport eventId={eventId} sectionId={section.id} />
-                  </div>
+            {section.songs.length > SONG_PREVIEW && (
+              <button
+                onClick={() => setSongsOpen((o) => !o)}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-brand/40 bg-brand/[0.04] py-2.5 text-sm font-bold text-brand transition hover:bg-brand/10 dark:border-brand-light/40 dark:text-brand-lighter"
+              >
+                {songsOpen ? (
+                  <>Show fewer <FontAwesomeIcon icon={faChevronUp} /></>
+                ) : (
+                  <>Show all {section.songs.length} songs <FontAwesomeIcon icon={faChevronDown} /></>
                 )}
-                {atLimit && (
-                  <p className="mt-3 text-xs text-zinc-400">Limited to {section.song_limit} song{section.song_limit === 1 ? "" : "s"}.</p>
-                )}
-              </>
+              </button>
+            )}
+
+            {canEditSongs && !atLimit && (
+              <div className="mt-4 flex flex-wrap items-start gap-2">
+                <MusicSearch eventId={eventId} sectionId={section.id} onAdd={addSong} />
+                <SpotifyImport eventId={eventId} sectionId={section.id} />
+              </div>
+            )}
+            {atLimit && (
+              <p className="mt-3 text-xs text-zinc-400">Limited to {section.song_limit} song{section.song_limit === 1 ? "" : "s"}.</p>
             )}
           </section>
         )}
