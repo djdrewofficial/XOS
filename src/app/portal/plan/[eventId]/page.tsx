@@ -12,6 +12,7 @@ import {
   resolveEventRole,
 } from "@/lib/planning";
 import Planner from "@/components/planner/Planner";
+import ThemeToggleIcon from "@/components/planner/ThemeToggleIcon";
 import SignOutButton from "@/components/SignOutButton";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +72,8 @@ export default async function PlannerPage({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-dark.png" alt="Xpress Entertainment" className="hidden h-7 dark:block" />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <ThemeToggleIcon />
             <RoleBadge role={role} />
             {role !== "staff" && <SignOutButton />}
           </div>
