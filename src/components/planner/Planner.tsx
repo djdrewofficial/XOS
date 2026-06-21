@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import confetti from "canvas-confetti";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -156,6 +157,26 @@ export default function Planner({
     url.searchParams.set("s", id);
     window.history.replaceState(null, "", url.toString());
   }
+
+  // Re-pull on tab focus (throttled) so live-synced songs and other changes show
+  // up without a manual reload. router.refresh re-runs the server page, which
+  // also triggers the throttled sync-on-open.
+  const router = useRouter();
+  useEffect(() => {
+    let last = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - last > 20_000) {
+        last = Date.now();
+        router.refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [router]);
 
   const sections = order;
   const selected = sections.find((s) => s.id === selectedId) ?? sections[0] ?? null;

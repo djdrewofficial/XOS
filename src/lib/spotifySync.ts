@@ -78,19 +78,45 @@ export async function reconcileSection(admin: Admin, section: SyncSectionRow): P
   return { added: toAdd.length, removed: toRemove.length };
 }
 
-/** Reconcile every live-synced section (the hourly cron). */
+/** Reconcile every live-synced section for UPCOMING, non-archived events (the
+    hourly cron). Past/archived events are skipped so the working set stays small
+    as events pile up. */
 export async function syncAllSections(admin: Admin): Promise<{ sections: number; added: number; removed: number }> {
+  const today = new Date().toISOString().slice(0, 10);
   const { data: sections } = await admin
     .from("planning_sections")
-    .select("id, event_id, song_limit, spotify_sync_playlist_id, spotify_sync_user_id")
+    .select("id, event_id, song_limit, spotify_sync_playlist_id, spotify_sync_user_id, events!inner(event_date, archived_at)")
     .not("spotify_sync_playlist_id", "is", null);
 
   let added = 0;
   let removed = 0;
+  let count = 0;
   for (const s of sections ?? []) {
-    const r = await reconcileSection(admin, s as SyncSectionRow);
+    const ev = (s as unknown as { events: { event_date: string | null; archived_at: string | null } | null }).events;
+    if (ev?.archived_at) continue;
+    if (ev?.event_date && ev.event_date < today) continue; // event already happened
+    count++;
+    const r = await reconcileSection(admin, s as unknown as SyncSectionRow);
     added += r.added;
     removed += r.removed;
   }
-  return { sections: (sections ?? []).length, added, removed };
+  return { sections: count, added, removed };
+}
+
+/** Reconcile one event's live-synced sections, skipping any synced within
+    maxAgeMs (so opening/refreshing the planner gives fresh songs without
+    hammering Spotify on every navigation). Best-effort; callers ignore errors. */
+export async function syncEventSections(admin: Admin, eventId: string, maxAgeMs = 120_000): Promise<void> {
+  const { data: sections } = await admin
+    .from("planning_sections")
+    .select("id, event_id, song_limit, spotify_sync_playlist_id, spotify_sync_user_id, spotify_synced_at")
+    .eq("event_id", eventId)
+    .not("spotify_sync_playlist_id", "is", null);
+
+  const now = Date.now();
+  for (const s of sections ?? []) {
+    const at = (s as unknown as { spotify_synced_at: string | null }).spotify_synced_at;
+    if (at && now - new Date(at).getTime() < maxAgeMs) continue; // synced very recently
+    await reconcileSection(admin, s as unknown as SyncSectionRow);
+  }
 }

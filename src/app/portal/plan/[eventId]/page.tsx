@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getMe } from "@/lib/auth";
+import { syncEventSections } from "@/lib/spotifySync";
 import {
   ensureEventPlanning,
   loadEventPlanning,
@@ -39,6 +41,13 @@ export default async function PlannerPage({
 
   // Seed sections from the matching template on first open (admin client).
   await ensureEventPlanning(eventId, event.event_type_id);
+
+  // Pull fresh songs for any live-synced sections (throttled; best-effort).
+  try {
+    await syncEventSections(createAdminClient(), eventId);
+  } catch {
+    /* a Spotify hiccup must never block the planner */
+  }
 
   const planning = await loadEventPlanning(supabase, eventId, me.userId, role);
   const people = role === "guest" ? { hosts: [], guests: [] } : await loadEventPeople(supabase, eventId);
