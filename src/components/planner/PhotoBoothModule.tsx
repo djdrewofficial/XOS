@@ -8,25 +8,30 @@ import {
   selectBackdrop,
   selectBoothDesign,
   fetchBoothTemplates,
-  fetchBoothFilters,
   type BoothBackdrop,
   type BoothDesign,
 } from "@/app/portal/plan/[eventId]/actions";
 
 const PER_PAGE = 12; // grid page size
 
-// Categories we expose (TemplatesBooth `tags`), default Wedding. Welcome screens
-// and animated overlays are excluded entirely by forcing type = "static".
+// Curated, fixed option sets (TemplatesBooth values). Designs are always static
+// (no welcome screens / animated overlays) and one of these layouts + counts.
 const CATEGORIES = [
   { value: "wedding", label: "Wedding" },
   { value: "minimalist", label: "Minimalist" },
   { value: "corporate", label: "Corporate" },
-] as const;
+];
+const LAYOUTS = [
+  { value: "26strip", label: "2×6 Strip" },
+  { value: "46postcard-p", label: "4×6 Portrait" },
+];
+const PHOTO_COUNTS = [
+  { value: "1images", label: "1 photo" },
+  { value: "3images", label: "3 photos" },
+];
 
 type Opt = { value: string; label: string };
-type FilterValues = { layout: Opt[]; image_type: Opt[]; no_of_images: Opt[] };
 
-/** Pull the design array out of whatever envelope TemplatesBooth returns. */
 function pickArray(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   if (payload && typeof payload === "object") {
@@ -66,43 +71,16 @@ function totalPagesOf(payload: unknown): number {
   return 1;
 }
 
-/** TemplatesBooth /filters returns value→label maps; normalize either shape. */
-function toOpts(v: unknown): Opt[] {
-  if (Array.isArray(v)) {
-    return v
-      .map((x) =>
-        x && typeof x === "object"
-          ? {
-              value: String((x as Record<string, unknown>).value ?? (x as Record<string, unknown>).slug ?? ""),
-              label: String((x as Record<string, unknown>).label ?? (x as Record<string, unknown>).name ?? (x as Record<string, unknown>).value ?? ""),
-            }
-          : { value: String(x), label: String(x) },
-      )
-      .filter((o) => o.value);
-  }
-  if (v && typeof v === "object") {
-    return Object.entries(v as Record<string, unknown>).map(([value, label]) => ({ value, label: String(label) }));
-  }
-  return [];
-}
-
-function normalizeFilters(payload: unknown): FilterValues {
-  const o = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
-  return {
-    layout: toOpts(o.layout_size ?? o.layout),
-    image_type: toOpts(o.image_type),
-    no_of_images: toOpts(o.no_of_images),
-  };
-}
-
 export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string; canEdit: boolean }) {
   const [backdrops, setBackdrops] = useState<BoothBackdrop[]>([]);
   const [backdropId, setBackdropId] = useState<string | null>(null);
   const [design, setDesign] = useState<BoothDesign | null>(null);
 
-  const [filters, setFilters] = useState<FilterValues>({ layout: [], image_type: [], no_of_images: [] });
-  const [active, setActive] = useState<{ tags: string; layout?: string; image_type?: string; no_of_images?: string }>({
+  // All three are required (single-select). Defaults: Wedding · 2×6 Strip · 3 photos.
+  const [active, setActive] = useState<{ tags: string; layout: string; no_of_images: string }>({
     tags: "wedding",
+    layout: "26strip",
+    no_of_images: "3images",
   });
 
   const [designs, setDesigns] = useState<BoothDesign[]>([]);
@@ -114,16 +92,14 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
 
   const [, startSave] = useTransition();
 
-  // Initial: saved selection + backdrops + filter values.
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [pb, f] = await Promise.all([loadPhotoBooth(eventId), fetchBoothFilters(eventId)]);
+      const pb = await loadPhotoBooth(eventId);
       if (!alive) return;
       setBackdrops(pb.backdrops);
       setBackdropId(pb.selection?.backdrop_id ?? null);
       setDesign(pb.selection?.design ?? null);
-      if (f.ok) setFilters(normalizeFilters(f.data));
     })();
     return () => { alive = false; };
   }, [eventId]);
@@ -138,9 +114,8 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
         per_page: PER_PAGE,
         type: "static", // exclude welcome screens + animated overlays
         tags: active.tags,
-        ...(active.layout ? { layout: active.layout } : {}),
-        ...(active.image_type ? { image_type: active.image_type } : {}),
-        ...(active.no_of_images ? { no_of_images: active.no_of_images } : {}),
+        layout: active.layout,
+        no_of_images: active.no_of_images,
       });
       if (id !== reqId.current) return; // superseded
       if (!res.ok) {
@@ -157,17 +132,11 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
     [eventId, active],
   );
 
-  // Reload page 1 whenever filters change.
   useEffect(() => { loadDesigns(1); }, [loadDesigns]);
 
-  function setCategory(v: string) {
-    if (!canEdit) return;
-    setActive((p) => ({ ...p, tags: v }));
-  }
-  function toggleFilter(key: "layout" | "image_type" | "no_of_images", value: string) {
-    if (!canEdit) return;
-    setActive((p) => ({ ...p, [key]: p[key] === value ? undefined : value }));
-  }
+  const setFilter = (key: "tags" | "layout" | "no_of_images", value: string) => {
+    if (canEdit) setActive((p) => ({ ...p, [key]: value }));
+  };
 
   function chooseBackdrop(b: BoothBackdrop) {
     if (!canEdit) return;
@@ -231,33 +200,13 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
       <section>
         <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand dark:text-brand-lighter">
           <FontAwesomeIcon icon={faCamera} /> Photo-strip design
-          {design && <span className="text-zinc-400">· {design.type_name ?? "selected"}</span>}
+          {design && <span className="text-zinc-400">· selected</span>}
         </h3>
 
-        {/* Category (single-select, always one) */}
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 w-16 shrink-0 text-[11px] font-bold uppercase tracking-wide text-zinc-400">Category</span>
-          {CATEGORIES.map((cat) => {
-            const on = active.tags === cat.value;
-            return (
-              <button
-                key={cat.value}
-                onClick={() => setCategory(cat.value)}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                  on ? "border-brand bg-brand text-white" : "border-zinc-300 text-zinc-600 hover:border-brand dark:border-white/10 dark:text-zinc-300"
-                }`}
-              >
-                {cat.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Other filters (single-select, clearable) */}
         <div className="mb-4 space-y-2">
-          <FilterRow label="Layout" options={filters.layout} active={active.layout} onPick={(v) => toggleFilter("layout", v)} />
-          <FilterRow label="Image" options={filters.image_type} active={active.image_type} onPick={(v) => toggleFilter("image_type", v)} />
-          <FilterRow label="Photos" options={filters.no_of_images} active={active.no_of_images} onPick={(v) => toggleFilter("no_of_images", v)} />
+          <FilterRow label="Theme" options={CATEGORIES} active={active.tags} onPick={(v) => setFilter("tags", v)} />
+          <FilterRow label="Size" options={LAYOUTS} active={active.layout} onPick={(v) => setFilter("layout", v)} />
+          <FilterRow label="Photos" options={PHOTO_COUNTS} active={active.no_of_images} onPick={(v) => setFilter("no_of_images", v)} />
         </div>
 
         {designError ? (
@@ -273,7 +222,7 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
           </div>
         ) : designs.length === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-400 dark:border-white/10">
-            No designs match these filters.
+            No designs match these options.
           </p>
         ) : (
           <>
@@ -296,31 +245,17 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
                         <FontAwesomeIcon icon={faCheck} />
                       </span>
                     )}
-                    {d.no_of_images && (
-                      <div className="absolute inset-x-0 bottom-0 flex flex-wrap gap-1 bg-gradient-to-t from-black/70 to-transparent p-1.5">
-                        <span className="rounded bg-white/20 px-1 text-[9px] font-semibold text-white">{d.no_of_images}</span>
-                      </div>
-                    )}
                   </button>
                 );
               })}
             </div>
 
-            {/* Pager */}
             <div className="mt-5 flex items-center justify-center gap-4">
-              <button
-                onClick={() => loadDesigns(page - 1)}
-                disabled={page <= 1}
-                className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-30"
-              >
+              <button onClick={() => loadDesigns(page - 1)} disabled={page <= 1} className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-30">
                 <FontAwesomeIcon icon={faChevronLeft} className="mr-1.5" /> Prev
               </button>
               <span className="text-sm font-medium text-zinc-500">Page {page} of {totalPages}</span>
-              <button
-                onClick={() => loadDesigns(page + 1)}
-                disabled={page >= totalPages}
-                className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-30"
-              >
+              <button onClick={() => loadDesigns(page + 1)} disabled={page >= totalPages} className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-30">
                 Next <FontAwesomeIcon icon={faChevronRight} className="ml-1.5" />
               </button>
             </div>
@@ -331,18 +266,8 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
   );
 }
 
-function FilterRow({
-  label,
-  options,
-  active,
-  onPick,
-}: {
-  label: string;
-  options: Opt[];
-  active: string | undefined;
-  onPick: (v: string) => void;
-}) {
-  if (options.length === 0) return null;
+/** Required single-select chip row (one option always active). */
+function FilterRow({ label, options, active, onPick }: { label: string; options: Opt[]; active: string; onPick: (v: string) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="mr-1 w-16 shrink-0 text-[11px] font-bold uppercase tracking-wide text-zinc-400">{label}</span>
@@ -352,7 +277,7 @@ function FilterRow({
           <button
             key={o.value}
             onClick={() => onPick(o.value)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+            className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
               on ? "border-brand bg-brand text-white" : "border-zinc-300 text-zinc-600 hover:border-brand dark:border-white/10 dark:text-zinc-300"
             }`}
           >
