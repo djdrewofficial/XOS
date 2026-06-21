@@ -144,6 +144,19 @@ export default function Planner({
     if (isStaff) listLibrarySections(eventId).then(setLibraryOptions).catch(() => {});
   }, [isStaff, eventId]);
 
+  // Remember the open section across refreshes via ?s=<id> (post-mount to avoid
+  // a hydration mismatch). selectSection keeps the URL in sync as you navigate.
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("s");
+    if (s && planning.sections.some((x) => x.id === s)) setSelectedId(s);
+  }, [planning.sections]);
+  function selectSection(id: string) {
+    setSelectedId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("s", id);
+    window.history.replaceState(null, "", url.toString());
+  }
+
   const sections = order;
   const selected = sections.find((s) => s.id === selectedId) ?? sections[0] ?? null;
   const settingsSection = planning.sections.find((s) => s.id === settingsId) ?? null;
@@ -240,7 +253,7 @@ export default function Planner({
                 selectedId={selected?.id ?? null}
                 role={role}
                 libraryOptions={libraryOptions}
-                onSelect={setSelectedId}
+                onSelect={selectSection}
                 onSettings={(id) => setSettingsId(id)}
                 onReorder={(next) => {
                   setOrder(next);
@@ -250,13 +263,13 @@ export default function Planner({
                 onInsert={async (afterSortOrder, input) => {
                   const res = await addSection(eventId, afterSortOrder, input);
                   if (res?.ok && isStaff && res.id) {
-                    setSelectedId(res.id);
+                    selectSection(res.id);
                     setSettingsId(res.id); // open settings so staff can finish setup
                   }
                 }}
                 onInsertTemplate={async (afterSortOrder, templateSectionId) => {
                   const res = await addLibrarySection(eventId, afterSortOrder, templateSectionId);
-                  if (res?.ok && res.id) setSelectedId(res.id);
+                  if (res?.ok && res.id) selectSection(res.id);
                 }}
               />
               {isStaff && planning.hostDeletedSections.length > 0 && (
