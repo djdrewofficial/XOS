@@ -23,6 +23,8 @@ import {
   faWandMagicSparkles,
   faTableCells,
   faRoute,
+  faChevronDown,
+  faChevronUp,
 } from "@fortawesome/free-solid-svg-icons";
 import { faHeart as faHeartOutline, faCircle, faStar as faStarOutline } from "@fortawesome/free-regular-svg-icons";
 import { faSpotify } from "@fortawesome/free-brands-svg-icons";
@@ -792,6 +794,9 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
   const atLimit = section.song_limit != null && section.songs.length >= section.song_limit;
   const mustPlayFull = section.must_play_limit != null && section.must_play_count >= section.must_play_limit;
   const canMustPlay = !isGuest && (isStaff || role === "host");
+  // Long song lists collapse so they don't bury the questions; auto-collapsed
+  // when there are a lot of songs.
+  const [songsOpen, setSongsOpen] = useState(section.songs.length <= 12);
 
   if (section.section_type === "headline") {
     return (
@@ -838,63 +843,9 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
 
         {isPhotoBooth && <PhotoBoothModule eventId={eventId} canEdit={isStaff || role === "host"} isStaff={isStaff} />}
 
-        {showSongs && section.spotify_sync_playlist_name && (
-          <SpotifySyncBanner
-            eventId={eventId}
-            sectionId={section.id}
-            playlistName={section.spotify_sync_playlist_name}
-            syncedAt={section.spotify_synced_at}
-            canEdit={canEditSongs}
-          />
-        )}
-
-        {showSongs && (
-          <section className="mb-6">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-brand dark:text-brand-lighter">
-                Songs <span className="text-zinc-400">{section.songs.length}{section.song_limit != null ? `/${section.song_limit}` : ""}</span>
-                {section.must_play_limit != null && (
-                  <span className="ml-2 text-zinc-400">· {section.must_play_count}/{section.must_play_limit} must-play</span>
-                )}
-              </h3>
-            </div>
-
-            {section.songs.length === 0 && (
-              <p className="mb-3 rounded-xl border border-dashed border-zinc-300 p-5 text-center text-sm text-zinc-400 dark:border-white/10">No songs yet.</p>
-            )}
-
-            <ul className="space-y-2">
-              {section.songs.map((song, i) => (
-                <SongRow
-                  key={song.id}
-                  eventId={eventId}
-                  song={song}
-                  index={i}
-                  total={section.songs.length}
-                  orderedIds={section.songs.map((s) => s.id)}
-                  sectionId={section.id}
-                  canEdit={canEditSongs}
-                  canMustPlay={canMustPlay}
-                  mustPlayFull={mustPlayFull}
-                  showWhoAdded={isStaff || role === "host"}
-                />
-              ))}
-            </ul>
-
-            {canEditSongs && !atLimit && (
-              <div className="mt-4 flex flex-wrap items-start gap-2">
-                <MusicSearch eventId={eventId} sectionId={section.id} onAdd={addSong} />
-                <SpotifyImport eventId={eventId} sectionId={section.id} />
-              </div>
-            )}
-            {atLimit && (
-              <p className="mt-3 text-xs text-zinc-400">Limited to {section.song_limit} song{section.song_limit === 1 ? "" : "s"}.</p>
-            )}
-          </section>
-        )}
-
+        {/* Questions first — they never get buried under a long playlist. */}
         {showQuestions && section.questions.length > 0 && (
-          <section>
+          <section className="mb-6">
             {showSongs && (
               <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-brand dark:text-brand-lighter">
                 Questions <span className="text-zinc-400">{section.answered_count}/{section.questions.length}</span>
@@ -913,6 +864,73 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
                   />
                 ))}
             </div>
+          </section>
+        )}
+
+        {showSongs && section.spotify_sync_playlist_name && (
+          <SpotifySyncBanner
+            eventId={eventId}
+            sectionId={section.id}
+            playlistName={section.spotify_sync_playlist_name}
+            syncedAt={section.spotify_synced_at}
+            canEdit={canEditSongs}
+          />
+        )}
+
+        {/* Songs — collapsible + scroll-capped so a big list stays contained. */}
+        {showSongs && (
+          <section>
+            <button
+              onClick={() => setSongsOpen((o) => !o)}
+              className="mb-3 flex w-full items-center justify-between gap-2 text-left"
+            >
+              <h3 className="text-xs font-bold uppercase tracking-wider text-brand dark:text-brand-lighter">
+                Songs <span className="text-zinc-400">{section.songs.length}{section.song_limit != null ? `/${section.song_limit}` : ""}</span>
+                {section.must_play_limit != null && (
+                  <span className="ml-2 text-zinc-400">· {section.must_play_count}/{section.must_play_limit} must-play</span>
+                )}
+              </h3>
+              <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                {songsOpen ? "Hide" : "Show"}
+                <FontAwesomeIcon icon={songsOpen ? faChevronUp : faChevronDown} />
+              </span>
+            </button>
+
+            {songsOpen && (
+              <>
+                {section.songs.length === 0 && (
+                  <p className="mb-3 rounded-xl border border-dashed border-zinc-300 p-5 text-center text-sm text-zinc-400 dark:border-white/10">No songs yet.</p>
+                )}
+
+                <ul className="max-h-[28rem] space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
+                  {section.songs.map((song, i) => (
+                    <SongRow
+                      key={song.id}
+                      eventId={eventId}
+                      song={song}
+                      index={i}
+                      total={section.songs.length}
+                      orderedIds={section.songs.map((s) => s.id)}
+                      sectionId={section.id}
+                      canEdit={canEditSongs}
+                      canMustPlay={canMustPlay}
+                      mustPlayFull={mustPlayFull}
+                      showWhoAdded={isStaff || role === "host"}
+                    />
+                  ))}
+                </ul>
+
+                {canEditSongs && !atLimit && (
+                  <div className="mt-4 flex flex-wrap items-start gap-2">
+                    <MusicSearch eventId={eventId} sectionId={section.id} onAdd={addSong} />
+                    <SpotifyImport eventId={eventId} sectionId={section.id} />
+                  </div>
+                )}
+                {atLimit && (
+                  <p className="mt-3 text-xs text-zinc-400">Limited to {section.song_limit} song{section.song_limit === 1 ? "" : "s"}.</p>
+                )}
+              </>
+            )}
           </section>
         )}
       </div>
