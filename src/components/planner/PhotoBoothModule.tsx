@@ -16,10 +16,11 @@ const PER_PAGE = 12; // grid page size
 
 // Curated, fixed option sets (TemplatesBooth values). Designs are always static
 // (no welcome screens / animated overlays) and one of these layouts + counts.
+// TemplatesBooth `tags` filters by tag ID (slugs are ignored). IDs from /filters.
 const CATEGORIES = [
-  { value: "wedding", label: "Wedding" },
-  { value: "minimalist", label: "Minimalist" },
-  { value: "corporate", label: "Corporate" },
+  { value: "6", label: "Wedding" },
+  { value: "31", label: "Minimalist" },
+  { value: "258", label: "Corporate" },
 ];
 const LAYOUTS = [
   { value: "26strip", label: "2×6 Strip" },
@@ -78,7 +79,7 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
 
   // All three are required (single-select). Defaults: Wedding · 2×6 Strip · 3 photos.
   const [active, setActive] = useState<{ tags: string; layout: string; no_of_images: string }>({
-    tags: "wedding",
+    tags: "6", // Wedding
     layout: "26strip",
     no_of_images: "3images",
   });
