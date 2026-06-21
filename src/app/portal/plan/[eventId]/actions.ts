@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getMe } from "@/lib/auth";
-import { resolveEventRole, resolveUserNames } from "@/lib/planning";
+import { resolveEventRole, resolveUserNames, addLibrarySectionToEvent } from "@/lib/planning";
 import { sendAccountInvite } from "@/lib/accounts";
 import {
   getSpotifyConnection,
@@ -428,6 +428,65 @@ export async function addSection(
   await logAction(supabase, eventId, me, "Added section", title);
   revalidate();
   return { ok: true, id: created.id as string };
+}
+
+export type LibrarySectionOption = {
+  id: string;
+  title: string;
+  icon: string | null;
+  module: string | null;
+  section_type: string;
+  question_count: number;
+};
+
+/** The reusable Section Templates library, for the staff "Add Section" picker. */
+export async function listLibrarySections(eventId: string): Promise<LibrarySectionOption[]> {
+  const { supabase } = await requireStaff(eventId);
+  const { data: lib } = await supabase
+    .from("planning_templates")
+    .select("id")
+    .eq("is_library", true)
+    .maybeSingle();
+  if (!lib) return [];
+  const { data: secs } = await supabase
+    .from("planning_template_sections")
+    .select("id, title, icon, module, section_type")
+    .eq("template_id", lib.id)
+    .order("sort_order");
+  if (!secs?.length) return [];
+
+  // Question counts (one grouped read).
+  const counts = new Map<string, number>();
+  const { data: qs } = await supabase
+    .from("planning_template_questions")
+    .select("template_section_id")
+    .in("template_section_id", secs.map((s) => s.id));
+  for (const q of qs ?? []) counts.set(q.template_section_id, (counts.get(q.template_section_id) ?? 0) + 1);
+
+  return secs.map((s) => ({
+    id: s.id,
+    title: s.title,
+    icon: s.icon,
+    module: s.module ?? null,
+    section_type: s.section_type,
+    question_count: counts.get(s.id) ?? 0,
+  }));
+}
+
+/** Insert a copy of a library section into the event after the given sort pos.
+    Staff only (library reads are staff-scoped). Returns the new section id. */
+export async function addLibrarySection(eventId: string, afterSortOrder: number, templateSectionId: string) {
+  const { supabase, me } = await requireStaff(eventId);
+  const { data: ts } = await supabase
+    .from("planning_template_sections")
+    .select("title")
+    .eq("id", templateSectionId)
+    .maybeSingle();
+  const id = await addLibrarySectionToEvent(eventId, templateSectionId, afterSortOrder);
+  if (!id) return { ok: false as const, error: "Could not add section" };
+  await logAction(supabase, eventId, me, "Added section from library", ts?.title ?? undefined);
+  revalidatePath(`/portal/plan/${eventId}`);
+  return { ok: true as const, id };
 }
 
 export async function reorderSections(eventId: string, orderedIds: string[]) {

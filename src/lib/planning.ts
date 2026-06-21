@@ -400,6 +400,39 @@ export async function assignAddonSections(eventId: string, addonId: string): Pro
   }
 }
 
+/** Clone one Section Templates *library* section into an event at a position
+    (afterSortOrder + 1), opening a gap for it. Reuses seedTemplateSection so the
+    section's questions + conditional links come along. Returns the new id.
+    Staff-facing (admin-scoped) — the caller gates access. */
+export async function addLibrarySectionToEvent(
+  eventId: string,
+  templateSectionId: string,
+  afterSortOrder: number,
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data: ts } = await admin
+    .from("planning_template_sections")
+    .select("*")
+    .eq("id", templateSectionId)
+    .maybeSingle();
+  if (!ts) return null;
+
+  const pos = afterSortOrder + 1;
+  // Open a gap: bump everything at/after the insert position.
+  const { data: toBump } = await admin
+    .from("planning_sections")
+    .select("id, sort_order")
+    .eq("event_id", eventId)
+    .gte("sort_order", pos);
+  await Promise.all(
+    (toBump ?? []).map((s) =>
+      admin.from("planning_sections").update({ sort_order: s.sort_order + 1 }).eq("id", s.id),
+    ),
+  );
+
+  return seedTemplateSection(admin, eventId, ts, pos);
+}
+
 /** Load the full planning tree for an event, scoped by the caller's RLS client.
     `role` shapes visibility: hosts/guests never see host-deleted sections; only
     staff get the host-deleted list and the audit log. */

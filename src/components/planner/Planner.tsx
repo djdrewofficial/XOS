@@ -75,6 +75,9 @@ import {
   deleteSection,
   restoreSection,
   addSection,
+  addLibrarySection,
+  listLibrarySections,
+  type LibrarySectionOption,
 } from "@/app/portal/plan/[eventId]/actions";
 import { faPlus } from "@fortawesome/free-solid-svg-icons";
 
@@ -132,6 +135,12 @@ export default function Planner({
   // Local order for optimistic drag reorder; resync when server data changes.
   const [order, setOrder] = useState<PlanningSection[]>(planning.sections);
   useEffect(() => setOrder(planning.sections), [planning.sections]);
+
+  // Section Templates library for the staff "Add Section" picker (loaded once).
+  const [libraryOptions, setLibraryOptions] = useState<LibrarySectionOption[]>([]);
+  useEffect(() => {
+    if (isStaff) listLibrarySections(eventId).then(setLibraryOptions).catch(() => {});
+  }, [isStaff, eventId]);
 
   const sections = order;
   const selected = sections.find((s) => s.id === selectedId) ?? sections[0] ?? null;
@@ -228,6 +237,7 @@ export default function Planner({
                 sections={sections}
                 selectedId={selected?.id ?? null}
                 role={role}
+                libraryOptions={libraryOptions}
                 onSelect={setSelectedId}
                 onSettings={(id) => setSettingsId(id)}
                 onReorder={(next) => {
@@ -241,6 +251,10 @@ export default function Planner({
                     setSelectedId(res.id);
                     setSettingsId(res.id); // open settings so staff can finish setup
                   }
+                }}
+                onInsertTemplate={async (afterSortOrder, templateSectionId) => {
+                  const res = await addLibrarySection(eventId, afterSortOrder, templateSectionId);
+                  if (res?.ok && res.id) setSelectedId(res.id);
                 }}
               />
               {isStaff && planning.hostDeletedSections.length > 0 && (
@@ -293,20 +307,24 @@ function SectionList({
   sections,
   selectedId,
   role,
+  libraryOptions,
   onSelect,
   onSettings,
   onReorder,
   onDelete,
   onInsert,
+  onInsertTemplate,
 }: {
   sections: PlanningSection[];
   selectedId: string | null;
   role: PlannerRole;
+  libraryOptions: LibrarySectionOption[];
   onSelect: (id: string) => void;
   onSettings: (id: string) => void;
   onReorder: (next: PlanningSection[]) => void;
   onDelete: (id: string) => void;
   onInsert: (afterSortOrder: number, input?: { title?: string; icon?: string }) => void | Promise<unknown>;
+  onInsertTemplate: (afterSortOrder: number, templateSectionId: string) => void | Promise<unknown>;
 }) {
   const canReorder = role === "staff" || role === "host";
   const canAdd = role === "staff" || role === "host";
@@ -363,7 +381,14 @@ function SectionList({
       onDragCancel={() => setActiveId(null)}
     >
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-        {canAdd && <InsertBar disabled={!!activeId} onAdd={(input) => onInsert(-1, input)} />}
+        {canAdd && (
+          <InsertBar
+            disabled={!!activeId}
+            onAdd={(input) => onInsert(-1, input)}
+            libraryOptions={libraryOptions}
+            onAddTemplate={(tid) => onInsertTemplate(-1, tid)}
+          />
+        )}
         {sections.map((s) => (
           <Fragment key={s.id}>
             <SortableSection id={s.id}>
@@ -381,7 +406,14 @@ function SectionList({
                 />
               )}
             </SortableSection>
-            {canAdd && <InsertBar disabled={!!activeId} onAdd={(input) => onInsert(s.sort_order, input)} />}
+            {canAdd && (
+              <InsertBar
+                disabled={!!activeId}
+                onAdd={(input) => onInsert(s.sort_order, input)}
+                libraryOptions={libraryOptions}
+                onAddTemplate={(tid) => onInsertTemplate(s.sort_order, tid)}
+              />
+            )}
           </Fragment>
         ))}
       </SortableContext>
@@ -428,9 +460,13 @@ function SortableSection({
     drag is in progress it's just an inert spacer. */
 function InsertBar({
   onAdd,
+  onAddTemplate,
+  libraryOptions,
   disabled,
 }: {
   onAdd: (input?: { title?: string; icon?: string }) => void | Promise<unknown>;
+  onAddTemplate: (templateSectionId: string) => void | Promise<unknown>;
+  libraryOptions: LibrarySectionOption[];
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -444,6 +480,13 @@ function InsertBar({
       setOpen(false);
       setTitle("");
       setIcon("");
+    });
+  }
+
+  function addTemplate(id: string) {
+    start(async () => {
+      await onAddTemplate(id);
+      setOpen(false);
     });
   }
 
@@ -467,10 +510,33 @@ function InsertBar({
         </div>
         <div className="mt-2 flex gap-2">
           <button onClick={add} disabled={pending} className="btn-primary px-3 py-1.5 text-sm disabled:opacity-50">
-            {pending ? "Adding…" : "Add section"}
+            {pending ? "Adding…" : "Add blank section"}
           </button>
           <button onClick={() => setOpen(false)} className="btn-ghost px-3 py-1.5 text-sm">Cancel</button>
         </div>
+
+        {libraryOptions.length > 0 && (
+          <div className="mt-3 border-t border-brand/15 pt-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">From Section Templates</p>
+            <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+              {libraryOptions.map((o) => (
+                <button
+                  key={o.id}
+                  onClick={() => addTemplate(o.id)}
+                  disabled={pending}
+                  className="flex w-full items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm transition hover:border-brand hover:bg-brand/[0.04] disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.02]"
+                >
+                  <span className="text-base">{o.icon || "📄"}</span>
+                  <span className="flex-1 truncate font-medium text-zinc-800 dark:text-zinc-100">{o.title}</span>
+                  {o.module && (
+                    <span className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand dark:text-brand-lighter">{o.module}</span>
+                  )}
+                  {o.question_count > 0 && <span className="text-xs text-zinc-400">{o.question_count} Q</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
