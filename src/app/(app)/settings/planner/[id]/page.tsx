@@ -28,6 +28,7 @@ export default async function TemplateBuilderPage({ params }: { params: Promise<
     list.push({
       id: q.id,
       prompt: q.prompt,
+      help_text: q.help_text ?? null,
       answer_type: q.answer_type,
       options: Array.isArray(q.options) ? q.options : [],
       required: q.required,

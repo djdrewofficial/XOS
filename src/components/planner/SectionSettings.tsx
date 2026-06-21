@@ -288,6 +288,7 @@ function QuestionEditor({ eventId, section }: { eventId: string; section: Planni
   const [pending, start] = useTransition();
   const [adding, setAdding] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const [help, setHelp] = useState("");
   const [atype, setAtype] = useState("short");
   const [required, setRequired] = useState(false);
   const [options, setOptions] = useState("");
@@ -298,8 +299,9 @@ function QuestionEditor({ eventId, section }: { eventId: string; section: Planni
       ? options.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
     start(async () => {
-      await addQuestion(eventId, section.id, { prompt: prompt.trim(), answer_type: atype, options: opts, required });
+      await addQuestion(eventId, section.id, { prompt: prompt.trim(), help_text: help.trim() || undefined, answer_type: atype, options: opts, required });
       setPrompt("");
+      setHelp("");
       setOptions("");
       setRequired(false);
       setAdding(false);
@@ -311,9 +313,12 @@ function QuestionEditor({ eventId, section }: { eventId: string; section: Planni
       <ul className="space-y-1.5">
         {section.questions.map((q) => (
           <li key={q.id} className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-white/10">
-            <span className="flex-1 text-zinc-700 dark:text-zinc-200">{q.prompt}</span>
-            <span className="text-xs text-zinc-400">{q.answer_type}</span>
-            <button onClick={() => start(() => deleteQuestion(eventId, q.id))} disabled={pending} className="text-zinc-400 hover:text-red-500">
+            <span className="min-w-0 flex-1">
+              <span className="block text-zinc-700 dark:text-zinc-200">{q.prompt}</span>
+              {q.help_text && <span className="mt-0.5 block text-xs text-zinc-400">{q.help_text}</span>}
+            </span>
+            <span className="shrink-0 text-xs text-zinc-400">{q.answer_type}</span>
+            <button onClick={() => start(() => deleteQuestion(eventId, q.id))} disabled={pending} className="shrink-0 text-zinc-400 hover:text-red-500">
               <FontAwesomeIcon icon={faTrash} />
             </button>
           </li>
@@ -323,6 +328,13 @@ function QuestionEditor({ eventId, section }: { eventId: string; section: Planni
       {adding ? (
         <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
           <input className="input w-full" placeholder="Question prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          <textarea
+            className="input w-full"
+            rows={2}
+            placeholder="Description (optional) — e.g. “Why are we asking this?”"
+            value={help}
+            onChange={(e) => setHelp(e.target.value)}
+          />
           <div className="flex gap-2">
             <select className="input flex-1" value={atype} onChange={(e) => setAtype(e.target.value)}>
               {ANSWER_TYPES.map((t) => (

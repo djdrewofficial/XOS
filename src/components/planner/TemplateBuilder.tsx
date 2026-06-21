@@ -48,7 +48,7 @@ import {
 } from "@/app/(app)/settings/planner/actions";
 
 type QOption = string | { label: string; image?: string | null };
-export type BuilderQuestion = { id: string; prompt: string; answer_type: string; options: QOption[]; required: boolean; condition_question_id: string | null; condition_values: string[] };
+export type BuilderQuestion = { id: string; prompt: string; help_text: string | null; answer_type: string; options: QOption[]; required: boolean; condition_question_id: string | null; condition_values: string[] };
 export type BuilderSection = {
   id: string;
   title: string;
@@ -436,6 +436,7 @@ function QuestionEditor({ templateId, section }: { templateId: string; section: 
   const [, start] = useTransition();
   const [adding, setAdding] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const [help, setHelp] = useState("");
   const [atype, setAtype] = useState("short");
   const [required, setRequired] = useState(false);
   const [textOptions, setTextOptions] = useState("");
@@ -446,8 +447,8 @@ function QuestionEditor({ templateId, section }: { templateId: string; section: 
       ? textOptions.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
     start(async () => {
-      await addTemplateQuestion(templateId, section.id, { prompt: prompt.trim(), answer_type: atype, options, required });
-      setPrompt(""); setTextOptions(""); setRequired(false); setAtype("short"); setAdding(false);
+      await addTemplateQuestion(templateId, section.id, { prompt: prompt.trim(), help_text: help.trim() || undefined, answer_type: atype, options, required });
+      setPrompt(""); setHelp(""); setTextOptions(""); setRequired(false); setAtype("short"); setAdding(false);
     });
   }
 
@@ -463,6 +464,13 @@ function QuestionEditor({ templateId, section }: { templateId: string; section: 
       {adding ? (
         <div className="mt-2 space-y-2 rounded-xl border border-brand/40 bg-brand/[0.03] p-3">
           <input className="input w-full" placeholder="Question prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} autoFocus />
+          <textarea
+            className="input w-full"
+            rows={2}
+            placeholder="Description (optional) — explain the thought behind it, e.g. “Why are we asking this?”"
+            value={help}
+            onChange={(e) => setHelp(e.target.value)}
+          />
           <div className="flex flex-wrap items-center gap-2">
             <select className="input flex-1" value={atype} onChange={(e) => setAtype(e.target.value)}>
               {ANSWER_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -492,6 +500,8 @@ function QuestionEditor({ templateId, section }: { templateId: string; section: 
 function QuestionRow({ templateId, question, siblings }: { templateId: string; question: BuilderQuestion; siblings: BuilderQuestion[] }) {
   const [, start] = useTransition();
   const [condOpen, setCondOpen] = useState(false);
+  const [descOpen, setDescOpen] = useState(false);
+  const [help, setHelp] = useState(question.help_text ?? "");
   const isImage = question.answer_type === "image_select";
   const isChoice = ["select", "multiselect"].includes(question.answer_type);
   const hasCond = !!question.condition_question_id;
@@ -500,11 +510,21 @@ function QuestionRow({ templateId, question, siblings }: { templateId: string; q
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-white/[0.06] dark:bg-white/[0.02]">
       <div className="flex items-start gap-2">
-        <span className="flex-1 text-sm text-zinc-700 dark:text-zinc-200">{question.prompt}</span>
+        <div className="flex-1">
+          <span className="text-sm text-zinc-700 dark:text-zinc-200">{question.prompt}</span>
+          {question.help_text && !descOpen && <p className="mt-0.5 text-xs text-zinc-400">{question.help_text}</p>}
+        </div>
         <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:bg-white/10">
           {TYPE_LABEL[question.answer_type] ?? question.answer_type}
         </span>
         {question.required && <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">Required</span>}
+        <button
+          onClick={() => setDescOpen((o) => !o)}
+          className={`shrink-0 transition ${question.help_text ? "text-brand dark:text-brand-lighter" : "text-zinc-300 hover:text-brand"}`}
+          title="Description / why we ask"
+        >
+          <FontAwesomeIcon icon={faNoteSticky} />
+        </button>
         <button
           onClick={() => setCondOpen((o) => !o)}
           className={`shrink-0 transition ${hasCond ? "text-brand dark:text-brand-lighter" : "text-zinc-300 hover:text-brand"}`}
@@ -516,6 +536,30 @@ function QuestionRow({ templateId, question, siblings }: { templateId: string; q
           <FontAwesomeIcon icon={faTrash} />
         </button>
       </div>
+
+      {descOpen && (
+        <div className="mt-2 space-y-2">
+          <textarea
+            className="input w-full"
+            rows={2}
+            placeholder="Description (optional) — explain the thought behind it, e.g. “Why are we asking this?”"
+            value={help}
+            onChange={(e) => setHelp(e.target.value)}
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => start(() => updateTemplateQuestion(templateId, question.id, { help_text: help.trim() || null }).then(() => setDescOpen(false)))}
+              className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110"
+            >
+              Save description
+            </button>
+            <button onClick={() => { setHelp(question.help_text ?? ""); setDescOpen(false); }} className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-500 hover:text-zinc-800">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {isChoice && question.options.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {question.options.map((o, i) => (
