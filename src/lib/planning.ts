@@ -88,6 +88,8 @@ export interface PlanningSection {
   section_cover_url: string | null;
   permissions: SectionPermissions;
   module: string | null;
+  spotify_sync_playlist_name: string | null;
+  spotify_synced_at: string | null;
   locked: boolean;
   sort_order: number;
   deleted_by_host: boolean;
@@ -543,6 +545,8 @@ export async function loadEventPlanning(
       section_cover_url: sec.section_cover_url ?? null,
       permissions: (sec.permissions ?? {}) as SectionPermissions,
       module: sec.module ?? null,
+      spotify_sync_playlist_name: sec.spotify_sync_playlist_name ?? null,
+      spotify_synced_at: sec.spotify_synced_at ?? null,
       locked: sec.locked,
       sort_order: sec.sort_order,
       deleted_by_host: isDeleted,

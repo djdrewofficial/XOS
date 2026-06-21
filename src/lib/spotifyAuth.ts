@@ -215,6 +215,40 @@ export async function getPlaylistTracks(userId: string, playlistId: string): Pro
   return out;
 }
 
+/** Like getPlaylistTracks but returns null on auth/fetch failure (vs [] for a
+    genuinely empty playlist). The live-sync uses this so a transient error never
+    removes the section's songs. */
+export async function fetchPlaylistTracksStrict(userId: string, playlistId: string): Promise<SpotifyTrackLite[] | null> {
+  const token = await getValidAccessToken(userId);
+  if (!token) return null;
+  const out: SpotifyTrackLite[] = [];
+  let url: string | null =
+    `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100&fields=next,items(track(id,name,duration_ms,preview_url,external_ids,external_urls,artists(name),album(name,images)))`;
+  while (url) {
+    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    if (!res.ok) return null; // fail closed — caller skips reconciliation
+    const j = (await res.json()) as { items: { track: SpotifyApiTrack | null }[]; next: string | null };
+    for (const it of j.items ?? []) {
+      const t = it.track;
+      if (!t || !t.id) continue;
+      out.push({
+        providerId: t.id,
+        isrc: t.external_ids?.isrc ?? null,
+        title: t.name,
+        artist: t.artists?.map((a) => a.name).join(", ") ?? "",
+        album: t.album?.name ?? null,
+        artworkUrl: t.album?.images?.[0]?.url ?? null,
+        durationMs: t.duration_ms ?? null,
+        previewUrl: t.preview_url ?? null,
+        externalUrl: t.external_urls?.spotify ?? null,
+      });
+    }
+    url = j.next;
+    if (out.length >= 500) break;
+  }
+  return out;
+}
+
 interface SpotifyApiPlaylist {
   id: string;
   name: string;

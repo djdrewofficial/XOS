@@ -24,6 +24,7 @@ import {
   faRoute,
 } from "@fortawesome/free-solid-svg-icons";
 import { faHeart as faHeartOutline, faCircle, faStar as faStarOutline } from "@fortawesome/free-regular-svg-icons";
+import { faSpotify } from "@fortawesome/free-brands-svg-icons";
 import {
   DndContext,
   DragOverlay,
@@ -77,6 +78,7 @@ import {
   addSection,
   addLibrarySection,
   listLibrarySections,
+  disablePlaylistSync,
   type LibrarySectionOption,
 } from "@/app/portal/plan/[eventId]/actions";
 import { faPlus } from "@fortawesome/free-solid-svg-icons";
@@ -802,6 +804,16 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
 
         {isPhotoBooth && <PhotoBoothModule eventId={eventId} canEdit={isStaff || role === "host"} isStaff={isStaff} />}
 
+        {showSongs && section.spotify_sync_playlist_name && (
+          <SpotifySyncBanner
+            eventId={eventId}
+            sectionId={section.id}
+            playlistName={section.spotify_sync_playlist_name}
+            syncedAt={section.spotify_synced_at}
+            canEdit={canEditSongs}
+          />
+        )}
+
         {showSongs && (
           <section className="mb-6">
             <div className="mb-3 flex items-center justify-between">
@@ -885,6 +897,47 @@ function GuestToggle({ eventId, sectionId, enabled }: { eventId: string; section
     >
       <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${enabled ? "left-[18px]" : "left-0.5"}`} />
     </button>
+  );
+}
+
+function SpotifySyncBanner({
+  eventId,
+  sectionId,
+  playlistName,
+  syncedAt,
+  canEdit,
+}: {
+  eventId: string;
+  sectionId: string;
+  playlistName: string;
+  syncedAt: string | null;
+  canEdit: boolean;
+}) {
+  const [pending, start] = useTransition();
+  const when = syncedAt
+    ? new Date(syncedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : null;
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-xl border border-[#1DB954]/30 bg-[#1DB954]/[0.07] p-3">
+      <FontAwesomeIcon icon={faSpotify} className="text-lg text-[#1DB954]" />
+      <div className="min-w-0 flex-1 text-sm">
+        <p className="font-semibold text-zinc-800 dark:text-zinc-100">
+          Live-synced with “{playlistName}”
+        </p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Auto-updates from Spotify about every hour{when ? ` · last synced ${when}` : ""}
+        </p>
+      </div>
+      {canEdit && (
+        <button
+          onClick={() => { if (confirm("Stop live-syncing this playlist? The current songs stay, but they won't auto-update anymore.")) start(() => { disablePlaylistSync(eventId, sectionId); }); }}
+          disabled={pending}
+          className="shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:border-red-300 hover:text-red-500 disabled:opacity-50 dark:border-white/10 dark:text-zinc-300"
+        >
+          {pending ? "Stopping…" : "Stop sync"}
+        </button>
+      )}
+    </div>
   );
 }
 

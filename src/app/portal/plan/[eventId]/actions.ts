@@ -12,7 +12,9 @@ import {
   getPlaylistTracks,
   disconnectSpotify,
   type SpotifyPlaylistLite,
+  type SpotifyTrackLite,
 } from "@/lib/spotifyAuth";
+import { reconcileSection, type SyncSectionRow } from "@/lib/spotifySync";
 import { boothTemplates, boothFilters } from "@/lib/templatesbooth";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Me } from "@/lib/auth";
@@ -711,6 +713,117 @@ export async function importSpotifyPlaylist(eventId: string, sectionId: string, 
   await logAction(supabase, eventId, me, "Imported Spotify playlist", `${rows.length} songs`);
   revalidate();
   return { ok: true, count: rows.length };
+}
+
+/** Tracks of a playlist, for the import picker. */
+export async function spotifyPlaylistTracks(eventId: string, playlistId: string): Promise<SpotifyTrackLite[]> {
+  const { me } = await requireHost(eventId);
+  return getPlaylistTracks(me.userId, playlistId);
+}
+
+type SpotifyTrackInput = {
+  providerId: string;
+  isrc: string | null;
+  title: string;
+  artist: string;
+  album: string | null;
+  artworkUrl: string | null;
+  durationMs: number | null;
+  previewUrl: string | null;
+  externalUrl: string | null;
+};
+
+/** One-time import of a selected subset of tracks (respects the song limit). */
+export async function importSpotifyTracks(eventId: string, sectionId: string, tracks: SpotifyTrackInput[]) {
+  const { supabase, me, revalidate } = await requireHost(eventId);
+  if (!tracks.length) return { ok: false, error: "No songs selected" };
+
+  const { data: section } = await supabase.from("planning_sections").select("song_limit").eq("id", sectionId).maybeSingle();
+  const { data: last } = await supabase
+    .from("planning_songs")
+    .select("sort_order")
+    .eq("section_id", sectionId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const { count: existing } = await supabase
+    .from("planning_songs")
+    .select("id", { count: "exact", head: true })
+    .eq("section_id", sectionId);
+
+  let toAdd = tracks;
+  if (section?.song_limit != null) {
+    const room = Math.max(0, section.song_limit - (existing ?? 0));
+    toAdd = tracks.slice(0, room);
+    if (toAdd.length === 0) return { ok: false, error: `This section is full (limit ${section.song_limit}).` };
+  }
+
+  let order = (last?.sort_order ?? -1) + 1;
+  const rows = toAdd.map((t) => ({
+    section_id: sectionId,
+    event_id: eventId,
+    provider: "spotify" as const,
+    provider_id: t.providerId,
+    isrc: t.isrc,
+    title: t.title,
+    artist: t.artist,
+    album: t.album,
+    artwork_url: t.artworkUrl,
+    duration_ms: t.durationMs,
+    preview_url: t.previewUrl,
+    external_url: t.externalUrl,
+    requested_by: me.userId,
+    sort_order: order++,
+  }));
+  const { error } = await supabase.from("planning_songs").insert(rows);
+  if (error) return { ok: false, error: error.message };
+  await logAction(supabase, eventId, me, "Imported Spotify songs", `${rows.length} songs`);
+  revalidate();
+  return { ok: true, count: rows.length };
+}
+
+/** Bind a section to a playlist for hourly live-sync + run an initial sync. */
+export async function enablePlaylistSync(
+  eventId: string,
+  sectionId: string,
+  playlistId: string,
+  playlistName: string,
+): Promise<{ ok: true; added: number; removed: number } | { ok: false; error: string }> {
+  const { supabase, me, revalidate } = await requireHost(eventId);
+  const admin = createAdminClient(); // planning_sections is staff-write under RLS
+  const { error } = await admin
+    .from("planning_sections")
+    .update({ spotify_sync_playlist_id: playlistId, spotify_sync_playlist_name: playlistName, spotify_sync_user_id: me.userId })
+    .eq("id", sectionId)
+    .eq("event_id", eventId);
+  if (error) return { ok: false, error: error.message };
+
+  const { data: section } = await admin
+    .from("planning_sections")
+    .select("id, event_id, song_limit, spotify_sync_playlist_id, spotify_sync_user_id")
+    .eq("id", sectionId)
+    .maybeSingle();
+  let result = { added: 0, removed: 0 };
+  if (section) result = await reconcileSection(admin, section as SyncSectionRow);
+
+  await logAction(supabase, eventId, me, "Enabled Spotify live-sync", playlistName);
+  revalidate();
+  return { ok: true, ...result };
+}
+
+/** Stop live-syncing a section. Keeps the songs (they become manual). */
+export async function disablePlaylistSync(eventId: string, sectionId: string) {
+  const { supabase, me, revalidate } = await requireHost(eventId);
+  const admin = createAdminClient();
+  await admin
+    .from("planning_sections")
+    .update({ spotify_sync_playlist_id: null, spotify_sync_playlist_name: null, spotify_sync_user_id: null, spotify_synced_at: null })
+    .eq("id", sectionId)
+    .eq("event_id", eventId);
+  await admin.from("planning_songs").update({ synced: false }).eq("section_id", sectionId).eq("synced", true);
+  await logAction(supabase, eventId, me, "Disabled Spotify live-sync");
+  revalidate();
+  return { ok: true };
 }
 
 // ─────────────────── Photo Booth module (backdrops + designs) ───────────────────
