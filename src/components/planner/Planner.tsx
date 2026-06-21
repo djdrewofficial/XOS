@@ -232,7 +232,7 @@ export default function Planner({
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-            <aside className="lg:sticky lg:top-20 lg:self-start">
+            <aside className="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1 [scrollbar-width:thin]">
               <SectionList
                 sections={sections}
                 selectedId={selected?.id ?? null}
