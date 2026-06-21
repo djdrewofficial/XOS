@@ -727,9 +727,15 @@ export type BoothDesign = {
   video_url?: string | null;
   poster?: string | null;
 };
-export type BoothSelection = { backdrop_id: string | null; design: BoothDesign | null } | null;
+export type BoothSelection = {
+  backdrop_id: string | null;
+  design: BoothDesign | null;
+  picked_by_name: string | null;
+  updated_at: string | null;
+} | null;
 
-/** Active backdrops + this event's saved selection (RLS-scoped). */
+/** Active backdrops + this event's saved selection (RLS-scoped), with the name
+    of whoever last picked (so staff can see who chose what). */
 export async function loadPhotoBooth(
   eventId: string,
 ): Promise<{ backdrops: BoothBackdrop[]; selection: BoothSelection }> {
@@ -742,13 +748,27 @@ export async function loadPhotoBooth(
       .order("sort_order"),
     supabase
       .from("event_photobooth_selection")
-      .select("backdrop_id, design")
+      .select("backdrop_id, design, updated_by, updated_at")
       .eq("event_id", eventId)
       .maybeSingle(),
   ]);
+
+  let picked_by_name: string | null = null;
+  if (sel?.updated_by) {
+    const names = await resolveUserNames(supabase, [sel.updated_by]);
+    picked_by_name = names.get(sel.updated_by) ?? null;
+  }
+
   return {
     backdrops: (backdrops ?? []) as BoothBackdrop[],
-    selection: (sel as BoothSelection) ?? null,
+    selection: sel
+      ? {
+          backdrop_id: sel.backdrop_id,
+          design: (sel.design as BoothDesign) ?? null,
+          picked_by_name,
+          updated_at: sel.updated_at,
+        }
+      : null,
   };
 }
 

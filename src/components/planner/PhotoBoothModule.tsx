@@ -2,7 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCheck, faCamera, faImages, faSpinner, faArrowRotateRight, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
+import {
+  faCheck,
+  faCamera,
+  faImages,
+  faSpinner,
+  faArrowRotateRight,
+  faChevronLeft,
+  faChevronRight,
+  faXmark,
+  faCircleCheck,
+  faUpRightFromSquare,
+} from "@fortawesome/free-solid-svg-icons";
 import {
   loadPhotoBooth,
   selectBackdrop,
@@ -14,8 +25,6 @@ import {
 
 const PER_PAGE = 12; // grid page size
 
-// Curated, fixed option sets (TemplatesBooth values). Designs are always static
-// (no welcome screens / animated overlays) and one of these layouts + counts.
 // TemplatesBooth `tags` filters by tag ID (slugs are ignored). IDs from /filters.
 const CATEGORIES = [
   { value: "6", label: "Wedding" },
@@ -72,14 +81,25 @@ function totalPagesOf(payload: unknown): number {
   return 1;
 }
 
-export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string; canEdit: boolean }) {
+function fmtDate(iso: string | null): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
+export default function PhotoBoothModule({ eventId, canEdit, isStaff }: { eventId: string; canEdit: boolean; isStaff: boolean }) {
   const [backdrops, setBackdrops] = useState<BoothBackdrop[]>([]);
   const [backdropId, setBackdropId] = useState<string | null>(null);
   const [design, setDesign] = useState<BoothDesign | null>(null);
+  const [pickedBy, setPickedBy] = useState<string | null>(null);
+  const [pickedAt, setPickedAt] = useState<string | null>(null);
 
-  // All three are required (single-select). Defaults: Wedding · 2×6 Strip · 3 photos.
+  // All three required (single-select). Defaults: Wedding · 2×6 Strip · 3 photos.
   const [active, setActive] = useState<{ tags: string; layout: string; no_of_images: string }>({
-    tags: "6", // Wedding
+    tags: "6",
     layout: "26strip",
     no_of_images: "3images",
   });
@@ -89,9 +109,19 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [designError, setDesignError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<BoothDesign | null>(null); // open design modal
   const reqId = useRef(0);
 
   const [, startSave] = useTransition();
+
+  const refreshSelection = useCallback(async () => {
+    const pb = await loadPhotoBooth(eventId);
+    setBackdrops(pb.backdrops);
+    setBackdropId(pb.selection?.backdrop_id ?? null);
+    setDesign(pb.selection?.design ?? null);
+    setPickedBy(pb.selection?.picked_by_name ?? null);
+    setPickedAt(pb.selection?.updated_at ?? null);
+  }, [eventId]);
 
   useEffect(() => {
     let alive = true;
@@ -101,6 +131,8 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
       setBackdrops(pb.backdrops);
       setBackdropId(pb.selection?.backdrop_id ?? null);
       setDesign(pb.selection?.design ?? null);
+      setPickedBy(pb.selection?.picked_by_name ?? null);
+      setPickedAt(pb.selection?.updated_at ?? null);
     })();
     return () => { alive = false; };
   }, [eventId]);
@@ -142,12 +174,27 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
   function chooseBackdrop(b: BoothBackdrop) {
     if (!canEdit) return;
     setBackdropId(b.id);
-    startSave(() => { selectBackdrop(eventId, b.id); });
+    startSave(async () => {
+      await selectBackdrop(eventId, b.id);
+      await refreshSelection();
+    });
   }
-  function chooseDesign(d: BoothDesign) {
+
+  // From the preview modal. Confirm before replacing an existing pick.
+  function useDesign(d: BoothDesign) {
     if (!canEdit) return;
+    if (design && design.src !== d.src) {
+      const ok = window.confirm(
+        "You've already picked a photo-strip design. Using this one will replace your current selection. Continue?",
+      );
+      if (!ok) return;
+    }
     setDesign(d);
-    startSave(() => { selectBoothDesign(eventId, d); });
+    setPreview(null);
+    startSave(async () => {
+      await selectBoothDesign(eventId, d);
+      await refreshSelection();
+    });
   }
 
   return (
@@ -155,6 +202,36 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
       <div className="inline-flex items-center gap-2 rounded-full bg-brand/10 px-3 py-1 text-xs font-medium text-brand dark:text-brand-lighter">
         <FontAwesomeIcon icon={faCamera} /> Pick your backdrop &amp; photo-strip design — saved straight to your event
       </div>
+
+      {/* Current selection banner — who picked what (staff get an emphasized callout). */}
+      {design && (
+        <div
+          className={`flex items-center gap-3 rounded-2xl border p-3 ${
+            isStaff
+              ? "border-brand/40 bg-brand/[0.06] dark:border-brand-light/40"
+              : "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10"
+          }`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={design.src} alt="" className="h-16 w-12 shrink-0 rounded-lg border border-white/40 bg-white object-contain" />
+          <div className="min-w-0 flex-1 text-sm">
+            <p className="font-semibold text-zinc-800 dark:text-zinc-100">
+              <FontAwesomeIcon icon={faCircleCheck} className={isStaff ? "mr-1.5 text-brand dark:text-brand-lighter" : "mr-1.5 text-emerald-500"} />
+              {isStaff ? "Couple's chosen design" : "Your chosen design"}
+            </p>
+            <p className="text-zinc-500 dark:text-zinc-400">
+              {pickedBy ? `Picked by ${pickedBy}` : "Selected"}
+              {pickedAt && ` · ${fmtDate(pickedAt)}`}
+              {design.no_of_images ? ` · ${design.no_of_images}` : ""}
+            </p>
+          </div>
+          {design.post_url && (
+            <a href={design.post_url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs font-semibold text-brand hover:underline dark:text-brand-lighter">
+              View <FontAwesomeIcon icon={faUpRightFromSquare} className="ml-0.5" />
+            </a>
+          )}
+        </div>
+      )}
 
       {/* ── Backdrop gallery ── */}
       <section>
@@ -233,9 +310,8 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
                 return (
                   <button
                     key={`${d.src}-${i}`}
-                    onClick={() => chooseDesign(d)}
-                    disabled={!canEdit}
-                    className={`group relative overflow-hidden rounded-2xl border-2 bg-zinc-50 transition disabled:cursor-default dark:bg-white/5 ${
+                    onClick={() => setPreview(d)}
+                    className={`group relative overflow-hidden rounded-2xl border-2 bg-zinc-50 transition dark:bg-white/5 ${
                       sel ? "border-brand ring-2 ring-brand/30" : "border-zinc-200 hover:border-brand/50 dark:border-white/10"
                     }`}
                   >
@@ -263,6 +339,55 @@ export default function PhotoBoothModule({ eventId, canEdit }: { eventId: string
           </>
         )}
       </section>
+
+      {/* ── Design preview modal ── */}
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPreview(null)}>
+          <div
+            className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-zinc-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setPreview(null)}
+              className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60"
+              title="Close"
+            >
+              <FontAwesomeIcon icon={faXmark} />
+            </button>
+            <div className="flex-1 overflow-auto bg-zinc-100 p-4 dark:bg-black/40">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={preview.src} alt={preview.type_name ?? "Design"} className="mx-auto max-h-[60vh] w-auto rounded-lg bg-white object-contain shadow" />
+            </div>
+            <div className="border-t border-zinc-100 p-4 dark:border-white/10">
+              <div className="mb-3 flex flex-wrap gap-1.5 text-[11px] font-semibold text-zinc-500">
+                {preview.no_of_images && <span className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-white/10">{preview.no_of_images}</span>}
+                {preview.layout_size && <span className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-white/10">{preview.layout_size}</span>}
+                {preview.post_url && (
+                  <a href={preview.post_url} target="_blank" rel="noopener noreferrer" className="rounded-full bg-zinc-100 px-2 py-0.5 text-brand hover:underline dark:bg-white/10 dark:text-brand-lighter">
+                    View on TemplatesBooth <FontAwesomeIcon icon={faUpRightFromSquare} className="ml-0.5" />
+                  </a>
+                )}
+              </div>
+              {design?.src === preview.src ? (
+                <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-2.5 text-sm font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                  <FontAwesomeIcon icon={faCircleCheck} /> This is your selected design
+                </div>
+              ) : canEdit ? (
+                <button onClick={() => useDesign(preview)} className="btn-primary w-full py-2.5 text-base">
+                  Use This Design
+                </button>
+              ) : (
+                <p className="text-center text-sm text-zinc-400">Only the couple can choose the design.</p>
+              )}
+              {design && design.src !== preview.src && canEdit && (
+                <p className="mt-2 text-center text-xs text-amber-600 dark:text-amber-400">
+                  This will replace your current selection.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

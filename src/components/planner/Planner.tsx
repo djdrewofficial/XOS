@@ -800,7 +800,7 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
           <VendorTeamModule eventId={eventId} vendors={vendors} canEdit={isStaff || role === "host"} />
         )}
 
-        {isPhotoBooth && <PhotoBoothModule eventId={eventId} canEdit={isStaff || role === "host"} />}
+        {isPhotoBooth && <PhotoBoothModule eventId={eventId} canEdit={isStaff || role === "host"} isStaff={isStaff} />}
 
         {showSongs && (
           <section className="mb-6">
