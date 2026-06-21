@@ -30,7 +30,7 @@ export default async function AppLayout({
           <Sidebar can={me?.can} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="print:hidden">
+          <div className="sticky top-0 z-40 print:hidden">
             <TopBar />
           </div>
           <main className="min-w-0 flex-1 p-4 md:p-6 print:p-0">{children}</main>
