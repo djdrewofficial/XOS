@@ -59,10 +59,11 @@ import type { ConvRow } from "@/components/InboxShell";
 import SigningChecklist from "@/components/SigningChecklist";
 import { resolveRequiredFields, getMissingSigningFields } from "@/lib/signingRequirements";
 import { summarizeHelperActions, type HelperAction } from "@/lib/helperSummary";
+import { resolveUserNames } from "@/lib/planning";
 
 export const dynamic = "force-dynamic";
 
-const EVENT_TABS = ["client", "details", "booking", "financials", "staff", "vendors", "logistics", "documents", "comms", "notes"] as const;
+const EVENT_TABS = ["client", "details", "booking", "financials", "staff", "vendors", "logistics", "photobooth", "documents", "comms", "notes"] as const;
 
 export default async function EventDetailPage({
   params,
@@ -192,6 +193,36 @@ export default async function EventDetailPage({
     .eq("is_library", false)
     .order("name");
 
+  // Photo Booth: the couple's saved selection (shown in its own tab when the
+  // event has a photo-booth). Resolve the backdrop image + who last picked.
+  const { data: boothSel } = await supabase
+    .from("event_photobooth_selection")
+    .select("backdrop_id, design, updated_by, updated_at")
+    .eq("event_id", id)
+    .maybeSingle();
+  type BoothDesign = {
+    src?: string;
+    post_url?: string | null;
+    layout_size?: string | null;
+    no_of_images?: string | null;
+    type_name?: string | null;
+  };
+  const boothDesign = (boothSel?.design ?? null) as BoothDesign | null;
+  let boothBackdrop: { name: string; image_url: string } | null = null;
+  let boothPickedBy: string | null = null;
+  if (boothSel?.backdrop_id) {
+    const { data: bd } = await supabase
+      .from("photobooth_backdrops")
+      .select("name, image_url")
+      .eq("id", boothSel.backdrop_id)
+      .maybeSingle();
+    boothBackdrop = bd ?? null;
+  }
+  if (boothSel?.updated_by) {
+    const names = await resolveUserNames(supabase, [boothSel.updated_by]);
+    boothPickedBy = names.get(boothSel.updated_by) ?? null;
+  }
+
   // PERF: second tier — queries/work that need the first batch's results, all
   // run together. The comms threads used to fire one query PER event client
   // (N+1); now it's a single batched query grouped in JS. Signed file URLs used
@@ -277,6 +308,9 @@ export default async function EventDetailPage({
   const addonLine = (ea: EventAddonRow) =>
     ea.quantity * Number(ea.price_override ?? ea.price_locked ?? ea.addon?.default_price ?? 0);
   const addonsTotal = addonRows.reduce((s, ea) => s + addonLine(ea), 0);
+  // The Photo Booth tab shows when the event has a booth add-on or a saved pick.
+  const hasPhotobooth =
+    !!boothSel || addonRows.some((ea) => /photo[\s-]?booth/i.test(ea.addon?.name ?? ""));
   const venueSetupFee = Number(
     (event.venue as unknown as { setup_fee?: number } | null)?.setup_fee ?? 0
   );
@@ -1698,6 +1732,77 @@ export default async function EventDetailPage({
     : null;
   const primaryOrg = (primaryClient as { organization?: string | null } | null)?.organization ?? null;
 
+  /* ---------- TAB: Photo Booth ---------- */
+  const photoboothTab = (
+    <div className="space-y-5">
+      <div className="card p-5">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="card-title mb-0">Photo Booth Selection</h2>
+          <a href={`/portal/plan/${id}`} target="_blank" className="text-xs font-semibold text-brand hover:underline dark:text-brand-lighter">
+            Open planner ↗
+          </a>
+        </div>
+
+        {!boothDesign && !boothBackdrop ? (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            The couple hasn&apos;t made a photo-booth selection yet.
+          </p>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2">
+            {/* Backdrop */}
+            <div>
+              <h3 className="label-xs mb-2">Backdrop</h3>
+              {boothBackdrop ? (
+                <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-white/10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={boothBackdrop.image_url} alt={boothBackdrop.name} className="h-56 w-full object-cover" />
+                  <div className="p-2.5 text-sm font-semibold text-zinc-800 dark:text-zinc-100">{boothBackdrop.name}</div>
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-400 dark:text-zinc-600">No backdrop selected.</p>
+              )}
+            </div>
+
+            {/* Design */}
+            <div>
+              <h3 className="label-xs mb-2">Photo-strip design</h3>
+              {boothDesign?.src ? (
+                <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-white/10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={boothDesign.src} alt="Selected design" className="h-56 w-full bg-white object-contain dark:bg-zinc-900" />
+                  <div className="flex items-center justify-between gap-2 p-2.5">
+                    <div className="text-xs text-zinc-500">
+                      {[boothDesign.no_of_images, boothDesign.layout_size].filter(Boolean).join(" · ") || "Design"}
+                    </div>
+                    {boothDesign.post_url && (
+                      <a
+                        href={boothDesign.post_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-primary shrink-0 px-3 py-1.5 text-xs"
+                      >
+                        Open in TemplatesBooth ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-400 dark:text-zinc-600">No design selected.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {boothSel?.updated_at && (
+          <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-600">
+            Last updated {new Date(boothSel.updated_at).toLocaleString()}
+            {boothPickedBy ? ` by ${boothPickedBy}` : ""}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="max-w-6xl">
       {/* ---------- STICKY HEADER ---------- */}
@@ -1832,6 +1937,9 @@ export default async function EventDetailPage({
           { id: "staff", label: "Staff", badge: (staff ?? []).length, content: staffTab },
           { id: "vendors", label: "Vendors", badge: vendorRows.length, content: vendorsTab },
           { id: "logistics", label: "Logistics", badge: equipRows.length ? `${packedCount}/${equipRows.length}` : undefined, content: logisticsTab },
+          ...(hasPhotobooth
+            ? [{ id: "photobooth", label: "Photo Booth", badge: boothDesign?.src ? "✓" : undefined, content: photoboothTab }]
+            : []),
           { id: "documents", label: "Documents", badge: (eventDocs ?? []).length || undefined, content: documentsTab },
           { id: "comms", label: "Comms", badge: commsThreads.length || undefined, content: <EventComms eventId={id} threads={commsThreads} startable={commsStartable} docs={(eventDocs ?? []).filter((d) => d.status !== "void").map((d) => ({ id: d.id, title: d.title }))} /> },
           { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
