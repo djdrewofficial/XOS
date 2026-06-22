@@ -71,6 +71,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "set_time") {
+    // Couple sets/clears the time shown for a section on their timeline (time_label).
+    const sectionId = String(body.sectionId ?? "");
+    if (!sectionId) return NextResponse.json({ error: "sectionId required" }, { status: 400 });
+    const time = body.time == null ? null : String(body.time).trim() || null;
+    const { error } = await admin
+      .from("planning_sections")
+      .update({ time_label: time })
+      .eq("id", sectionId)
+      .eq("event_id", eventId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "set_timeline") {
     // Couple toggles whether a section appears on THEIR client timeline view.
     // Per-event only (event's own planning_sections row) — never touches templates.
