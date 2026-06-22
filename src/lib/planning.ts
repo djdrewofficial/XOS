@@ -86,6 +86,7 @@ export interface PlanningSection {
   notes_enabled: boolean;
   time_enabled: boolean;
   on_timeline: boolean | null; // null = auto (on when section_type==='timeline')
+  on_music: boolean | null; // null = auto (vibe playlists: songs on + no single-song limit)
   section_cover_url: string | null;
   permissions: SectionPermissions;
   module: string | null;
@@ -202,6 +203,7 @@ async function seedFromTemplate(admin: Admin, eventId: string, templateId: strin
         notes_enabled: ts.notes_enabled,
         time_enabled: ts.time_enabled,
         on_timeline: null,
+        on_music: null,
         ai_picks_enabled: ts.ai_picks_enabled,
         section_cover_url: ts.section_cover_url,
         permissions: ts.permissions,
@@ -324,6 +326,7 @@ async function seedTemplateSection(
       notes_enabled: ts.notes_enabled,
       time_enabled: ts.time_enabled,
       on_timeline: null,
+      on_music: null,
       ai_picks_enabled: ts.ai_picks_enabled,
       section_cover_url: ts.section_cover_url,
       permissions: ts.permissions,
@@ -546,6 +549,7 @@ export async function loadEventPlanning(
       notes_enabled: sec.notes_enabled ?? true,
       time_enabled: sec.time_enabled ?? false,
       on_timeline: sec.on_timeline ?? null,
+      on_music: sec.on_music ?? null,
       section_cover_url: sec.section_cover_url ?? null,
       permissions: (sec.permissions ?? {}) as SectionPermissions,
       module: sec.module ?? null,

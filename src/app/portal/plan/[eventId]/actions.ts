@@ -330,6 +330,7 @@ type SectionSettingsInput = {
   time_enabled?: boolean;
   time_label?: string | null;
   on_timeline?: boolean | null;
+  on_music?: boolean | null;
   permissions?: Record<string, string[]>;
 };
 

@@ -57,6 +57,9 @@ export default function SectionSettings({
   // Whether this section appears on the couple's app timeline. Default follows the
   // type (timeline=on, info=off) until explicitly set here.
   const [onTimeline, setOnTimeline] = useState(section.on_timeline ?? section.section_type === "timeline");
+  // Whether this section appears on the couple's Music tab (vibe curation).
+  // Default: open playlists (songs on + no single-song limit).
+  const [onMusic, setOnMusic] = useState(section.on_music ?? (section.songs_enabled && section.song_limit == null));
 
   const initialPerms: Record<string, boolean> = {};
   for (const a of PERM_ACTIONS) {
@@ -84,6 +87,7 @@ export default function SectionSettings({
         time_enabled: timeOn,
         time_label: timeLabel.trim() || null,
         on_timeline: onTimeline,
+        on_music: onMusic,
         permissions,
       });
       if (res?.ok) onClose();
@@ -159,6 +163,10 @@ export default function SectionSettings({
                   <div className="mt-3 space-y-3">
                     <NumberRow label="Song limit" value={songLimit} onChange={setSongLimit} placeholder="∞" />
                     <NumberRow label="Must-play limit" value={mustPlayLimit} onChange={setMustPlayLimit} placeholder="∞" />
+                    <ToggleRow label="Show on Music tab (vibe curation)" on={onMusic} onToggle={() => setOnMusic((v) => !v)} />
+                    <p className="text-xs text-zinc-500">
+                      Surfaces this section on the couple&apos;s Music tab for playlist/vibe curation (e.g. Cocktail Hour, Dinner, Open Dancing). Turn off for single-song moments.
+                    </p>
                   </div>
                 )}
               </Group>
