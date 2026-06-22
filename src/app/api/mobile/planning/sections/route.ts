@@ -71,6 +71,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "set_timeline") {
+    // Couple toggles whether a section appears on THEIR client timeline view.
+    // Per-event only (event's own planning_sections row) — never touches templates.
+    const sectionId = String(body.sectionId ?? "");
+    const on = body.on;
+    if (!sectionId || typeof on !== "boolean") return NextResponse.json({ error: "sectionId and on required" }, { status: 400 });
+    const { error } = await admin
+      .from("planning_sections")
+      .update({ on_timeline: on })
+      .eq("id", sectionId)
+      .eq("event_id", eventId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "restore") {
     const sectionId = String(body.sectionId ?? "");
     if (!sectionId) return NextResponse.json({ error: "sectionId required" }, { status: 400 });
