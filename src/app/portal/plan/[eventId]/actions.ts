@@ -329,6 +329,7 @@ type SectionSettingsInput = {
   notes_enabled?: boolean;
   time_enabled?: boolean;
   time_label?: string | null;
+  on_timeline?: boolean | null;
   permissions?: Record<string, string[]>;
 };
 

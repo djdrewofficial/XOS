@@ -54,6 +54,9 @@ export default function SectionSettings({
   const [notesOn, setNotesOn] = useState(section.notes_enabled);
   const [timeOn, setTimeOn] = useState(section.time_enabled);
   const [timeLabel, setTimeLabel] = useState(section.time_label ?? "");
+  // Whether this section appears on the couple's app timeline. Default follows the
+  // type (timeline=on, info=off) until explicitly set here.
+  const [onTimeline, setOnTimeline] = useState(section.on_timeline ?? section.section_type === "timeline");
 
   const initialPerms: Record<string, boolean> = {};
   for (const a of PERM_ACTIONS) {
@@ -80,6 +83,7 @@ export default function SectionSettings({
         notes_enabled: notesOn,
         time_enabled: timeOn,
         time_label: timeLabel.trim() || null,
+        on_timeline: onTimeline,
         permissions,
       });
       if (res?.ok) onClose();
@@ -176,6 +180,14 @@ export default function SectionSettings({
                 {timeOn && (
                   <input className="input mt-3 w-40" placeholder="05:00 pm" value={timeLabel} onChange={(e) => setTimeLabel(e.target.value)} />
                 )}
+              </Group>
+
+              {/* Client timeline visibility */}
+              <Group label="Client timeline">
+                <ToggleRow label="Show on couple's timeline" on={onTimeline} onToggle={() => setOnTimeline((v) => !v)} />
+                <p className="mt-2 text-xs text-zinc-500">
+                  Turn off for informational sections (e.g. Vendor Team) that belong in the plan but not on the couple&apos;s event timeline.
+                </p>
               </Group>
             </>
           )}

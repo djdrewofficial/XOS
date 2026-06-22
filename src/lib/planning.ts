@@ -85,6 +85,7 @@ export interface PlanningSection {
   questions_enabled: boolean;
   notes_enabled: boolean;
   time_enabled: boolean;
+  on_timeline: boolean | null; // null = auto (on when section_type==='timeline')
   section_cover_url: string | null;
   permissions: SectionPermissions;
   module: string | null;
@@ -200,6 +201,7 @@ async function seedFromTemplate(admin: Admin, eventId: string, templateId: strin
         questions_enabled: ts.questions_enabled,
         notes_enabled: ts.notes_enabled,
         time_enabled: ts.time_enabled,
+        on_timeline: null,
         ai_picks_enabled: ts.ai_picks_enabled,
         section_cover_url: ts.section_cover_url,
         permissions: ts.permissions,
@@ -321,6 +323,7 @@ async function seedTemplateSection(
       questions_enabled: ts.questions_enabled,
       notes_enabled: ts.notes_enabled,
       time_enabled: ts.time_enabled,
+      on_timeline: null,
       ai_picks_enabled: ts.ai_picks_enabled,
       section_cover_url: ts.section_cover_url,
       permissions: ts.permissions,
@@ -542,6 +545,7 @@ export async function loadEventPlanning(
       questions_enabled: sec.questions_enabled ?? true,
       notes_enabled: sec.notes_enabled ?? true,
       time_enabled: sec.time_enabled ?? false,
+      on_timeline: sec.on_timeline ?? null,
       section_cover_url: sec.section_cover_url ?? null,
       permissions: (sec.permissions ?? {}) as SectionPermissions,
       module: sec.module ?? null,
