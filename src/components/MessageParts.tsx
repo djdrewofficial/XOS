@@ -210,12 +210,14 @@ export function ReplyForm({
   title,
   docs = [],
   forcedChannel = null,
+  onOptimistic,
 }: {
   conversation: { id: string; phone: string | null; email: string | null };
   messages: MsgRow[];
   title: string;
   docs?: ThreadDoc[];
   forcedChannel?: string | null;
+  onOptimistic?: (body: string, channel: string) => void;
 }) {
   const [fileNames, setFileNames] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -235,7 +237,14 @@ export function ReplyForm({
   return (
     <form
       action={sendInboxReply.bind(null, conversation.id)}
-      onSubmit={() => setTimeout(() => setFileNames([]), 800)}
+      onSubmit={(e) => {
+        const form = e.currentTarget;
+        const ta = form.elements.namedItem("body") as HTMLTextAreaElement | null;
+        const body = ta?.value?.trim() ?? "";
+        // optimistic bubble (text-only sends; file sends fall back to realtime)
+        if (body && fileNames.length === 0) onOptimistic?.(body, channel);
+        setTimeout(() => { setFileNames([]); if (ta) ta.value = ""; }, 0);
+      }}
       className="border-t border-zinc-100 p-4 dark:border-white/[0.05]"
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">

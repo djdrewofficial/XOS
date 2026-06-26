@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   syncHighLevelConversations,
   processSmsOutbox,
@@ -12,6 +13,72 @@ import {
 } from "@/lib/highlevel";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
+import type { ActiveThread, ConvRow } from "@/components/InboxShell";
+import type { MsgRow, ThreadDoc } from "@/components/MessageParts";
+
+const CONV_COLS =
+  "id, hl_contact_id, client_id, contact_name, phone, email, last_message_at, last_message_direction, last_message_type, last_message_body, unread_count";
+
+/** Load a single thread (for client-side conversation switching) and clear its
+    unread badge. Mirrors what the /inbox/[id] server page builds. */
+export async function loadThread(id: string): Promise<ActiveThread | null> {
+  const supabase = await createClient();
+  const { data: conv } = await supabase.from("hl_conversations").select("*").eq("id", id).maybeSingle();
+  if (!conv) return null;
+
+  const [{ data: messages }, { data: client }] = await Promise.all([
+    supabase.from("hl_messages").select("*").eq("conversation_id", id).order("date_added", { ascending: true }).limit(500),
+    conv.client_id
+      ? supabase.from("clients").select("id, first_name, last_name, cell_phone, email").eq("id", conv.client_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const { data: events } = client
+    ? await supabase.from("events").select("id, name, event_date, status:event_statuses(name, color, text_color)").eq("client_id", client.id).order("event_date", { ascending: false }).limit(10)
+    : { data: [] };
+
+  const eventIds = (events ?? []).map((ev) => ev.id as string);
+  const { data: docs } = eventIds.length
+    ? await supabase.from("documents").select("id, title").in("event_id", eventIds).neq("status", "void").order("created_at", { ascending: false }).limit(20)
+    : { data: [] };
+
+  // clear unread so the list badge updates (best-effort, via admin)
+  await createAdminClient().from("hl_conversations").update({ unread_count: 0 }).eq("id", id);
+
+  return {
+    conv: conv as ConvRow,
+    messages: (messages ?? []) as MsgRow[],
+    client: client ?? null,
+    events: (events ?? []).map((ev) => {
+      const status = ev.status as unknown as { name: string; color: string; text_color: string } | null;
+      return {
+        id: ev.id as string,
+        name: ev.name as string,
+        event_date: (ev.event_date as string) ?? null,
+        status_name: status?.name ?? null,
+        status_color: status?.color ?? null,
+        status_text_color: status?.text_color ?? null,
+      };
+    }),
+    ghlUrl:
+      conv.hl_contact_id && process.env.HIGHLEVEL_LOCATION_ID
+        ? `https://app.gohighlevel.com/v2/location/${process.env.HIGHLEVEL_LOCATION_ID}/contacts/detail/${conv.hl_contact_id}`
+        : null,
+    docs: (docs ?? []) as ThreadDoc[],
+  };
+}
+
+/** Next page of conversations older than the given timestamp (infinite scroll). */
+export async function loadMoreConversations(beforeIso: string): Promise<ConvRow[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("hl_conversations")
+    .select(CONV_COLS)
+    .lt("last_message_at", beforeIso)
+    .order("last_message_at", { ascending: false })
+    .limit(200);
+  return (data ?? []) as ConvRow[];
+}
 
 export async function syncInbox(full?: boolean) {
   const supabase = await createClient();
