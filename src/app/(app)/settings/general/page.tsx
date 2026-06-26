@@ -44,6 +44,8 @@ type GeneralSettings = {
   default_template_event_id: string | null;
   landing_page: string;
   legal_venue: string | null;
+  instagram_url: string | null;
+  tiktok_url: string | null;
 };
 
 export default async function GeneralSettingsPage() {
@@ -123,6 +125,15 @@ export default async function GeneralSettingsPage() {
               placeholder="Broward County, Florida"
               className="input w-full max-w-md"
             />
+          </Row>
+        </Section>
+
+        <Section title="Social Links">
+          <Row label="Instagram URL" hint="Shown to couples in the app's “follow us” prompt after they share their handles.">
+            <input name="instagram_url" defaultValue={s.instagram_url ?? ""} placeholder="https://instagram.com/yourpage" className="input w-full max-w-md" />
+          </Row>
+          <Row label="TikTok URL">
+            <input name="tiktok_url" defaultValue={s.tiktok_url ?? ""} placeholder="https://www.tiktok.com/@yourpage" className="input w-full max-w-md" />
           </Row>
         </Section>
               </div>

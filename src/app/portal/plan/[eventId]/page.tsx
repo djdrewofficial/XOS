@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getMe } from "@/lib/auth";
 import { syncEventSections } from "@/lib/spotifySync";
 import { loadEventAccount, loadClientMessages } from "@/lib/eventAccount";
+import SocialPrompt, { type SocialState } from "@/components/SocialPrompt";
 import {
   ensureEventPlanning,
   loadEventPlanning,
@@ -58,6 +59,9 @@ export default async function PlannerPage({
   const admin2 = createAdminClient();
   const account = role === "guest" ? null : await loadEventAccount(admin2, eventId, role);
   const messages = role === "guest" ? { emails: [], texts: [] } : await loadClientMessages(admin2, eventId);
+  // Social-handle prompt (stamps first sign-in; only fires for clients/guests 24h+ in).
+  const { data: socialRows } = await supabase.rpc("social_prompt_state");
+  const socialState = ((socialRows as SocialState[] | null) ?? [])[0] ?? null;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -98,6 +102,7 @@ export default async function PlannerPage({
         messages={messages}
         paypalClientId={process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? null}
       />
+      <SocialPrompt state={socialState} />
     </div>
   );
 }
