@@ -1809,7 +1809,7 @@ export default async function EventDetailPage({
   );
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       {/* ---------- STICKY HEADER ---------- */}
       <div className="sticky top-14 z-30 -mx-4 -mt-4 mb-5 border-b border-zinc-200 bg-white/85 px-4 pt-4 pb-3 backdrop-blur-xl dark:border-white/[0.08] dark:bg-[#0b0913]/90 md:-mx-6 md:-mt-6 md:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">

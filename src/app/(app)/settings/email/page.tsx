@@ -25,7 +25,7 @@ export default async function EmailPage() {
   const label = "label-xs";
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <h1 className="mb-5 text-2xl font-bold">Email</h1>
 
       <div className={`card mb-6 p-4 text-sm ${mailgunConfigured ? "border-emerald-400/30 text-emerald-800 dark:text-emerald-200" : "border-amber-400/30 text-amber-800 dark:text-amber-200"}`}>

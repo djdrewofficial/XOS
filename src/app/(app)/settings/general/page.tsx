@@ -75,7 +75,7 @@ export default async function GeneralSettingsPage() {
   const s = settings as GeneralSettings;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <h1 className="page-title mb-5">General</h1>
       <form action={saveGeneralSettings} className="space-y-5">
         <Tabs

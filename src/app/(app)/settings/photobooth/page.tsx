@@ -11,7 +11,7 @@ export default async function PhotoBoothSettingsPage() {
     .order("sort_order");
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5">
         <h1 className="page-title mb-1">Photo Booth Backdrops</h1>
         <p className="text-sm text-zinc-500">

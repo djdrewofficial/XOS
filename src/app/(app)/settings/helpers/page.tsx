@@ -52,7 +52,7 @@ export default async function HelpersPage() {
   const list = (helpers ?? []) as HelperRow[];
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="page-title mb-1">Booking Helpers</h1>

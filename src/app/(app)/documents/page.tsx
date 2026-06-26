@@ -177,7 +177,7 @@ export default async function DocumentsPage() {
   );
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <h1 className="page-title mb-5">Documents</h1>
       <Tabs
         tabs={[

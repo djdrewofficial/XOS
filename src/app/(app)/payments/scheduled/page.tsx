@@ -58,7 +58,7 @@ export default async function ScheduledPaymentsPage({ searchParams }: { searchPa
   const cols = "grid grid-cols-[1.4fr_0.8fr_1fr] gap-3";
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Scheduled Payments — {y}</h1>
         <div className="flex items-center gap-2 text-sm">

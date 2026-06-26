@@ -36,7 +36,7 @@ export default async function PaymentsPage({
   const yearTotal = months.reduce((s, m) => s + m.total, 0);
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Payments — {y}</h1>
         <div className="flex items-center gap-2 text-sm">

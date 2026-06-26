@@ -35,7 +35,7 @@ export default async function VenueDetailPage({
   const upcoming = (events ?? []).filter((e) => e.event_date && e.event_date >= today).length;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="page-title">{venue.name}</h1>

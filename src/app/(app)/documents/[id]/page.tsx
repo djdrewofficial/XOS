@@ -50,7 +50,7 @@ export default async function DocumentDetailPage({
   const editing = edit === "1" && !locked;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link href="/documents" className="text-xs font-semibold text-zinc-500 hover:underline">← Documents</Link>

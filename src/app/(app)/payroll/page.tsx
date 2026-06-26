@@ -60,7 +60,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
 
   if (!period) {
     return (
-      <div className="max-w-5xl space-y-5">
+      <div className="max-w-[1700px] space-y-5">
         <h1 className="page-title">Payroll</h1>
         {settingsPanel}
         <p className="text-sm text-zinc-500">Set a first pay day above to start tracking pay periods.</p>
@@ -144,7 +144,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       : "bg-zinc-200 text-zinc-600 dark:bg-white/10 dark:text-zinc-300";
 
   return (
-    <div className="max-w-5xl space-y-5">
+    <div className="max-w-[1700px] space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="page-title">Payroll</h1>
         <div className="flex items-center gap-2 text-sm">

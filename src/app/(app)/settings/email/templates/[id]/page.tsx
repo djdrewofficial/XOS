@@ -373,7 +373,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
   );
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <form action={updateTemplate.bind(null, id)}>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>

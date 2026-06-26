@@ -156,7 +156,7 @@ export default async function PlannerTemplatesPage() {
   );
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5">
         <h1 className="page-title mb-1">XOS Planner</h1>
         <p className="text-sm text-zinc-500">

@@ -78,7 +78,7 @@ export default async function CommissionsPage({ searchParams }: { searchParams: 
   );
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Sales &amp; Commissions — {y}</h1>
         <div className="flex items-center gap-2 text-sm">

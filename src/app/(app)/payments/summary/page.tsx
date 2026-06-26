@@ -88,7 +88,7 @@ export default async function IncomeExpensePage({ searchParams }: { searchParams
   const anyProjected = months.some((r) => r.events > 0 && isProjected(r.month));
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Income &amp; Expense — {y}</h1>
         <div className="flex items-center gap-2 text-sm">

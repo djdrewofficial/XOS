@@ -46,7 +46,7 @@ export default async function VendorDetailPage({
   const upcoming = linkRows.filter((l) => l.event!.event_date && l.event!.event_date >= today).length;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="page-title">

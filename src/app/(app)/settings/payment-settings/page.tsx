@@ -57,7 +57,7 @@ export default async function PaymentSettingsPage() {
   const s = settings as PaymentSettings;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <h1 className="page-title mb-5">Payment Settings</h1>
       <form action={savePaymentSettings} className="space-y-5">
         <Tabs

@@ -87,7 +87,7 @@ export default async function OutstandingPage() {
   const overdueTotal = rows.filter((r) => r.overdueDays > 0).reduce((s, r) => s + r.balance, 0);
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Outstanding Balances</h1>
         <a href="/api/reports/outstanding" target="_blank" rel="noopener" className="btn-ghost px-3 py-1.5 text-sm">🖨 Export PDF</a>

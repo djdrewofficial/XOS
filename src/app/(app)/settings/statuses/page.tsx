@@ -35,7 +35,7 @@ export default async function StatusesPage() {
   });
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <h1 className="page-title mb-5">Event Statuses</h1>
 
       {/* ---------- compact status list (click a row to edit) ---------- */}

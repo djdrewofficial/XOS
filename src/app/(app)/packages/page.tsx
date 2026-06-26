@@ -169,7 +169,7 @@ export default async function PackagesPage() {
   }
 
   return (
-    <div className="max-w-6xl" id="packages-root">
+    <div className="max-w-[1700px]" id="packages-root">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h1 className="page-title">Packages &amp; Add-Ons</h1>
         <LiveFilter targetSelector="#packages-root" placeholder="Search packages and add-ons…" />

@@ -470,7 +470,7 @@ export default async function EmployeeProfilePage({
   );
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       {/* header */}
       <div className="mb-5">
         <Link href="/employees" className="text-xs font-semibold text-zinc-500 hover:underline">← All Employees</Link>

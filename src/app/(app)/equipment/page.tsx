@@ -67,7 +67,7 @@ export default async function EquipmentPage() {
   };
 
   return (
-    <div className="max-w-6xl" id="equipment-root">
+    <div className="max-w-[1700px]" id="equipment-root">
       <h1 className="page-title mb-1">Equipment</h1>
       <p className="mb-5 text-sm text-zinc-500">
         Systems are racks/cases that travel as one unit; standalone items are grouped by category.

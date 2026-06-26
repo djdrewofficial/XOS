@@ -488,7 +488,7 @@ export default async function StaffSettingsPage() {
   );
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex items-center justify-between">
         <h1 className="page-title mb-0">Staff Settings</h1>
         <Link href="/employees" className="btn-ghost px-4 py-1.5 text-xs">

@@ -30,7 +30,7 @@ export default async function VendorsPage() {
   });
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="page-title">Vendors</h1>

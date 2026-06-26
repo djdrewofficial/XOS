@@ -593,7 +593,7 @@ export default async function EditHelperPage({
   );
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1700px]">
       <form action={updateHelper.bind(null, id)}>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>

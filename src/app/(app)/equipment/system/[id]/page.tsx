@@ -45,7 +45,7 @@ export default async function SystemDetailPage({
   }));
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <div className="mb-5">
         <Link href="/equipment" className="text-xs font-semibold text-zinc-500 hover:underline">← All Equipment</Link>
         <h1 className="page-title mt-1">{system.name}</h1>

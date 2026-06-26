@@ -58,7 +58,7 @@ export default async function ExpensesSettingsPage() {
     : null;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-[1700px]">
       <h1 className="page-title mb-5">Expenses</h1>
       <Tabs
         tabs={[
