@@ -8,7 +8,7 @@ import SaveButton from "@/components/SaveButton";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowUpRightFromSquare, faRotate, faPenToSquare, faArrowLeft } from "@fortawesome/free-solid-svg-icons";
 import { channelIcon, channelLabel, fmtWhen } from "@/app/(app)/inbox/ui";
-import { syncInbox, startConversation } from "@/app/(app)/inbox/actions";
+import { syncInbox, startConversation, listInboxClients } from "@/app/(app)/inbox/actions";
 import { MessageBubble, ReplyForm, ChannelTabs, CHANNEL_TO_TYPE, type MsgRow, type ThreadDoc } from "@/components/MessageParts";
 
 export type { MsgRow };
@@ -54,7 +54,7 @@ export type ClientLite = { id: string; first_name: string; last_name: string; ce
 export default function InboxShell({
   conversations: initialConversations,
   active,
-  clients = [],
+  clients: initialClients = [],
 }: {
   conversations: ConvRow[];
   active: ActiveThread | null;
@@ -62,6 +62,9 @@ export default function InboxShell({
 }) {
   const router = useRouter();
   const [conversations, setConversations] = useState<ConvRow[]>(initialConversations);
+  // Clients load lazily the first time the composer opens (700+ rows otherwise
+  // ship on every inbox load / conversation click).
+  const [clients, setClients] = useState<ClientLite[]>(initialClients);
   const [messages, setMessages] = useState<MsgRow[]>(active?.messages ?? []);
   const [channel, setChannel] = useState<string>("all");
   const [q, setQ] = useState("");
@@ -78,6 +81,11 @@ export default function InboxShell({
     setMessages(active?.messages ?? []);
     setChannelView("all");
   }, [activeId, active?.messages]);
+
+  // Load the client picker only when the composer is first opened.
+  useEffect(() => {
+    if (composing && clients.length === 0) listInboxClients().then(setClients).catch(() => {});
+  }, [composing, clients.length]);
 
   /* ===== realtime: DB changes stream straight into the UI ===== */
   useEffect(() => {

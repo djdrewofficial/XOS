@@ -15,14 +15,10 @@ export default async function ConversationPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: conversations }, { data: conv }, { data: clientList }] = await Promise.all([
-    supabase
-      .from("hl_conversations")
-      .select("*")
-      .order("last_message_at", { ascending: false })
-      .limit(200),
+  const CONV_COLS = "id, hl_contact_id, client_id, contact_name, phone, email, last_message_at, last_message_direction, last_message_type, last_message_body, unread_count";
+  const [{ data: conversations }, { data: conv }] = await Promise.all([
+    supabase.from("hl_conversations").select(CONV_COLS).order("last_message_at", { ascending: false }).limit(200),
     supabase.from("hl_conversations").select("*").eq("id", id).maybeSingle(),
-    supabase.from("clients").select("id, first_name, last_name, cell_phone").order("first_name"),
   ]);
   if (!conv) notFound();
 
@@ -96,7 +92,7 @@ export default async function ConversationPage({
     <InboxShell
       conversations={(conversations ?? []) as ConvRow[]}
       active={active}
-      clients={clientList ?? []}
+      clients={[]}
     />
   );
 }

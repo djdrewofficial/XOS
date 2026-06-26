@@ -19,6 +19,14 @@ export async function syncInbox(full?: boolean) {
   revalidatePath("/inbox");
 }
 
+/** Clients for the "New conversation" picker — loaded lazily (only when the user
+    opens the composer) so the 700+ rows aren't shipped on every inbox load. */
+export async function listInboxClients() {
+  const supabase = await createClient();
+  const { data } = await supabase.from("clients").select("id, first_name, last_name, cell_phone").order("first_name");
+  return (data ?? []) as { id: string; first_name: string; last_name: string; cell_phone: string | null }[];
+}
+
 /** Reply from a thread on ANY channel (SMS/Email/WhatsApp/IG/FB) through the
     outbox pipeline, then re-pull the conversation so the new message appears.
     Files upload to the public sms-media bucket (unguessable uuid paths);

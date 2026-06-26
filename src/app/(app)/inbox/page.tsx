@@ -25,20 +25,19 @@ export default async function InboxPage() {
     });
   }
 
-  const [{ data: conversations }, { data: clients }] = await Promise.all([
-    supabase
-      .from("hl_conversations")
-      .select("*")
-      .order("last_message_at", { ascending: false })
-      .limit(200),
-    supabase.from("clients").select("id, first_name, last_name, cell_phone").order("first_name"),
-  ]);
+  // Only the columns the list needs (avoids shipping every conversation column).
+  // Clients for the "New conversation" picker load lazily on demand in the shell.
+  const { data: conversations } = await supabase
+    .from("hl_conversations")
+    .select("id, hl_contact_id, client_id, contact_name, phone, email, last_message_at, last_message_direction, last_message_type, last_message_body, unread_count")
+    .order("last_message_at", { ascending: false })
+    .limit(200);
 
   return (
     <InboxShell
       conversations={(conversations ?? []) as ConvRow[]}
       active={null}
-      clients={clients ?? []}
+      clients={[]}
     />
   );
 }
