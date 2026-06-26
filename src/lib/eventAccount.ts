@@ -11,10 +11,13 @@ const num = (v: unknown): number => (typeof v === "number" ? v : v ? Number(v) :
 
 export type AccountAddon = { name: string; detail: string | null; price: number; qty: number };
 export type AccountPayment = { id: string; amount: number; paidAt: string | null; method: string | null; reason: string | null; pending: boolean };
-export type AccountSchedule = { id: string; label: string | null; dueDate: string | null; amount: number; seq: number };
+export type AccountSchedule = { id: string; label: string | null; dueDate: string | null; amount: number; seq: number; paid: boolean };
 
 export type EventAccount = {
   financialsVisible: boolean;
+  payToken: string | null;
+  feePct: number;
+  paypalEnabled: boolean;
   packageName: string | null;
   packageDescription: string | null;
   includedHours: number | null;
@@ -53,8 +56,12 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   const financialsVisible = role === "staff" || !hidden;
 
   const { data: eAddons } = await admin.from("event_addons").select("addon_id, quantity, price_override, price_locked").eq("event_id", eventId);
+  const { data: pset } = financialsVisible ? await admin.from("payment_settings").select("*").eq("id", true).maybeSingle() : { data: null };
+  const ps = (pset ?? {}) as Record<string, unknown>;
+  const paypalEnabled = ps.online_pay_enabled !== false && ps.paypal_pay_enabled !== false;
+  const feePct = Number(ps.paypal_fee_pct ?? 4);
   const pays = financialsVisible
-    ? (await admin.from("payments").select("id, amount, status, paid_at, method, reason").eq("event_id", eventId).order("paid_at", { ascending: true })).data
+    ? (await admin.from("payments").select("id, amount, status, paid_at, method, reason, scheduled_payment_id").eq("event_id", eventId).order("paid_at", { ascending: true })).data
     : null;
   const sched = financialsVisible
     ? (await admin.from("scheduled_payments").select("id, seq, due_date, amount, label").eq("event_id", eventId).order("seq", { ascending: true })).data
@@ -103,10 +110,13 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   }));
   const paid = payments.filter((p) => !p.pending).reduce((s, p) => s + p.amount, 0);
   const balance = total - paid;
-  const schedule: AccountSchedule[] = (sched ?? []).map((s) => ({ id: s.id, label: s.label, dueDate: s.due_date, amount: num(s.amount), seq: s.seq ?? 0 }));
+  // An installment is "paid" once an approved payment is linked to it.
+  const takenSched = new Set((pays ?? []).filter((p) => p.status === "approved" && p.scheduled_payment_id).map((p) => p.scheduled_payment_id as string));
+  const schedule: AccountSchedule[] = (sched ?? []).map((s) => ({ id: s.id, label: s.label, dueDate: s.due_date, amount: num(s.amount), seq: s.seq ?? 0, paid: takenSched.has(s.id) }));
 
   return {
-    financialsVisible, packageName, packageDescription, includedHours, packagePrice, addons, travelFee, overtimeFee,
+    financialsVisible, payToken: (ev.pay_token as string) ?? null, feePct, paypalEnabled,
+    packageName, packageDescription, includedHours, packagePrice, addons, travelFee, overtimeFee,
     discounts, total, paid, balance, billingTerms: financialsVisible ? ev.billing_terms ?? null : null, payments, schedule,
   };
 }

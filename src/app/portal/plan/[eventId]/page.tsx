@@ -96,6 +96,7 @@ export default async function PlannerPage({
         role={role}
         account={account}
         messages={messages}
+        paypalClientId={process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? null}
       />
     </div>
   );

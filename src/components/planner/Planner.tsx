@@ -124,6 +124,7 @@ export default function Planner({
   role,
   account,
   messages,
+  paypalClientId,
 }: {
   eventId: string;
   eventName: string;
@@ -135,6 +136,7 @@ export default function Planner({
   role: PlannerRole;
   account: EventAccount | null;
   messages: { emails: SentEmail[]; texts: SentText[] };
+  paypalClientId: string | null;
 }) {
   const isGuest = role === "guest";
   const isStaff = role === "staff";
@@ -267,7 +269,7 @@ export default function Planner({
 
       <div className="mt-6">
         {!isGuest && tab === "account" ? (
-          <MyEventTab account={account} messages={messages} />
+          <MyEventTab account={account} messages={messages} paypalClientId={paypalClientId} />
         ) : !isGuest && tab === "people" ? (
           <PeoplePanel eventId={eventId} hosts={people.hosts} guests={people.guests} canManage={isStaff || role === "host"} />
         ) : !isGuest && tab === "activity" ? (

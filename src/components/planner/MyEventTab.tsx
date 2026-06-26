@@ -4,16 +4,18 @@ import { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEnvelope, faCommentSms, faBoxOpen, faMoneyBillWave, faXmark, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 import type { EventAccount, SentEmail, SentText } from "@/lib/eventAccount";
+import MakePayment from "@/components/planner/MakePayment";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—");
 const fmtDateTime = (d: string | null) => (d ? new Date(d).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
 
 export default function MyEventTab({
-  account, messages,
+  account, messages, paypalClientId,
 }: {
   account: EventAccount | null;
   messages: { emails: SentEmail[]; texts: SentText[] };
+  paypalClientId: string | null;
 }) {
   const [openEmail, setOpenEmail] = useState<SentEmail | null>(null);
 
@@ -32,8 +34,7 @@ export default function MyEventTab({
       {/* Package */}
       <Card icon={faBoxOpen} title="Your package">
         <p className="text-xl font-bold text-zinc-900 dark:text-zinc-50">{account.packageName ?? "Custom package"}</p>
-        {account.includedHours != null && <p className="mt-0.5 text-sm font-semibold text-brand dark:text-brand-lighter">{account.includedHours} hours of entertainment</p>}
-        {account.packageDescription && <p className="mt-2 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{account.packageDescription}</p>}
+        {account.packageDescription &&<p className="mt-2 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{account.packageDescription}</p>}
         {account.addons.length > 0 && (
           <div className="mt-4">
             <Label>What&apos;s included</Label>
@@ -64,6 +65,18 @@ export default function MyEventTab({
             <Stat label="Paid" value={money(account.paid)} cls="text-emerald-600 dark:text-emerald-400" />
             <Stat label="Balance" value={money(account.balance)} cls={account.balance > 0 ? "text-brand dark:text-brand-lighter" : "text-emerald-600 dark:text-emerald-400"} />
           </div>
+
+          {account.balance > 0.005 && account.paypalEnabled && account.payToken && (
+            <div className="mt-4">
+              <MakePayment
+                token={account.payToken}
+                clientId={paypalClientId}
+                feePct={account.feePct}
+                balance={account.balance}
+                installments={account.schedule.filter((s) => !s.paid && s.amount > 0).map((s) => ({ id: s.id, label: s.label, dueDate: s.dueDate, amount: s.amount }))}
+              />
+            </div>
+          )}
 
           {account.schedule.length > 0 && (
             <div className="mt-4">
