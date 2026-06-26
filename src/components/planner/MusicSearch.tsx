@@ -44,6 +44,9 @@ const PROVIDER_META: Record<Provider, { label: string; dot: string }> = {
   apple: { label: "Apple Music", dot: "bg-pink-500" },
   youtube: { label: "YouTube", dot: "bg-red-500" },
 };
+// YouTube is excluded from open search (only resolvable via a pasted link), so
+// it isn't a toggleable search provider — but its meta stays for link results.
+const SEARCHABLE: Provider[] = ["spotify", "apple"];
 
 export default function MusicSearch({
   eventId,
@@ -56,7 +59,7 @@ export default function MusicSearch({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [providers, setProviders] = useState<Provider[]>(["spotify", "apple", "youtube"]);
+  const [providers, setProviders] = useState<Provider[]>(["spotify", "apple"]);
   const [results, setResults] = useState<Track[]>([]);
   const [status, setStatus] = useState<Partial<Record<Provider, ProviderStatus>>>({});
   const [loading, setLoading] = useState(false);
@@ -144,7 +147,7 @@ export default function MusicSearch({
           <input
             autoFocus
             className="input w-full pl-9"
-            placeholder="Search songs or paste a song name…"
+            placeholder="Search songs — or paste a YouTube link…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
@@ -159,7 +162,7 @@ export default function MusicSearch({
 
       {/* Provider toggles */}
       <div className="mb-3 flex flex-wrap gap-2">
-        {(Object.keys(PROVIDER_META) as Provider[]).map((p) => {
+        {SEARCHABLE.map((p) => {
           const on = providers.includes(p);
           return (
             <button

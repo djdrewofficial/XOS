@@ -190,6 +190,43 @@ async function searchYouTube(q: string, limit: number): Promise<MusicTrack[]> {
     }));
 }
 
+const YT_ID_RE = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+/** Pull an 11-char YouTube video id from a pasted URL (watch / youtu.be / shorts / embed). */
+export function parseYouTubeId(input: string): string | null {
+  const m = input.match(YT_ID_RE);
+  return m ? m[1] : null;
+}
+
+/** Resolve a pasted YouTube link to a single track via a snippet lookup. Returns
+    null if it isn't a YouTube URL or the lookup fails. Lets clients post a YouTube
+    link even though YouTube is excluded from open search. */
+export async function resolveYouTubeUrl(input: string): Promise<MusicTrack | null> {
+  const id = parseYouTubeId(input);
+  if (!id) return null;
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${id}&key=${key}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { items?: { snippet?: YouTubeItem["snippet"] }[] };
+    const sn = json.items?.[0]?.snippet;
+    if (!sn) return null;
+    return {
+      provider: "youtube",
+      providerId: id,
+      title: decodeHtml(sn.title ?? "YouTube video"),
+      artist: decodeHtml(sn.channelTitle ?? ""),
+      album: null,
+      artworkUrl: sn.thumbnails?.medium?.url ?? sn.thumbnails?.default?.url ?? null,
+      durationMs: null,
+      previewUrl: null,
+      externalUrl: `https://www.youtube.com/watch?v=${id}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function decodeHtml(s: string): string {
   return s
     .replace(/&amp;/g, "&")
