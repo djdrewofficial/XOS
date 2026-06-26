@@ -101,7 +101,7 @@ export default function SectionSettings({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
-      <div className="my-8 w-full max-w-lg rounded-2xl bg-white shadow-2xl dark:bg-zinc-900">
+      <div className="my-8 w-full max-w-none rounded-2xl bg-white shadow-2xl dark:bg-zinc-900">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-white/10">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
