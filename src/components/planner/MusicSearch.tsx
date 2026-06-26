@@ -137,7 +137,7 @@ export default function MusicSearch({
   const unconfigured = (Object.keys(status) as Provider[]).filter((p) => status[p] === "unconfigured");
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
+    <div className="w-full rounded-xl border border-zinc-200 bg-white p-4 dark:border-white/[0.08] dark:bg-white/[0.02]">
       <div className="mb-3 flex items-center gap-2">
         <div className="relative flex-1">
           <FontAwesomeIcon
