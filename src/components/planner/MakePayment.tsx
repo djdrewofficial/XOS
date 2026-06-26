@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faXmark, faCheck } from "@fortawesome/free-solid-svg-icons";
+import { faXmark, faCheck, faCopy } from "@fortawesome/free-solid-svg-icons";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
 const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -181,7 +181,7 @@ export default function MakePayment({
                           <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-white/10 dark:bg-white/5">
                             <div className="mb-2 font-semibold text-zinc-900 dark:text-white">Send your Zelle ({fmt(amount)}) to:</div>
                             <div className="flex items-center justify-between py-0.5"><span className="text-zinc-500">Recipient</span><span className="font-semibold text-zinc-800 dark:text-zinc-100">{zelle.displayName}</span></div>
-                            <div className="flex items-center justify-between py-0.5"><span className="text-zinc-500">Zelle</span><span className="font-mono font-semibold text-zinc-800 dark:text-zinc-100">{zelle.handle}</span></div>
+                            <div className="flex items-center justify-between py-0.5"><span className="text-zinc-500">Zelle</span><CopyField value={zelle.handle ?? ""} /></div>
                             <div className="mt-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{zelle.memo}</div>
                             <ol className="mt-3 list-decimal space-y-1 pl-4 text-xs text-zinc-500 dark:text-zinc-400">
                               <li>Open your bank&apos;s app and choose Zelle.</li>
@@ -202,6 +202,28 @@ export default function MakePayment({
         </div>
       )}
     </>
+  );
+}
+
+// Tap the value or the icon to copy it (Zelle handle / email).
+function CopyField({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked */ }
+  };
+  return (
+    <button type="button" onClick={copy} title="Copy" className="flex items-center gap-1.5 font-mono font-semibold text-zinc-800 transition hover:text-brand dark:text-zinc-100 dark:hover:text-brand-lighter">
+      {value}
+      {copied ? (
+        <span className="font-sans text-[11px] font-medium text-emerald-500">Copied!</span>
+      ) : (
+        <FontAwesomeIcon icon={faCopy} className="text-xs text-zinc-400" />
+      )}
+    </button>
   );
 }
 
