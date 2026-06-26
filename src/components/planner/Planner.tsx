@@ -25,6 +25,7 @@ import {
   faRoute,
   faChevronDown,
   faChevronUp,
+  faClock,
 } from "@fortawesome/free-solid-svg-icons";
 import { faHeart as faHeartOutline, faCircle, faStar as faStarOutline } from "@fortawesome/free-regular-svg-icons";
 import { faSpotify } from "@fortawesome/free-brands-svg-icons";
@@ -75,6 +76,7 @@ import {
   toggleLike,
   toggleMustPlay,
   setSectionGuestAccess,
+  setSectionTime,
   reorderSections,
   deleteSection,
   restoreSection,
@@ -771,6 +773,55 @@ function ActivityLog({ entries }: { entries: EventPlanning["auditLog"] }) {
   );
 }
 
+// Inline time editor for time-enabled sections — sits top-left of the header.
+function SectionTimeEditor({ eventId, sectionId, value, canEdit }: { eventId: string; sectionId: string; value: string | null; canEdit: boolean }) {
+  const [pending, start] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+
+  if (!canEdit) {
+    return value ? (
+      <div className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+        <FontAwesomeIcon icon={faClock} /> {value}
+      </div>
+    ) : null;
+  }
+
+  if (editing) {
+    const save = (v: string | null) => start(async () => { await setSectionTime(eventId, sectionId, v); setEditing(false); });
+    return (
+      <div className="mb-2 flex items-center gap-2">
+        <FontAwesomeIcon icon={faClock} className="text-zinc-400" />
+        <input
+          autoFocus
+          className="input w-32 py-1 text-sm"
+          placeholder="5:00 PM"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(draft); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
+        />
+        <button onClick={() => save(draft)} disabled={pending} className="btn-primary px-3 py-1 text-xs disabled:opacity-50">Save</button>
+        {value && <button onClick={() => save(null)} disabled={pending} className="text-xs text-zinc-400 hover:text-red-500">Clear</button>}
+        <button onClick={() => { setDraft(value ?? ""); setEditing(false); }} className="text-xs text-zinc-400 hover:text-zinc-600">Cancel</button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => { setDraft(value ?? ""); setEditing(true); }}
+      className={`mb-2 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-semibold transition ${
+        value
+          ? "border-brand/30 bg-brand/5 text-brand dark:text-brand-lighter"
+          : "border-dashed border-zinc-300 text-zinc-400 hover:border-brand hover:text-brand dark:border-white/15"
+      }`}
+      title="Edit section time"
+    >
+      <FontAwesomeIcon icon={faClock} /> {value || "Add a time"}
+    </button>
+  );
+}
+
 // ───────────────────────────── Section detail ─────────────────────────────
 
 function SectionDetail({ eventId, section, role, vendors }: { eventId: string; section: PlanningSection; role: PlannerRole; vendors: EventVendor[] }) {
@@ -817,12 +868,19 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
         <img src={section.section_cover_url} alt="" className="h-32 w-full object-cover md:h-40" />
       )}
       <div className="p-6 md:p-7">
+        {section.time_enabled && (
+          <SectionTimeEditor
+            eventId={eventId}
+            sectionId={section.id}
+            value={section.time_label}
+            canEdit={!isGuest && allows(section.permissions, "change_time", role)}
+          />
+        )}
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
             {section.icon && <span className="mr-2">{section.icon}</span>}
             {section.title}
           </h2>
-          {section.time_label && <span className="text-sm text-zinc-400">· {section.time_label}</span>}
           {section.locked && (
             <span className="inline-flex items-center gap-1 rounded-full bg-zinc-200 px-2 py-0.5 text-xs text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
               <FontAwesomeIcon icon={faLock} /> Locked

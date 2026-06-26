@@ -519,6 +519,19 @@ export async function addLibrarySection(eventId: string, afterSortOrder: number,
   return { ok: true as const, id };
 }
 
+/** Set/clear a section's time label (the time shown on the planner + app
+    timeline). Host + staff; host lacks the staff-only section write RLS so we
+    write via admin after the role gate. */
+export async function setSectionTime(eventId: string, sectionId: string, time: string | null) {
+  const { supabase, me } = await requireHost(eventId);
+  const admin = createAdminClient();
+  const value = time && time.trim() ? time.trim() : null;
+  const { error } = await admin.from("planning_sections").update({ time_label: value }).eq("id", sectionId).eq("event_id", eventId);
+  if (error) throw new Error(error.message);
+  await logAction(supabase, eventId, me, "Set section time", value ?? "cleared");
+  revalidatePath(`/portal/plan/${eventId}`);
+}
+
 export async function reorderSections(eventId: string, orderedIds: string[]) {
   const { supabase, me } = await requireHost(eventId);
   const admin = createAdminClient(); // host lacks staff-only section write RLS
