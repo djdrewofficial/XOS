@@ -3,8 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faXmark, faTrash, faPlus, faPen, faImage, faSpinner } from "@fortawesome/free-solid-svg-icons";
-import type { PlanningSection } from "@/lib/planning";
-import { optionLabel } from "@/lib/planning";
+import type { PlanningSection, QuestionOption } from "@/lib/planning";
 import {
   updateSectionSettings,
   addQuestion,
@@ -21,6 +20,9 @@ const PERM_ACTIONS: { key: string; label: string }[] = [
   { key: "edit_notes", label: "Who can view & edit notes" },
   { key: "change_time", label: "Who can change time" },
 ];
+
+// Client-safe option label (can't import value helpers from the server-only planning module).
+const optLabel = (o: QuestionOption): string => (typeof o === "string" ? o : o.label);
 
 const ANSWER_TYPES = [
   { value: "short", label: "Short text" },
@@ -327,7 +329,7 @@ function QuestionEditor({ eventId, section }: { eventId: string; section: Planni
     setHelp(q.help_text ?? "");
     setAtype(q.answer_type);
     setRequired(q.required);
-    setOptions(q.options.map(optionLabel).join(", "));
+    setOptions(q.options.map(optLabel).join(", "));
   };
 
   function save() {
