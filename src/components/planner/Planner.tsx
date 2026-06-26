@@ -26,6 +26,7 @@ import {
   faChevronDown,
   faChevronUp,
   faClock,
+  faWallet,
 } from "@fortawesome/free-solid-svg-icons";
 import { faHeart as faHeartOutline, faCircle, faStar as faStarOutline } from "@fortawesome/free-regular-svg-icons";
 import { faSpotify } from "@fortawesome/free-brands-svg-icons";
@@ -63,6 +64,8 @@ import MusicSearch from "@/components/planner/MusicSearch";
 import CoverPhoto from "@/components/planner/CoverPhoto";
 import PeoplePanel from "@/components/planner/PeoplePanel";
 import SectionSettings from "@/components/planner/SectionSettings";
+import MyEventTab from "@/components/planner/MyEventTab";
+import type { EventAccount, SentEmail, SentText } from "@/lib/eventAccount";
 import VendorTeamModule from "@/components/planner/VendorTeamModule";
 import PhotoBoothModule from "@/components/planner/PhotoBoothModule";
 import SpotifyImport from "@/components/planner/SpotifyImport";
@@ -119,6 +122,8 @@ export default function Planner({
   people,
   vendors,
   role,
+  account,
+  messages,
 }: {
   eventId: string;
   eventName: string;
@@ -128,14 +133,16 @@ export default function Planner({
   people: { hosts: Person[]; guests: Person[] };
   vendors: EventVendor[];
   role: PlannerRole;
+  account: EventAccount | null;
+  messages: { emails: SentEmail[]; texts: SentText[] };
 }) {
   const isGuest = role === "guest";
   const isStaff = role === "staff";
   const canEditCover = isStaff || role === "host";
 
-  const [tab, setTab] = useState<"plan" | "people" | "activity">("plan");
+  const [tab, setTab] = useState<"plan" | "people" | "activity" | "account">("plan");
   // The couple gets the guided journey by default; staff preview opens flat.
-  const [mode, setMode] = useState<"guided" | "all">(role === "staff" ? "all" : "guided");
+  const [mode, setMode] = useState<"guided" | "all">("all");
   // Default to the first real section, not a headline divider (which has no page).
   const [selectedId, setSelectedId] = useState<string | null>(planning.sections.find((s) => s.section_type !== "headline")?.id ?? null);
   const [settingsId, setSettingsId] = useState<string | null>(null);
@@ -235,6 +242,7 @@ export default function Planner({
             icon={faUsers}
             label={`People · ${people.hosts.length + people.guests.length}`}
           />
+          <TabButton active={tab === "account"} onClick={() => setTab("account")} icon={faWallet} label="My Event" />
           {isStaff && (
             <TabButton active={tab === "activity"} onClick={() => setTab("activity")} icon={faClockRotateLeft} label="Activity" />
           )}
@@ -258,7 +266,9 @@ export default function Planner({
       )}
 
       <div className="mt-6">
-        {!isGuest && tab === "people" ? (
+        {!isGuest && tab === "account" ? (
+          <MyEventTab account={account} messages={messages} />
+        ) : !isGuest && tab === "people" ? (
           <PeoplePanel eventId={eventId} hosts={people.hosts} guests={people.guests} canManage={isStaff || role === "host"} />
         ) : !isGuest && tab === "activity" ? (
           <ActivityLog entries={planning.auditLog} />

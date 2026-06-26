@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getMe } from "@/lib/auth";
 import { syncEventSections } from "@/lib/spotifySync";
+import { loadEventAccount, loadClientMessages } from "@/lib/eventAccount";
 import {
   ensureEventPlanning,
   loadEventPlanning,
@@ -53,6 +54,10 @@ export default async function PlannerPage({
   const planning = await loadEventPlanning(supabase, eventId, me.userId, role);
   const people = role === "guest" ? { hosts: [], guests: [] } : await loadEventPeople(supabase, eventId);
   const vendors = role === "guest" ? [] : await loadEventVendors(supabase, eventId);
+  // "My Event" tab data — financials + sent emails/texts (admin read, role-gated).
+  const admin2 = createAdminClient();
+  const account = role === "guest" ? null : await loadEventAccount(admin2, eventId, role);
+  const messages = role === "guest" ? { emails: [], texts: [] } : await loadClientMessages(admin2, eventId);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -89,6 +94,8 @@ export default async function PlannerPage({
         people={people}
         vendors={vendors}
         role={role}
+        account={account}
+        messages={messages}
       />
     </div>
   );
