@@ -77,3 +77,36 @@ export async function sendTest(formData: FormData) {
   await sendTestEmail(to);
   revalidatePath("/settings/email");
 }
+
+export async function saveSendingLimits(formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("company_settings")
+    .update({
+      email_send_window_start: clean(formData.get("email_send_window_start")),
+      email_send_window_end: clean(formData.get("email_send_window_end")),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", true);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+}
+
+export async function addBlackoutDate(formData: FormData) {
+  const day = clean(formData.get("day"));
+  if (!day) return;
+  const supabase = await createClient();
+  // upsert on the unique day so re-adding the same date just updates the label
+  const { error } = await supabase
+    .from("email_blackout_dates")
+    .upsert({ day, label: clean(formData.get("label")) }, { onConflict: "day" });
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+}
+
+export async function removeBlackoutDate(id: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("email_blackout_dates").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+}

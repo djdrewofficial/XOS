@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import SaveButton from "@/components/SaveButton";
-import { sendQueuedEmails, saveCompanySettings, sendTest, runScheduledNow } from "./actions";
+import { sendQueuedEmails, saveCompanySettings, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
 import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
 import { templateReviewReasons } from "@/lib/emailTemplateReview";
+import Tabs from "@/components/Tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -82,10 +83,11 @@ function TemplateGroups({ templates }: { templates: Tpl[] }) {
 
 export default async function EmailPage() {
   const supabase = await createClient();
-  const [{ data: templates }, { data: log }, { data: company }] = await Promise.all([
+  const [{ data: templates }, { data: log }, { data: company }, { data: blackouts }] = await Promise.all([
     supabase.from("email_templates").select("*").eq("is_active", true).order("group_name").order("name"),
     supabase.from("email_log").select("*").order("created_at", { ascending: false }).limit(50),
     supabase.from("company_settings").select("*").eq("id", true).maybeSingle(),
+    supabase.from("email_blackout_dates").select("*").order("day"),
   ]);
 
   const mailgunConfigured = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
@@ -101,26 +103,52 @@ export default async function EmailPage() {
     "input w-full";
   const label = "label-xs";
 
-  return (
-    <div className="max-w-[1700px]">
-      <h1 className="mb-5 text-2xl font-bold">Email</h1>
+  const templatesTab = (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="card-title mb-0">
+          Email Templates
+          {reviewCount > 0 && (
+            <span className="ml-2 rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold uppercase text-amber-700 dark:text-amber-400">
+              {reviewCount} need review
+            </span>
+          )}
+        </h2>
+        <div className="flex gap-2">
+          <form action={runScheduledNow}>
+            <button className="btn-ghost text-xs" title="Check scheduled templates and queue any that are due right now">
+              Run Scheduled Now
+            </button>
+          </form>
+          <form action={createBlankTemplate}>
+            <SaveButton className="btn-primary text-sm" savedLabel="Added">+ Add Template</SaveButton>
+          </form>
+        </div>
+      </div>
+      <TemplateGroups templates={emailTemplates} />
+    </div>
+  );
 
-      <div className={`card mb-6 p-4 text-sm ${mailgunConfigured ? "border-emerald-400/30 text-emerald-800 dark:text-emerald-200" : "border-amber-400/30 text-amber-800 dark:text-amber-200"}`}>
+  const smsTab = (
+    <div>
+      <div className="card mb-3 border-sky-400/30 p-3 text-xs text-sky-800 dark:text-sky-200">
+        Imported from DJEP. XOS does not send text messages yet — these are kept here so the copy and timing are ready when SMS sending is added.
+      </div>
+      <TemplateGroups templates={smsTemplates} />
+    </div>
+  );
+
+  const settingsTab = (
+    <div className="space-y-6">
+      <div className={`card p-4 text-sm ${mailgunConfigured ? "border-emerald-400/30 text-emerald-800 dark:text-emerald-200" : "border-amber-400/30 text-amber-800 dark:text-amber-200"}`}>
         {mailgunConfigured ? (
           <>Mailgun is configured — queued emails send via <strong>{process.env.MAILGUN_DOMAIN}</strong> ({region} region).</>
         ) : (
           <>Mailgun not configured yet. Emails queue safely in the outbox; add <code>MAILGUN_API_KEY</code> and <code>MAILGUN_DOMAIN</code> to <code>.env.local</code> to enable sending.</>
         )}
-        {queuedCount > 0 && (
-          <form action={sendQueuedEmails} className="mt-2">
-            <SaveButton className="btn-primary px-4 py-1.5">
-              Send {queuedCount} Queued Email{queuedCount === 1 ? "" : "s"} Now
-            </SaveButton>
-          </form>
-        )}
       </div>
 
-      <div className="mb-6 grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
         <div>
           <h2 className="card-title">Company Sending Identity</h2>
           <form action={saveCompanySettings} className="card space-y-3 p-5">
@@ -154,7 +182,7 @@ export default async function EmailPage() {
           <h2 className="card-title">Send a Test Email</h2>
           <form action={sendTest} className="card space-y-3 p-5">
             <p className="text-xs text-zinc-500">
-              Sends a test message from your company identity through Mailgun, then records it in the log below — the
+              Sends a test message from your company identity through Mailgun, then records it in the log — the
               fastest way to confirm sending works end to end.
             </p>
             <div>
@@ -168,41 +196,78 @@ export default async function EmailPage() {
         </div>
       </div>
 
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="card-title mb-0">
-          Email Templates
-          {reviewCount > 0 && (
-            <span className="ml-2 rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold uppercase text-amber-700 dark:text-amber-400">
-              {reviewCount} need review
-            </span>
-          )}
-        </h2>
-        <div className="flex gap-2">
-          <form action={runScheduledNow}>
-            <button className="btn-ghost text-xs" title="Check scheduled templates and queue any that are due right now">
-              Run Scheduled Now
-            </button>
+      <div>
+        <h2 className="card-title">Sending Limits</h2>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <form action={saveSendingLimits} className="card space-y-3 p-5">
+            <p className="text-xs text-zinc-500">
+              Quiet hours for scheduled client emails. The scheduler only queues messages when the current time (company
+              timezone) is inside this window. Leave both blank for no limit.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Send No Earlier Than</label>
+                <input name="email_send_window_start" type="time" defaultValue={(company?.email_send_window_start ?? "").slice(0, 5)} className={input} />
+              </div>
+              <div>
+                <label className={label}>Send No Later Than</label>
+                <input name="email_send_window_end" type="time" defaultValue={(company?.email_send_window_end ?? "").slice(0, 5)} className={input} />
+              </div>
+            </div>
+            <SaveButton>Save Limits</SaveButton>
           </form>
-          <form action={createBlankTemplate}>
-            <SaveButton className="btn-primary text-sm" savedLabel="Added">+ Add Template</SaveButton>
-          </form>
+
+          <div className="card space-y-3 p-5">
+            <p className="text-xs text-zinc-500">
+              Holiday blackout dates. Scheduled emails never send on these days (e.g. Christmas, Thanksgiving).
+            </p>
+            <form action={addBlackoutDate} className="flex flex-wrap items-end gap-2">
+              <div>
+                <label className={label}>Date</label>
+                <input name="day" type="date" required className="input" />
+              </div>
+              <div className="flex-1">
+                <label className={label}>Label (optional)</label>
+                <input name="label" placeholder="e.g. Christmas" className="input w-full" />
+              </div>
+              <SaveButton className="btn-primary text-sm" savedLabel="Added">+ Add</SaveButton>
+            </form>
+            <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
+              {(blackouts ?? []).map((b) => (
+                <li key={b.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span>
+                    <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                      {new Date(`${b.day}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" })}
+                    </span>
+                    {b.label && <span className="ml-2 text-zinc-500">{b.label}</span>}
+                  </span>
+                  <form action={removeBlackoutDate.bind(null, b.id)}>
+                    <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Remove</button>
+                  </form>
+                </li>
+              ))}
+              {(blackouts ?? []).length === 0 && (
+                <li className="py-3 text-center text-xs text-zinc-500">No blackout dates yet.</li>
+              )}
+            </ul>
+          </div>
         </div>
       </div>
-      <TemplateGroups templates={emailTemplates} />
+    </div>
+  );
 
-      {smsTemplates.length > 0 && (
-        <>
-          <div className="mb-2 mt-8 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="card-title mb-0">SMS Templates</h2>
-          </div>
-          <div className="card mb-3 border-sky-400/30 p-3 text-xs text-sky-800 dark:text-sky-200">
-            Imported from DJEP. XOS does not send text messages yet — these are kept here so the copy and timing are ready when SMS sending is added.
-          </div>
-          <TemplateGroups templates={smsTemplates} />
-        </>
-      )}
-
-      <h2 className="card-title mt-8">Send Log</h2>
+  const logTab = (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="card-title mb-0">Send Log</h2>
+        {queuedCount > 0 && (
+          <form action={sendQueuedEmails}>
+            <SaveButton className="btn-primary px-4 py-1.5 text-sm">
+              Send {queuedCount} Queued Email{queuedCount === 1 ? "" : "s"} Now
+            </SaveButton>
+          </form>
+        )}
+      </div>
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="table-head">
@@ -244,13 +309,27 @@ export default async function EmailPage() {
             {(log ?? []).length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400">
-                  No emails yet — run a booking helper that sends one, or send a test above.
+                  No emails yet — run a booking helper that sends one, or send a test.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="max-w-[1700px]">
+      <h1 className="mb-5 text-2xl font-bold">Email</h1>
+      <Tabs
+        tabs={[
+          { id: "templates", label: "Email Templates", badge: reviewCount || undefined, content: templatesTab },
+          { id: "sms", label: "SMS Templates", badge: smsTemplates.length || undefined, content: smsTab },
+          { id: "settings", label: "Sending Settings", content: settingsTab },
+          { id: "log", label: "Send Log", badge: queuedCount || undefined, content: logTab },
+        ]}
+      />
     </div>
   );
 }
