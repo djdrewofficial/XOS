@@ -380,6 +380,32 @@ export async function addQuestion(
   return { ok: true };
 }
 
+export async function updateQuestion(
+  eventId: string,
+  questionId: string,
+  q: { prompt: string; answer_type: string; options?: string[]; help_text?: string; required?: boolean },
+) {
+  const { supabase, me, revalidate } = await requireStaff(eventId);
+  const patch: Record<string, unknown> = {
+    prompt: q.prompt,
+    answer_type: q.answer_type,
+    help_text: q.help_text ?? null,
+    required: q.required ?? false,
+  };
+  // Only touch options when the caller manages them — preserves image/branching
+  // option data for types this editor doesn't surface (e.g. image_select).
+  if (q.options !== undefined) patch.options = q.options;
+  const { error } = await supabase
+    .from("planning_questions")
+    .update(patch)
+    .eq("id", questionId)
+    .eq("event_id", eventId);
+  if (error) return { ok: false, error: error.message };
+  await logAction(supabase, eventId, me, "Edited question", q.prompt);
+  revalidate();
+  return { ok: true };
+}
+
 export async function deleteQuestion(eventId: string, questionId: string) {
   const { supabase, me, revalidate } = await requireStaff(eventId);
   const { data: q } = await supabase.from("planning_questions").select("prompt").eq("id", questionId).maybeSingle();

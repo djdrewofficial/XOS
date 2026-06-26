@@ -2,11 +2,13 @@
 
 import { useRef, useState, useTransition } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faXmark, faTrash, faPlus, faImage, faSpinner } from "@fortawesome/free-solid-svg-icons";
+import { faXmark, faTrash, faPlus, faPen, faImage, faSpinner } from "@fortawesome/free-solid-svg-icons";
 import type { PlanningSection } from "@/lib/planning";
+import { optionLabel } from "@/lib/planning";
 import {
   updateSectionSettings,
   addQuestion,
+  updateQuestion,
   deleteQuestion,
   uploadSectionCover,
 } from "@/app/portal/plan/[eventId]/actions";
@@ -306,78 +308,131 @@ function CoverUpload({ eventId, sectionId, url }: { eventId: string; sectionId: 
 
 function QuestionEditor({ eventId, section }: { eventId: string; section: PlanningSection }) {
   const [pending, start] = useTransition();
-  const [adding, setAdding] = useState(false);
+  const [mode, setMode] = useState<"none" | "add" | string>("none"); // "add" or a question id
   const [prompt, setPrompt] = useState("");
   const [help, setHelp] = useState("");
   const [atype, setAtype] = useState("short");
   const [required, setRequired] = useState(false);
   const [options, setOptions] = useState("");
 
-  function add() {
+  const reset = () => {
+    setMode("none"); setPrompt(""); setHelp(""); setAtype("short"); setRequired(false); setOptions("");
+  };
+  const beginAdd = () => {
+    setMode("add"); setPrompt(""); setHelp(""); setAtype("short"); setRequired(false); setOptions("");
+  };
+  const beginEdit = (q: PlanningSection["questions"][number]) => {
+    setMode(q.id);
+    setPrompt(q.prompt);
+    setHelp(q.help_text ?? "");
+    setAtype(q.answer_type);
+    setRequired(q.required);
+    setOptions(q.options.map(optionLabel).join(", "));
+  };
+
+  function save() {
     if (!prompt.trim()) return;
-    const opts = ["select", "multiselect"].includes(atype)
-      ? options.split(",").map((s) => s.trim()).filter(Boolean)
-      : [];
+    // Manage options only for the option-based types; leave others untouched so
+    // image/branching option data isn't wiped on edit.
+    let opts: string[] | undefined;
+    if (["select", "multiselect"].includes(atype)) opts = options.split(",").map((s) => s.trim()).filter(Boolean);
+    else if (["short", "long", "yesno", "scale"].includes(atype)) opts = [];
+    const payload = { prompt: prompt.trim(), help_text: help.trim() || undefined, answer_type: atype, options: opts, required };
     start(async () => {
-      await addQuestion(eventId, section.id, { prompt: prompt.trim(), help_text: help.trim() || undefined, answer_type: atype, options: opts, required });
-      setPrompt("");
-      setHelp("");
-      setOptions("");
-      setRequired(false);
-      setAdding(false);
+      if (mode === "add") await addQuestion(eventId, section.id, payload);
+      else await updateQuestion(eventId, mode, payload);
+      reset();
     });
   }
+
+  // Preserve unusual types (e.g. image_select) in the dropdown when editing.
+  const typeOptions = ANSWER_TYPES.some((t) => t.value === atype) ? ANSWER_TYPES : [...ANSWER_TYPES, { value: atype, label: atype }];
 
   return (
     <div className="mt-3 space-y-2">
       <ul className="space-y-1.5">
         {section.questions.map((q) => (
-          <li key={q.id} className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-white/10">
-            <span className="min-w-0 flex-1">
-              <span className="block text-zinc-700 dark:text-zinc-200">{q.prompt}</span>
-              {q.help_text && <span className="mt-0.5 block text-xs text-zinc-400">{q.help_text}</span>}
-            </span>
-            <span className="shrink-0 text-xs text-zinc-400">{q.answer_type}</span>
-            <button onClick={() => start(() => deleteQuestion(eventId, q.id))} disabled={pending} className="shrink-0 text-zinc-400 hover:text-red-500">
-              <FontAwesomeIcon icon={faTrash} />
-            </button>
+          <li key={q.id} className="rounded-lg border border-zinc-200 dark:border-white/10">
+            <div className="flex items-center gap-2 px-3 py-2 text-sm">
+              <span className="min-w-0 flex-1">
+                <span className="block text-zinc-700 dark:text-zinc-200">{q.prompt}</span>
+                {q.help_text && <span className="mt-0.5 block text-xs text-zinc-400">{q.help_text}</span>}
+              </span>
+              <span className="shrink-0 text-xs text-zinc-400">{q.answer_type}</span>
+              <button onClick={() => beginEdit(q)} disabled={pending} className="shrink-0 text-zinc-400 hover:text-brand" title="Edit question">
+                <FontAwesomeIcon icon={faPen} />
+              </button>
+              <button onClick={() => start(() => deleteQuestion(eventId, q.id))} disabled={pending} className="shrink-0 text-zinc-400 hover:text-red-500" title="Delete question">
+                <FontAwesomeIcon icon={faTrash} />
+              </button>
+            </div>
+            {mode === q.id && (
+              <QuestionForm
+                prompt={prompt} setPrompt={setPrompt} help={help} setHelp={setHelp}
+                atype={atype} setAtype={setAtype} required={required} setRequired={setRequired}
+                options={options} setOptions={setOptions} typeOptions={typeOptions}
+                pending={pending} onSave={save} onCancel={reset} saveLabel="Save changes"
+              />
+            )}
           </li>
         ))}
       </ul>
 
-      {adding ? (
-        <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
-          <input className="input w-full" placeholder="Question prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-          <textarea
-            className="input w-full"
-            rows={2}
-            placeholder="Description (optional) — e.g. “Why are we asking this?”"
-            value={help}
-            onChange={(e) => setHelp(e.target.value)}
-          />
-          <div className="flex gap-2">
-            <select className="input flex-1" value={atype} onChange={(e) => setAtype(e.target.value)}>
-              {ANSWER_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-            <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300">
-              <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Required
-            </label>
-          </div>
-          {["select", "multiselect"].includes(atype) && (
-            <input className="input w-full" placeholder="Options, comma-separated" value={options} onChange={(e) => setOptions(e.target.value)} />
-          )}
-          <div className="flex gap-2">
-            <button onClick={add} disabled={pending} className="btn-primary disabled:opacity-50">Add question</button>
-            <button onClick={() => setAdding(false)} className="btn-ghost">Cancel</button>
-          </div>
-        </div>
-      ) : (
-        <button onClick={() => setAdding(true)} className="inline-flex items-center gap-2 text-sm font-semibold text-brand dark:text-brand-lighter">
+      {mode === "add" ? (
+        <QuestionForm
+          prompt={prompt} setPrompt={setPrompt} help={help} setHelp={setHelp}
+          atype={atype} setAtype={setAtype} required={required} setRequired={setRequired}
+          options={options} setOptions={setOptions} typeOptions={typeOptions}
+          pending={pending} onSave={save} onCancel={reset} saveLabel="Add question"
+        />
+      ) : mode === "none" ? (
+        <button onClick={beginAdd} className="inline-flex items-center gap-2 text-sm font-semibold text-brand dark:text-brand-lighter">
           <FontAwesomeIcon icon={faPlus} /> Add question
         </button>
+      ) : null}
+    </div>
+  );
+}
+
+function QuestionForm({
+  prompt, setPrompt, help, setHelp, atype, setAtype, required, setRequired, options, setOptions,
+  typeOptions, pending, onSave, onCancel, saveLabel,
+}: {
+  prompt: string; setPrompt: (v: string) => void;
+  help: string; setHelp: (v: string) => void;
+  atype: string; setAtype: (v: string) => void;
+  required: boolean; setRequired: (v: boolean) => void;
+  options: string; setOptions: (v: string) => void;
+  typeOptions: { value: string; label: string }[];
+  pending: boolean; onSave: () => void; onCancel: () => void; saveLabel: string;
+}) {
+  return (
+    <div className="space-y-2 border-t border-zinc-200 p-3 dark:border-white/10">
+      <input className="input w-full" placeholder="Question prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+      <textarea
+        className="input w-full"
+        rows={2}
+        placeholder="Description (optional) — e.g. “Why are we asking this?”"
+        value={help}
+        onChange={(e) => setHelp(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <select className="input flex-1" value={atype} onChange={(e) => setAtype(e.target.value)}>
+          {typeOptions.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300">
+          <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Required
+        </label>
+      </div>
+      {["select", "multiselect"].includes(atype) && (
+        <input className="input w-full" placeholder="Options, comma-separated" value={options} onChange={(e) => setOptions(e.target.value)} />
       )}
+      <div className="flex gap-2">
+        <button onClick={onSave} disabled={pending} className="btn-primary disabled:opacity-50">{saveLabel}</button>
+        <button onClick={onCancel} className="btn-ghost">Cancel</button>
+      </div>
     </div>
   );
 }
