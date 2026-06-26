@@ -31,8 +31,13 @@ export type EventAccount = {
   schedule: AccountSchedule[];
 };
 
-export type SentEmail = { id: string; subject: string | null; to: string | null; status: string | null; sentAt: string | null; openedAt: string | null };
+export type SentEmail = { id: string; subject: string | null; to: string | null; status: string | null; sentAt: string | null; openedAt: string | null; bodyHtml: string | null };
 export type SentText = { id: string; body: string | null; to: string | null; status: string | null; sentAt: string | null };
+
+// Hide anything that didn't actually reach the client.
+const failed = (s: string | null) => /fail|bounce|error|complain|undeliver|reject|spam|invalid/i.test(s ?? "");
+// HighLevel tacks a "Sent via HighLevel" footer onto texts — not for the couple.
+const stripHL = (b: string | null) => ((b ?? "").replace(/\(?\s*sent via highlevel\.?\s*\)?/gi, "").trim() || null);
 
 export async function loadEventAccount(admin: SupabaseClient, eventId: string, role: PlannerRole): Promise<EventAccount | null> {
   const { data: ev } = await admin.from("events").select("*").eq("id", eventId).maybeSingle();
@@ -108,11 +113,18 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
 
 export async function loadClientMessages(admin: SupabaseClient, eventId: string): Promise<{ emails: SentEmail[]; texts: SentText[] }> {
   const [{ data: em }, { data: sms }] = await Promise.all([
-    admin.from("email_log").select("id, subject, to_address, status, sent_at, created_at, opened_at").eq("event_id", eventId).order("created_at", { ascending: false }).limit(30),
-    admin.from("sms_log").select("id, body, to_number, status, sent_at, created_at").eq("event_id", eventId).order("created_at", { ascending: false }).limit(30),
+    admin.from("email_log").select("id, subject, to_address, status, sent_at, created_at, opened_at, body_html").eq("event_id", eventId).order("created_at", { ascending: false }).limit(50),
+    admin.from("sms_log").select("id, body, to_number, status, sent_at, created_at").eq("event_id", eventId).order("created_at", { ascending: false }).limit(50),
   ]);
   return {
-    emails: (em ?? []).map((e) => ({ id: e.id, subject: e.subject, to: e.to_address, status: e.status, sentAt: e.sent_at ?? e.created_at, openedAt: e.opened_at })),
-    texts: (sms ?? []).map((s) => ({ id: s.id, body: s.body, to: s.to_number, status: s.status, sentAt: s.sent_at ?? s.created_at })),
+    emails: (em ?? [])
+      .filter((e) => !failed(e.status))
+      .slice(0, 30)
+      .map((e) => ({ id: e.id, subject: e.subject, to: e.to_address, status: e.status, sentAt: e.sent_at ?? e.created_at, openedAt: e.opened_at, bodyHtml: e.body_html })),
+    texts: (sms ?? [])
+      .filter((s) => !failed(s.status))
+      .slice(0, 30)
+      .map((s) => ({ id: s.id, body: stripHL(s.body), to: s.to_number, status: s.status, sentAt: s.sent_at ?? s.created_at }))
+      .filter((s) => s.body),
   };
 }

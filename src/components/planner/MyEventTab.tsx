@@ -1,5 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEnvelope, faCommentSms, faBoxOpen, faMoneyBillWave } from "@fortawesome/free-solid-svg-icons";
+import { faEnvelope, faCommentSms, faBoxOpen, faMoneyBillWave, faXmark, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 import type { EventAccount, SentEmail, SentText } from "@/lib/eventAccount";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -12,6 +15,8 @@ export default function MyEventTab({
   account: EventAccount | null;
   messages: { emails: SentEmail[]; texts: SentText[] };
 }) {
+  const [openEmail, setOpenEmail] = useState<SentEmail | null>(null);
+
   if (!account) {
     return (
       <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500 dark:border-white/[0.08] dark:bg-white/[0.02]">
@@ -22,6 +27,7 @@ export default function MyEventTab({
   const fin = account.financialsVisible;
 
   return (
+    <>
     <div className="grid gap-5 lg:grid-cols-2">
       {/* Package */}
       <Card icon={faBoxOpen} title="Your package">
@@ -102,14 +108,19 @@ export default function MyEventTab({
         {messages.emails.length === 0 ? (
           <p className="text-sm text-zinc-400">No emails yet.</p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             {messages.emails.map((e) => (
-              <li key={e.id} className="flex items-start justify-between gap-3 border-b border-zinc-100 pb-2 text-sm last:border-0 dark:border-white/5">
-                <span className="min-w-0">
-                  <span className="block truncate font-medium text-zinc-700 dark:text-zinc-200">{e.subject || "(no subject)"}</span>
-                  <span className="text-xs text-zinc-400">{fmtDateTime(e.sentAt)}{e.openedAt ? " · opened" : ""}</span>
-                </span>
-                <StatusPill status={e.status} />
+              <li key={e.id}>
+                <button onClick={() => setOpenEmail(e)} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm transition hover:bg-zinc-50 dark:hover:bg-white/5">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-zinc-700 dark:text-zinc-200">{e.subject || "(no subject)"}</span>
+                    <span className="text-xs text-zinc-400">{fmtDateTime(e.sentAt)}{e.openedAt ? " · opened" : ""}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <StatusPill status={e.status} />
+                    <FontAwesomeIcon icon={faChevronRight} className="text-zinc-300 dark:text-zinc-600" />
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
@@ -135,6 +146,30 @@ export default function MyEventTab({
         )}
       </Card>
     </div>
+
+    {openEmail && (
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setOpenEmail(null)}>
+        <div className="my-8 flex max-h-[calc(100vh-4rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-zinc-900" onClick={(e) => e.stopPropagation()}>
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-white/10">
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50">{openEmail.subject || "(no subject)"}</h3>
+              <p className="mt-0.5 text-xs text-zinc-400">{fmtDateTime(openEmail.sentAt)}{openEmail.to ? ` · to ${openEmail.to}` : ""}</p>
+            </div>
+            <button onClick={() => setOpenEmail(null)} className="shrink-0 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+              <FontAwesomeIcon icon={faXmark} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto bg-white p-5 dark:bg-zinc-100">
+            {openEmail.bodyHtml ? (
+              <div className="prose prose-sm mx-auto max-w-none text-zinc-900" dangerouslySetInnerHTML={{ __html: openEmail.bodyHtml }} />
+            ) : (
+              <p className="text-sm text-zinc-500">No content available for this email.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
