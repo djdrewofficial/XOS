@@ -18,6 +18,7 @@ export type EventAccount = {
   payToken: string | null;
   feePct: number;
   paypalEnabled: boolean;
+  zelle: { displayName: string; handle: string | null; memo: string } | null;
   packageName: string | null;
   packageDescription: string | null;
   includedHours: number | null;
@@ -58,8 +59,12 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   const { data: eAddons } = await admin.from("event_addons").select("addon_id, quantity, price_override, price_locked").eq("event_id", eventId);
   const { data: pset } = financialsVisible ? await admin.from("payment_settings").select("*").eq("id", true).maybeSingle() : { data: null };
   const ps = (pset ?? {}) as Record<string, unknown>;
-  const paypalEnabled = ps.online_pay_enabled !== false && ps.paypal_pay_enabled !== false;
+  const onlineOn = ps.online_pay_enabled !== false;
+  const paypalEnabled = onlineOn && ps.paypal_pay_enabled !== false;
   const feePct = Number(ps.paypal_fee_pct ?? 4);
+  const zelle = onlineOn && ps.zelle_pay_enabled !== false && ps.zelle_handle
+    ? { displayName: (ps.zelle_display_name as string) ?? "Xpress Entertainment", handle: (ps.zelle_handle as string) ?? null, memo: (ps.zelle_memo as string) ?? "Include your event date in the memo" }
+    : null;
   const pays = financialsVisible
     ? (await admin.from("payments").select("id, amount, status, paid_at, method, reason, scheduled_payment_id").eq("event_id", eventId).order("paid_at", { ascending: true })).data
     : null;
@@ -115,7 +120,7 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   const schedule: AccountSchedule[] = (sched ?? []).map((s) => ({ id: s.id, label: s.label, dueDate: s.due_date, amount: num(s.amount), seq: s.seq ?? 0, paid: takenSched.has(s.id) }));
 
   return {
-    financialsVisible, payToken: (ev.pay_token as string) ?? null, feePct, paypalEnabled,
+    financialsVisible, payToken: (ev.pay_token as string) ?? null, feePct, paypalEnabled, zelle,
     packageName, packageDescription, includedHours, packagePrice, addons, travelFee, overtimeFee,
     discounts, total, paid, balance, billingTerms: financialsVisible ? ev.billing_terms ?? null : null, payments, schedule,
   };

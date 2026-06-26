@@ -11,20 +11,27 @@ const withFee = (base: number, pct: number) => Math.round(base * (1 + pct / 100)
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null);
 
 export type PayInstallment = { id: string; label: string | null; dueDate: string | null; amount: number };
+export type ZelleInfo = { displayName: string; handle: string | null; memo: string };
 
 export default function MakePayment({
-  token, clientId, feePct, balance, installments,
+  token, clientId, feePct, balance, installments, zelle,
 }: {
   token: string;
   clientId: string | null;
   feePct: number;
   balance: number;
   installments: PayInstallment[];
+  zelle: ZelleInfo | null;
 }) {
+  const cardOk = !!clientId;
+  const zelleOk = !!zelle?.handle;
+
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"installments" | "balance">(installments.length ? "installments" : "balance");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [method, setMethod] = useState<"card" | "zelle" | null>(cardOk && zelleOk ? null : cardOk ? "card" : zelleOk ? "zelle" : null);
   const [done, setDone] = useState<{ base: number; fee: number } | null>(null);
+  const [zelleSent, setZelleSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const router = useRouter();
@@ -37,7 +44,7 @@ export default function MakePayment({
 
   const charged = withFee(amount, feePct);
   const fee = Math.round((charged - amount) * 100) / 100;
-  const canPay = amount > 0.005 && !!clientId;
+  const canPay = amount > 0.005;
 
   const toggle = (id: string) => setSelected((prev) => {
     const next = new Set(prev);
@@ -45,7 +52,25 @@ export default function MakePayment({
     return next;
   });
 
-  const close = () => { if (done) router.refresh(); setOpen(false); setDone(null); setError(null); setSelected(new Set()); };
+  const finished = !!done || zelleSent;
+  const close = () => {
+    if (finished) router.refresh();
+    setOpen(false); setDone(null); setZelleSent(false); setError(null); setSelected(new Set());
+    setMethod(cardOk && zelleOk ? null : cardOk ? "card" : zelleOk ? "zelle" : null);
+  };
+
+  const markZelleSent = async () => {
+    setWorking(true); setError(null);
+    try {
+      const res = await fetch("/api/pay/zelle-pending", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, amount }) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error ?? "Could not record your Zelle."); }
+      setZelleSent(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setWorking(false);
+    }
+  };
 
   return (
     <>
@@ -61,34 +86,27 @@ export default function MakePayment({
 
             <div className="flex-1 space-y-4 overflow-y-auto p-5">
               {done ? (
-                <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center dark:border-emerald-500/30 dark:bg-emerald-500/10">
-                  <div className="text-2xl">🎉</div>
-                  <div className="mt-1 text-lg font-bold text-emerald-800 dark:text-emerald-300">Payment received</div>
-                  <div className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">
-                    {fmt(done.base)} applied to your balance{done.fee > 0 ? ` (plus a ${fmt(done.fee)} card fee)` : ""}. A receipt is on its way. Thank you!
-                  </div>
-                  <button onClick={close} className="btn-primary mt-4">Done</button>
-                </div>
+                <Success title="Payment received" body={`${fmt(done.base)} applied to your balance${done.fee > 0 ? ` (plus a ${fmt(done.fee)} card fee)` : ""}. A receipt is on its way. Thank you!`} onClose={close} />
+              ) : zelleSent ? (
+                <Success
+                  emoji="⏳"
+                  title="Marked as sent"
+                  body={`Thanks! Your ${fmt(amount)} Zelle is pending staff verification — we'll confirm it the moment it lands and update your balance.`}
+                  onClose={close}
+                />
               ) : (
                 <>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Choose what you&apos;d like to pay. Select one or more scheduled payments, or pay your full balance.</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Choose what you&apos;d like to pay — one or more scheduled payments, or your full balance.</p>
 
                   {installments.length > 0 && (
                     <div className="space-y-2">
-                      <button
-                        onClick={() => setMode("installments")}
-                        className={`w-full rounded-xl border px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide ${mode === "installments" ? "border-brand text-brand dark:text-brand-lighter" : "border-zinc-200 text-zinc-400 dark:border-white/10"}`}
-                      >
-                        Scheduled payments
-                      </button>
+                      <button onClick={() => setMode("installments")} className={`w-full rounded-xl border px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide ${mode === "installments" ? "border-brand text-brand dark:text-brand-lighter" : "border-zinc-200 text-zinc-400 dark:border-white/10"}`}>Scheduled payments</button>
                       {mode === "installments" && installments.map((i) => {
                         const on = selected.has(i.id);
                         return (
                           <button key={i.id} onClick={() => toggle(i.id)} className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${on ? "border-brand bg-brand/5" : "border-zinc-200 hover:border-brand/50 dark:border-white/10"}`}>
                             <span className="flex items-center gap-2.5">
-                              <span className={`flex h-5 w-5 items-center justify-center rounded border ${on ? "border-brand bg-brand text-white" : "border-zinc-300 dark:border-white/20"}`}>
-                                {on && <FontAwesomeIcon icon={faCheck} className="text-[10px]" />}
-                              </span>
+                              <span className={`flex h-5 w-5 items-center justify-center rounded border ${on ? "border-brand bg-brand text-white" : "border-zinc-300 dark:border-white/20"}`}>{on && <FontAwesomeIcon icon={faCheck} className="text-[10px]" />}</span>
                               <span>
                                 <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">{i.label || "Payment"}</span>
                                 {fmtDate(i.dueDate) && <span className="text-xs text-zinc-400">Due {fmtDate(i.dueDate)}</span>}
@@ -101,10 +119,7 @@ export default function MakePayment({
                     </div>
                   )}
 
-                  <button
-                    onClick={() => setMode("balance")}
-                    className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left transition ${mode === "balance" ? "border-brand bg-brand/5" : "border-zinc-200 hover:border-brand/50 dark:border-white/10"}`}
-                  >
+                  <button onClick={() => setMode("balance")} className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left transition ${mode === "balance" ? "border-brand bg-brand/5" : "border-zinc-200 hover:border-brand/50 dark:border-white/10"}`}>
                     <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Pay full balance</span>
                     <span className="font-bold text-zinc-900 dark:text-zinc-50">{fmt(balance)}</span>
                   </button>
@@ -112,44 +127,73 @@ export default function MakePayment({
                   <div className="rounded-xl bg-zinc-50 px-4 py-3 text-center dark:bg-white/5">
                     <div className="text-xs uppercase tracking-wide text-zinc-400">Paying</div>
                     <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{fmt(amount)}</div>
-                    {feePct > 0 && amount > 0 && <div className="mt-1 text-xs text-amber-600 dark:text-amber-400">+ {fmt(fee)} card fee · charged {fmt(charged)}. Zelle avoids this fee.</div>}
                   </div>
 
                   {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-center text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">{error}</div>}
 
-                  {!clientId ? (
-                    <p className="text-center text-sm text-zinc-400">Online payments aren&apos;t available right now.</p>
-                  ) : !canPay ? (
+                  {!canPay ? (
                     <p className="text-center text-sm text-zinc-400">Select a payment to continue.</p>
+                  ) : !cardOk && !zelleOk ? (
+                    <p className="text-center text-sm text-zinc-400">Online payments aren&apos;t available right now.</p>
                   ) : (
-                    <PayPalScriptProvider options={{ clientId, currency: "USD", enableFunding: "venmo", disableFunding: "credit,paylater", intent: "capture" }}>
-                      <PayPalButtons
-                        style={{ layout: "vertical", shape: "rect", label: "pay" }}
-                        disabled={working}
-                        forceReRender={[amount, feePct]}
-                        createOrder={async () => {
-                          setError(null);
-                          const res = await fetch("/api/paypal/create-order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, amount }) });
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error ?? "Could not start the payment.");
-                          return data.id as string;
-                        }}
-                        onApprove={async (data) => {
-                          setWorking(true);
-                          try {
-                            const res = await fetch("/api/paypal/capture-order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, orderId: data.orderID }) });
-                            const out = await res.json();
-                            if (!res.ok) throw new Error(out.error ?? "Payment could not be completed.");
-                            setDone({ base: out.amount ?? amount, fee: out.fee ?? 0 });
-                          } catch (e) {
-                            setError(e instanceof Error ? e.message : "Something went wrong.");
-                          } finally {
-                            setWorking(false);
-                          }
-                        }}
-                        onError={() => setError("Something went wrong with PayPal — please try again.")}
-                      />
-                    </PayPalScriptProvider>
+                    <>
+                      {cardOk && zelleOk && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => setMethod("card")} className={`rounded-xl border px-3 py-2.5 text-center text-sm font-semibold transition ${method === "card" ? "border-brand bg-brand/10 text-brand dark:text-brand-lighter" : "border-zinc-200 text-zinc-600 hover:border-brand/50 dark:border-white/10 dark:text-zinc-300"}`}>Card / PayPal</button>
+                          <button onClick={() => setMethod("zelle")} className={`rounded-xl border px-3 py-2.5 text-center text-sm font-semibold transition ${method === "zelle" ? "border-brand bg-brand/10 text-brand dark:text-brand-lighter" : "border-zinc-200 text-zinc-600 hover:border-brand/50 dark:border-white/10 dark:text-zinc-300"}`}>Zelle (no fee)</button>
+                        </div>
+                      )}
+
+                      {method === "card" && cardOk && (
+                        <div className="space-y-3">
+                          {feePct > 0 && <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">A {feePct}% card fee applies — you&apos;ll be charged {fmt(charged)} ({fmt(amount)} + {fmt(fee)} fee). Zelle avoids this fee.</div>}
+                          <PayPalScriptProvider options={{ clientId: clientId!, currency: "USD", enableFunding: "venmo", disableFunding: "credit,paylater", intent: "capture" }}>
+                            <PayPalButtons
+                              style={{ layout: "vertical", shape: "rect", label: "pay" }}
+                              disabled={working}
+                              forceReRender={[amount, feePct]}
+                              createOrder={async () => {
+                                setError(null);
+                                const res = await fetch("/api/paypal/create-order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, amount }) });
+                                const data = await res.json();
+                                if (!res.ok) throw new Error(data.error ?? "Could not start the payment.");
+                                return data.id as string;
+                              }}
+                              onApprove={async (data) => {
+                                setWorking(true);
+                                try {
+                                  const res = await fetch("/api/paypal/capture-order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, orderId: data.orderID }) });
+                                  const out = await res.json();
+                                  if (!res.ok) throw new Error(out.error ?? "Payment could not be completed.");
+                                  setDone({ base: out.amount ?? amount, fee: out.fee ?? 0 });
+                                } catch (e) {
+                                  setError(e instanceof Error ? e.message : "Something went wrong.");
+                                } finally { setWorking(false); }
+                              }}
+                              onError={() => setError("Something went wrong with PayPal — please try again.")}
+                            />
+                          </PayPalScriptProvider>
+                        </div>
+                      )}
+
+                      {method === "zelle" && zelleOk && zelle && (
+                        <div className="space-y-3">
+                          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm dark:border-white/10 dark:bg-white/5">
+                            <div className="mb-2 font-semibold text-zinc-900 dark:text-white">Send your Zelle ({fmt(amount)}) to:</div>
+                            <div className="flex items-center justify-between py-0.5"><span className="text-zinc-500">Recipient</span><span className="font-semibold text-zinc-800 dark:text-zinc-100">{zelle.displayName}</span></div>
+                            <div className="flex items-center justify-between py-0.5"><span className="text-zinc-500">Zelle</span><span className="font-mono font-semibold text-zinc-800 dark:text-zinc-100">{zelle.handle}</span></div>
+                            <div className="mt-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{zelle.memo}</div>
+                            <ol className="mt-3 list-decimal space-y-1 pl-4 text-xs text-zinc-500 dark:text-zinc-400">
+                              <li>Open your bank&apos;s app and choose Zelle.</li>
+                              <li>Send {fmt(amount)} to the recipient above.</li>
+                              <li>Add the memo, then tap the button below.</li>
+                            </ol>
+                          </div>
+                          <button onClick={markZelleSent} disabled={working} className="btn-primary w-full disabled:opacity-50">{working ? "One sec…" : "I've sent my Zelle"}</button>
+                          <p className="text-center text-xs text-zinc-400">We&apos;ll mark it pending and confirm once it lands.</p>
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -158,5 +202,16 @@ export default function MakePayment({
         </div>
       )}
     </>
+  );
+}
+
+function Success({ emoji = "🎉", title, body, onClose }: { emoji?: string; title: string; body: string; onClose: () => void }) {
+  return (
+    <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center dark:border-emerald-500/30 dark:bg-emerald-500/10">
+      <div className="text-2xl">{emoji}</div>
+      <div className="mt-1 text-lg font-bold text-emerald-800 dark:text-emerald-300">{title}</div>
+      <div className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">{body}</div>
+      <button onClick={onClose} className="btn-primary mt-4">Done</button>
+    </div>
   );
 }

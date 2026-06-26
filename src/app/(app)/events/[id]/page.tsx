@@ -1132,8 +1132,13 @@ export default async function EventDetailPage({
                         {money(p.amount)}
                       </div>
                       {isPending && (
-                        <div className="mt-1 flex justify-end gap-1.5">
-                          <form action={confirmPayment.bind(null, p.id, id)}>
+                        <div className="mt-1 flex flex-col items-end gap-1.5">
+                          <form action={confirmPayment.bind(null, p.id, id)} className="flex items-center gap-1.5">
+                            <input
+                              name="note"
+                              placeholder="Zelle details / note"
+                              className="w-36 rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] text-zinc-700 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200"
+                            />
                             <SaveButton className="btn-ghost px-2 py-1 text-[11px]" savedLabel="✓">Confirm received</SaveButton>
                           </form>
                           <form action={removePayment.bind(null, p.id, id)}>

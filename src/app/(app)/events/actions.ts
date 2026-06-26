@@ -584,8 +584,9 @@ export async function addPayment(eventId: string, formData: FormData) {
 /* Confirm a pending payment (e.g. a client-reported Zelle claim) once the money
    has actually landed: flip it to approved, link it to the earliest unpaid
    scheduled payment, and fire payment_received automations. */
-export async function confirmPayment(paymentId: string, eventId: string) {
+export async function confirmPayment(paymentId: string, eventId: string, formData?: FormData) {
   const supabase = await createClient();
+  const note = formData ? clean(formData.get("note")) : null;
 
   // link to the earliest scheduled payment with no approved payment against it
   const [{ data: scheduled }, { data: priorPayments }] = await Promise.all([
@@ -599,9 +600,11 @@ export async function confirmPayment(paymentId: string, eventId: string) {
   const taken = new Set((priorPayments ?? []).map((p) => p.scheduled_payment_id).filter(Boolean));
   const scheduledId = (scheduled ?? []).find((s) => !taken.has(s.id))?.id ?? null;
 
+  const patch: Record<string, unknown> = { status: "approved", scheduled_payment_id: scheduledId, paid_at: new Date().toISOString() };
+  if (note) patch.notes = note; // staff-entered Zelle details replace the auto reminder
   const { error } = await supabase
     .from("payments")
-    .update({ status: "approved", scheduled_payment_id: scheduledId, paid_at: new Date().toISOString() })
+    .update(patch)
     .eq("id", paymentId)
     .eq("event_id", eventId);
   if (error) throw new Error(error.message);

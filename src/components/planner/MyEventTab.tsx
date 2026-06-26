@@ -66,14 +66,15 @@ export default function MyEventTab({
             <Stat label="Balance" value={money(account.balance)} cls={account.balance > 0 ? "text-brand dark:text-brand-lighter" : "text-emerald-600 dark:text-emerald-400"} />
           </div>
 
-          {account.balance > 0.005 && account.paypalEnabled && account.payToken && (
+          {account.balance > 0.005 && account.payToken && (account.paypalEnabled || account.zelle) && (
             <div className="mt-4">
               <MakePayment
                 token={account.payToken}
-                clientId={paypalClientId}
+                clientId={account.paypalEnabled ? paypalClientId : null}
                 feePct={account.feePct}
                 balance={account.balance}
                 installments={account.schedule.filter((s) => !s.paid && s.amount > 0).map((s) => ({ id: s.id, label: s.label, dueDate: s.dueDate, amount: s.amount }))}
+                zelle={account.zelle}
               />
             </div>
           )}
@@ -98,8 +99,11 @@ export default function MyEventTab({
               <ul className="mt-1.5 space-y-1.5">
                 {account.payments.map((p) => (
                   <li key={p.id} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-zinc-700 dark:text-zinc-200">
-                      {p.reason || p.method || "Payment"}<span className="text-zinc-400"> · {fmtDate(p.paidAt)}{p.pending ? " · pending" : ""}</span>
+                    <span className="min-w-0 text-zinc-700 dark:text-zinc-200">
+                      {p.reason || p.method || "Payment"}<span className="text-zinc-400"> · {fmtDate(p.paidAt)}</span>
+                      {p.pending && (
+                        <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">Pending staff verification</span>
+                      )}
                     </span>
                     <span className={`shrink-0 font-medium ${p.pending ? "text-zinc-400" : "text-emerald-600 dark:text-emerald-400"}`}>{money(p.amount)}</span>
                   </li>
