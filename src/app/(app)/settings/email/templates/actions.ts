@@ -97,7 +97,12 @@ export async function createBlankTemplate() {
 
 export async function updateTemplate(id: string, formData: FormData) {
   const supabase = await createClient();
-  const { error } = await supabase.from("email_templates").update(buildPayload(formData)).eq("id", id);
+  // Saving acknowledges any import-time review flags (unmapped anchor/status).
+  // The blank-subject flag is derived live, so it persists until a subject is set.
+  const { error } = await supabase
+    .from("email_templates")
+    .update({ ...buildPayload(formData), review_reasons: [] })
+    .eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/settings/email");
   revalidatePath(`/settings/email/templates/${id}`);

@@ -8,6 +8,7 @@ import SaveButton from "@/components/SaveButton";
 import RichTextEditor from "@/components/RichTextEditor";
 import { Section, Row, Note, CheckBoxField, CheckGroup } from "@/components/SettingsForm";
 import { RadioChecklist, EnabledToggle } from "@/components/HelperEditorControls";
+import { templateReviewReasons } from "@/lib/emailTemplateReview";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,9 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
 
   if (!tpl) notFound();
 
+  const isSms = !!tpl.is_sms;
+  const reviewReasons = templateReviewReasons(tpl);
+
   const statusItems = (statuses ?? []).map((s) => ({ id: s.id, name: s.name, color: s.color, text_color: s.text_color }));
   const typeItems = (eventTypes ?? []).map((t) => ({ id: t.id, name: t.name }));
   const employeeOptions = (employees ?? []).map((e) => ({ id: e.id, name: `${e.first_name} ${e.last_name}`.trim() }));
@@ -120,9 +124,11 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
   const contentTab = (
     <div className="space-y-5">
       <Section title="Content">
-        <Row label="Subject" hint="(merge tags supported)">
-          <input name="subject" defaultValue={tpl.subject ?? ""} className="input w-full" placeholder="Your <event_type> on <event_date_long>" />
-        </Row>
+        {!isSms && (
+          <Row label="Subject" hint="(merge tags supported)">
+            <input name="subject" defaultValue={tpl.subject ?? ""} className="input w-full" placeholder="Your <event_type> on <event_date_long>" />
+          </Row>
+        )}
         <Row label="Body">
           <RichTextEditor name="body_html" defaultValue={tpl.body_html ?? ""} />
         </Row>
@@ -148,18 +154,21 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
         <Row label="Status">
           <CheckBoxField name="is_active" label="Active" defaultChecked={tpl.is_active} />
         </Row>
-        <Row
-          label="Branded Design"
-          hint="ON: logo header + styled card. OFF: plain email exactly as written — better deliverability for follow-ups."
-        >
-          <CheckBoxField
-            name="branded_shell"
-            label="Wrap in the branded design (logo header + card)"
-            defaultChecked={tpl.branded_shell ?? true}
-          />
-        </Row>
+        {!isSms && (
+          <Row
+            label="Branded Design"
+            hint="ON: logo header + styled card. OFF: plain email exactly as written — better deliverability for follow-ups."
+          >
+            <CheckBoxField
+              name="branded_shell"
+              label="Wrap in the branded design (logo header + card)"
+              defaultChecked={tpl.branded_shell ?? true}
+            />
+          </Row>
+        )}
       </Section>
 
+      {!isSms && (
       <Section title="Attach Document">
         <Note>
           Attaches a document from the{" "}
@@ -199,6 +208,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
           (package + add-ons + Total Investment) and <code className="rounded bg-black/5 px-1 dark:bg-white/10">&lt;payment_plan&gt;</code>.
         </Note>
       </Section>
+      )}
 
       <Section title="Autofill Settings">
         <Note>These settings apply only to manually sent emails — not scheduled emails, notifications, or booking helpers.</Note>
@@ -380,11 +390,28 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
             <Link href="/settings/email" className="text-xs font-semibold text-zinc-500 hover:underline">
               ← All Email Templates
             </Link>
-            <h1 className="page-title mt-1">Edit Email Template</h1>
+            <h1 className="page-title mt-1 flex items-center gap-2">
+              {isSms ? "Edit SMS Template" : "Edit Email Template"}
+              {isSms && (
+                <span className="rounded bg-sky-500/15 px-2 py-0.5 text-xs font-bold uppercase text-sky-700 dark:text-sky-400">SMS</span>
+              )}
+            </h1>
             <p className="text-sm text-zinc-500">{tpl.display_name ?? tpl.name}</p>
           </div>
           <SaveButton className="btn-primary px-8">Save</SaveButton>
         </div>
+
+        {reviewReasons.length > 0 && (
+          <div className="mb-5 rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200">
+            <p className="font-bold">⚠ This template needs review before it can be enabled:</p>
+            <ul className="mt-1 list-inside list-disc space-y-0.5">
+              {reviewReasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-amber-700/80 dark:text-amber-300/70">Fix the above and Save — the flag clears automatically.</p>
+          </div>
+        )}
 
         <Tabs
           tabs={[

@@ -3,8 +3,82 @@ import { createClient } from "@/lib/supabase/server";
 import SaveButton from "@/components/SaveButton";
 import { sendQueuedEmails, saveCompanySettings, sendTest, runScheduledNow } from "./actions";
 import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
+import { templateReviewReasons } from "@/lib/emailTemplateReview";
 
 export const dynamic = "force-dynamic";
+
+type Tpl = {
+  id: string;
+  group_name: string;
+  name: string;
+  display_name: string | null;
+  subject: string | null;
+  schedule_enabled: boolean;
+  schedule_days: number | null;
+  schedule_direction: string | null;
+  is_sms: boolean | null;
+  review_reasons: string[] | null;
+  djep_was_enabled: boolean | null;
+};
+
+function ReviewBadge({ reasons }: { reasons: string[] }) {
+  if (reasons.length === 0) return null;
+  return (
+    <span
+      title={reasons.join("\n")}
+      className="ml-2 inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400"
+    >
+      ⚠ Needs Review
+    </span>
+  );
+}
+
+function TemplateGroups({ templates }: { templates: Tpl[] }) {
+  const groups = [...new Set(templates.map((t) => t.group_name))];
+  return (
+    <>
+      {groups.map((g) => (
+        <div key={g} className="mb-4">
+          <h3 className="mb-1 rounded-t-xl bg-black/[0.07] dark:bg-white/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-zinc-900 dark:text-white">{g}</h3>
+          <div className="card overflow-hidden rounded-t-none">
+            <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
+              {templates.filter((t) => t.group_name === g).map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                  <Link href={`/settings/email/templates/${t.id}`} className="min-w-0 flex-1">
+                    <span className="font-medium text-zinc-800 hover:text-brand hover:underline dark:text-zinc-200 dark:hover:text-brand-lighter">
+                      {t.display_name ?? t.name}
+                    </span>
+                    <ReviewBadge reasons={templateReviewReasons(t)} />
+                    {t.schedule_enabled && (
+                      <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400">
+                        Scheduled {t.schedule_days}d {t.schedule_direction}
+                      </span>
+                    )}
+                    {t.djep_was_enabled && !t.schedule_enabled && (
+                      <span className="ml-2 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-sky-700 dark:text-sky-400" title="This automation was turned on in DJEP">
+                        Was On In DJEP
+                      </span>
+                    )}
+                    {!t.is_sms && <span className="ml-3 truncate italic text-zinc-500">{t.subject}</span>}
+                  </Link>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <Link href={`/settings/email/templates/${t.id}`} className="text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">Edit</Link>
+                    <form action={duplicateTemplate.bind(null, t.id)}>
+                      <button className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:underline">Duplicate</button>
+                    </form>
+                    <form action={deleteTemplate.bind(null, t.id)}>
+                      <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Delete</button>
+                    </form>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
 
 export default async function EmailPage() {
   const supabase = await createClient();
@@ -18,7 +92,10 @@ export default async function EmailPage() {
   const region = (process.env.MAILGUN_REGION ?? "us").toUpperCase();
   const queuedCount = (log ?? []).filter((m) => m.status === "queued").length;
 
-  const groups = [...new Set((templates ?? []).map((t) => t.group_name))];
+  const allTemplates = (templates ?? []) as Tpl[];
+  const emailTemplates = allTemplates.filter((t) => !t.is_sms);
+  const smsTemplates = allTemplates.filter((t) => t.is_sms);
+  const reviewCount = allTemplates.filter((t) => templateReviewReasons(t).length > 0).length;
 
   const input =
     "input w-full";
@@ -92,7 +169,14 @@ export default async function EmailPage() {
       </div>
 
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="card-title mb-0">Templates</h2>
+        <h2 className="card-title mb-0">
+          Email Templates
+          {reviewCount > 0 && (
+            <span className="ml-2 rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold uppercase text-amber-700 dark:text-amber-400">
+              {reviewCount} need review
+            </span>
+          )}
+        </h2>
         <div className="flex gap-2">
           <form action={runScheduledNow}>
             <button className="btn-ghost text-xs" title="Check scheduled templates and queue any that are due right now">
@@ -104,39 +188,19 @@ export default async function EmailPage() {
           </form>
         </div>
       </div>
-      {groups.map((g) => (
-        <div key={g} className="mb-4">
-          <h3 className="mb-1 rounded-t-xl bg-black/[0.07] dark:bg-white/10 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-zinc-900 dark:text-white">{g}</h3>
-          <div className="card overflow-hidden rounded-t-none">
-            <ul className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
-              {(templates ?? []).filter((t) => t.group_name === g).map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                  <Link href={`/settings/email/templates/${t.id}`} className="min-w-0 flex-1">
-                    <span className="font-medium text-zinc-800 hover:text-brand hover:underline dark:text-zinc-200 dark:hover:text-brand-lighter">
-                      {t.display_name ?? t.name}
-                    </span>
-                    {t.schedule_enabled && (
-                      <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400">
-                        Scheduled {t.schedule_days}d {t.schedule_direction}
-                      </span>
-                    )}
-                    <span className="ml-3 truncate italic text-zinc-500">{t.subject}</span>
-                  </Link>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <Link href={`/settings/email/templates/${t.id}`} className="text-xs font-semibold text-brand dark:text-brand-lighter hover:underline">Edit</Link>
-                    <form action={duplicateTemplate.bind(null, t.id)}>
-                      <button className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:underline">Duplicate</button>
-                    </form>
-                    <form action={deleteTemplate.bind(null, t.id)}>
-                      <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Delete</button>
-                    </form>
-                  </div>
-                </li>
-              ))}
-            </ul>
+      <TemplateGroups templates={emailTemplates} />
+
+      {smsTemplates.length > 0 && (
+        <>
+          <div className="mb-2 mt-8 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="card-title mb-0">SMS Templates</h2>
           </div>
-        </div>
-      ))}
+          <div className="card mb-3 border-sky-400/30 p-3 text-xs text-sky-800 dark:text-sky-200">
+            Imported from DJEP. XOS does not send text messages yet — these are kept here so the copy and timing are ready when SMS sending is added.
+          </div>
+          <TemplateGroups templates={smsTemplates} />
+        </>
+      )}
 
       <h2 className="card-title mt-8">Send Log</h2>
       <div className="card overflow-hidden">
