@@ -71,6 +71,31 @@ export default function SectionSettings({
     initialPerms[a.key] = roles.includes("host");
   }
   const [perms, setPerms] = useState(initialPerms);
+  const [confirming, setConfirming] = useState(false);
+
+  // Unsaved-changes detection (the question editor + cover upload save on their
+  // own, so they're intentionally not part of this).
+  const dirty =
+    type !== (section.section_type === "headline" ? "headline" : "timeline") ||
+    title !== section.title ||
+    icon !== (section.icon ?? "") ||
+    intro !== (section.intro ?? "") ||
+    guestEnabled !== section.guest_enabled ||
+    songsOn !== section.songs_enabled ||
+    songLimit !== (section.song_limit?.toString() ?? "") ||
+    mustPlayLimit !== (section.must_play_limit?.toString() ?? "") ||
+    questionsOn !== section.questions_enabled ||
+    notesOn !== section.notes_enabled ||
+    timeOn !== section.time_enabled ||
+    timeLabel !== (section.time_label ?? "") ||
+    onTimeline !== (section.on_timeline ?? section.section_type === "timeline") ||
+    onMusic !== (section.on_music ?? (section.songs_enabled && section.song_limit == null)) ||
+    JSON.stringify(perms) !== JSON.stringify(initialPerms);
+
+  function requestClose() {
+    if (dirty) setConfirming(true);
+    else onClose();
+  }
 
   function save() {
     setErr(null);
@@ -100,19 +125,19 @@ export default function SectionSettings({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
-      <div className="my-8 w-full max-w-none rounded-2xl bg-white shadow-2xl dark:bg-zinc-900">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-white/10">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className="relative my-8 flex max-h-[calc(100vh-4rem)] w-full max-w-none flex-col rounded-2xl bg-white shadow-2xl dark:bg-zinc-900">
+        {/* Header (sticky) */}
+        <div className="flex shrink-0 items-center justify-between rounded-t-2xl border-b border-zinc-200 bg-white px-6 py-4 dark:border-white/10 dark:bg-zinc-900">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
             Section settings — {section.icon} {section.title}
           </h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+          <button onClick={requestClose} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
             <FontAwesomeIcon icon={faXmark} />
           </button>
         </div>
 
-        <div className="space-y-6 px-6 py-5">
+        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
           {/* Type */}
           <Group label="Type">
             <div className="flex gap-2">
@@ -207,13 +232,31 @@ export default function SectionSettings({
           {err && <p className="text-sm text-red-500">{err}</p>}
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end gap-2 border-t border-zinc-200 px-6 py-4 dark:border-white/10">
-          <button onClick={onClose} className="btn-ghost">Cancel</button>
-          <button onClick={save} disabled={pending} className="btn-primary disabled:opacity-50">
-            {pending ? "Saving…" : "Done"}
+        {/* Footer (sticky) */}
+        <div className="flex shrink-0 items-center justify-end gap-2 rounded-b-2xl border-t border-zinc-200 bg-white px-6 py-4 dark:border-white/10 dark:bg-zinc-900">
+          {dirty && <span className="mr-auto text-xs font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>}
+          <button onClick={requestClose} className="btn-ghost">Cancel</button>
+          <button onClick={save} disabled={pending || !dirty} className="btn-primary disabled:opacity-50">
+            {pending ? "Saving…" : "Save changes"}
           </button>
         </div>
+
+        {/* Unsaved-changes guard */}
+        {confirming && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-black/50 p-4">
+            <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl dark:bg-zinc-900">
+              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50">Unsaved changes</h3>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                You&apos;ve made changes to this section. Do you want to save them before closing?
+              </p>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button onClick={() => setConfirming(false)} className="btn-ghost">Keep editing</button>
+                <button onClick={() => { setConfirming(false); onClose(); }} className="btn-ghost text-red-500 hover:text-red-600">Discard</button>
+                <button onClick={() => { setConfirming(false); save(); }} disabled={pending} className="btn-primary disabled:opacity-50">Save changes</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
