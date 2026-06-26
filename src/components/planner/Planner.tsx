@@ -136,7 +136,8 @@ export default function Planner({
   const [tab, setTab] = useState<"plan" | "people" | "activity">("plan");
   // The couple gets the guided journey by default; staff preview opens flat.
   const [mode, setMode] = useState<"guided" | "all">(role === "staff" ? "all" : "guided");
-  const [selectedId, setSelectedId] = useState<string | null>(planning.sections[0]?.id ?? null);
+  // Default to the first real section, not a headline divider (which has no page).
+  const [selectedId, setSelectedId] = useState<string | null>(planning.sections.find((s) => s.section_type !== "headline")?.id ?? null);
   const [settingsId, setSettingsId] = useState<string | null>(null);
 
   // Local order for optimistic drag reorder; resync when server data changes.
@@ -183,7 +184,10 @@ export default function Planner({
   }, [router]);
 
   const sections = order;
-  const selected = sections.find((s) => s.id === selectedId) ?? sections[0] ?? null;
+  // Never resolve to a headline — it has no detail page (blank). Fall back to the first real section.
+  const firstContent = sections.find((s) => s.section_type !== "headline") ?? null;
+  const picked = sections.find((s) => s.id === selectedId) ?? null;
+  const selected = picked && picked.section_type !== "headline" ? picked : firstContent;
   const settingsSection = planning.sections.find((s) => s.id === settingsId) ?? null;
 
   // Guided journey steps: skip headlines (used as group labels) and any section
@@ -649,9 +653,10 @@ function SectionCard({
         } ${overlay ? "bg-white shadow-2xl ring-2 ring-brand dark:bg-zinc-900" : ""}`}
       >
         {Grip}
-        <button onClick={onClick} className="flex-1 text-left text-xs font-bold uppercase tracking-wider text-zinc-400">
+        {/* Headlines are group dividers — not navigable (they have no detail page). */}
+        <span className="flex-1 text-left text-xs font-bold uppercase tracking-wider text-zinc-400">
           {section.icon} {section.title}
-        </button>
+        </span>
         {isStaff && (
           <button onClick={onSettings} className="text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-brand">
             <FontAwesomeIcon icon={faGear} />
