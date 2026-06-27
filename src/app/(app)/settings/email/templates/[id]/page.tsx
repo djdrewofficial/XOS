@@ -9,6 +9,7 @@ import RichTextEditor from "@/components/RichTextEditor";
 import { Section, Row, Note, CheckBoxField, CheckGroup } from "@/components/SettingsForm";
 import { RadioChecklist, EnabledToggle } from "@/components/HelperEditorControls";
 import { templateReviewReasons } from "@/lib/emailTemplateReview";
+import EmailPreviewButton from "@/components/EmailPreviewButton";
 
 export const dynamic = "force-dynamic";
 
@@ -398,7 +399,10 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
             </h1>
             <p className="text-sm text-zinc-500">{tpl.display_name ?? tpl.name}</p>
           </div>
-          <SaveButton className="btn-primary px-8">Save</SaveButton>
+          <div className="flex items-center gap-2">
+            <EmailPreviewButton isSms={isSms} />
+            <SaveButton className="btn-primary px-8">Save</SaveButton>
+          </div>
         </div>
 
         {reviewReasons.length > 0 && (
