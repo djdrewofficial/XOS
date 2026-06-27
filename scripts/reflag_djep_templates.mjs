@@ -29,6 +29,10 @@ for (const r of data) {
   const body = col(r, "Content (Body of Email)") || "";
   const reasons = [];
 
+  // truncated body — the DJEP report export caps "Content" at 1000 chars,
+  // so longer emails (esp. full-HTML ones) are cut off mid-document.
+  if (body.length >= 1000) reasons.push(`Body was cut off at 1000 characters by the DJEP export — re-import the full email content before using.`);
+
   // anchor (re-derive to keep the row's full reason set)
   const de = txt(col(r, "Date Element"));
   if (de && !ANCHOR[de]) reasons.push(`Imported timing anchor “${de}” has no XOS equivalent — pick a send trigger before enabling.`);
