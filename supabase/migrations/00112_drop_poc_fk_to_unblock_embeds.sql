@@ -1,0 +1,12 @@
+-- 00112_drop_poc_fk_to_unblock_embeds.sql
+-- Adding point_of_contact_employee_id (migration 00110) as a SECOND foreign key
+-- from events -> employees made PostgREST/Supabase resource embeds ambiguous:
+-- `salesperson:employees(*)` could match either salesperson_id or
+-- point_of_contact_employee_id, so those selects errored and the Events and
+-- Clients pages came back empty.
+--
+-- Fix: drop the FK constraint (keep the column). POC is resolved by id inside
+-- resolve_sender / render_merge_tags and via the employee list in the editor, so
+-- no FK relationship is needed. This leaves events with a single employees FK
+-- (salesperson_id), so existing embeds resolve unambiguously again.
+alter table events drop constraint if exists events_point_of_contact_employee_id_fkey;
