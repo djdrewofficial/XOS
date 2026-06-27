@@ -60,6 +60,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     { data: helpers },
     { data: vendorCategories },
     { data: docTemplates },
+    { data: mergeTags },
   ] = await Promise.all([
     supabase.from("email_templates").select("*").eq("id", id).single(),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
@@ -70,7 +71,17 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     supabase.from("booking_helpers").select("id, title").order("position"),
     supabase.from("vendor_categories").select("id, name").eq("is_active", true).order("name"),
     supabase.from("document_templates").select("id, name, doc_type").eq("is_active", true).order("name"),
+    supabase.from("merge_tags").select("tag_key, group_name").eq("is_active", true).order("group_name").order("sort_order").order("tag_key"),
   ]);
+
+  // group registry tags for the editor's "+ Merge Tag" dropdown
+  const tagGroupMap = new Map<string, string[]>();
+  for (const t of (mergeTags ?? []) as { tag_key: string; group_name: string }[]) {
+    const arr = tagGroupMap.get(t.group_name) ?? [];
+    arr.push(`<${t.tag_key}>`);
+    tagGroupMap.set(t.group_name, arr);
+  }
+  const tagGroups = [...tagGroupMap.entries()].map(([group, tags]) => ({ group, tags }));
 
   if (!tpl) notFound();
 
@@ -131,7 +142,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
           </Row>
         )}
         <Row label="Body">
-          <RichTextEditor name="body_html" defaultValue={tpl.body_html ?? ""} />
+          <RichTextEditor name="body_html" defaultValue={tpl.body_html ?? ""} tagGroups={tagGroups} />
         </Row>
       </Section>
     </div>
@@ -306,6 +317,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
             <option value="company">Company</option>
             <option value="salesperson">Assigned Salesperson</option>
             <option value="primary_dj">Assigned DJ</option>
+            <option value="point_of_contact">Point of Contact</option>
             <option value="master_admin">Master Administrator</option>
           </select>
         </Row>

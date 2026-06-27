@@ -24,10 +24,14 @@ const TB_ON = "bg-brand/15 text-brand dark:text-brand-lighter";
 export default function RichTextEditor({
   name,
   defaultValue,
+  tagGroups,
 }: {
   name: string;
   defaultValue?: string;
+  /** Merge-tag groups for the dropdown; falls back to the built-in list. */
+  tagGroups?: { group: string; tags: string[] }[];
 }) {
+  const mergeTagGroups = tagGroups && tagGroups.length > 0 ? tagGroups : MERGE_TAGS;
   const [html, setHtml] = useState(defaultValue ?? "");
   const [source, setSource] = useState(false);
 
@@ -125,7 +129,7 @@ export default function RichTextEditor({
           title="Insert a merge tag"
         >
           <option value="">+ Merge Tag</option>
-          {MERGE_TAGS.map((g) => (
+          {mergeTagGroups.map((g) => (
             <optgroup key={g.group} label={g.group}>
               {g.tags.map((tag) => (
                 <option key={tag} value={tag}>{tag}</option>

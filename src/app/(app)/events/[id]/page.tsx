@@ -676,10 +676,15 @@ export default async function EventDetailPage({
               salespersonName: event.salesperson
                 ? `${event.salesperson.first_name} ${event.salesperson.last_name}`
                 : null,
+              pointOfContactId: (event as unknown as { point_of_contact_employee_id?: string | null }).point_of_contact_employee_id ?? null,
             }}
             statuses={statuses ?? []}
             sources={inquirySources ?? []}
             salespeople={(employees ?? []).map((e) => ({
+              id: e.id,
+              name: `${e.first_name} ${e.last_name}`.trim(),
+            }))}
+            pointsOfContact={(employees ?? []).map((e) => ({
               id: e.id,
               name: `${e.first_name} ${e.last_name}`.trim(),
             }))}

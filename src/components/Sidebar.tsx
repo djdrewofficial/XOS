@@ -36,6 +36,7 @@ import {
   faPenToSquare,
   faEnvelope,
   faBullseye,
+  faTags,
   faLock,
   faRobot,
   faPowerOff,
@@ -138,6 +139,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
         items: [
           { href: "/settings/assistant", label: "AI", icon: faRobot, module: "settings" },
           { href: "/settings/email", label: "Email", icon: faEnvelope, module: "settings" },
+          { href: "/settings/merge-tags", label: "Merge Tags", icon: faTags, module: "settings" },
           { href: "/settings/sources", label: "Inquiry Sources", icon: faBullseye, module: "settings" },
         ],
       },

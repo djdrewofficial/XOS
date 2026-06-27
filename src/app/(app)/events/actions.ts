@@ -1331,6 +1331,7 @@ export async function updateBookingInfo(eventId: string, formData: FormData) {
       status_id: statusId,
       inquiry_source_id: clean(formData.get("inquiry_source_id")),
       salesperson_id: clean(formData.get("salesperson_id")),
+      point_of_contact_employee_id: clean(formData.get("point_of_contact_employee_id")),
     })
     .eq("id", eventId);
   if (error) throw new Error(error.message);

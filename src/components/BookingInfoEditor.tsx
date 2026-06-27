@@ -11,6 +11,7 @@ export default function BookingInfoEditor({
   statuses,
   sources,
   salespeople,
+  pointsOfContact,
   save,
 }: {
   current: {
@@ -19,16 +20,19 @@ export default function BookingInfoEditor({
     sourceName: string | null;
     salespersonId: string | null;
     salespersonName: string | null;
+    pointOfContactId: string | null;
   };
   statuses: Status[];
   sources: Option[];
   salespeople: Option[];
+  pointsOfContact: Option[];
   save: (formData: FormData) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [, startTransition] = useTransition();
 
   const currentStatus = statuses.find((s) => s.id === current.statusId) ?? null;
+  const pocName = pointsOfContact.find((e) => e.id === current.pointOfContactId)?.name ?? null;
 
   if (!editing) {
     return (
@@ -56,6 +60,10 @@ export default function BookingInfoEditor({
           <div className="flex justify-between">
             <dt className="text-zinc-500">Salesperson</dt>
             <dd>{current.salespersonName ?? "—"}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-zinc-500">Point of Contact</dt>
+            <dd>{pocName ?? "—"}</dd>
           </div>
         </dl>
         <button onClick={() => setEditing(true)} className="btn-ghost mt-4 px-4 py-1.5 text-xs">
@@ -107,6 +115,18 @@ export default function BookingInfoEditor({
             </option>
           ))}
         </select>
+      </div>
+      <div>
+        <label className="label-xs">Point of Contact</label>
+        <select name="point_of_contact_employee_id" defaultValue={current.pointOfContactId ?? ""} className="input w-full">
+          <option value="">—</option>
+          {pointsOfContact.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-[11px] text-zinc-500">Emails set to send “from Point of Contact” use this person; powers the <code>&lt;poc_*&gt;</code> merge tags.</p>
       </div>
       <div className="flex gap-2">
         <SaveButton className="btn-primary px-5 py-2 text-xs">Save</SaveButton>
