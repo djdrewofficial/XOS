@@ -45,6 +45,8 @@ export async function signDocument(
 
   const hdrs = await headers();
   const ip = (hdrs.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
+  // x-forwarded-for is client-controllable; escape before it goes into stored HTML.
+  const ipSafe = ip.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const userAgent = hdrs.get("user-agent") ?? "unknown";
   const signedAt = new Date();
 
@@ -61,7 +63,7 @@ export async function signDocument(
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")}</div><div class="xdoc-sign-name">${signerName
             .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")}</div><div class="xdoc-sign-meta">Electronically signed · ${signedAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })} · IP ${ip}</div></div>`,
+            .replace(/</g, "&lt;")}</div><div class="xdoc-sign-meta">Electronically signed · ${signedAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })} · IP ${ipSafe}</div></div>`,
         }
       : b
   );

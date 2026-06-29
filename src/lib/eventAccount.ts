@@ -99,6 +99,13 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
 
   const travelFee = financialsVisible ? num(ev.travel_fee) : 0;
   const overtimeFee = financialsVisible ? num(ev.overtime_fee) : 0;
+  // Venue setup fee — the admin view and the /pay page both include this; without
+  // it the couple's "My Event" balance was lower than what they actually owe.
+  let venueSetupFee = 0;
+  if (financialsVisible && ev.venue_id) {
+    const { data: ven } = await admin.from("venues").select("setup_fee").eq("id", ev.venue_id).maybeSingle();
+    venueSetupFee = num(ven?.setup_fee);
+  }
   const discounts = financialsVisible
     ? [
         { label: ev.discount1_label || "Discount", amount: num(ev.discount1_amount) },
@@ -108,7 +115,7 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
 
   const addonsTotal = addons.reduce((s, a) => s + a.price, 0);
   const discountTotal = discounts.reduce((s, d) => s + d.amount, 0);
-  const total = packagePrice + addonsTotal + travelFee + overtimeFee - discountTotal;
+  const total = packagePrice + addonsTotal + travelFee + overtimeFee + venueSetupFee - discountTotal;
 
   const payments: AccountPayment[] = (pays ?? []).map((p) => ({
     id: p.id, amount: num(p.amount), paidAt: p.paid_at, method: p.method, reason: p.reason, pending: p.status === "pending",

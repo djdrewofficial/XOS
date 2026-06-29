@@ -81,8 +81,10 @@ export async function POST(req: Request) {
 
   const supabase = createAdminClient();
   // Don't let a late "delivered" overwrite an "opened" (opened is the stronger signal).
-  const query = supabase.from("email_log").update(update).eq("provider_message_id", messageId);
-  if (data.event === "delivered") query.neq("status", "opened");
+  let query = supabase.from("email_log").update(update).eq("provider_message_id", messageId);
+  // Don't let a late "delivered" overwrite an "opened" (the immutable-chained builder
+  // must be reassigned, otherwise the filter is silently dropped).
+  if (data.event === "delivered") query = query.neq("status", "opened");
   await query;
 
   return NextResponse.json({ ok: true });

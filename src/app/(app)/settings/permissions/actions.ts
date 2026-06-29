@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireModule } from "@/lib/auth";
+import { requireMaster } from "@/lib/auth";
 import { MODULE_KEYS, isModuleKey, ROLES, type Access, type Role } from "@/lib/permissions";
 
 const ACCESS_VALUES: Access[] = ["none", "view", "edit"];
@@ -23,7 +23,7 @@ export async function saveRolePermissions(role: Role, formData: FormData) {
     throw new Error("That role can't be edited.");
   }
   const supabase = await createClient();
-  await requireModule("settings", "edit", { mode: "throw", supabase });
+  await requireMaster(supabase);
 
   const now = new Date().toISOString();
   const rows = MODULE_KEYS.map((module) => ({
@@ -56,7 +56,7 @@ export async function saveUserPermissions(formData: FormData) {
   if (!employeeId) throw new Error("No employee selected.");
 
   const supabase = await createClient();
-  await requireModule("settings", "edit", { mode: "throw", supabase });
+  await requireMaster(supabase);
 
   const now = new Date().toISOString();
   const toUpsert: { employee_id: string; module: string; access: Access; updated_at: string }[] = [];

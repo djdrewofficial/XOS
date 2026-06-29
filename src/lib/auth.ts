@@ -123,6 +123,16 @@ export async function moduleAccess(moduleKey: string, supabase?: Client): Promis
   return me.can[moduleKey] ?? defaultAccess(me.role, moduleKey);
 }
 
+/** Guard a server action so only the master admin (owner) can run it. Throws
+    otherwise. Use for privilege-sensitive actions (editing permission tiers,
+    the permission grid, etc.) that RBAC modules don't adequately protect. */
+export async function requireMaster(supabase?: Client): Promise<void> {
+  const me = await getMe(supabase);
+  if (!me || me.accountType !== "staff" || me.role !== "master_admin") {
+    throw new Error("Not authorized.");
+  }
+}
+
 /** Guard a page or server action: redirect (pages) / throw (actions) unless the
     current user has at least `need` access to `moduleKey`. */
 export async function requireModule(

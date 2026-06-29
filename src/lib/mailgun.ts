@@ -49,7 +49,7 @@ async function mailgunSend(opts: {
   const form = new FormData();
   form.append("from", opts.from);
   form.append("to", opts.to);
-  form.append("subject", opts.subject);
+  form.append("subject", opts.subject?.trim() || "(no subject)");
   form.append("html", opts.html || "<p>(empty)</p>");
   if (opts.replyTo) form.append("h:Reply-To", opts.replyTo);
   for (const tag of opts.tags ?? []) form.append("o:tag", tag);

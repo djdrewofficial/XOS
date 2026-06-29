@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireModule, requireMaster } from "@/lib/auth";
 import {
   PERM_SECTIONS,
   PERM_VIEW_ALL,
@@ -127,11 +128,19 @@ export async function saveAvailabilitySort(formData: FormData) {
 /** Per-employee settings that also live on the employee profile page. */
 export async function saveEmployeeRow(id: string, formData: FormData) {
   const supabase = await createClient();
+  await requireModule("settings", "edit", { mode: "throw", supabase });
   const rate = clean(formData.get("hourly_rate"));
+  const newTier = clean(formData.get("permission_tier")) ?? "employee";
+  // Changing an employee's permission tier is master-admin only (anti-escalation):
+  // a non-owner editing other fields keeps the existing tier, so they aren't blocked.
+  const { data: cur } = await supabase.from("employees").select("permission_tier").eq("id", id).maybeSingle();
+  if (cur && newTier !== cur.permission_tier) {
+    await requireMaster(supabase);
+  }
   const { error } = await supabase
     .from("employees")
     .update({
-      permission_tier: clean(formData.get("permission_tier")) ?? "employee",
+      permission_tier: newTier,
       hourly_rate: rate === null ? null : parseFloat(rate),
       display_order: intOrNull(formData.get("display_order")) ?? 0,
       check_in_required: formData.get("check_in_required") === "on",
