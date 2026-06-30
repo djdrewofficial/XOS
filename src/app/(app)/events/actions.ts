@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
+import { writeSchedulePreservingPaid } from "@/lib/scheduleWrite";
 import { loadEventBundle } from "@/lib/documentRender";
 import { buildEventName, autoNameEvent, type NamingClient } from "@/lib/eventName";
 import { runAutomations, fireHelperWebhook } from "@/lib/automations";
@@ -666,20 +667,16 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
     throw new Error(`This package allows ${allowedSplits.join(", ")} payment split(s) — ${count} is not permitted.`);
   }
 
-  await supabase.from("scheduled_payments").delete().eq("event_id", eventId);
-
-  const rows = buildScheduleRows({
+  // Preserve already-paid installments (and their payment links); only the
+  // unpaid portion is regenerated to cover the remaining balance.
+  await writeSchedulePreservingPaid(supabase, eventId, {
     total,
     deposit,
     eventDate: eventDate ?? null,
     terms,
     termsDays,
     plan: { kind: "split", count },
-    today: new Date().toISOString().slice(0, 10),
-  }).map((r) => ({ ...r, event_id: eventId }));
-
-  const { error } = await supabase.from("scheduled_payments").insert(rows);
-  if (error) throw new Error(error.message);
+  });
   revalidatePath(`/events/${eventId}`);
 }
 

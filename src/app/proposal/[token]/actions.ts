@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
-import { buildScheduleRows, type SchedulePlan } from "@/lib/paymentSchedule";
+import { type SchedulePlan } from "@/lib/paymentSchedule";
+import { writeSchedulePreservingPaid } from "@/lib/scheduleWrite";
 import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConfig";
 import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations } from "@/lib/automations";
@@ -167,13 +168,8 @@ export async function confirmProposal(token: string, formData: FormData) {
       : { kind: "full" };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const rows = buildScheduleRows({ total, deposit, eventDate: newDate, terms, termsDays, plan, today }).map((r) => ({
-    ...r,
-    event_id: eventId,
-  }));
-  await supabase.from("scheduled_payments").delete().eq("event_id", eventId);
-  await supabase.from("scheduled_payments").insert(rows);
+  // Never disturb already-paid installments; only (re)build the unpaid portion.
+  await writeSchedulePreservingPaid(supabase, eventId, { total, deposit, eventDate: newDate, terms, termsDays, plan });
 
   // auto-name the event now that the couple's info is in ("Alex & Sam's Wedding")
   await autoNameEvent(supabase, eventId);
