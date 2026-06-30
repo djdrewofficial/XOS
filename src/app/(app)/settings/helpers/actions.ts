@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -138,6 +139,7 @@ function buildHelperPayload(formData: FormData) {
 }
 
 export async function createBlankHelper() {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: maxRow } = await supabase
     .from("booking_helpers")
@@ -162,6 +164,7 @@ export async function createBlankHelper() {
 }
 
 export async function createHelper(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: maxRow } = await supabase
     .from("booking_helpers")
@@ -179,6 +182,7 @@ export async function createHelper(formData: FormData) {
 }
 
 export async function updateHelper(id: string, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("booking_helpers")
@@ -191,6 +195,7 @@ export async function updateHelper(id: string, formData: FormData) {
 }
 
 export async function moveHelper(id: string, direction: "up" | "down") {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: helpers } = await supabase
     .from("booking_helpers")
@@ -214,6 +219,7 @@ export async function moveHelper(id: string, direction: "up" | "down") {
 }
 
 export async function duplicateHelper(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: src } = await supabase.from("booking_helpers").select("*").eq("id", id).single();
   if (!src) return;
@@ -247,6 +253,7 @@ export async function duplicateHelper(id: string) {
 }
 
 export async function toggleHelper(id: string, isActive: boolean) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("booking_helpers")
@@ -257,6 +264,7 @@ export async function toggleHelper(id: string, isActive: boolean) {
 }
 
 export async function deleteHelper(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("booking_helpers").delete().eq("id", id);
   if (error) throw new Error(error.message);

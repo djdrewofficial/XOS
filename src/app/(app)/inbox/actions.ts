@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -22,6 +23,7 @@ const CONV_COLS =
 /** Load a single thread (for client-side conversation switching) and clear its
     unread badge. Mirrors what the /inbox/[id] server page builds. */
 export async function loadThread(id: string): Promise<ActiveThread | null> {
+  await requireModule("inbox", "view", { mode: "throw" });
   const supabase = await createClient();
   const { data: conv } = await supabase.from("hl_conversations").select("*").eq("id", id).maybeSingle();
   if (!conv) return null;
@@ -70,6 +72,7 @@ export async function loadThread(id: string): Promise<ActiveThread | null> {
 
 /** Next page of conversations older than the given timestamp (infinite scroll). */
 export async function loadMoreConversations(beforeIso: string): Promise<ConvRow[]> {
+  await requireModule("inbox", "view", { mode: "throw" });
   const supabase = await createClient();
   const { data } = await supabase
     .from("hl_conversations")
@@ -81,6 +84,7 @@ export async function loadMoreConversations(beforeIso: string): Promise<ConvRow[
 }
 
 export async function syncInbox(full?: boolean) {
+  await requireModule("inbox", "view", { mode: "throw" });
   const supabase = await createClient();
   await syncHighLevelConversations(supabase, { full });
   revalidatePath("/inbox");
@@ -89,6 +93,7 @@ export async function syncInbox(full?: boolean) {
 /** Clients for the "New conversation" picker — loaded lazily (only when the user
     opens the composer) so the 700+ rows aren't shipped on every inbox load. */
 export async function listInboxClients() {
+  await requireModule("inbox", "view", { mode: "throw" });
   const supabase = await createClient();
   const { data } = await supabase.from("clients").select("id, first_name, last_name, cell_phone").order("first_name");
   return (data ?? []) as { id: string; first_name: string; last_name: string; cell_phone: string | null }[];
@@ -99,6 +104,7 @@ export async function listInboxClients() {
     Files upload to the public sms-media bucket (unguessable uuid paths);
     an XOS document can be attached as a branded PDF (Email especially). */
 export async function sendInboxReply(conversationId: string, formData: FormData) {
+  await requireModule("inbox", "edit", { mode: "throw" });
   const body = (formData.get("body") ?? "").toString().trim();
   const channel = ((formData.get("channel") ?? "SMS").toString() || "SMS") as
     | "SMS" | "Email" | "WhatsApp" | "IG" | "FB" | "GMB";
@@ -188,6 +194,7 @@ export async function sendInboxReply(conversationId: string, formData: FormData)
     immediately. origin = "inbox" (redirects into the new thread) or an event
     id (stays on the event's Comms tab). */
 export async function startConversation(formData: FormData) {
+  await requireModule("inbox", "edit", { mode: "throw" });
   const body = (formData.get("body") ?? "").toString().trim();
   const phoneRaw = (formData.get("phone") ?? "").toString().trim();
   const clientId = (formData.get("client_id") ?? "").toString().trim() || null;
@@ -244,6 +251,7 @@ export async function startConversation(formData: FormData) {
 }
 
 export async function markConversationRead(conversationId: string) {
+  await requireModule("inbox", "edit", { mode: "throw" });
   const supabase = await createClient();
   await supabase.from("hl_conversations").update({ unread_count: 0 }).eq("id", conversationId);
   revalidatePath("/inbox");

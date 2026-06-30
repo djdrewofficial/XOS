@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -9,6 +10,7 @@ function clean(v: FormDataEntryValue | null): string | null {
 }
 
 export async function createEquipmentItem(formData: FormData) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -23,6 +25,7 @@ export async function createEquipmentItem(formData: FormData) {
 }
 
 export async function createEquipmentSystem(formData: FormData) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -35,6 +38,7 @@ export async function createEquipmentSystem(formData: FormData) {
 }
 
 export async function updateEquipmentItem(id: string, formData: FormData) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("equipment_items")
@@ -70,6 +74,7 @@ async function actorName(supabase: Awaited<ReturnType<typeof createClient>>): Pr
 }
 
 export async function reportDamage(itemId: string, formData: FormData) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const description = clean(formData.get("description"));
   if (!description) return;
@@ -103,6 +108,7 @@ export async function reportDamage(itemId: string, formData: FormData) {
 }
 
 export async function addDamagePhoto(itemId: string, reportId: string, formData: FormData) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const file = formData.get("photo") as File | null;
   if (!file || file.size === 0) return;
@@ -117,6 +123,7 @@ export async function addDamagePhoto(itemId: string, reportId: string, formData:
 }
 
 export async function resolveDamage(itemId: string, reportId: string) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("equipment_damage_reports")
@@ -128,6 +135,7 @@ export async function resolveDamage(itemId: string, reportId: string) {
 }
 
 export async function createStorageLocation(formData: FormData) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -140,6 +148,7 @@ export async function createStorageLocation(formData: FormData) {
 }
 
 export async function toggleStorageLocation(id: string, isActive: boolean) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("equipment_storage_locations")
@@ -154,6 +163,7 @@ export async function uploadEquipmentPhoto(
   id: string,
   formData: FormData
 ) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const file = formData.get("photo") as File | null;
   if (!file || file.size === 0) return;
@@ -179,6 +189,7 @@ export async function deleteEquipmentPhoto(
   photoId: string,
   path: string
 ) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   await supabase.storage.from("equipment").remove([path]);
   const { error } = await supabase.from("equipment_photos").delete().eq("id", photoId);
@@ -188,6 +199,7 @@ export async function deleteEquipmentPhoto(
 }
 
 export async function setItemSystem(itemId: string, systemId: string | null, revalidate: string) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("equipment_items")
@@ -199,12 +211,14 @@ export async function setItemSystem(itemId: string, systemId: string | null, rev
 }
 
 export async function addItemToSystemForm(systemId: string, formData: FormData) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const itemId = clean(formData.get("item_id"));
   if (!itemId) return;
   await setItemSystem(itemId, systemId, `/equipment/system/${systemId}`);
 }
 
 export async function updateEquipmentSystem(id: string, formData: FormData) {
+  await requireModule("equipment", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("equipment_systems")

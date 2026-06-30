@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -55,6 +56,7 @@ async function snapshotVersion(
 }
 
 export async function createPackage(formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("packages")
@@ -71,6 +73,7 @@ export async function createPackage(formData: FormData) {
 }
 
 export async function deletePackage(id: string) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { count } = await supabase
     .from("events")
@@ -85,6 +88,7 @@ export async function deletePackage(id: string) {
 }
 
 export async function createPackageCategory(packageId: string | null, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -95,6 +99,7 @@ export async function createPackageCategory(packageId: string | null, formData: 
 }
 
 export async function updatePackageCategory(id: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -107,6 +112,7 @@ export async function updatePackageCategory(id: string, formData: FormData) {
 }
 
 export async function deletePackageCategory(id: string) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { count } = await supabase
     .from("packages")
@@ -122,6 +128,7 @@ export async function deletePackageCategory(id: string) {
 
 /* ---------- ADD-ON CATEGORIES ---------- */
 export async function createAddonCategory(formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -131,6 +138,7 @@ export async function createAddonCategory(formData: FormData) {
 }
 
 export async function updateAddonCategory(id: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -143,6 +151,7 @@ export async function updateAddonCategory(id: string, formData: FormData) {
 }
 
 export async function deleteAddonCategory(id: string) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { count } = await supabase
     .from("addons")
@@ -158,6 +167,7 @@ export async function deleteAddonCategory(id: string) {
 
 /* ---------- ADD-ONS ---------- */
 export async function createAddon(formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("addons")
@@ -174,6 +184,7 @@ export async function createAddon(formData: FormData) {
 }
 
 export async function updateAddonSettings(id: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("addons")
@@ -196,6 +207,7 @@ export async function updateAddonSettings(id: string, formData: FormData) {
 }
 
 export async function deleteAddon(id: string) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { count } = await supabase
     .from("event_addons")
@@ -211,6 +223,7 @@ export async function deleteAddon(id: string) {
 }
 
 export async function saveAddonEquipmentDefaults(addonId: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   await supabase.from("addon_equipment_defaults").delete().eq("addon_id", addonId);
   const rows: { addon_id: string; item_id: string | null; system_id: string | null; quantity: number }[] = [];
@@ -234,6 +247,7 @@ export async function saveAddonEquipmentDefaults(addonId: string, formData: Form
 /** Which reusable planning sections auto-add to an event when this add-on is
     attached (mapped to planning_template_sections). */
 export async function saveAddonPlanningSections(addonId: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   await supabase.from("addon_section_templates").delete().eq("addon_id", addonId);
   const rows: { addon_id: string; template_section_id: string }[] = [];
@@ -250,6 +264,7 @@ export async function saveAddonPlanningSections(addonId: string, formData: FormD
 }
 
 export async function updatePackageGeneral(id: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("packages")
@@ -270,6 +285,7 @@ export async function updatePackageGeneral(id: string, formData: FormData) {
 }
 
 export async function updatePackageFinancials(id: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const splits = formData
     .getAll("allowed_splits")
@@ -312,6 +328,7 @@ export async function updatePackageFinancials(id: string, formData: FormData) {
 }
 
 export async function addDatePrice(packageId: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const start = clean(formData.get("start_date"));
   const end = clean(formData.get("end_date"));
@@ -328,6 +345,7 @@ export async function addDatePrice(packageId: string, formData: FormData) {
 }
 
 export async function deleteDatePrice(packageId: string, priceId: string) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("package_date_prices").delete().eq("id", priceId);
   if (error) throw new Error(error.message);
@@ -335,6 +353,7 @@ export async function deleteDatePrice(packageId: string, priceId: string) {
 }
 
 export async function saveAddonDefaults(packageId: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   // fields arrive as addon_<addonId> = quantity (blank/0 = not assigned)
   await supabase.from("package_addon_defaults").delete().eq("package_id", packageId);
@@ -354,6 +373,7 @@ export async function saveAddonDefaults(packageId: string, formData: FormData) {
 }
 
 export async function saveEquipmentDefaults(packageId: string, formData: FormData) {
+  await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
   // system_<id> = "on" checkboxes; item_<id> = quantity inputs
   await supabase.from("package_equipment_defaults").delete().eq("package_id", packageId);

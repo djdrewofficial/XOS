@@ -27,6 +27,7 @@ export async function inviteEmployee(id: string): Promise<{ ok: boolean; error?:
     employeeId: id,
   });
   if (res.ok) {
+  await requireModule("employees", "edit", { mode: "throw" });
     revalidatePath(`/employees/${id}`);
     revalidatePath("/employees");
   }
@@ -43,6 +44,7 @@ export async function resetEmployeePassword(id: string): Promise<{ ok: boolean; 
 }
 
 export async function createEmployee(formData: FormData) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("employees").insert({
     first_name: clean(formData.get("first_name")) ?? "",
@@ -60,6 +62,7 @@ export async function createEmployee(formData: FormData) {
 }
 
 export async function updateEmployeeGeneral(id: string, formData: FormData) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("employees")
@@ -86,6 +89,7 @@ export async function updateEmployeeGeneral(id: string, formData: FormData) {
 }
 
 export async function updateEmployeeContact(id: string, formData: FormData) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("employees")
@@ -105,6 +109,7 @@ export async function updateEmployeeContact(id: string, formData: FormData) {
 }
 
 export async function updateEmployeeWages(id: string, formData: FormData) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const num = (v: FormDataEntryValue | null) => {
     const n = parseFloat((v ?? "0").toString());
@@ -124,6 +129,7 @@ export async function updateEmployeeWages(id: string, formData: FormData) {
 }
 
 export async function uploadEmployeePhoto(id: string, formData: FormData) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const file = formData.get("photo") as File | null;
   if (!file || file.size === 0) return;
@@ -140,6 +146,7 @@ export async function uploadEmployeePhoto(id: string, formData: FormData) {
 }
 
 export async function addTimeOff(employeeId: string, formData: FormData) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const start = clean(formData.get("start_date"));
   if (!start) return;
@@ -156,6 +163,7 @@ export async function addTimeOff(employeeId: string, formData: FormData) {
 }
 
 export async function setTimeOffStatus(employeeId: string, timeOffId: string, status: string) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("employee_time_off")
@@ -167,6 +175,7 @@ export async function setTimeOffStatus(employeeId: string, timeOffId: string, st
 }
 
 export async function deleteTimeOff(employeeId: string, timeOffId: string) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("employee_time_off").delete().eq("id", timeOffId);
   if (error) throw new Error(error.message);
@@ -175,6 +184,7 @@ export async function deleteTimeOff(employeeId: string, timeOffId: string) {
 }
 
 export async function toggleEmployee(id: string, isActive: boolean) {
+  await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("employees").update({ is_active: isActive }).eq("id", id);
   if (error) throw new Error(error.message);

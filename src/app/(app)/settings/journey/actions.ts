@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export async function saveJourneySettings(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("journey_settings")

@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizeKeys } from "@/lib/signingRequirements";
 
 export async function saveSigningRequirements(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
 
   // global default

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -84,6 +85,7 @@ function buildPayload(formData: FormData) {
 }
 
 export async function createBlankTemplate() {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("email_templates")
@@ -96,6 +98,7 @@ export async function createBlankTemplate() {
 }
 
 export async function updateTemplate(id: string, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   // Saving acknowledges any import-time review flags (unmapped anchor/status).
   // The blank-subject flag is derived live, so it persists until a subject is set.
@@ -110,6 +113,7 @@ export async function updateTemplate(id: string, formData: FormData) {
 }
 
 export async function deleteTemplate(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("email_templates").update({ is_active: false }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -117,6 +121,7 @@ export async function deleteTemplate(id: string) {
 }
 
 export async function duplicateTemplate(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: src } = await supabase.from("email_templates").select("*").eq("id", id).single();
   if (!src) return;

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -15,6 +16,7 @@ function socialCollab(v: FormDataEntryValue | null): string | null {
 }
 
 export async function createVendorCategory(formData: FormData) {
+  await requireModule("vendors", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -24,6 +26,7 @@ export async function createVendorCategory(formData: FormData) {
 }
 
 export async function toggleVendorCategory(id: string, isActive: boolean) {
+  await requireModule("vendors", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("vendor_categories").update({ is_active: isActive }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -45,6 +48,7 @@ function vendorPayload(formData: FormData) {
 }
 
 export async function createVendor(formData: FormData) {
+  await requireModule("vendors", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("vendors")
@@ -57,6 +61,7 @@ export async function createVendor(formData: FormData) {
 }
 
 export async function updateVendor(id: string, formData: FormData) {
+  await requireModule("vendors", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("vendors").update(vendorPayload(formData)).eq("id", id);
   if (error) throw new Error(error.message);
@@ -65,6 +70,7 @@ export async function updateVendor(id: string, formData: FormData) {
 }
 
 export async function addVendorContact(vendorId: string, formData: FormData) {
+  await requireModule("vendors", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -80,6 +86,7 @@ export async function addVendorContact(vendorId: string, formData: FormData) {
 }
 
 export async function removeVendorContact(vendorId: string, contactId: string) {
+  await requireModule("vendors", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("vendor_contacts").delete().eq("id", contactId);
   if (error) throw new Error(error.message);
@@ -89,12 +96,14 @@ export async function removeVendorContact(vendorId: string, contactId: string) {
 // ───────────────────── GPT vendor-match review queue ─────────────────────
 
 export async function dismissVendorSuggestion(id: string) {
+  await requireModule("vendors", "edit", { mode: "throw" });
   const supabase = await createClient();
   await supabase.from("vendor_match_suggestions").update({ status: "dismissed" }).eq("id", id);
   revalidatePath("/vendors/review");
 }
 
 export async function applyVendorSuggestion(id: string) {
+  await requireModule("vendors", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: s } = await supabase.from("vendor_match_suggestions").select("*").eq("id", id).maybeSingle();
   if (!s || s.status !== "pending") return;

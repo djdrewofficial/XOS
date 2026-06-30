@@ -208,6 +208,7 @@ async function applyPackageSelection(
 }
 
 export async function createEvent(formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const payload = eventPayload(formData);
   const { data, error } = await supabase
@@ -268,6 +269,7 @@ function parseJson<T>(v: FormDataEntryValue | null, fallback: T): T {
 /* Reference data the New Event form needs — fetched on demand so the form can
    open in a modal from anywhere (mirrors what /events/new loads server-side). */
 export async function loadNewEventFormData() {
+  await requireModule("events", "view", { mode: "throw" });
   const supabase = await createClient();
   const [
     { data: roles },
@@ -301,6 +303,7 @@ export async function loadNewEventFormData() {
 }
 
 export async function createEventOnboarding(formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
 
   const clients = parseJson<NewClient[]>(formData.get("clients_json"), []);
@@ -533,6 +536,7 @@ export async function createEventOnboarding(formData: FormData) {
 }
 
 export async function updateEvent(id: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: before } = await supabase
     .from("events")
@@ -557,6 +561,7 @@ export async function updateEvent(id: string, formData: FormData) {
 }
 
 export async function setEventStatus(id: string, statusId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("events").update({ status_id: statusId }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -566,6 +571,7 @@ export async function setEventStatus(id: string, statusId: string) {
 }
 
 export async function addPayment(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("payments").insert({
     event_id: eventId,
@@ -585,6 +591,7 @@ export async function addPayment(eventId: string, formData: FormData) {
    has actually landed: flip it to approved, link it to the earliest unpaid
    scheduled payment, and fire payment_received automations. */
 export async function confirmPayment(paymentId: string, eventId: string, formData?: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const note = formData ? clean(formData.get("note")) : null;
 
@@ -617,6 +624,7 @@ export async function confirmPayment(paymentId: string, eventId: string, formDat
 /* Remove a payment row — used to reject a false/duplicate Zelle claim, or undo
    a mistaken entry. */
 export async function removePayment(paymentId: string, eventId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("payments").delete().eq("id", paymentId).eq("event_id", eventId);
   if (error) throw new Error(error.message);
@@ -625,6 +633,7 @@ export async function removePayment(paymentId: string, eventId: string) {
 }
 
 export async function addScheduledPayments(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   // schedule generation governed by the package's payment rules:
   // allowed splits + final-due terms (N days before event, or corporate Net-N after)
@@ -677,6 +686,7 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
 /** Office-set billing terms for event types where the office (not the client)
     decides the plan. Read by the public /proposal page when chooser = 'office'. */
 export async function updateBillingTerms(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const terms = clean(formData.get("billing_terms"));
   const count = Math.max(1, Math.round(num(formData.get("billing_terms_count"))) || 2);
@@ -689,6 +699,7 @@ export async function updateBillingTerms(eventId: string, formData: FormData) {
 }
 
 export async function runBookingHelper(eventId: string, helperId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.rpc("run_booking_helper", {
     p_helper_id: helperId,
@@ -706,6 +717,7 @@ export async function runBookingHelper(eventId: string, helperId: string) {
 }
 
 export async function assignStaff(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const employeeId = clean(formData.get("employee_id"));
   if (!employeeId) return;
@@ -720,6 +732,7 @@ export async function assignStaff(eventId: string, formData: FormData) {
 }
 
 export async function removeStaff(eventId: string, staffId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_staff").delete().eq("id", staffId);
   if (error) throw new Error(error.message);
@@ -731,6 +744,7 @@ export async function markStaff(
   staffId: string,
   field: "notified_at" | "confirmed_at" | "checked_in_at" | "checked_out_at"
 ) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_staff")
@@ -743,6 +757,7 @@ export async function markStaff(
 /* Staff self-service: a signed-in employee checks themselves in/out of their own
    assignment (verified by auth_user_id → employee_id → event_staff.employee_id). */
 export async function selfCheckInOut(eventStaffId: string, field: "checked_in_at" | "checked_out_at") {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const {
     data: { user },
@@ -758,6 +773,7 @@ export async function selfCheckInOut(eventStaffId: string, field: "checked_in_at
 
 /* Staff request a correction to their recorded times — admins approve on /payroll. */
 export async function requestTimesheetChange(eventStaffId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const {
     data: { user },
@@ -779,6 +795,7 @@ export async function requestTimesheetChange(eventStaffId: string, formData: For
 }
 
 export async function addEventEquipment(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const ref = clean(formData.get("equipment_ref")); // "item:<id>" or "system:<id>"
   if (!ref) return;
@@ -795,6 +812,7 @@ export async function addEventEquipment(eventId: string, formData: FormData) {
 }
 
 export async function removeEventEquipment(eventId: string, rowId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_equipment").delete().eq("id", rowId);
   if (error) throw new Error(error.message);
@@ -802,6 +820,7 @@ export async function removeEventEquipment(eventId: string, rowId: string) {
 }
 
 export async function toggleEquipmentPacked(eventId: string, rowId: string, packed: boolean) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_equipment").update({ packed }).eq("id", rowId);
   if (error) throw new Error(error.message);
@@ -813,6 +832,7 @@ export async function markEquipment(
   rowId: string,
   field: "checked_out_at" | "checked_in_at"
 ) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_equipment")
@@ -823,6 +843,7 @@ export async function markEquipment(
 }
 
 export async function updateEquipmentNotes(eventId: string, rowId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_equipment")
@@ -833,6 +854,7 @@ export async function updateEquipmentNotes(eventId: string, rowId: string, formD
 }
 
 export async function addLogisticsNote(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
@@ -847,6 +869,7 @@ export async function addLogisticsNote(eventId: string, formData: FormData) {
 }
 
 export async function addEventVendor(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const vendorId = clean(formData.get("vendor_id"));
   if (!vendorId) return;
@@ -861,6 +884,7 @@ export async function addEventVendor(eventId: string, formData: FormData) {
 }
 
 export async function removeEventVendor(eventId: string, eventVendorId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_vendors").delete().eq("id", eventVendorId);
   if (error) throw new Error(error.message);
@@ -868,6 +892,7 @@ export async function removeEventVendor(eventId: string, eventVendorId: string) 
 }
 
 export async function updateStaffDetails(eventId: string, staffId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_staff")
@@ -884,6 +909,7 @@ export async function updateStaffDetails(eventId: string, staffId: string, formD
 }
 
 export async function toggleStaffPortal(eventId: string, staffId: string, visible: boolean) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_staff")
@@ -894,6 +920,7 @@ export async function toggleStaffPortal(eventId: string, staffId: string, visibl
 }
 
 export async function deleteEvent(eventId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   // hard delete is master_admin only — everyone else archives instead
   await requireTier(supabase, ["master_admin"]);
@@ -908,6 +935,7 @@ export async function deleteEvent(eventId: string) {
    the active Events list / dashboard. Also cancels any still-queued automated
    emails/SMS so nothing already in the outbox fires. */
 export async function archiveEvent(eventId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireTier(supabase, ["master_admin", "admin", "salesperson"]);
 
@@ -929,6 +957,7 @@ export async function archiveEvent(eventId: string) {
 }
 
 export async function unarchiveEvent(eventId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireTier(supabase, ["master_admin", "admin", "salesperson"]);
 
@@ -942,6 +971,7 @@ export async function unarchiveEvent(eventId: string) {
 }
 
 export async function addEventClient(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const clientId = clean(formData.get("client_id"));
   if (!clientId) return;
@@ -965,6 +995,7 @@ export async function addEventClient(eventId: string, formData: FormData) {
 }
 
 export async function createClientAndAttach(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const firstName = clean(formData.get("first_name"));
   if (!firstName) return;
@@ -997,6 +1028,7 @@ export async function createClientAndAttach(eventId: string, formData: FormData)
 }
 
 export async function removeEventClient(eventId: string, eventClientId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: links } = await supabase
     .from("event_clients")
@@ -1018,6 +1050,7 @@ export async function removeEventClient(eventId: string, eventClientId: string) 
 }
 
 export async function setPrimaryEventClient(eventId: string, eventClientId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: link } = await supabase
     .from("event_clients")
@@ -1032,6 +1065,7 @@ export async function setPrimaryEventClient(eventId: string, eventClientId: stri
 }
 
 export async function toggleContractHolder(eventId: string, eventClientId: string, value: boolean) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_clients").update({ is_contract_holder: value }).eq("id", eventClientId);
   if (error) throw new Error(error.message);
@@ -1039,6 +1073,7 @@ export async function toggleContractHolder(eventId: string, eventClientId: strin
 }
 
 export async function addClientNote(eventId: string, clientId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
@@ -1075,6 +1110,7 @@ async function assignAddonEquipment(
 }
 
 export async function addEventAddon(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const addonId = clean(formData.get("addon_id"));
   if (!addonId) return;
@@ -1098,6 +1134,7 @@ export async function addEventAddon(eventId: string, formData: FormData) {
 }
 
 export async function removeEventAddon(eventId: string, eventAddonId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_addons").delete().eq("id", eventAddonId);
   if (error) throw new Error(error.message);
@@ -1105,6 +1142,7 @@ export async function removeEventAddon(eventId: string, eventAddonId: string) {
 }
 
 export async function addExpense(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   let categoryId = clean(formData.get("category_id"));
   const newCategory = clean(formData.get("new_category"));
@@ -1131,6 +1169,7 @@ export async function addExpense(eventId: string, formData: FormData) {
 }
 
 export async function deleteExpense(eventId: string, expenseId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("expenses").delete().eq("id", expenseId);
   if (error) throw new Error(error.message);
@@ -1138,6 +1177,7 @@ export async function deleteExpense(eventId: string, expenseId: string) {
 }
 
 export async function addTrip(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   let vehicleId: string | null = null;
   const vehicleName = clean(formData.get("vehicle"));
@@ -1162,6 +1202,7 @@ export async function addTrip(eventId: string, formData: FormData) {
 }
 
 export async function deleteTrip(eventId: string, tripId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_trips").delete().eq("id", tripId);
   if (error) throw new Error(error.message);
@@ -1169,6 +1210,7 @@ export async function deleteTrip(eventId: string, tripId: string) {
 }
 
 export async function addEventNote(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
@@ -1183,6 +1225,7 @@ export async function addEventNote(eventId: string, formData: FormData) {
 }
 
 export async function addContractNote(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
@@ -1197,6 +1240,7 @@ export async function addContractNote(eventId: string, formData: FormData) {
 }
 
 export async function updateEventDetails(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("events")
@@ -1216,6 +1260,7 @@ export async function updateEventDetails(eventId: string, formData: FormData) {
 }
 
 export async function updateEventVenue(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   let venueId = clean(formData.get("venue_id"));
 
@@ -1259,6 +1304,7 @@ export async function updateEventVenue(eventId: string, formData: FormData) {
 }
 
 export async function updateEventLinks(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: event } = await supabase
     .from("events")
@@ -1290,6 +1336,7 @@ export async function setEventPlanningTemplate(eventId: string, formData: FormDa
 }
 
 export async function updateEventFinancials(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: before } = await supabase
     .from("events")
@@ -1322,6 +1369,7 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
 }
 
 export async function updateBookingInfo(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: before } = await supabase.from("events").select("status_id").eq("id", eventId).maybeSingle();
   const statusId = clean(formData.get("status_id"));
@@ -1343,6 +1391,7 @@ export async function updateBookingInfo(eventId: string, formData: FormData) {
 }
 
 export async function updateBookingDates(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("events")
@@ -1379,6 +1428,7 @@ export async function updateBookingDates(eventId: string, formData: FormData) {
 }
 
 export async function addCustomDateField(eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -12,6 +13,7 @@ function normalizeKey(v: FormDataEntryValue | null): string {
 }
 
 export async function addCustomTag(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const tag_key = normalizeKey(formData.get("tag_key"));
   if (!tag_key) throw new Error("Tag key is required.");
   const supabase = await createClient();
@@ -33,6 +35,7 @@ export async function addCustomTag(formData: FormData) {
 }
 
 export async function updateCustomTag(id: string, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("merge_tags")
@@ -51,6 +54,7 @@ export async function updateCustomTag(id: string, formData: FormData) {
 }
 
 export async function deleteCustomTag(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("merge_tags").delete().eq("id", id).eq("is_builtin", false);
   if (error) throw new Error(error.message);

@@ -38,6 +38,7 @@ export async function resetClientPassword(id: string): Promise<{ ok: boolean; er
 }
 
 async function payload(supabase: Awaited<ReturnType<typeof createClient>>, formData: FormData) {
+  await requireModule("clients", "edit", { mode: "throw" });
   // phone auto-formatting (612-555-1212) — General settings toggle
   const { data: cs } = await supabase
     .from("company_settings")
@@ -72,6 +73,7 @@ function normalizeHandle(v: string | null): string | null {
 }
 
 export async function createClientRecord(formData: FormData) {
+  await requireModule("clients", "edit", { mode: "throw" });
   const supabase = await createClient();
   // dedupe by email — if this email already exists, open that client instead
   const { id } = await findOrCreateClient(supabase, await payload(supabase, formData));
@@ -80,6 +82,7 @@ export async function createClientRecord(formData: FormData) {
 }
 
 export async function updateClientRecord(id: string, formData: FormData) {
+  await requireModule("clients", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("clients")

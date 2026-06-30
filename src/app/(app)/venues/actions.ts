@@ -48,6 +48,7 @@ export async function deleteVenues(
   const deletable = ids.filter((id) => !blocked.has(id));
 
   if (blocked.size) {
+  await requireModule("venues", "edit", { mode: "throw" });
     const { data: vs } = await supabase.from("venues").select("id, name").in("id", [...blocked]);
     (vs ?? []).forEach((v) => skipped.push({ id: v.id, name: v.name, events: counts[v.id] ?? 0 }));
   }
@@ -86,6 +87,7 @@ export async function mergeVenues(
   // 1) reassign all references loser -> survivor (this includes venue_djep_map,
   //    which is how the survivor inherits the losers' DJEP ids).
   for (const table of ["events", "inquiry_sources", "venue_contacts", "venue_rooms", "venue_djep_map"]) {
+  await requireModule("venues", "edit", { mode: "throw" });
     const { error } = await supabase.from(table).update({ venue_id: survivorId }).in("venue_id", losers);
     if (error) throw new Error(`${table}: ${error.message}`);
   }
@@ -107,6 +109,7 @@ export async function mergeVenues(
 }
 
 export async function createVenueCategory(formData: FormData) {
+  await requireModule("venues", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -116,6 +119,7 @@ export async function createVenueCategory(formData: FormData) {
 }
 
 export async function toggleVenueCategory(id: string, isActive: boolean) {
+  await requireModule("venues", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("venue_categories").update({ is_active: isActive }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -123,6 +127,7 @@ export async function toggleVenueCategory(id: string, isActive: boolean) {
 }
 
 export async function updateVenue(id: string, formData: FormData) {
+  await requireModule("venues", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("venues")
@@ -154,6 +159,7 @@ export async function updateVenue(id: string, formData: FormData) {
 }
 
 export async function addVenueContact(venueId: string, formData: FormData) {
+  await requireModule("venues", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -169,6 +175,7 @@ export async function addVenueContact(venueId: string, formData: FormData) {
 }
 
 export async function removeVenueContact(venueId: string, contactId: string) {
+  await requireModule("venues", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("venue_contacts").delete().eq("id", contactId);
   if (error) throw new Error(error.message);
@@ -176,6 +183,7 @@ export async function removeVenueContact(venueId: string, contactId: string) {
 }
 
 export async function addVenueRoom(venueId: string, formData: FormData) {
+  await requireModule("venues", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -185,6 +193,7 @@ export async function addVenueRoom(venueId: string, formData: FormData) {
 }
 
 export async function createVenue(formData: FormData) {
+  await requireModule("venues", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("venues")

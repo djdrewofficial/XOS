@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -9,6 +10,7 @@ function clean(v: FormDataEntryValue | null): string | null {
 }
 
 export async function saveGeneralSettings(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const notifTypes = formData.getAll("notif_types").map(String).filter(Boolean);
   const { error } = await supabase

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { processOutbox, sendTestEmail } from "@/lib/mailgun";
 
@@ -10,6 +11,7 @@ function clean(v: FormDataEntryValue | null): string | null {
 }
 
 export async function createTemplate(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("email_templates").insert({
     group_name: clean(formData.get("group_name")) ?? "GENERAL",
@@ -22,6 +24,7 @@ export async function createTemplate(formData: FormData) {
 }
 
 export async function updateTemplate(id: string, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("email_templates")
@@ -37,6 +40,7 @@ export async function updateTemplate(id: string, formData: FormData) {
 }
 
 export async function deleteTemplate(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("email_templates").update({ is_active: false }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -44,11 +48,13 @@ export async function deleteTemplate(id: string) {
 }
 
 export async function sendQueuedEmails() {
+  await requireModule("settings", "edit", { mode: "throw" });
   await processOutbox();
   revalidatePath("/settings/email");
 }
 
 export async function runScheduledNow() {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.rpc("run_scheduled_emails");
   if (error) throw new Error(error.message);
@@ -56,6 +62,7 @@ export async function runScheduledNow() {
 }
 
 export async function saveCompanySettings(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("company_settings")
@@ -72,6 +79,7 @@ export async function saveCompanySettings(formData: FormData) {
 }
 
 export async function sendTest(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const to = clean(formData.get("test_to"));
   if (!to) return;
   await sendTestEmail(to);
@@ -79,6 +87,7 @@ export async function sendTest(formData: FormData) {
 }
 
 export async function saveSendingLimits(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("company_settings")
@@ -93,6 +102,7 @@ export async function saveSendingLimits(formData: FormData) {
 }
 
 export async function addBlackoutDate(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const day = clean(formData.get("day"));
   if (!day) return;
   const supabase = await createClient();
@@ -105,6 +115,7 @@ export async function addBlackoutDate(formData: FormData) {
 }
 
 export async function removeBlackoutDate(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("email_blackout_dates").delete().eq("id", id);
   if (error) throw new Error(error.message);

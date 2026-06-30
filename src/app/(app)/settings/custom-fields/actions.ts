@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -9,6 +10,7 @@ function clean(v: FormDataEntryValue | null): string | null {
 }
 
 export async function createClientRole(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -19,6 +21,7 @@ export async function createClientRole(formData: FormData) {
 }
 
 export async function updateClientRole(id: string, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("client_role_definitions")
@@ -33,6 +36,7 @@ export async function updateClientRole(id: string, formData: FormData) {
 }
 
 export async function createEventType(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;
@@ -42,6 +46,7 @@ export async function createEventType(formData: FormData) {
 }
 
 export async function updateEventType(id: string, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_types")

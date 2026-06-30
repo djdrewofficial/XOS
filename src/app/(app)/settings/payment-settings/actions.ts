@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 function lines(v: FormDataEntryValue | null): string[] {
@@ -17,6 +18,7 @@ function clean(v: FormDataEntryValue | null): string | null {
 }
 
 export async function savePaymentSettings(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const prefill = [
     clean(formData.get("prefill_0")) ?? "",

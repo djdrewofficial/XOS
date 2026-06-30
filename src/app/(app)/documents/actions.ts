@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizeBlocks, docTypeClientLabel, type DocBlock } from "@/lib/documentBlocks";
@@ -40,6 +41,7 @@ function blocksFromForm(formData: FormData): DocBlock[] {
 /* ---------------- templates ---------------- */
 
 export async function createTemplate(formData: FormData) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("document_templates")
@@ -62,6 +64,7 @@ export async function createTemplate(formData: FormData) {
 }
 
 export async function updateTemplate(id: string, formData: FormData) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("document_templates")
@@ -80,6 +83,7 @@ export async function updateTemplate(id: string, formData: FormData) {
 }
 
 export async function duplicateTemplate(id: string) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: t, error } = await supabase.from("document_templates").select("*").eq("id", id).single();
   if (error || !t) throw new Error(error?.message ?? "Template not found");
@@ -94,6 +98,7 @@ export async function duplicateTemplate(id: string) {
 }
 
 export async function deleteTemplate(id: string) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("document_templates")
@@ -106,6 +111,7 @@ export async function deleteTemplate(id: string) {
 /* ---------------- generated documents ---------------- */
 
 export async function generateDocument(formData: FormData) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const templateId = clean(formData.get("template_id"));
   const eventId = clean(formData.get("event_id"));
   if (!templateId || !eventId) return;
@@ -118,6 +124,7 @@ export async function generateDocument(formData: FormData) {
 }
 
 export async function updateDocumentBlocks(id: string, formData: FormData) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   // one-off edits: text blocks editable; smart blocks keep their frozen html
   const { data: doc } = await supabase.from("documents").select("blocks, signed_at").eq("id", id).single();
@@ -139,6 +146,7 @@ export async function updateDocumentBlocks(id: string, formData: FormData) {
 }
 
 export async function regenerateDocument(id: string) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: doc } = await supabase
     .from("documents")
@@ -165,6 +173,7 @@ export async function regenerateDocument(id: string) {
 }
 
 export async function setDocumentStatus(id: string, status: string) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("documents")
@@ -177,6 +186,7 @@ export async function setDocumentStatus(id: string, status: string) {
 
 /** Emails the client their signing link and marks the document as sent. */
 export async function sendForSignature(id: string) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const [{ data: doc }, { data: cs }] = await Promise.all([
     supabase
@@ -236,6 +246,7 @@ export async function sendForSignature(id: string) {
 }
 
 export async function setDocumentVisibility(id: string, eventId: string, visible: boolean) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("documents")
@@ -247,6 +258,7 @@ export async function setDocumentVisibility(id: string, eventId: string, visible
 }
 
 export async function deleteDocument(id: string) {
+  await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { data: doc } = await supabase.from("documents").select("signed_at").eq("id", id).single();
   if (doc?.signed_at) throw new Error("Signed documents can't be deleted — void them instead.");

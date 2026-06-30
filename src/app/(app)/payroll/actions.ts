@@ -25,6 +25,7 @@ async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>):
 }
 
 export async function savePayrollSettings(formData: FormData) {
+  await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireAdmin(supabase);
   await supabase
@@ -38,6 +39,7 @@ export async function savePayrollSettings(formData: FormData) {
    computed staff cost. Idempotent: updates existing auto rows, inserts new ones;
    never deletes (would orphan logged payments). */
 export async function generatePayables(payday: string, periodStart: string, periodEnd: string) {
+  await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireAdmin(supabase);
 
@@ -98,6 +100,7 @@ export async function generatePayables(payday: string, periodStart: string, peri
 }
 
 export async function logPayment(payableId: string, formData: FormData) {
+  await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireAdmin(supabase);
   const amount = num(formData.get("amount"));
@@ -113,6 +116,7 @@ export async function logPayment(payableId: string, formData: FormData) {
 }
 
 export async function addManualPayable(payday: string, formData: FormData) {
+  await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireAdmin(supabase);
   const payee_kind = (clean(formData.get("payee_kind")) ?? "vendor") as "employee" | "vendor" | "contractor";
@@ -131,6 +135,7 @@ export async function addManualPayable(payday: string, formData: FormData) {
 }
 
 export async function removePayable(payableId: string) {
+  await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireAdmin(supabase);
   await supabase.from("payroll_payables").delete().eq("id", payableId);
@@ -138,6 +143,7 @@ export async function removePayable(payableId: string) {
 }
 
 export async function approveTimesheetChange(id: string) {
+  await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   const reviewer = await requireAdmin(supabase);
   const { data: req } = await supabase.from("timesheet_change_requests").select("*").eq("id", id).maybeSingle();
@@ -154,6 +160,7 @@ export async function approveTimesheetChange(id: string) {
 }
 
 export async function denyTimesheetChange(id: string) {
+  await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   const reviewer = await requireAdmin(supabase);
   await supabase

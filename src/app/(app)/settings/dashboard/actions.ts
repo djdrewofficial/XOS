@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizeLayout, type Role } from "@/lib/dashboardWidgets";
 
 export async function saveDashboardLayout(role: Role, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   let parsed: unknown = [];
   try {
     parsed = JSON.parse((formData.get("widgets") ?? "[]").toString());

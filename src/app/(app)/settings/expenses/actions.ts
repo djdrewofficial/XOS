@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -18,6 +19,7 @@ function lines(v: FormDataEntryValue | null): string[] {
 
 /** Payees list (expense_settings) + expense payment methods (lives in payment_settings too). */
 export async function saveExpenseLists(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("expense_settings")
@@ -36,6 +38,7 @@ export async function saveExpenseLists(formData: FormData) {
 }
 
 export async function addExpenseCategory(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const name = clean(formData.get("name"));
   if (!name) return;
   const supabase = await createClient();
@@ -47,6 +50,7 @@ export async function addExpenseCategory(formData: FormData) {
 }
 
 export async function toggleExpenseCategory(id: string, isActive: boolean) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("expense_categories").update({ is_active: isActive }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -54,6 +58,7 @@ export async function toggleExpenseCategory(id: string, isActive: boolean) {
 }
 
 export async function saveAutoMileage(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const rate = parseFloat(clean(formData.get("mileage_rate")) ?? "0.70");
   const { error } = await supabase
@@ -72,6 +77,7 @@ export async function saveAutoMileage(formData: FormData) {
 
 /** Per-venue mileage toggle + one-way distance — also editable on the venue page. */
 export async function saveVenueMileage(venueId: string, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const dist = clean(formData.get("distance_miles"));
   const { error } = await supabase
@@ -87,6 +93,7 @@ export async function saveVenueMileage(venueId: string, formData: FormData) {
 }
 
 export async function runAutoMileageNow() {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.rpc("run_auto_mileage");
   if (error) throw new Error(error.message);

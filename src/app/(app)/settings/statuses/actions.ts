@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -26,6 +27,7 @@ function statusPayload(formData: FormData) {
 }
 
 export async function createStatus(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_statuses").insert(statusPayload(formData));
   if (error) throw new Error(error.message);
@@ -33,6 +35,7 @@ export async function createStatus(formData: FormData) {
 }
 
 export async function updateStatus(id: string, formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("event_statuses").update(statusPayload(formData)).eq("id", id);
   if (error) throw new Error(error.message);
@@ -41,6 +44,7 @@ export async function updateStatus(id: string, formData: FormData) {
 }
 
 export async function deleteStatus(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   // refuse if any event or daily action references it
   const [{ count: evCount }, { count: daFrom }, { count: daTo }] = await Promise.all([
@@ -57,6 +61,7 @@ export async function deleteStatus(id: string) {
 }
 
 export async function createDailyAction(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const from = clean(formData.get("from_status_id"));
   const to = clean(formData.get("to_status_id"));
@@ -71,6 +76,7 @@ export async function createDailyAction(formData: FormData) {
 }
 
 export async function toggleDailyAction(id: string, isActive: boolean) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase
     .from("daily_status_actions")
@@ -81,6 +87,7 @@ export async function toggleDailyAction(id: string, isActive: boolean) {
 }
 
 export async function deleteDailyAction(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.from("daily_status_actions").delete().eq("id", id);
   if (error) throw new Error(error.message);
@@ -88,6 +95,7 @@ export async function deleteDailyAction(id: string) {
 }
 
 export async function runDailyActionsNow() {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
   const { error } = await supabase.rpc("run_daily_status_actions");
   if (error) throw new Error(error.message);

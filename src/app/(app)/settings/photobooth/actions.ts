@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getMe } from "@/lib/auth";
+import { getMe, requireModule } from "@/lib/auth";
 
 /* Photo Booth backdrop gallery — staff curate the swipeable backdrops the couple
    picks from in the planner. Images live in the public `photobooth-backdrops`
@@ -21,6 +21,7 @@ async function requireStaff() {
 const rev = () => revalidatePath("/settings/photobooth");
 
 export async function uploadBackdrop(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   await requireStaff();
   const file = formData.get("photo") as File | null;
   const name = (formData.get("name") ?? "").toString().trim() || "Backdrop";
@@ -56,6 +57,7 @@ export async function uploadBackdrop(formData: FormData) {
 }
 
 export async function updateBackdrop(id: string, patch: { name?: string; category?: string | null }) {
+  await requireModule("settings", "edit", { mode: "throw" });
   await requireStaff();
   const admin = createAdminClient();
   const { error } = await admin.from("photobooth_backdrops").update(patch).eq("id", id);
@@ -65,6 +67,7 @@ export async function updateBackdrop(id: string, patch: { name?: string; categor
 }
 
 export async function toggleBackdrop(id: string, isActive: boolean) {
+  await requireModule("settings", "edit", { mode: "throw" });
   await requireStaff();
   const admin = createAdminClient();
   const { error } = await admin.from("photobooth_backdrops").update({ is_active: isActive }).eq("id", id);
@@ -73,6 +76,7 @@ export async function toggleBackdrop(id: string, isActive: boolean) {
 }
 
 export async function deleteBackdrop(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   await requireStaff();
   const admin = createAdminClient();
   const { data: row } = await admin.from("photobooth_backdrops").select("image_path").eq("id", id).maybeSingle();
@@ -83,6 +87,7 @@ export async function deleteBackdrop(id: string) {
 }
 
 export async function reorderBackdrops(orderedIds: string[]) {
+  await requireModule("settings", "edit", { mode: "throw" });
   await requireStaff();
   const admin = createAdminClient();
   await Promise.all(

@@ -33,6 +33,7 @@ async function save(patch: Record<string, unknown>) {
 }
 
 export async function saveFeatures(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   await save({
     feat_time_off: formData.get("feat_time_off") === "on",
     feat_confirm_events: formData.get("feat_confirm_events") === "on",
@@ -54,6 +55,7 @@ export async function saveFeatures(formData: FormData) {
 }
 
 export async function saveAccess(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const ids = formData.getAll("access_status_ids").map(String).filter(Boolean);
   await save({
     access_status_ids: ids.length > 0 ? ids : null,
@@ -63,6 +65,7 @@ export async function saveAccess(formData: FormData) {
 }
 
 export async function savePermissions(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const sections: Record<string, boolean> = {};
   for (const [key] of PERM_SECTIONS) sections[key] = formData.get(`sec_${key}`) === "on";
 
@@ -89,6 +92,7 @@ export async function savePermissions(formData: FormData) {
 }
 
 export async function saveNotifications(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const excludeEmployees = formData.getAll("notif_exclude_employee_ids").map(String).filter(Boolean);
   const excludeStatuses = formData.getAll("notif_exclude_status_ids").map(String).filter(Boolean);
   await save({
@@ -108,6 +112,7 @@ export async function saveNotifications(formData: FormData) {
 }
 
 export async function savePayroll(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const fields = formData.getAll("payroll_export_fields").map(String).filter(Boolean);
   await save({
     payroll_sort_day: clean(formData.get("payroll_sort_day")) ?? "event_type",
@@ -120,6 +125,7 @@ export async function savePayroll(formData: FormData) {
 }
 
 export async function saveAvailabilitySort(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   await save({
     availability_sort: clean(formData.get("availability_sort")) ?? "display_order",
   });

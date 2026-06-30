@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getMe } from "@/lib/auth";
+import { getMe, requireModule } from "@/lib/auth";
 
 /* Planning template builder — staff-only (planning_template_* tables have
    staff-manage RLS, so the user client works; uploads use admin). */
@@ -24,6 +24,7 @@ const rev = (id?: string) => {
 // ───────────────────────── Templates ─────────────────────────
 
 export async function createTemplate(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const name = (formData.get("name") ?? "").toString().trim() || "New Template";
   const eventTypeId = (formData.get("event_type_id") ?? "").toString().trim() || null;
@@ -40,6 +41,7 @@ export async function updateTemplate(
   id: string,
   patch: { name?: string; event_type_id?: string | null },
 ) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const { error } = await supabase.from("planning_templates").update(patch).eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -48,6 +50,7 @@ export async function updateTemplate(
 }
 
 export async function setDefaultTemplate(id: string, isDefault: boolean) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   if (isDefault) await supabase.from("planning_templates").update({ is_default: false }).neq("id", id);
   const { error } = await supabase.from("planning_templates").update({ is_default: isDefault }).eq("id", id);
@@ -56,6 +59,7 @@ export async function setDefaultTemplate(id: string, isDefault: boolean) {
 }
 
 export async function deleteTemplate(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const { error } = await supabase.from("planning_templates").delete().eq("id", id);
   if (error) throw new Error(error.message);
@@ -64,6 +68,7 @@ export async function deleteTemplate(id: string) {
 }
 
 export async function duplicateTemplate(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const admin = createAdminClient();
   const { data: tpl } = await admin.from("planning_templates").select("*").eq("id", id).single();
@@ -126,6 +131,7 @@ export async function addTemplateSection(
   templateId: string,
   input?: { title?: string; icon?: string; section_type?: "timeline" | "headline" },
 ) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const { data: last } = await supabase
     .from("planning_template_sections")
@@ -148,6 +154,7 @@ export async function addTemplateSection(
 }
 
 export async function updateTemplateSection(templateId: string, sectionId: string, patch: TSectionPatch) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const { error } = await supabase.from("planning_template_sections").update(patch).eq("id", sectionId);
   if (error) return { ok: false, error: error.message };
@@ -156,6 +163,7 @@ export async function updateTemplateSection(templateId: string, sectionId: strin
 }
 
 export async function deleteTemplateSection(templateId: string, sectionId: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const { error } = await supabase.from("planning_template_sections").delete().eq("id", sectionId);
   if (error) throw new Error(error.message);
@@ -163,6 +171,7 @@ export async function deleteTemplateSection(templateId: string, sectionId: strin
 }
 
 export async function reorderTemplateSections(templateId: string, orderedIds: string[]) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   await Promise.all(
     orderedIds.map((id, i) => supabase.from("planning_template_sections").update({ sort_order: i }).eq("id", id)),
@@ -179,6 +188,7 @@ export async function addTemplateQuestion(
   sectionId: string,
   q: { prompt: string; answer_type: string; options?: QOption[]; help_text?: string; required?: boolean; condition_question_id?: string | null; condition_values?: string[] },
 ) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const { data: last } = await supabase
     .from("planning_template_questions")
@@ -208,6 +218,7 @@ export async function updateTemplateQuestion(
   questionId: string,
   patch: { prompt?: string; options?: QOption[]; required?: boolean; help_text?: string | null; condition_question_id?: string | null; condition_values?: string[] },
 ) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const { error } = await supabase.from("planning_template_questions").update(patch).eq("id", questionId);
   if (error) return { ok: false, error: error.message };
@@ -216,6 +227,7 @@ export async function updateTemplateQuestion(
 }
 
 export async function deleteTemplateQuestion(templateId: string, questionId: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await staffClient();
   const { error } = await supabase.from("planning_template_questions").delete().eq("id", questionId);
   if (error) throw new Error(error.message);
@@ -226,6 +238,7 @@ export async function deleteTemplateQuestion(templateId: string, questionId: str
     bucket and return its public URL. The client then patches the question's
     options with the returned URL. */
 export async function uploadOptionImage(formData: FormData): Promise<{ ok: boolean; url?: string; error?: string }> {
+  await requireModule("settings", "edit", { mode: "throw" });
   await staffClient();
   const file = formData.get("photo") as File | null;
   if (!file || file.size === 0) return { ok: false, error: "No file" };
