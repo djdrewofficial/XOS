@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import SaveButton from "@/components/SaveButton";
-import { sendQueuedEmails, saveCompanySettings, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
+import { sendQueuedEmails, saveCompanySettings, saveEmailSignature, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
 import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
 import { templateReviewReasons } from "@/lib/emailTemplateReview";
 import Tabs from "@/components/Tabs";
+import RichTextEditor from "@/components/RichTextEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -194,6 +195,20 @@ export default async function EmailPage() {
             </SaveButton>
           </form>
         </div>
+      </div>
+
+      <div>
+        <h2 className="card-title">Email Signature</h2>
+        <form action={saveEmailSignature} className="card space-y-3 p-5">
+          <p className="text-xs text-zinc-500">
+            Your reusable email sign-off. It appears anywhere a template body includes the{" "}
+            <code>&lt;company_email_signature&gt;</code> merge tag — drop that tag in wherever you want the signature,
+            then edit it once here. Supports links and formatting; you can use merge tags like{" "}
+            <code>&lt;company_name&gt;</code> inside it too.
+          </p>
+          <RichTextEditor name="email_signature_html" defaultValue={company?.email_signature_html ?? ""} />
+          <SaveButton>Save Signature</SaveButton>
+        </form>
       </div>
 
       <div>

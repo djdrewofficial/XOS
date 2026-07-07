@@ -6,7 +6,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { TextAlign } from "@tiptap/extension-text-align";
 import { Placeholder } from "@tiptap/extension-placeholder";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 export const MERGE_TAGS: { group: string; tags: string[] }[] = [
   { group: "Client", tags: ["<first_name>", "<last_name>", "<client_name>", "<client_organization>", "<client_email>", "<client_cell>", "<client_address>", "<authorized_rep_name>", "<authorized_rep_title>", "<authorized_rep_email>", "<authorized_rep_phone>"] },
@@ -119,24 +119,7 @@ export default function RichTextEditor({
         )}
 
         <span className="ml-auto" />
-        <select
-          onChange={(e) => {
-            if (e.target.value) insertTag(e.target.value);
-            e.target.value = "";
-          }}
-          defaultValue=""
-          className="h-8 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700 dark:border-white/10 dark:bg-white/[0.06] dark:text-zinc-200"
-          title="Insert a merge tag"
-        >
-          <option value="">+ Merge Tag</option>
-          {mergeTagGroups.map((g) => (
-            <optgroup key={g.group} label={g.group}>
-              {g.tags.map((tag) => (
-                <option key={tag} value={tag}>{tag}</option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        <MergeTagPicker groups={mergeTagGroups} onPick={insertTag} />
       </div>
 
       {source ? (
@@ -149,6 +132,114 @@ export default function RichTextEditor({
         />
       ) : (
         <EditorContent editor={editor} />
+      )}
+    </div>
+  );
+}
+
+/** Searchable "+ Merge Tag" dropdown: type to filter, click or Enter to insert. */
+function MergeTagPicker({
+  groups,
+  onPick,
+}: {
+  groups: { group: string; tags: string[] }[];
+  onPick: (tag: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Close when clicking outside the picker.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  // Focus the search box as soon as the panel opens.
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = groups
+    .map((g) => ({
+      group: g.group,
+      // A whole group shows when its name matches; otherwise filter tag-by-tag.
+      tags: q
+        ? g.tags.filter((t) => t.toLowerCase().includes(q) || g.group.toLowerCase().includes(q))
+        : g.tags,
+    }))
+    .filter((g) => g.tags.length > 0);
+  const firstMatch = filtered[0]?.tags[0];
+
+  const pick = (tag: string) => {
+    onPick(tag);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="h-8 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-white/10 dark:bg-white/[0.06] dark:text-zinc-200 dark:hover:bg-white/10"
+        title="Insert a merge tag"
+      >
+        + Merge Tag ▾
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-64 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900">
+          <div className="border-b border-zinc-200 p-2 dark:border-white/10">
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setOpen(false);
+                  setQuery("");
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (firstMatch) pick(firstMatch);
+                }
+              }}
+              placeholder="Search merge tags…"
+              className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-brand dark:border-white/10 dark:bg-white/[0.06] dark:text-zinc-100"
+            />
+          </div>
+          <div className="max-h-72 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-center text-xs text-zinc-400">
+                No tags match “{query}”.
+              </div>
+            ) : (
+              filtered.map((g) => (
+                <div key={g.group} className="px-1 py-0.5">
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                    {g.group}
+                  </div>
+                  {g.tags.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => pick(tag)}
+                      className="block w-full rounded px-2 py-1 text-left text-xs text-brand hover:bg-brand/10 dark:text-brand-lighter"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

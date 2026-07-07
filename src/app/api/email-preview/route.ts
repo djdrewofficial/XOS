@@ -23,9 +23,16 @@ const SAMPLE: Record<string, string> = {
   overtime_rate: "$150.00", current_date: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
 };
 
-function applySample(text: string, companyName: string): string {
+function applySample(text: string, companyName: string, signature = ""): string {
   let out = (text || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-  const map: Record<string, string> = { ...SAMPLE, company_name: companyName };
+  // Signature keys go before company_name so a <company_name> *inside* the
+  // signature still resolves on the same pass.
+  const map: Record<string, string> = {
+    ...SAMPLE,
+    company_email_signature: signature,
+    email_signature: signature,
+    company_name: companyName,
+  };
   for (const [k, v] of Object.entries(map)) out = out.split(`<${k}>`).join(v);
   return out;
 }
@@ -52,10 +59,11 @@ export async function POST(req: NextRequest) {
 
   const { body_html = "", subject = "", branded = true, sms = false } = await req.json();
   const { data: company } = await supabase
-    .from("company_settings").select("company_name").eq("id", true).maybeSingle();
+    .from("company_settings").select("company_name, email_signature_html").eq("id", true).maybeSingle();
   const companyName = company?.company_name ?? "Xpress Entertainment";
+  const signature = company?.email_signature_html ?? "";
 
-  const body = applySample(body_html, companyName);
+  const body = applySample(body_html, companyName, signature);
   let html: string;
   if (sms) {
     html = `<div style="background:#f4f2fa;padding:24px;font-family:ui-sans-serif,system-ui,Arial,sans-serif;">

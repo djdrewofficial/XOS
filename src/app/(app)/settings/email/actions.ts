@@ -78,6 +78,22 @@ export async function saveCompanySettings(formData: FormData) {
   revalidatePath("/settings/email");
 }
 
+export async function saveEmailSignature(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const raw = (formData.get("email_signature_html") ?? "").toString().trim();
+  // An empty editor submits blank or a lone empty paragraph — store that as null
+  // so the <company_email_signature> tag resolves to nothing rather than "<p></p>".
+  const stripped = raw.replace(/<p>\s*<\/p>/gi, "").replace(/<br\s*\/?>/gi, "").trim();
+  const value = stripped === "" ? null : raw;
+  const { error } = await supabase
+    .from("company_settings")
+    .update({ email_signature_html: value, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+}
+
 export async function sendTest(formData: FormData) {
   await requireModule("settings", "edit", { mode: "throw" });
   const to = clean(formData.get("test_to"));
