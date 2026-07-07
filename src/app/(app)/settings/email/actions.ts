@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { processOutbox, sendTestEmail } from "@/lib/mailgun";
+import { normalizeSignatureConfig, renderSignatureHtml } from "@/lib/emailSignature";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -81,14 +82,19 @@ export async function saveCompanySettings(formData: FormData) {
 export async function saveEmailSignature(formData: FormData) {
   await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();
-  const raw = (formData.get("email_signature_html") ?? "").toString().trim();
-  // An empty editor submits blank or a lone empty paragraph — store that as null
-  // so the <company_email_signature> tag resolves to nothing rather than "<p></p>".
-  const stripped = raw.replace(/<p>\s*<\/p>/gi, "").replace(/<br\s*\/?>/gi, "").trim();
-  const value = stripped === "" ? null : raw;
+  let parsed: unknown = {};
+  try {
+    parsed = JSON.parse((formData.get("email_signature_config") ?? "{}").toString());
+  } catch {
+    /* fall back to defaults on malformed config */
+  }
+  // The builder edits the config; the send pipeline reads the generated HTML.
+  // Persist both so the UI reloads its toggles and emails get email-safe markup.
+  const config = normalizeSignatureConfig(parsed);
+  const html = renderSignatureHtml(config);
   const { error } = await supabase
     .from("company_settings")
-    .update({ email_signature_html: value, updated_at: new Date().toISOString() })
+    .update({ email_signature_config: config, email_signature_html: html, updated_at: new Date().toISOString() })
     .eq("id", true);
   if (error) throw new Error(error.message);
   revalidatePath("/settings/email");
