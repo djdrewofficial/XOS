@@ -81,6 +81,8 @@ function buildPayload(formData: FormData) {
     attach_mode: clean(formData.get("attach_mode")) ?? "esign_link",
     // OFF = plain email for deliverability (follow-ups)
     branded_shell: formData.get("branded_shell") === "on",
+    // Body authored as raw HTML (BeeFree/Mailchimp import) vs the rich editor.
+    is_raw_html: formData.get("is_raw_html") === "on",
   };
 }
 
@@ -118,6 +120,17 @@ export async function deleteTemplate(id: string) {
   const { error } = await supabase.from("email_templates").update({ is_active: false }).eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/settings/email");
+}
+
+// Same soft-delete as deleteTemplate, but returns to the list — used by the
+// Delete button inside a template's edit page (Settings tab).
+export async function deleteTemplateAndExit(id: string) {
+  await requireModule("settings", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const { error } = await supabase.from("email_templates").update({ is_active: false }).eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+  redirect("/settings/email");
 }
 
 export async function duplicateTemplate(id: string) {

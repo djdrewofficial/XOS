@@ -25,15 +25,22 @@ export default function RichTextEditor({
   name,
   defaultValue,
   tagGroups,
+  onChange,
 }: {
   name: string;
   defaultValue?: string;
   /** Merge-tag groups for the dropdown; falls back to the built-in list. */
   tagGroups?: { group: string; tags: string[] }[];
+  /** Notified whenever the HTML changes — lets a parent lift the content. */
+  onChange?: (html: string) => void;
 }) {
   const mergeTagGroups = tagGroups && tagGroups.length > 0 ? tagGroups : MERGE_TAGS;
   const [html, setHtml] = useState(defaultValue ?? "");
   const [source, setSource] = useState(false);
+  const emit = (h: string) => {
+    setHtml(h);
+    onChange?.(h);
+  };
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -51,7 +58,7 @@ export default function RichTextEditor({
           "prose prose-sm max-w-none min-h-[260px] px-4 py-3 focus:outline-none dark:prose-invert prose-p:my-2",
       },
     },
-    onUpdate: ({ editor }) => setHtml(editor.getHTML()),
+    onUpdate: ({ editor }) => emit(editor.getHTML()),
   });
 
   const insertTag = (tag: string) => {
@@ -125,7 +132,7 @@ export default function RichTextEditor({
       {source ? (
         <textarea
           value={html}
-          onChange={(e) => setHtml(e.target.value)}
+          onChange={(e) => emit(e.target.value)}
           rows={14}
           spellCheck={false}
           className="w-full resize-y bg-transparent px-4 py-3 font-mono text-xs text-zinc-800 focus:outline-none dark:text-zinc-200"

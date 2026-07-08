@@ -2,10 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { updateTemplate } from "../actions";
+import { updateTemplate, deleteTemplateAndExit } from "../actions";
 import Tabs from "@/components/Tabs";
 import SaveButton from "@/components/SaveButton";
-import RichTextEditor from "@/components/RichTextEditor";
+import BodyEditor from "@/components/BodyEditor";
+import DeleteTemplateButton from "@/components/DeleteTemplateButton";
+import { helpersForTemplate, type HelperRow } from "@/lib/templateUsage";
 import { Section, Row, Note, CheckBoxField, CheckGroup } from "@/components/SettingsForm";
 import { RadioChecklist, EnabledToggle } from "@/components/HelperEditorControls";
 import { templateReviewReasons } from "@/lib/emailTemplateReview";
@@ -68,7 +70,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     supabase.from("packages").select("id, name").eq("is_active", true).order("name"),
     supabase.from("addons").select("id, name").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name"),
-    supabase.from("booking_helpers").select("id, title").order("position"),
+    supabase.from("booking_helpers").select("id, title, actions, is_active").order("position"),
     supabase.from("vendor_categories").select("id, name").eq("is_active", true).order("name"),
     supabase.from("document_templates").select("id, name, doc_type").eq("is_active", true).order("name"),
     supabase.from("merge_tags").select("tag_key, group_name").eq("is_active", true).order("group_name").order("sort_order").order("tag_key"),
@@ -87,6 +89,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
 
   const isSms = !!tpl.is_sms;
   const reviewReasons = templateReviewReasons(tpl);
+  const usedInHelpers = helpersForTemplate((helpers ?? []) as HelperRow[], id);
 
   const statusItems = (statuses ?? []).map((s) => ({ id: s.id, name: s.name, color: s.color, text_color: s.text_color }));
   const typeItems = (eventTypes ?? []).map((t) => ({ id: t.id, name: t.name }));
@@ -142,7 +145,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
           </Row>
         )}
         <Row label="Body">
-          <RichTextEditor name="body_html" defaultValue={tpl.body_html ?? ""} tagGroups={tagGroups} />
+          <BodyEditor name="body_html" defaultValue={tpl.body_html ?? ""} defaultRaw={!!tpl.is_raw_html} tagGroups={tagGroups} />
         </Row>
       </Section>
     </div>
@@ -392,6 +395,43 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
           <CheckBoxField name="is_venue_template" label="Include" defaultChecked={tpl.is_venue_template} />
         </Row>
       </Section>
+
+      <Section title="Delete Template">
+        <Note>Removes this template from your active templates. Any scheduled sends using it will stop.</Note>
+        <DeleteTemplateButton action={deleteTemplateAndExit.bind(null, id)} name={tpl.display_name ?? tpl.name} />
+      </Section>
+    </div>
+  );
+
+  const usageTab = (
+    <div className="space-y-4">
+      <Section title="Booking Helpers That Send This Email">
+        {usedInHelpers.length === 0 ? (
+          <Note>Not used by any booking helper yet. Add a “Send Email” action to a helper to use this template.</Note>
+        ) : (
+          usedInHelpers.map((h) => (
+            <Link
+              key={h.id}
+              href={`/settings/helpers/${h.id}`}
+              className="flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+            >
+              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                {h.title}
+                {!h.isActive && (
+                  <span className="ml-2 rounded bg-zinc-400/20 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-500">Inactive</span>
+                )}
+              </span>
+              <span className="shrink-0 text-xs font-semibold text-brand dark:text-brand-lighter">Open →</span>
+            </Link>
+          ))
+        )}
+      </Section>
+
+      {tpl.schedule_enabled && (
+        <Section title="Automatic Scheduling">
+          <Note>This template also sends automatically on a schedule — see the Scheduling tab.</Note>
+        </Section>
+      )}
     </div>
   );
 
@@ -435,6 +475,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
             { id: "settings", label: "Settings", content: settingsTab },
             { id: "scheduling", label: "Scheduling", badge: tpl.schedule_enabled ? "ON" : undefined, content: schedulingTab },
             { id: "visibility", label: "Visibility", content: visibilityTab },
+            { id: "usage", label: "Where It's Used", badge: usedInHelpers.length || undefined, content: usageTab },
           ]}
         />
       </form>

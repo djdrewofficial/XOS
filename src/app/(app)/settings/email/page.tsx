@@ -4,6 +4,7 @@ import SaveButton from "@/components/SaveButton";
 import { sendQueuedEmails, saveCompanySettings, saveEmailSignature, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
 import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
 import { templateReviewReasons } from "@/lib/emailTemplateReview";
+import { mapTemplateHelperUsage, type HelperRow, type HelperRef } from "@/lib/templateUsage";
 import Tabs from "@/components/Tabs";
 import SignatureBuilder from "@/components/SignatureBuilder";
 
@@ -35,7 +36,20 @@ function ReviewBadge({ reasons }: { reasons: string[] }) {
   );
 }
 
-function TemplateGroups({ templates }: { templates: Tpl[] }) {
+function UsedInBadge({ helpers }: { helpers: HelperRef[] }) {
+  if (!helpers.length) return null;
+  const tip = helpers.map((h) => `• ${h.title}${h.isActive ? "" : " (inactive)"}`).join("\n");
+  return (
+    <span
+      title={tip}
+      className="ml-2 inline-flex items-center gap-1 rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand dark:text-brand-lighter"
+    >
+      Booking Helper{helpers.length > 1 ? ` ×${helpers.length}` : ""}
+    </span>
+  );
+}
+
+function TemplateGroups({ templates, usage }: { templates: Tpl[]; usage: Record<string, HelperRef[]> }) {
   const groups = [...new Set(templates.map((t) => t.group_name))];
   return (
     <>
@@ -51,6 +65,7 @@ function TemplateGroups({ templates }: { templates: Tpl[] }) {
                       {t.display_name ?? t.name}
                     </span>
                     <ReviewBadge reasons={templateReviewReasons(t)} />
+                    <UsedInBadge helpers={usage[t.id] ?? []} />
                     {t.schedule_enabled && (
                       <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400">
                         Scheduled {t.schedule_days}d {t.schedule_direction}
@@ -84,12 +99,15 @@ function TemplateGroups({ templates }: { templates: Tpl[] }) {
 
 export default async function EmailPage() {
   const supabase = await createClient();
-  const [{ data: templates }, { data: log }, { data: company }, { data: blackouts }] = await Promise.all([
+  const [{ data: templates }, { data: log }, { data: company }, { data: blackouts }, { data: helpers }] = await Promise.all([
     supabase.from("email_templates").select("*").eq("is_active", true).order("group_name").order("name"),
     supabase.from("email_log").select("*").order("created_at", { ascending: false }).limit(50),
     supabase.from("company_settings").select("*").eq("id", true).maybeSingle(),
     supabase.from("email_blackout_dates").select("*").order("day"),
+    supabase.from("booking_helpers").select("id, title, actions, is_active").order("position"),
   ]);
+
+  const helperUsage = mapTemplateHelperUsage((helpers ?? []) as HelperRow[]);
 
   const mailgunConfigured = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
   const region = (process.env.MAILGUN_REGION ?? "us").toUpperCase();
@@ -126,7 +144,7 @@ export default async function EmailPage() {
           </form>
         </div>
       </div>
-      <TemplateGroups templates={emailTemplates} />
+      <TemplateGroups templates={emailTemplates} usage={helperUsage} />
     </div>
   );
 
@@ -135,7 +153,7 @@ export default async function EmailPage() {
       <div className="card mb-3 border-sky-400/30 p-3 text-xs text-sky-800 dark:text-sky-200">
         Imported from DJEP. XOS does not send text messages yet — these are kept here so the copy and timing are ready when SMS sending is added.
       </div>
-      <TemplateGroups templates={smsTemplates} />
+      <TemplateGroups templates={smsTemplates} usage={helperUsage} />
     </div>
   );
 
