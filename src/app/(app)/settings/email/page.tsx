@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import SaveButton from "@/components/SaveButton";
-import { sendQueuedEmails, saveCompanySettings, saveEmailSignature, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
+import { sendQueuedEmails, saveCompanySettings, saveEmailSignature, saveSocialLinks, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
 import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
 import { templateReviewReasons } from "@/lib/emailTemplateReview";
 import { mapTemplateHelperUsage, type HelperRow, type HelperRef } from "@/lib/templateUsage";
@@ -225,6 +225,35 @@ export default async function EmailPage() {
           </p>
           <SignatureBuilder initial={company?.email_signature_config ?? undefined} />
           <SaveButton>Save Signature</SaveButton>
+        </form>
+      </div>
+
+      <div>
+        <h2 className="card-title">Social Links</h2>
+        <form action={saveSocialLinks} className="card space-y-3 p-5">
+          <p className="text-xs text-zinc-500">
+            Your social profile URLs. The email editor’s <strong>Social</strong> button drops in a row of self-hosted
+            icons (no external image hosting) linking to whichever of these you fill in.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label className={label}>Facebook</label>
+              <input name="facebook_url" defaultValue={company?.facebook_url ?? ""} placeholder="https://facebook.com/xpressdjsfl" className={input} />
+            </div>
+            <div>
+              <label className={label}>Instagram</label>
+              <input name="instagram_url" defaultValue={company?.instagram_url ?? ""} placeholder="https://instagram.com/xpressdjs" className={input} />
+            </div>
+            <div>
+              <label className={label}>TikTok</label>
+              <input name="tiktok_url" defaultValue={company?.tiktok_url ?? ""} placeholder="https://tiktok.com/@xpressdjs" className={input} />
+            </div>
+            <div>
+              <label className={label}>YouTube</label>
+              <input name="youtube_url" defaultValue={company?.youtube_url ?? ""} placeholder="https://youtube.com/@xpressdjs" className={input} />
+            </div>
+          </div>
+          <SaveButton>Save Social Links</SaveButton>
         </form>
       </div>
 

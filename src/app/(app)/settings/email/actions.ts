@@ -100,6 +100,23 @@ export async function saveEmailSignature(formData: FormData) {
   revalidatePath("/settings/email");
 }
 
+export async function saveSocialLinks(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("company_settings")
+    .update({
+      facebook_url: clean(formData.get("facebook_url")),
+      instagram_url: clean(formData.get("instagram_url")),
+      tiktok_url: clean(formData.get("tiktok_url")),
+      youtube_url: clean(formData.get("youtube_url")),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", true);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+}
+
 export async function sendTest(formData: FormData) {
   await requireModule("settings", "edit", { mode: "throw" });
   const to = clean(formData.get("test_to"));

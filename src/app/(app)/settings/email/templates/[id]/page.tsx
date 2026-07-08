@@ -76,6 +76,18 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     supabase.from("merge_tags").select("tag_key, group_name").eq("is_active", true).order("group_name").order("sort_order").order("tag_key"),
   ]);
 
+  const { data: company } = await supabase
+    .from("company_settings")
+    .select("facebook_url, instagram_url, tiktok_url, youtube_url")
+    .eq("id", true)
+    .maybeSingle();
+  const socialLinks = {
+    facebook: company?.facebook_url ?? "",
+    instagram: company?.instagram_url ?? "",
+    tiktok: company?.tiktok_url ?? "",
+    youtube: company?.youtube_url ?? "",
+  };
+
   // group registry tags for the editor's "+ Merge Tag" dropdown
   const tagGroupMap = new Map<string, string[]>();
   for (const t of (mergeTags ?? []) as { tag_key: string; group_name: string }[]) {
@@ -145,7 +157,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
           </Row>
         )}
         <Row label="Body">
-          <BodyEditor name="body_html" defaultValue={tpl.body_html ?? ""} defaultRaw={!!tpl.is_raw_html} tagGroups={tagGroups} />
+          <BodyEditor name="body_html" defaultValue={tpl.body_html ?? ""} defaultRaw={!!tpl.is_raw_html} tagGroups={tagGroups} socialLinks={socialLinks} />
         </Row>
       </Section>
     </div>

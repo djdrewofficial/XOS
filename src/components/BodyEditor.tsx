@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import RichTextEditor from "@/components/RichTextEditor";
+import RichTextEditor, { type SocialLinks } from "@/components/RichTextEditor";
 
 /* Email body field with two modes:
    - Rich text (default): the tiptap editor, for hand-written emails.
@@ -16,11 +16,13 @@ export default function BodyEditor({
   defaultValue,
   defaultRaw,
   tagGroups,
+  socialLinks,
 }: {
   name: string;
   defaultValue?: string;
   defaultRaw?: boolean;
   tagGroups?: { group: string; tags: string[] }[];
+  socialLinks?: SocialLinks;
 }) {
   const [raw, setRaw] = useState(!!defaultRaw);
   const [body, setBody] = useState(defaultValue ?? "");
@@ -64,7 +66,7 @@ export default function BodyEditor({
           className="w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2.5 font-mono text-xs leading-relaxed text-zinc-800 focus:outline-none focus:ring-1 focus:ring-brand dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-200"
         />
       ) : (
-        <RichTextEditor name={name} defaultValue={body} tagGroups={tagGroups} onChange={setBody} />
+        <RichTextEditor name={name} defaultValue={body} tagGroups={tagGroups} onChange={setBody} socialLinks={socialLinks} />
       )}
 
       {raw && (

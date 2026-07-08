@@ -7,6 +7,10 @@ import { Color } from "@tiptap/extension-color";
 import { TextAlign } from "@tiptap/extension-text-align";
 import { Placeholder } from "@tiptap/extension-placeholder";
 import { useState, useRef, useEffect } from "react";
+import { EmailButton } from "@/components/editor/EmailButton";
+import { SocialIcons } from "@/components/editor/SocialIcons";
+
+export type SocialLinks = { facebook?: string; instagram?: string; tiktok?: string; youtube?: string };
 
 export const MERGE_TAGS: { group: string; tags: string[] }[] = [
   { group: "Client", tags: ["<first_name>", "<last_name>", "<client_name>", "<client_organization>", "<client_email>", "<client_cell>", "<client_address>", "<authorized_rep_name>", "<authorized_rep_title>", "<authorized_rep_email>", "<authorized_rep_phone>"] },
@@ -26,6 +30,7 @@ export default function RichTextEditor({
   defaultValue,
   tagGroups,
   onChange,
+  socialLinks,
 }: {
   name: string;
   defaultValue?: string;
@@ -33,6 +38,8 @@ export default function RichTextEditor({
   tagGroups?: { group: string; tags: string[] }[];
   /** Notified whenever the HTML changes — lets a parent lift the content. */
   onChange?: (html: string) => void;
+  /** Saved social profile URLs used by the "Social" toolbar button. */
+  socialLinks?: SocialLinks;
 }) {
   const mergeTagGroups = tagGroups && tagGroups.length > 0 ? tagGroups : MERGE_TAGS;
   const [html, setHtml] = useState(defaultValue ?? "");
@@ -50,6 +57,8 @@ export default function RichTextEditor({
       Color,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Placeholder.configure({ placeholder: "Write your email… use Merge Tags to drop in client/event values." }),
+      EmailButton,
+      SocialIcons,
     ],
     content: defaultValue ?? "",
     editorProps: {
@@ -73,6 +82,25 @@ export default function RichTextEditor({
     if (url === null) return;
     if (url === "") editor.chain().focus().extendMarkRange("link").unsetLink().run();
     else editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+  };
+
+  const insertButton = () => {
+    if (!editor) return;
+    const text = window.prompt("Button text", "Book Now");
+    if (text === null) return;
+    const href = window.prompt("Button link (URL)", "https://");
+    if (!href) return;
+    editor.chain().focus().setEmailButton({ text: text || "Button", href, bg: "#4b328e" }).run();
+  };
+
+  const insertSocial = () => {
+    if (!editor) return;
+    const links = socialLinks ?? {};
+    if (!links.facebook && !links.instagram && !links.tiktok && !links.youtube) {
+      window.alert("Add your social profile links first in Settings → Email → Social Links.");
+      return;
+    }
+    editor.chain().focus().setSocialIcons(links).run();
   };
 
   const toggleSource = () => {
@@ -110,6 +138,8 @@ export default function RichTextEditor({
             <button type="button" onClick={() => editor.chain().focus().setTextAlign("right").run()} className={on(editor.isActive({ textAlign: "right" }))} title="Align right">➡</button>
             <span className="mx-1 h-5 w-px bg-zinc-300 dark:bg-white/10" />
             <button type="button" onClick={setLink} className={on(editor.isActive("link"))} title="Link">🔗</button>
+            <button type="button" onClick={insertButton} className={`${TB_BTN} text-xs font-semibold`} title="Insert a button">Button</button>
+            <button type="button" onClick={insertSocial} className={`${TB_BTN} text-xs font-semibold`} title="Insert social icons">Social</button>
             <label className={`${TB_BTN} cursor-pointer`} title="Text color">
               A
               <input
