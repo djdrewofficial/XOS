@@ -78,6 +78,17 @@ function resetHtml(link: string): string {
     <p style="font-size:12px;color:#8a8a94;line-height:1.6;margin:8px 0 0;">This link expires in 24 hours. If you didn't request this, you can safely ignore this email.</p>`;
 }
 
+/* Code (OTP) reset — used by the mobile app so the whole reset stays in-app:
+   the couple types this code into the app instead of following a deep link. */
+function resetCodeHtml(code: string): string {
+  return `<p style="font-size:15px;color:#1d1d22;margin:0 0 10px;">Password reset</p>
+    <p style="font-size:14px;color:#4a4a52;line-height:1.6;margin:0 0 14px;">Enter this code in the Xpress Entertainment app to reset your password:</p>
+    <div style="text-align:center;margin:6px 0 20px;">
+      <span style="display:inline-block;font-size:34px;letter-spacing:12px;font-weight:800;color:#4b328e;background:#f4f1fb;border:1px solid #e4ddf7;border-radius:12px;padding:16px 22px 16px 34px;">${code}</span>
+    </div>
+    <p style="font-size:12px;color:#8a8a94;line-height:1.6;margin:8px 0 0;">This code expires in about an hour. If you didn't request this, you can safely ignore this email.</p>`;
+}
+
 /** Create/ensure a login for someone, link it in `accounts`, and email the invite. */
 export async function sendAccountInvite(args: {
   type: AccountType;
@@ -140,6 +151,32 @@ export async function sendPasswordReset(
       to: addr,
       subject: "Reset your XOS password",
       contentHtml: resetHtml(link),
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Email a 6-digit password-reset CODE (not a link) to an existing login. The
+    app verifies it with Supabase (verifyOtp type "recovery") and sets the new
+    password in-app. `generateLink` returns the OTP alongside the link — we send
+    only the code, branded via Mailgun. */
+export async function sendPasswordResetCode(
+  email: string | null | undefined,
+): Promise<{ ok: boolean; error?: string }> {
+  const addr = (email ?? "").trim().toLowerCase();
+  if (!addr) return { ok: false, error: "No email on file." };
+  const admin = createAdminClient();
+  try {
+    const userId = await findAuthUserByEmail(admin, addr);
+    if (!userId) return { ok: false, error: "No XOS login exists for that email yet — send an invite first." };
+    const { data, error } = await admin.auth.admin.generateLink({ type: "recovery", email: addr });
+    const code = data?.properties?.email_otp;
+    if (error || !code) throw new Error(error?.message ?? "Could not generate a reset code.");
+    return await sendBrandedEmail({
+      to: addr,
+      subject: "Your XOS password reset code",
+      contentHtml: resetCodeHtml(code),
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
