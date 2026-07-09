@@ -334,8 +334,12 @@ async function searchAppleMusic(q: string, limit: number): Promise<MusicTrack[]>
   if (!res.ok) throw new Error(`apple search ${res.status}`);
   const json = (await res.json()) as AppleSearch;
 
-  return (json.results?.songs?.data ?? []).map((s) => ({
-    provider: "apple" as const,
+  return (json.results?.songs?.data ?? []).map(appleSongToMusic);
+}
+
+function appleSongToMusic(s: AppleSong): MusicTrack {
+  return {
+    provider: "apple",
     providerId: s.id,
     isrc: s.attributes?.isrc ?? null,
     title: s.attributes?.name ?? "",
@@ -345,12 +349,71 @@ async function searchAppleMusic(q: string, limit: number): Promise<MusicTrack[]>
     durationMs: s.attributes?.durationInMillis ?? null,
     previewUrl: s.attributes?.previews?.[0]?.url ?? null,
     externalUrl: s.attributes?.url ?? null,
-  }));
+  };
 }
 
 function appleArt(a?: { url: string }): string | null {
   if (!a?.url) return null;
   return a.url.replace("{w}", "300").replace("{h}", "300");
+}
+
+/** Pull an Apple Music playlist id (and its storefront, if present) from a share
+    URL / bare id. Handles `music.apple.com/{sf}/playlist/{slug}/pl.xxxx`,
+    slug-less links, and a bare `pl.` id. */
+export function parseAppleMusicPlaylistId(
+  input: string,
+): { id: string; storefront: string | null } | null {
+  const s = (input ?? "").trim();
+  const m = s.match(/music\.apple\.com\/(?:([a-z]{2})\/)?playlist\/(?:[^/]+\/)?(pl\.[A-Za-z0-9-]+)/i);
+  if (m) return { id: m[2], storefront: m[1] ? m[1].toLowerCase() : null };
+  if (/^pl\.[A-Za-z0-9-]+$/.test(s)) return { id: s, storefront: null };
+  return null;
+}
+
+/** Read a PUBLIC Apple Music playlist's tracks with only the developer token
+    (catalog endpoint — no Music User Token / user login, so nothing is gated by
+    a user's library auth). Mirrors getSpotifyPlaylistTracks: returns { error }
+    for private/not-found playlists, or null when Apple Music isn't configured.
+
+    NOTE: shared user-playlist ids (`pl.u-…`) usually resolve directly against the
+    catalog endpoint; when one doesn't, Apple returns 404 → surfaced as not_found. */
+export async function getAppleMusicPlaylistTracks(
+  playlistId: string,
+  storefront?: string | null,
+  max = 250,
+): Promise<{ name: string | null; tracks: MusicTrack[] } | { error: "restricted" | "not_found" } | null> {
+  const token = appleDeveloperToken();
+  if (!token) return null;
+
+  const sf = storefront || process.env.APPLE_MUSIC_STOREFRONT || "us";
+  const auth = { Authorization: `Bearer ${token}` };
+
+  // Playlist meta (name). A missing/private playlist fails here first.
+  let name: string | null = null;
+  const meta = await fetch(`https://api.music.apple.com/v1/catalog/${sf}/playlists/${playlistId}`, {
+    headers: auth,
+    cache: "no-store",
+  });
+  if (meta.status === 404) return { error: "not_found" };
+  if (meta.status === 401 || meta.status === 403) return { error: "restricted" };
+  if (meta.ok) {
+    const j = (await meta.json()) as { data?: { attributes?: { name?: string } }[] };
+    name = j.data?.[0]?.attributes?.name ?? null;
+  }
+
+  // Tracks, paged via the relationship's `next` path (100/page).
+  const tracks: MusicTrack[] = [];
+  let path: string | null = `/v1/catalog/${sf}/playlists/${playlistId}/tracks?limit=100`;
+  while (path && tracks.length < max) {
+    const res: Response = await fetch(`https://api.music.apple.com${path}`, { headers: auth, cache: "no-store" });
+    if (res.status === 404) break; // no tracks relationship (empty playlist)
+    if (res.status === 401 || res.status === 403) return { error: "restricted" };
+    if (!res.ok) break;
+    const j = (await res.json()) as { data?: AppleSong[]; next?: string };
+    for (const s of j.data ?? []) tracks.push(appleSongToMusic(s));
+    path = j.next ?? null;
+  }
+  return { name, tracks };
 }
 
 // Cache the signed developer token (valid up to ~6 months; we re-sign hourly to
@@ -414,22 +477,23 @@ interface YouTubeItem {
 interface YouTubeSearch {
   items?: YouTubeItem[];
 }
+interface AppleSong {
+  id: string;
+  attributes?: {
+    name?: string;
+    artistName?: string;
+    albumName?: string;
+    isrc?: string;
+    durationInMillis?: number;
+    url?: string;
+    artwork?: { url: string };
+    previews?: { url: string }[];
+  };
+}
 interface AppleSearch {
   results?: {
     songs?: {
-      data: {
-        id: string;
-        attributes?: {
-          name?: string;
-          artistName?: string;
-          albumName?: string;
-          isrc?: string;
-          durationInMillis?: number;
-          url?: string;
-          artwork?: { url: string };
-          previews?: { url: string }[];
-        };
-      }[];
+      data: AppleSong[];
     };
   };
 }
