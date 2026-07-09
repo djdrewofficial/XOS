@@ -87,7 +87,7 @@ export async function duplicateTemplate(id: string) {
       .insert({
         template_id: copy.id,
         title: s.title, icon: s.icon, section_type: s.section_type, intro: s.intro, time_label: s.time_label,
-        client_editable: s.client_editable, guest_enabled: s.guest_enabled, song_limit: s.song_limit,
+        client_editable: s.client_editable, guest_enabled: s.guest_enabled, client_addable: s.client_addable, song_limit: s.song_limit,
         must_play_limit: s.must_play_limit, songs_enabled: s.songs_enabled, questions_enabled: s.questions_enabled,
         notes_enabled: s.notes_enabled, time_enabled: s.time_enabled, ai_picks_enabled: s.ai_picks_enabled,
         section_cover_url: s.section_cover_url, permissions: s.permissions, sort_order: s.sort_order,
@@ -117,6 +117,7 @@ type TSectionPatch = {
   intro?: string | null;
   section_type?: "info" | "timeline" | "headline";
   guest_enabled?: boolean;
+  client_addable?: boolean;
   songs_enabled?: boolean;
   questions_enabled?: boolean;
   notes_enabled?: boolean;

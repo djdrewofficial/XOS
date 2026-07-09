@@ -56,6 +56,7 @@ export type BuilderSection = {
   section_type: "info" | "timeline" | "headline";
   intro: string | null;
   guest_enabled: boolean;
+  client_addable: boolean;
   songs_enabled: boolean;
   questions_enabled: boolean;
   notes_enabled: boolean;
@@ -311,6 +312,7 @@ function SectionCard({
             {section.songs_enabled && <Pill icon={faMusic} text={section.song_limit != null ? `${section.song_limit}` : "songs"} />}
             {section.questions_enabled && section.questions.length > 0 && <Pill icon={faListCheck} text={`${section.questions.length}`} />}
             {section.guest_enabled && <Pill icon={faUserGroup} text="guests" amber />}
+            {section.client_addable && <Pill icon={faPlus} text="add-on" amber />}
           </div>
         )}
 
@@ -370,7 +372,9 @@ function SectionCard({
               <FeatureToggle icon={faClock} label="Time" on={section.time_enabled} onChange={(v) => patch({ time_enabled: v })} />
               {section.songs_enabled && <FeatureToggle icon={faWandMagicSparkles} label="For You picks" on={section.ai_picks_enabled} onChange={(v) => patch({ ai_picks_enabled: v })} />}
               <FeatureToggle icon={faUserGroup} label="Guests can answer" on={section.guest_enabled} onChange={(v) => patch({ guest_enabled: v })} amber />
+              <FeatureToggle icon={faPlus} label="Couples can add" on={section.client_addable} onChange={(v) => patch({ client_addable: v })} amber />
             </div>
+            <p className="mt-1.5 text-xs text-zinc-400">&quot;Couples can add&quot; leaves this off the default plan but lets couples add it themselves from the app (e.g. Bouquet Toss, Chair Game).</p>
           </div>
 
           {section.songs_enabled && (

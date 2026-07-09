@@ -63,6 +63,7 @@ export default async function PlannerTemplatesPage() {
       section_type: s.section_type,
       intro: s.intro,
       guest_enabled: s.guest_enabled,
+      client_addable: s.client_addable,
       songs_enabled: s.songs_enabled,
       questions_enabled: s.questions_enabled,
       notes_enabled: s.notes_enabled,

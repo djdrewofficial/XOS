@@ -112,5 +112,132 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "add") {
+    // Couple adds a section — from a client_addable template, or a custom one
+    // (name + notes + up to 3 songs). Placed at the end of the target group.
+    const groupId = String(body.groupId ?? "");
+    const { data: all } = await admin
+      .from("planning_sections")
+      .select("id, sort_order, section_type")
+      .eq("event_id", eventId)
+      .order("sort_order");
+    const rows = (all ?? []) as { id: string; sort_order: number; section_type: string }[];
+    const maxOrder = rows.length ? Math.max(...rows.map((r) => r.sort_order)) : -1;
+
+    // Insert slot = just before the next headline after the target group.
+    let insertOrder: number;
+    if (groupId && groupId !== "start") {
+      const idx = rows.findIndex((r) => r.id === groupId);
+      if (idx < 0) return NextResponse.json({ error: "Group not found" }, { status: 400 });
+      const next = rows.slice(idx + 1).find((r) => r.section_type === "headline");
+      insertOrder = next ? next.sort_order : maxOrder + 1;
+    } else {
+      const firstHeadline = rows.find((r) => r.section_type === "headline");
+      insertOrder = firstHeadline ? firstHeadline.sort_order : maxOrder + 1;
+    }
+
+    // Shift sections at/after the slot down by one to make room.
+    const toShift = rows.filter((r) => r.sort_order >= insertOrder);
+    if (toShift.length) {
+      await Promise.all(
+        toShift.map((r) => admin.from("planning_sections").update({ sort_order: r.sort_order + 1 }).eq("id", r.id)),
+      );
+    }
+
+    // Resolve the new section's fields — template clone vs custom.
+    let title: string;
+    let icon: string | null;
+    let intro: string | null;
+    let songLimit: number | null;
+    let templateSectionId: string | null;
+    const custom = body.custom as { title?: string; notes?: string; songs?: unknown[] } | undefined;
+
+    if (body.templateSectionId) {
+      templateSectionId = String(body.templateSectionId);
+      const { data: ts } = await admin
+        .from("planning_template_sections")
+        .select("title, icon, intro, song_limit")
+        .eq("id", templateSectionId)
+        .eq("client_addable", true)
+        .maybeSingle();
+      if (!ts) return NextResponse.json({ error: "Section not available" }, { status: 400 });
+      title = ts.title as string;
+      icon = (ts.icon as string | null) ?? null;
+      intro = (ts.intro as string | null) ?? null;
+      songLimit = (ts.song_limit as number | null) ?? null;
+    } else if (custom) {
+      title = String(custom.title ?? "").trim();
+      if (!title) return NextResponse.json({ error: "Section name is required" }, { status: 400 });
+      icon = "🎵";
+      intro = String(custom.notes ?? "").trim() || null;
+      songLimit = 3;
+      templateSectionId = null;
+    } else {
+      return NextResponse.json({ error: "templateSectionId or custom required" }, { status: 400 });
+    }
+
+    const { data: ins, error: insErr } = await admin
+      .from("planning_sections")
+      .insert({
+        event_id: eventId,
+        template_section_id: templateSectionId,
+        title,
+        icon,
+        intro,
+        section_type: "timeline",
+        song_limit: songLimit,
+        on_timeline: true,
+        sort_order: insertOrder,
+      })
+      .select("id")
+      .single();
+    if (insErr || !ins) return NextResponse.json({ error: insErr?.message ?? "Could not add section" }, { status: 500 });
+    const newId = ins.id as string;
+
+    // Clone the template section's questions (simple; conditions not carried over).
+    if (templateSectionId) {
+      const { data: tqs } = await admin
+        .from("planning_template_questions")
+        .select("prompt, help_text, answer_type, options, sort_order")
+        .eq("template_section_id", templateSectionId)
+        .order("sort_order");
+      if (tqs?.length) {
+        await admin.from("planning_questions").insert(
+          tqs.map((q) => ({
+            event_id: eventId,
+            section_id: newId,
+            prompt: q.prompt,
+            help_text: q.help_text,
+            answer_type: q.answer_type,
+            options: q.options,
+            sort_order: q.sort_order,
+          })),
+        );
+      }
+    }
+
+    // Custom-section songs (up to 3), inserted here so the add is one atomic call.
+    if (custom && Array.isArray(custom.songs) && custom.songs.length) {
+      const songs = (custom.songs as Record<string, unknown>[]).slice(0, 3);
+      await admin.from("planning_songs").insert(
+        songs.map((s, i) => ({
+          event_id: eventId,
+          section_id: newId,
+          title: String(s.title ?? "").slice(0, 300),
+          artist: (s.artist as string | null) ?? null,
+          album: (s.album as string | null) ?? null,
+          artwork_url: (s.artwork_url as string | null) ?? null,
+          preview_url: (s.preview_url as string | null) ?? null,
+          external_url: (s.external_url as string | null) ?? null,
+          provider: (s.provider as string | null) ?? "manual",
+          provider_id: (s.provider_id as string | null) ?? null,
+          sort_order: i,
+        })),
+      );
+    }
+
+    return NextResponse.json({ ok: true, sectionId: newId });
+  }
+
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }
