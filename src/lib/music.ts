@@ -158,6 +158,84 @@ function pickSpotifyArt(images?: { url: string; width: number }[]): string | nul
   return (sorted.find((i) => i.width >= 200) ?? sorted[sorted.length - 1]).url;
 }
 
+interface SpotifyTrackObj {
+  id?: string;
+  name?: string;
+  duration_ms?: number;
+  preview_url?: string | null;
+  external_ids?: { isrc?: string };
+  external_urls?: { spotify?: string };
+  artists?: { name: string }[];
+  album?: { name?: string; images?: { url: string; width: number }[] };
+}
+
+function spotifyTrackToMusic(t: SpotifyTrackObj): MusicTrack {
+  return {
+    provider: "spotify",
+    providerId: t.id ?? "",
+    isrc: t.external_ids?.isrc ?? null,
+    title: t.name ?? "",
+    artist: t.artists?.map((a) => a.name).join(", ") ?? "",
+    album: t.album?.name ?? null,
+    artworkUrl: pickSpotifyArt(t.album?.images),
+    durationMs: t.duration_ms ?? null,
+    previewUrl: t.preview_url ?? null,
+    externalUrl: t.external_urls?.spotify ?? null,
+  };
+}
+
+/** Pull a Spotify playlist id from a share URL / URI / bare id. */
+export function parseSpotifyPlaylistId(input: string): string | null {
+  const s = (input ?? "").trim();
+  const uri = s.match(/spotify:playlist:([A-Za-z0-9]+)/);
+  if (uri) return uri[1];
+  const url = s.match(/open\.spotify\.com\/(?:[a-z-]+\/)?playlist\/([A-Za-z0-9]+)/i);
+  if (url) return url[1];
+  if (/^[A-Za-z0-9]{22}$/.test(s)) return s;
+  return null;
+}
+
+/** Read a PUBLIC Spotify playlist's tracks with the app (client-credentials)
+    token — no user login, so it isn't gated by extended-quota approval. Returns
+    { error } for private/not-found/dev-mode-restricted playlists, or null when
+    Spotify isn't configured. */
+export async function getSpotifyPlaylistTracks(
+  playlistId: string,
+  max = 250,
+): Promise<{ name: string | null; tracks: MusicTrack[] } | { error: "restricted" | "not_found" } | null> {
+  const token = await spotifyAccessToken();
+  if (!token) return null;
+
+  let name: string | null = null;
+  try {
+    const meta = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (meta.status === 404) return { error: "not_found" };
+    if (meta.status === 401 || meta.status === 403) return { error: "restricted" };
+    if (meta.ok) name = ((await meta.json()) as { name?: string }).name ?? null;
+  } catch {
+    /* best-effort name */
+  }
+
+  const tracks: MusicTrack[] = [];
+  const fields = "next,items(track(id,name,artists(name),album(name,images),duration_ms,preview_url,external_urls,external_ids))";
+  let url: string | null = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&fields=${encodeURIComponent(fields)}`;
+  while (url && tracks.length < max) {
+    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    if (res.status === 404) return { error: "not_found" };
+    if (res.status === 401 || res.status === 403) return { error: "restricted" };
+    if (!res.ok) break;
+    const j = (await res.json()) as { next: string | null; items: { track: SpotifyTrackObj | null }[] };
+    for (const it of j.items ?? []) {
+      if (it.track?.id) tracks.push(spotifyTrackToMusic(it.track));
+    }
+    url = j.next;
+  }
+  return { name, tracks };
+}
+
 // ───────────────────────────── YouTube ─────────────────────────────
 // Data API v3 search (quota-heavy: 100 units/call). Duration isn't in the
 // search payload; left null for v1 (a videos.list lookup can fill it later).
