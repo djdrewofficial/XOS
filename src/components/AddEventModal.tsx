@@ -15,6 +15,7 @@ export default function AddEventModal({ className, children }: { className?: str
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<FormData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const pathname = usePathname();
 
   // This component lives in the persistent layout (TopBar), so its open state
@@ -24,16 +25,25 @@ export default function AddEventModal({ className, children }: { className?: str
     setOpen(false);
   }, [pathname]);
 
+  // Load the reference data the form needs. Without a catch here a transient
+  // failure (expired session, cold start, network blip) would leave the modal
+  // stuck on "Loading…" forever with no feedback and no way out but reload.
+  async function loadData() {
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await loadNewEventFormData());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn’t load the Add Event form.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function openModal() {
     setOpen(true);
-    if (!data && !loading) {
-      setLoading(true);
-      try {
-        setData(await loadNewEventFormData());
-      } finally {
-        setLoading(false);
-      }
-    }
+    if (!data && !loading) await loadData();
   }
 
   // close on Escape
@@ -69,6 +79,28 @@ export default function AddEventModal({ className, children }: { className?: str
             <div className="p-5">
               {data ? (
                 <NewEventForm action={createEventOnboarding} {...data} />
+              ) : error ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <p className="text-sm font-medium text-red-600 dark:text-red-400">Couldn’t load the Add Event form.</p>
+                  <p className="max-w-sm text-xs text-zinc-500">{error}</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={loadData}
+                      disabled={loading}
+                      className="rounded-lg bg-gradient-to-r from-brand to-brand-light px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand/30 transition-all hover:brightness-110 disabled:opacity-60"
+                    >
+                      {loading ? "Retrying…" : "Try again"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="rounded-lg px-4 py-2 text-sm font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-white/10"
+                    >
+                      Reload page
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div className="flex items-center justify-center gap-2 py-20 text-sm text-zinc-500">
                   <span className="size-4 animate-spin rounded-full border-2 border-zinc-300 border-t-brand dark:border-zinc-600 dark:border-t-brand-lighter" />
