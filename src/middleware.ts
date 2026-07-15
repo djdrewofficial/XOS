@@ -65,6 +65,7 @@ export async function middleware(request: NextRequest) {
   // their own auth — Mailgun HMAC and the CRON_SECRET bearer token; /api/mobile
   // verifies the XOS Mobile app's Supabase JWT itself)
   const isPublic =
+    pathname.startsWith("/app-privacy") ||
     pathname.startsWith("/sign/") ||
     pathname.startsWith("/pay/") ||
     pathname.startsWith("/welcome/") ||
