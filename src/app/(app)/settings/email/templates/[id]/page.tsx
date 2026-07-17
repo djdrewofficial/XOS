@@ -485,7 +485,13 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
           tabs={[
             { id: "content", label: "Content", content: contentTab },
             { id: "settings", label: "Settings", content: settingsTab },
-            { id: "scheduling", label: "Scheduling", badge: tpl.schedule_enabled ? "ON" : undefined, content: schedulingTab },
+            // The date-based scheduler is email-only — it can't send SMS. Hiding
+            // the tab for SMS templates prevents a scheduled "SMS" that would
+            // silently go out as an email. (SMS reminders live in Payment
+            // Reminders / booking helpers.)
+            ...(isSms
+              ? []
+              : [{ id: "scheduling", label: "Scheduling", badge: tpl.schedule_enabled ? "ON" : undefined, content: schedulingTab }]),
             { id: "visibility", label: "Visibility", content: visibilityTab },
             { id: "usage", label: "Where It's Used", badge: usedInHelpers.length || undefined, content: usageTab },
           ]}

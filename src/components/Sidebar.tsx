@@ -33,6 +33,7 @@ import {
   faCreditCard,
   faRoute,
   faReceipt,
+  faBell,
   faPenToSquare,
   faEnvelope,
   faBullseye,
@@ -130,6 +131,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
         module: "settings",
         items: [
           { href: "/settings/payment-settings", label: "Payment Settings", icon: faCreditCard, module: "settings" },
+          { href: "/settings/payment-reminders", label: "Payment Reminders", icon: faBell, module: "settings" },
           { href: "/settings/expenses", label: "Expenses", icon: faReceipt, module: "settings" },
         ],
       },
