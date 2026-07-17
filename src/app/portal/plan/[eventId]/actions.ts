@@ -19,6 +19,28 @@ import { boothTemplates, boothFilters } from "@/lib/templatesbooth";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Me } from "@/lib/auth";
 
+/** Machine payload that `restorePlannerValue` replays. Absent = not restorable. */
+export type PlannerSnapshot =
+  | { kind: "answer"; questionId: string; answer: string | null }
+  | { kind: "song_row"; row: Record<string, unknown> }
+  | { kind: "song_patch"; songId: string; patch: Record<string, unknown> }
+  | { kind: "question_row"; question: Record<string, unknown>; answer: Record<string, unknown> | null }
+  | { kind: "section_tree"; section: Record<string, unknown>; questions: Record<string, unknown>[]; answers: Record<string, unknown>[]; songs: Record<string, unknown>[] }
+  | { kind: "section_patch"; sectionId: string; patch: Record<string, unknown> };
+
+/** What an audit entry points at, so staff can see a per-field history and
+    restore a previous value. old/new are display text; snapshot drives Restore. */
+type LogTarget = {
+  sectionId?: string | null;
+  questionId?: string | null;
+  songId?: string | null;
+  targetType?: "answer" | "song" | "question" | "section" | "settings";
+  targetLabel?: string | null;
+  oldValue?: string | null;
+  newValue?: string | null;
+  snapshot?: PlannerSnapshot | null;
+};
+
 /** Append a staff-visible audit entry. Best-effort — never blocks the action. */
 async function logAction(
   supabase: SupabaseClient,
@@ -26,6 +48,7 @@ async function logAction(
   me: Me,
   action: string,
   detail?: string,
+  target: LogTarget = {},
 ) {
   try {
     const names = await resolveUserNames(supabase, [me.userId]);
@@ -37,10 +60,46 @@ async function logAction(
       actor_role: role,
       action,
       detail: detail ?? null,
+      section_id: target.sectionId ?? null,
+      question_id: target.questionId ?? null,
+      song_id: target.songId ?? null,
+      target_type: target.targetType ?? null,
+      target_label: target.targetLabel ?? null,
+      old_value: target.oldValue ?? null,
+      new_value: target.newValue ?? null,
+      snapshot: target.snapshot ?? null,
     });
   } catch {
     /* logging must never break the user's action */
   }
+}
+
+/** Compact human label for a song, used in history rows. */
+function songLabel(s: { title?: string | null; artist?: string | null } | null): string | undefined {
+  if (!s?.title) return undefined;
+  return `${s.title}${s.artist ? ` — ${s.artist}` : ""}`;
+}
+
+const SETTING_LABELS: Record<string, string> = {
+  title: "Title", icon: "Icon", intro: "Intro", section_type: "Type",
+  guest_enabled: "Guest access", song_limit: "Song limit", must_play_limit: "Must-play limit",
+  songs_enabled: "Songs", questions_enabled: "Questions", notes_enabled: "Notes",
+  time_enabled: "Time", time_label: "Time", on_timeline: "On timeline", on_music: "On music",
+  permissions: "Permissions",
+};
+
+/** Render a settings patch as "Title: Ceremony · Songs: on" for the history UI. */
+function describeSettings(patch: Record<string, unknown>): string | null {
+  const parts = Object.entries(patch).map(([k, v]) => {
+    const label = SETTING_LABELS[k] ?? k;
+    const val =
+      v === null || v === "" ? "—"
+      : typeof v === "boolean" ? (v ? "on" : "off")
+      : typeof v === "object" ? JSON.stringify(v)
+      : String(v);
+    return `${label}: ${val}`;
+  });
+  return parts.length ? parts.join(" · ") : null;
 }
 
 /* Planner server actions. Writes are authorized by RLS (xos_can_access_event):
@@ -84,6 +143,14 @@ async function requireStaff(eventId: string) {
 
 export async function saveAnswer(eventId: string, questionId: string, answer: string) {
   const { supabase, me, revalidate } = await ctx(eventId);
+  // Read the value we're about to replace, so the history can restore it.
+  const { data: prev } = await supabase
+    .from("planning_question_answers")
+    .select("answer")
+    .eq("question_id", questionId)
+    .maybeSingle();
+  const before = prev?.answer ?? null;
+
   const { error } = await supabase
     .from("planning_question_answers")
     .upsert(
@@ -91,8 +158,31 @@ export async function saveAnswer(eventId: string, questionId: string, answer: st
       { onConflict: "question_id" },
     );
   if (error) throw new Error(error.message);
-  const { data: q } = await supabase.from("planning_questions").select("prompt").eq("id", questionId).maybeSingle();
-  await logAction(supabase, eventId, me, "Answered question", q?.prompt ?? undefined);
+
+  // This fires on blur, so skip no-op saves — they'd bury the real edits.
+  if ((before ?? "") !== answer) {
+    const { data: q } = await supabase
+      .from("planning_questions")
+      .select("prompt, section_id")
+      .eq("id", questionId)
+      .maybeSingle();
+    await logAction(
+      supabase,
+      eventId,
+      me,
+      before ? (answer ? "Changed answer" : "Cleared answer") : "Answered question",
+      q?.prompt ?? undefined,
+      {
+        questionId,
+        sectionId: q?.section_id ?? null,
+        targetType: "answer",
+        targetLabel: q?.prompt ?? null,
+        oldValue: before,
+        newValue: answer || null,
+        snapshot: { kind: "answer", questionId, answer: before },
+      },
+    );
+  }
   revalidate();
 }
 
@@ -109,33 +199,51 @@ export async function addSong(eventId: string, song: SongInput) {
     .maybeSingle();
   const nextOrder = (last?.sort_order ?? -1) + 1;
 
-  const { error } = await supabase.from("planning_songs").insert({
-    section_id: song.sectionId,
-    event_id: eventId,
-    provider: song.provider,
-    provider_id: song.providerId ?? null,
-    isrc: song.isrc ?? null,
-    title: song.title,
-    artist: song.artist ?? null,
-    album: song.album ?? null,
-    artwork_url: song.artworkUrl ?? null,
-    duration_ms: song.durationMs ?? null,
-    preview_url: song.previewUrl ?? null,
-    external_url: song.externalUrl ?? null,
-    requested_by: me.userId,
-    sort_order: nextOrder,
-  });
+  const { data: created, error } = await supabase
+    .from("planning_songs")
+    .insert({
+      section_id: song.sectionId,
+      event_id: eventId,
+      provider: song.provider,
+      provider_id: song.providerId ?? null,
+      isrc: song.isrc ?? null,
+      title: song.title,
+      artist: song.artist ?? null,
+      album: song.album ?? null,
+      artwork_url: song.artworkUrl ?? null,
+      duration_ms: song.durationMs ?? null,
+      preview_url: song.previewUrl ?? null,
+      external_url: song.externalUrl ?? null,
+      requested_by: me.userId,
+      sort_order: nextOrder,
+    })
+    .select("id")
+    .single();
   if (error) throw new Error(error.message);
-  await logAction(supabase, eventId, me, "Added song", `${song.title}${song.artist ? ` — ${song.artist}` : ""}`);
+  await logAction(supabase, eventId, me, "Added song", songLabel(song), {
+    songId: created?.id ?? null,
+    sectionId: song.sectionId,
+    targetType: "song",
+    targetLabel: songLabel(song) ?? null,
+    newValue: songLabel(song) ?? null,
+  });
   revalidate();
 }
 
 export async function removeSong(eventId: string, songId: string) {
   const { supabase, me, revalidate } = await ctx(eventId);
-  const { data: song } = await supabase.from("planning_songs").select("title, artist").eq("id", songId).maybeSingle();
+  // Snapshot the whole row before deleting — this is what "Restore" re-inserts.
+  const { data: song } = await supabase.from("planning_songs").select("*").eq("id", songId).maybeSingle();
   const { error } = await supabase.from("planning_songs").delete().eq("id", songId);
   if (error) throw new Error(error.message);
-  await logAction(supabase, eventId, me, "Removed song", song ? `${song.title}${song.artist ? ` — ${song.artist}` : ""}` : undefined);
+  await logAction(supabase, eventId, me, "Removed song", songLabel(song), {
+    songId,
+    sectionId: song?.section_id ?? null,
+    targetType: "song",
+    targetLabel: songLabel(song) ?? null,
+    oldValue: songLabel(song) ?? null,
+    snapshot: song ? { kind: "song_row", row: song } : null,
+  });
   revalidate();
 }
 
@@ -169,31 +277,65 @@ export async function toggleMustPlay(eventId: string, songId: string, value: boo
     }
   }
 
+  const { data: row } = await supabase
+    .from("planning_songs")
+    .select("title, artist, section_id")
+    .eq("id", songId)
+    .maybeSingle();
   const { error } = await supabase.from("planning_songs").update({ must_play: value }).eq("id", songId);
   if (error) return { ok: false, error: error.message };
-  await logAction(supabase, eventId, me, value ? "Marked must-play" : "Unmarked must-play");
+  await logAction(supabase, eventId, me, value ? "Marked must-play" : "Unmarked must-play", songLabel(row), {
+    songId,
+    sectionId: row?.section_id ?? null,
+    targetType: "song",
+    targetLabel: songLabel(row) ?? null,
+    oldValue: value ? "Not must-play" : "Must-play",
+    newValue: value ? "Must-play" : "Not must-play",
+    snapshot: { kind: "song_patch", songId, patch: { must_play: !value } },
+  });
   revalidate();
   return { ok: true };
 }
 
 export async function updateSongNote(eventId: string, songId: string, note: string) {
-  const { supabase, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await ctx(eventId);
+  const { data: row } = await supabase
+    .from("planning_songs")
+    .select("title, artist, note, section_id")
+    .eq("id", songId)
+    .maybeSingle();
+  const before = row?.note ?? null;
   const { error } = await supabase
     .from("planning_songs")
     .update({ note: note || null })
     .eq("id", songId);
   if (error) throw new Error(error.message);
+  if ((before ?? "") !== note) {
+    await logAction(supabase, eventId, me, before ? "Changed song note" : "Added song note", songLabel(row), {
+      songId,
+      sectionId: row?.section_id ?? null,
+      targetType: "song",
+      targetLabel: songLabel(row) ?? null,
+      oldValue: before,
+      newValue: note || null,
+      snapshot: { kind: "song_patch", songId, patch: { note: before } },
+    });
+  }
   revalidate();
 }
 
 export async function reorderSongs(eventId: string, sectionId: string, orderedIds: string[]) {
-  const { supabase, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await ctx(eventId);
   // Persist new positions one-by-one (sections are small).
   await Promise.all(
     orderedIds.map((id, i) =>
       supabase.from("planning_songs").update({ sort_order: i }).eq("id", id).eq("section_id", sectionId),
     ),
   );
+  await logAction(supabase, eventId, me, "Reordered songs", undefined, {
+    sectionId,
+    targetType: "section",
+  });
   revalidate();
 }
 
@@ -304,13 +446,32 @@ export async function removeGuest(eventId: string, guestId: string) {
 
 export async function setSectionGuestAccess(eventId: string, sectionId: string, enabled: boolean) {
   const { supabase, me, revalidate } = await requireStaff(eventId);
+  const { data: before } = await supabase
+    .from("planning_sections")
+    .select("title")
+    .eq("id", sectionId)
+    .maybeSingle();
   const { error } = await supabase
     .from("planning_sections")
     .update({ guest_enabled: enabled })
     .eq("id", sectionId)
     .eq("event_id", eventId);
   if (error) throw new Error(error.message);
-  await logAction(supabase, eventId, me, enabled ? "Enabled guest access" : "Disabled guest access");
+  await logAction(
+    supabase,
+    eventId,
+    me,
+    enabled ? "Enabled guest access" : "Disabled guest access",
+    before?.title ?? undefined,
+    {
+      sectionId,
+      targetType: "settings",
+      targetLabel: before?.title ?? null,
+      oldValue: enabled ? "Guest access: off" : "Guest access: on",
+      newValue: enabled ? "Guest access: on" : "Guest access: off",
+      snapshot: { kind: "section_patch", sectionId, patch: { guest_enabled: !enabled } },
+    },
+  );
   revalidate();
 }
 
@@ -340,13 +501,31 @@ export async function updateSectionSettings(
   settings: SectionSettingsInput,
 ) {
   const { supabase, me, revalidate } = await requireStaff(eventId);
+  // Snapshot only the keys this call actually changes, so the history shows the
+  // specific setting that moved rather than the whole row.
+  const { data: before } = await supabase
+    .from("planning_sections")
+    .select("*")
+    .eq("id", sectionId)
+    .maybeSingle();
+  const changedBefore: Record<string, unknown> = {};
+  for (const k of Object.keys(settings)) {
+    if (before && k in before) changedBefore[k] = (before as Record<string, unknown>)[k];
+  }
   const { error } = await supabase
     .from("planning_sections")
     .update(settings)
     .eq("id", sectionId)
     .eq("event_id", eventId);
   if (error) return { ok: false, error: error.message };
-  await logAction(supabase, eventId, me, "Updated section settings", settings.title);
+  await logAction(supabase, eventId, me, "Updated section settings", settings.title ?? before?.title, {
+    sectionId,
+    targetType: "settings",
+    targetLabel: (settings.title ?? before?.title) as string | null,
+    oldValue: describeSettings(changedBefore),
+    newValue: describeSettings(settings as Record<string, unknown>),
+    snapshot: { kind: "section_patch", sectionId, patch: changedBefore },
+  });
   revalidate();
   return { ok: true };
 }
@@ -364,18 +543,28 @@ export async function addQuestion(
     .order("sort_order", { ascending: false })
     .limit(1)
     .maybeSingle();
-  const { error } = await supabase.from("planning_questions").insert({
-    section_id: sectionId,
-    event_id: eventId,
-    prompt: q.prompt,
-    answer_type: q.answer_type,
-    options: q.options ?? [],
-    help_text: q.help_text ?? null,
-    required: q.required ?? false,
-    sort_order: (last?.sort_order ?? -1) + 1,
-  });
+  const { data: created, error } = await supabase
+    .from("planning_questions")
+    .insert({
+      section_id: sectionId,
+      event_id: eventId,
+      prompt: q.prompt,
+      answer_type: q.answer_type,
+      options: q.options ?? [],
+      help_text: q.help_text ?? null,
+      required: q.required ?? false,
+      sort_order: (last?.sort_order ?? -1) + 1,
+    })
+    .select("id")
+    .single();
   if (error) return { ok: false, error: error.message };
-  await logAction(supabase, eventId, me, "Added question", q.prompt);
+  await logAction(supabase, eventId, me, "Added question", q.prompt, {
+    questionId: created?.id ?? null,
+    sectionId,
+    targetType: "question",
+    targetLabel: q.prompt,
+    newValue: q.prompt,
+  });
   revalidate();
   return { ok: true };
 }
@@ -395,23 +584,52 @@ export async function updateQuestion(
   // Only touch options when the caller manages them — preserves image/branching
   // option data for types this editor doesn't surface (e.g. image_select).
   if (q.options !== undefined) patch.options = q.options;
+  const { data: before } = await supabase
+    .from("planning_questions")
+    .select("*")
+    .eq("id", questionId)
+    .maybeSingle();
   const { error } = await supabase
     .from("planning_questions")
     .update(patch)
     .eq("id", questionId)
     .eq("event_id", eventId);
   if (error) return { ok: false, error: error.message };
-  await logAction(supabase, eventId, me, "Edited question", q.prompt);
+  await logAction(supabase, eventId, me, "Edited question", q.prompt, {
+    questionId,
+    sectionId: before?.section_id ?? null,
+    targetType: "question",
+    targetLabel: q.prompt,
+    oldValue: (before?.prompt as string | undefined) ?? null,
+    newValue: q.prompt,
+    snapshot: before ? { kind: "question_row", question: before, answer: null } : null,
+  });
   revalidate();
   return { ok: true };
 }
 
 export async function deleteQuestion(eventId: string, questionId: string) {
   const { supabase, me, revalidate } = await requireStaff(eventId);
-  const { data: q } = await supabase.from("planning_questions").select("prompt").eq("id", questionId).maybeSingle();
+  // Snapshot the question *and* its answer — restoring a question without the
+  // answer the host had typed into it would only be half a recovery.
+  const { data: q } = await supabase.from("planning_questions").select("*").eq("id", questionId).maybeSingle();
+  // select * — the snapshot is re-inserted verbatim, so it needs the full row
+  // (question_id/event_id included), not just the display fields.
+  const { data: ans } = await supabase
+    .from("planning_question_answers")
+    .select("*")
+    .eq("question_id", questionId)
+    .maybeSingle();
   const { error } = await supabase.from("planning_questions").delete().eq("id", questionId);
   if (error) throw new Error(error.message);
-  await logAction(supabase, eventId, me, "Deleted question", q?.prompt ?? undefined);
+  await logAction(supabase, eventId, me, "Deleted question", q?.prompt ?? undefined, {
+    questionId,
+    sectionId: q?.section_id ?? null,
+    targetType: "question",
+    targetLabel: q?.prompt ?? null,
+    oldValue: q?.prompt ?? null,
+    snapshot: q ? { kind: "question_row", question: q, answer: ans ?? null } : null,
+  });
   revalidate();
 }
 
@@ -526,9 +744,23 @@ export async function setSectionTime(eventId: string, sectionId: string, time: s
   const { supabase, me } = await requireHost(eventId);
   const admin = createAdminClient();
   const value = time && time.trim() ? time.trim() : null;
+  const { data: before } = await admin
+    .from("planning_sections")
+    .select("title, time_label")
+    .eq("id", sectionId)
+    .maybeSingle();
   const { error } = await admin.from("planning_sections").update({ time_label: value }).eq("id", sectionId).eq("event_id", eventId);
   if (error) throw new Error(error.message);
-  await logAction(supabase, eventId, me, "Set section time", value ?? "cleared");
+  if ((before?.time_label ?? null) !== value) {
+    await logAction(supabase, eventId, me, value ? "Set section time" : "Cleared section time", before?.title ?? undefined, {
+      sectionId,
+      targetType: "settings",
+      targetLabel: before?.title ?? null,
+      oldValue: before?.time_label ?? null,
+      newValue: value,
+      snapshot: { kind: "section_patch", sectionId, patch: { time_label: before?.time_label ?? null } },
+    });
+  }
   revalidatePath(`/portal/plan/${eventId}`);
 }
 
@@ -548,12 +780,34 @@ export async function reorderSections(eventId: string, orderedIds: string[]) {
 export async function deleteSection(eventId: string, sectionId: string) {
   const { supabase, me, role } = await requireHost(eventId);
   const admin = createAdminClient();
-  const { data: sec } = await admin.from("planning_sections").select("title").eq("id", sectionId).maybeSingle();
+  const { data: sec } = await admin.from("planning_sections").select("*").eq("id", sectionId).maybeSingle();
 
   if (role === "staff") {
+    // Permanent, and it cascades to the section's questions/answers/songs — so
+    // snapshot the whole subtree first. This is the worst thing anyone can do
+    // by mistake in the planner; without this it's unrecoverable.
+    const [{ data: qs }, { data: songs }] = await Promise.all([
+      admin.from("planning_questions").select("*").eq("section_id", sectionId),
+      admin.from("planning_songs").select("*").eq("section_id", sectionId),
+    ]);
+    const questionIds = (qs ?? []).map((q) => q.id as string);
+    const answers = questionIds.length
+      ? (await admin.from("planning_question_answers").select("*").in("question_id", questionIds)).data
+      : [];
+
     const { error } = await admin.from("planning_sections").delete().eq("id", sectionId).eq("event_id", eventId);
     if (error) throw new Error(error.message);
-    await logAction(supabase, eventId, me, "Deleted section (permanent)", sec?.title ?? undefined);
+    await logAction(supabase, eventId, me, "Deleted section (permanent)", sec?.title ?? undefined, {
+      sectionId,
+      targetType: "section",
+      targetLabel: sec?.title ?? null,
+      oldValue: sec
+        ? `${sec.title} (${(qs ?? []).length} question${(qs ?? []).length === 1 ? "" : "s"}, ${(songs ?? []).length} song${(songs ?? []).length === 1 ? "" : "s"})`
+        : null,
+      snapshot: sec
+        ? { kind: "section_tree", section: sec, questions: qs ?? [], answers: answers ?? [], songs: songs ?? [] }
+        : null,
+    });
   } else {
     const { error } = await admin
       .from("planning_sections")
@@ -561,9 +815,96 @@ export async function deleteSection(eventId: string, sectionId: string) {
       .eq("id", sectionId)
       .eq("event_id", eventId);
     if (error) throw new Error(error.message);
-    await logAction(supabase, eventId, me, "Removed section (host)", sec?.title ?? undefined);
+    await logAction(supabase, eventId, me, "Removed section (host)", sec?.title ?? undefined, {
+      sectionId,
+      targetType: "section",
+      targetLabel: sec?.title ?? null,
+    });
   }
   revalidatePath(`/portal/plan/${eventId}`);
+}
+
+/** Put a previous value back. Staff only. Reads the snapshot recorded on the
+    audit entry and replays it, then logs the restore itself so the history
+    always explains how the current value got there. */
+export async function restorePlannerValue(eventId: string, auditId: string) {
+  const { supabase, me, revalidate } = await requireStaff(eventId);
+  const { data: entry } = await supabase
+    .from("planning_audit_log")
+    .select("id, event_id, snapshot, target_label, action")
+    .eq("id", auditId)
+    .eq("event_id", eventId) // never let one event's id restore into another
+    .maybeSingle();
+  if (!entry) return { ok: false as const, error: "History entry not found." };
+
+  const snap = entry.snapshot as PlannerSnapshot | null;
+  if (!snap) return { ok: false as const, error: "Nothing to restore on this entry." };
+
+  // Writes go through admin: restoring a host-made change is a staff action, and
+  // some targets (sections) are staff-write-only under RLS.
+  const admin = createAdminClient();
+
+  try {
+    switch (snap.kind) {
+      case "answer": {
+        if (snap.answer === null) {
+          await admin.from("planning_question_answers").delete().eq("question_id", snap.questionId);
+        } else {
+          await admin.from("planning_question_answers").upsert(
+            {
+              question_id: snap.questionId,
+              event_id: eventId,
+              answer: snap.answer,
+              answered_by: me.userId,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "question_id" },
+          );
+        }
+        break;
+      }
+      case "song_row": {
+        // upsert, not insert — the row may still exist if this is an older entry.
+        await admin.from("planning_songs").upsert(snap.row, { onConflict: "id" });
+        break;
+      }
+      case "song_patch": {
+        await admin.from("planning_songs").update(snap.patch).eq("id", snap.songId).eq("event_id", eventId);
+        break;
+      }
+      case "question_row": {
+        await admin.from("planning_questions").upsert(snap.question, { onConflict: "id" });
+        if (snap.answer) {
+          await admin.from("planning_question_answers").upsert(snap.answer, { onConflict: "question_id" });
+        }
+        break;
+      }
+      case "section_tree": {
+        await admin.from("planning_sections").upsert(snap.section, { onConflict: "id" });
+        if (snap.questions.length) await admin.from("planning_questions").upsert(snap.questions, { onConflict: "id" });
+        if (snap.songs.length) await admin.from("planning_songs").upsert(snap.songs, { onConflict: "id" });
+        if (snap.answers.length)
+          await admin.from("planning_question_answers").upsert(snap.answers, { onConflict: "question_id" });
+        break;
+      }
+      case "section_patch": {
+        await admin.from("planning_sections").update(snap.patch).eq("id", snap.sectionId).eq("event_id", eventId);
+        break;
+      }
+      default:
+        return { ok: false as const, error: "Unknown history entry." };
+    }
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "Restore failed." };
+  }
+
+  await logAction(supabase, eventId, me, "Restored", entry.target_label ?? undefined, {
+    targetType: "settings",
+    targetLabel: entry.target_label,
+    newValue: `Undid: ${entry.action}`,
+  });
+  revalidate();
+  return { ok: true as const };
 }
 
 export async function restoreSection(eventId: string, sectionId: string) {

@@ -90,6 +90,7 @@ import {
   type LibrarySectionOption,
 } from "@/app/portal/plan/[eventId]/actions";
 import { faPlus } from "@fortawesome/free-solid-svg-icons";
+import FieldHistory, { FieldHistoryProvider } from "@/components/planner/FieldHistory";
 
 // Client-safe permission check (mirrors planning.permAllows; can't import the
 // server-only module's value exports into a client component).
@@ -223,6 +224,7 @@ export default function Planner({
     : null;
 
   return (
+    <FieldHistoryProvider eventId={eventId} entries={isStaff ? planning.auditLog : []}>
     <div className="mx-auto max-w-6xl px-4 py-6">
       <CoverPhoto eventId={eventId} url={coverPhotoUrl} canEdit={canEditCover}>
         {dateLabel && <p className="mb-1 text-sm font-semibold uppercase tracking-wider text-white/80">{dateLabel}</p>}
@@ -326,6 +328,7 @@ export default function Planner({
         <SectionSettings eventId={eventId} section={settingsSection} onClose={() => setSettingsId(null)} />
       )}
     </div>
+    </FieldHistoryProvider>
   );
 }
 
@@ -1278,6 +1281,7 @@ function QuestionField({
           <input className="input w-full" value={value} onChange={(e) => onChange(e.target.value)} onBlur={() => persist(value)} />
         )}
         {pending && <span className="mt-1 block text-xs text-zinc-400">Saving…</span>}
+        <FieldHistory questionId={question.id} />
       </div>
     </div>
   );

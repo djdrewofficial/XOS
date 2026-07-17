@@ -120,6 +120,16 @@ export interface AuditEntry {
   action: string;
   detail: string | null;
   created_at: string;
+  section_id: string | null;
+  question_id: string | null;
+  song_id: string | null;
+  target_type: string | null;
+  target_label: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  /** True when the entry carries a snapshot Restore can replay. The snapshot
+      itself stays server-side — the client only needs to know it exists. */
+  restorable: boolean;
 }
 
 export interface EventPlanning {
@@ -464,10 +474,14 @@ export async function loadEventPlanning(
       isStaff
         ? supabase
             .from("planning_audit_log")
-            .select("id, actor_name, actor_role, action, detail, created_at")
+            // `snapshot` is deliberately not selected — it can carry a whole
+            // deleted section; `restorable` is the generated flag the UI needs.
+            .select(
+              "id, actor_name, actor_role, action, detail, created_at, section_id, question_id, song_id, target_type, target_label, old_value, new_value, restorable",
+            )
             .eq("event_id", eventId)
             .order("created_at", { ascending: false })
-            .limit(100)
+            .limit(1000)
         : Promise.resolve({ data: [] as AuditEntry[] }),
     ]);
 
