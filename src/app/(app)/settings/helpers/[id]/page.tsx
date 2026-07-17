@@ -148,7 +148,9 @@ export default async function EditHelperPage({
   ] = await Promise.all([
     supabase.from("booking_helpers").select("*").eq("id", id).single(),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
-    supabase.from("email_templates").select("id, name, group_name").eq("is_active", true).order("group_name"),
+    // Email and SMS templates both live in email_templates, split by is_sms — so
+    // the Email tab lists only email templates and the Texts tab only SMS ones.
+    supabase.from("email_templates").select("id, name, group_name, is_sms").eq("is_active", true).order("group_name"),
     supabase.from("booking_helpers").select("id, title").neq("id", id).order("position"),
     supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
     supabase.from("inquiry_sources").select("id, name").eq("is_active", true).order("name"),
@@ -168,6 +170,8 @@ export default async function EditHelperPage({
   const smsActions = actions.filter((a) => a.type === "send_sms");
   const clientSms = smsActions.find((a) => a.to !== "custom");
   const customSms = smsActions.find((a) => a.to === "custom");
+  const staffSms = find("send_sms_staff");
+  const smsCount = smsActions.length + (staffSms ? 1 : 0);
   const assignAction = find("assign_employee");
   const dates = new Map(actions.filter((a) => a.type === "set_date" && a.field).map((a) => [a.field!, a.value ?? ""]));
   const customDates = new Map(
@@ -180,10 +184,22 @@ export default async function EditHelperPage({
   const employeeOptions = (employees ?? []).map((e) => ({ id: e.id, name: `${e.first_name} ${e.last_name}`.trim() }));
   const statusItems = (statuses ?? []).map((s) => ({ id: s.id, name: s.name, color: s.color, text_color: s.text_color }));
 
+  const emailTemplates = (templates ?? []).filter((t) => !t.is_sms);
+  const smsTemplates = (templates ?? []).filter((t) => t.is_sms);
+
   const TemplateSelect = ({ name, value }: { name: string; value?: string }) => (
     <select name={name} defaultValue={value ?? ""} className="input w-full">
       <option value="">(none)</option>
-      {(templates ?? []).map((t) => (
+      {emailTemplates.map((t) => (
+        <option key={t.id} value={t.id}>{t.group_name} — {t.name}</option>
+      ))}
+    </select>
+  );
+
+  const SmsTemplateSelect = ({ name, value }: { name: string; value?: string }) => (
+    <select name={name} defaultValue={value ?? ""} className="input w-full">
+      <option value="">(none)</option>
+      {smsTemplates.map((t) => (
         <option key={t.id} value={t.id}>{t.group_name} — {t.name}</option>
       ))}
     </select>
@@ -360,17 +376,12 @@ export default async function EditHelperPage({
     <div className="space-y-5">
       <div className="rounded-lg bg-zinc-100 px-4 py-2.5 text-xs text-zinc-500 dark:bg-white/[0.04] dark:text-zinc-400">
         Texts are queued to the outbox and sent through HighLevel — the conversation (including replies) appears in
-        your HighLevel inbox. Merge tags work in message bodies. Every send is logged on the event.
+        your HighLevel inbox. Pick an SMS template (managed under Settings → Email &amp; SMS Templates); its merge tags
+        are filled in at send time. Every send is logged on the event.
       </div>
-      <Section title="Send Text Message To Client">
-        <Row label="Message" hint="(merge tag enabled) Sent to the client's cell phone — skipped if blank.">
-          <textarea
-            name="action_sms_body"
-            defaultValue={clientSms?.body ?? ""}
-            rows={4}
-            className="input w-full"
-            placeholder={'e.g. "Hi <first_name>! Your <event_type> on <event_date_long> is officially booked 🎉"'}
-          />
+      <Section title="Send Text Message To Related Contact">
+        <Row label="Client" hint="Sent to the client's cell phone — skipped if none on file.">
+          <SmsTemplateSelect name="action_sms_template_id" value={clientSms?.template_id} />
         </Row>
       </Section>
       <Section title="Send Text Message To Specific Number">
@@ -383,8 +394,22 @@ export default async function EditHelperPage({
             placeholder="(305) 555-1234"
           />
         </Row>
-        <Row label="Message" hint="(merge tag enabled)">
-          <textarea name="sms_custom_body" defaultValue={customSms?.body ?? ""} rows={4} className="input w-full" />
+        <Row label="Send This Text">
+          <SmsTemplateSelect name="sms_custom_template_id" value={customSms?.template_id} />
+        </Row>
+      </Section>
+      <Section title="Send Text Message To Employees">
+        <Row label="Send To">
+          <select name="staff_sms_audience" defaultValue={staffSms?.audience ?? ""} className="input w-full">
+            <option value="">(don&apos;t send)</option>
+            <option value="all">Assigned Employees (All Employees)</option>
+            <option value="not_notified">Assigned Employees (Not Marked As Notified)</option>
+            <option value="not_confirmed">Assigned Employees (Not Confirmed Or Declined)</option>
+            <option value="salesperson">Salesperson</option>
+          </select>
+        </Row>
+        <Row label="Send This Text" hint="Sent to each recipient's employee phone number — skipped if none on file.">
+          <SmsTemplateSelect name="staff_sms_template_id" value={staffSms?.template_id} />
         </Row>
       </Section>
     </div>
@@ -613,7 +638,7 @@ export default async function EditHelperPage({
             { id: "general", label: "General", content: generalTab },
             { id: "details", label: "Event Details", content: eventDetailsTab },
             { id: "emails", label: "Send Emails", content: emailsTab },
-            { id: "texts", label: "Send Texts", badge: smsActions.length || undefined, content: textsTab },
+            { id: "texts", label: "Send Texts", badge: smsCount || undefined, content: textsTab },
             { id: "dates", label: "Dates / Times", content: datesTab },
             { id: "employees", label: "Employees", content: employeesTab },
             { id: "automation", label: "Automation", badge: helper.auto_on_create ? "ON" : undefined, content: automationTab },

@@ -92,14 +92,20 @@ function buildHelperPayload(formData: FormData) {
     actions.push({ type: "send_email_staff", template_id: staffTemplate, audience: staffAudience });
   }
 
-  // texts (HighLevel SMS)
-  const smsBody = clean(formData.get("action_sms_body"));
-  if (smsBody) actions.push({ type: "send_sms", to: "client", body: smsBody });
+  // texts (HighLevel SMS) — template-based, mirroring the email actions above
+  const smsTemplateId = clean(formData.get("action_sms_template_id"));
+  if (smsTemplateId) actions.push({ type: "send_sms", to: "client", template_id: smsTemplateId });
 
   const smsCustomNumber = clean(formData.get("sms_custom_number"));
-  const smsCustomBody = clean(formData.get("sms_custom_body"));
-  if (smsCustomNumber && smsCustomBody) {
-    actions.push({ type: "send_sms", to: "custom", number: smsCustomNumber, body: smsCustomBody });
+  const smsCustomTemplate = clean(formData.get("sms_custom_template_id"));
+  if (smsCustomNumber && smsCustomTemplate) {
+    actions.push({ type: "send_sms", to: "custom", number: smsCustomNumber, template_id: smsCustomTemplate });
+  }
+
+  const staffSmsTemplate = clean(formData.get("staff_sms_template_id"));
+  const staffSmsAudience = clean(formData.get("staff_sms_audience"));
+  if (staffSmsTemplate && staffSmsAudience) {
+    actions.push({ type: "send_sms_staff", template_id: staffSmsTemplate, audience: staffSmsAudience });
   }
 
   const note = clean(formData.get("action_note"));
