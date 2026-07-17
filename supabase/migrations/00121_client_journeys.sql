@@ -79,6 +79,6 @@ select
   'For clients booked through an exclusive venue partner (e.g. Villa Toscana). No payment through us — they confirm info, sign a light agreement, then download the app and book their onboarding meeting.',
   false, true, true, false, true, true, true,
   'You''re all set!',
-  'Download the Xpress app to start planning, and book your Exclusive Venue Onboarding call below. Check your email for your login details.',
+  'First, book your Exclusive Venue Onboarding call below. Then download the Xpress app and sign in with the login details we emailed you — that''s where you''ll plan your event.',
   10
 where not exists (select 1 from journey_types where name = 'Venue Partner');

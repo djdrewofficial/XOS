@@ -83,13 +83,37 @@ export default async function ViboPage({ params }: { params: Promise<{ token: st
         )}
       </div>
 
+      {/* Venue-partner order: book the onboarding meeting FIRST, then download
+          the app. Direct journeys skip the step labels and the meeting block. */}
+      {showMeeting && (
+        <div className="mb-6">
+          <p className="mb-1 text-center text-[11px] font-bold uppercase tracking-wide text-brand dark:text-brand-lighter">
+            Step 1 — Book your onboarding
+          </p>
+          <h2 className="mb-1 text-center text-base font-bold text-zinc-900 dark:text-white">
+            Book your Exclusive Venue Onboarding
+          </h2>
+          <p className="mb-3 text-center text-xs text-zinc-500">Pick a time that works for you — this is where we plan the details together.</p>
+          <RawEmbed html={journey.calendar_embed as string} />
+        </div>
+      )}
+
+      {showMeeting && (
+        <div className="mb-3 border-t border-zinc-200 pt-5 text-center dark:border-white/10">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-brand dark:text-brand-lighter">
+            Step 2 — Download the app &amp; log in
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">Sign in with the login details we just emailed you.</p>
+        </div>
+      )}
+
       {embed && (
         <div className="mb-4 aspect-video overflow-hidden rounded-xl bg-black">
           <iframe src={embed} className="h-full w-full" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen title="About Vibo" />
         </div>
       )}
 
-      <p className="mb-4 text-center text-sm text-zinc-600 dark:text-zinc-300">{s.vibo_intro}</p>
+      {s.vibo_intro && <p className="mb-4 text-center text-sm text-zinc-600 dark:text-zinc-300">{s.vibo_intro}</p>}
 
       <div className="space-y-3">
         <ViboDownload iosUrl={s.vibo_ios_url ?? null} androidUrl={s.vibo_android_url ?? null} webUrl={s.vibo_web_url ?? null} />
@@ -105,8 +129,7 @@ export default async function ViboPage({ params }: { params: Promise<{ token: st
           </a>
         ) : (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-            Your event is being set up in Vibo — check back here shortly for your join link. (You can download the app
-            now.)
+            Your event is being set up — check back here shortly for your join link. (You can download the app now.)
           </div>
         )}
 
@@ -114,16 +137,6 @@ export default async function ViboPage({ params }: { params: Promise<{ token: st
           <ViboInvite token={token} />
         </div>
       </div>
-
-      {showMeeting && (
-        <div className="mt-6 border-t border-zinc-200 pt-5 dark:border-white/10">
-          <h2 className="mb-1 text-center text-base font-bold text-zinc-900 dark:text-white">
-            Book your Exclusive Venue Onboarding
-          </h2>
-          <p className="mb-3 text-center text-xs text-zinc-500">Pick a time that works for you — this is where we plan the details together.</p>
-          <RawEmbed html={journey.calendar_embed as string} />
-        </div>
-      )}
 
       <p className="mt-5 text-center text-[11px] text-zinc-400">
         Planning together makes it perfect — invite your partner, planner, or anyone helping with the day.

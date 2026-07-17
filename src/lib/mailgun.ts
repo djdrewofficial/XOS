@@ -165,6 +165,14 @@ async function enrichMessage(
     html = replaceTag(html, "review_sign_button", url ? signButtonHtml(url, "Review & Sign") : "");
   }
 
+  // start journey → the same /proposal entry, but a friendlier button for a
+  // welcome email that kicks off the client journey (confirm → sign → …).
+  if (tagPresent(html, "journey_start_link") || tagPresent(html, "journey_start_button")) {
+    const url = payToken ? `${appUrl()}/proposal/${payToken}` : "";
+    html = replaceTag(html, "journey_start_link", url);
+    html = replaceTag(html, "journey_start_button", url ? signButtonHtml(url, "Get Started") : "");
+  }
+
   // document attached to the email template?
   if (!tmpl?.attach_template_id) {
     // no attachment configured — still clean up a dangling sign-link tag
