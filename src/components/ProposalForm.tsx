@@ -35,6 +35,8 @@ export type ProposalFormProps = {
   // office mode (we set it) — schedule computed server-side
   officeRows: ScheduleRow[];
   officeLabel: string;
+  // venue-partner journeys collect no payment — hide the quote + payment plan
+  hidePayment?: boolean;
 };
 
 function Input({ label, name, defaultValue, type = "text" }: { label: string; name: string; defaultValue: string; type?: string }) {
@@ -129,7 +131,7 @@ export default function ProposalForm(props: ProposalFormProps) {
   return (
     <form action={confirmProposal.bind(null, props.token)} className="space-y-6">
       {/* ---- quote summary (read-only) ---- */}
-      {props.quoteHtml && (
+      {!props.hidePayment && props.quoteHtml && (
         <div>
           <SectionLabel>Your Quote</SectionLabel>
           <div
@@ -202,7 +204,8 @@ export default function ProposalForm(props: ProposalFormProps) {
         <p className="mt-1 text-[11px] text-zinc-400">Times can be estimates — we&apos;ll finalize them with you later.</p>
       </div>
 
-      {/* ---- Payment ---- */}
+      {/* ---- Payment (skipped for no-payment venue-partner journeys) ---- */}
+      {!props.hidePayment && (
       <div>
         <SectionLabel>Payment</SectionLabel>
         {isClient ? (
@@ -243,6 +246,7 @@ export default function ProposalForm(props: ProposalFormProps) {
           </>
         )}
       </div>
+      )}
 
       <Submit />
       <p className="text-center text-[11px] text-zinc-400">

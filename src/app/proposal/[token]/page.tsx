@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle } from "@/lib/documentRender";
 import { quoteSummaryHtml } from "@/lib/signing";
 import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConfig";
+import { loadEventJourney } from "@/lib/eventJourney";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
 import ProposalForm from "@/components/ProposalForm";
 
@@ -45,7 +46,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, event_date, setup_time, start_time, end_time, deposit_value, venue_id, package_id, event_type_id, billing_terms, billing_terms_count"
+      "id, event_date, setup_time, start_time, end_time, deposit_value, venue_id, package_id, event_type_id, billing_terms, billing_terms_count, journey_type_id"
     )
     .eq("pay_token", token)
     .maybeSingle();
@@ -60,7 +61,10 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
     );
   }
 
-  // already signed? skip straight to the welcome/payment page
+  const journeyType = await loadEventJourney(supabase, event.journey_type_id);
+
+  // already signed? skip ahead — to payment on a normal journey, or straight to
+  // the final app/onboarding page on a no-payment venue-partner journey.
   const { data: signedDoc } = await supabase
     .from("documents")
     .select("id")
@@ -69,7 +73,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
     .not("signed_at", "is", null)
     .limit(1)
     .maybeSingle();
-  if (signedDoc) redirect(`/welcome/${token}`);
+  if (signedDoc) redirect(journeyType.step_payment ? `/welcome/${token}` : `/vibo/${token}`);
 
   const [bundle, { data: ecs }, venueRes, pkgRes, typeRes, jsRes] = await Promise.all([
     loadEventBundle(supabase, event.id),
@@ -145,8 +149,9 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
           You&apos;re almost there, {firstName}! 🎉
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Take a moment to confirm your details and choose the payment plan that works best for you. Then we&apos;ll
-          have you sign and you&apos;re officially booked.
+          {journeyType.step_payment
+            ? "Take a moment to confirm your details and choose the payment plan that works best for you. Then we'll have you sign and you're officially booked."
+            : "Take a moment to confirm your details. Then we'll have you sign and get you set up on our app."}
         </p>
       </div>
 
@@ -182,6 +187,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
         termsDays={termsDays}
         officeRows={officeRows}
         officeLabel={officeLabel}
+        hidePayment={!journeyType.step_payment}
       />
     </Shell>
   );

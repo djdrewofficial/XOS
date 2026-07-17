@@ -36,6 +36,9 @@ function buildHelperPayload(formData: FormData) {
   const sourceId = clean(formData.get("action_inquiry_source_id"));
   if (sourceId) actions.push({ type: "set_inquiry_source", inquiry_source_id: sourceId });
 
+  const journeyTypeId = clean(formData.get("action_journey_type_id"));
+  if (journeyTypeId) actions.push({ type: "start_journey", journey_type_id: journeyTypeId });
+
   const salespersonId = clean(formData.get("action_salesperson_id"));
   if (salespersonId) actions.push({ type: "set_salesperson", employee_id: salespersonId });
 

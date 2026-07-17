@@ -25,11 +25,17 @@ export default function SignPanel({
   clientName,
   companyName,
   documentTitle,
+  photoRelease = false,
+  forwardLabel = "Continue to payment →",
 }: {
   action: (prev: SignResult | null, formData: FormData) => Promise<SignResult>;
   clientName: string | null;
   companyName: string;
   documentTitle: string;
+  /** Show the media-release opt-out checkbox (venue-partner agreement). */
+  photoRelease?: boolean;
+  /** Label for the post-sign continue button/message. */
+  forwardLabel?: string;
 }) {
   const [state, formAction] = useActionState(action, null);
 
@@ -56,14 +62,14 @@ export default function SignPanel({
           also print or save this page as a PDF.
         </p>
         <p className="text-sm font-semibold text-zinc-700">
-          {forward ? "Taking you to your payment…" : "We can't wait to celebrate with you! 🎉"}
+          {forward ? "Taking you to the next step…" : "We can't wait to celebrate with you! 🎉"}
         </p>
         {forward && (
           <a
             href={forward}
             className="mt-5 inline-block rounded-xl bg-gradient-to-r from-brand to-brand-light px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand/40"
           >
-            Continue to payment →
+            {forwardLabel}
           </a>
         )}
       </div>
@@ -98,6 +104,15 @@ export default function SignPanel({
             terms.
           </span>
         </label>
+        {photoRelease && (
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-200 p-3.5 text-sm text-zinc-700">
+            <input type="checkbox" name="photo_optout" className="mt-0.5 size-4 accent-brand-light" />
+            <span>
+              <strong>Optional:</strong> Check this box to <strong>decline</strong> the photo/video release in Section 11
+              — we won&apos;t use images of your event in our marketing. Leave unchecked to allow it.
+            </span>
+          </label>
+        )}
         {state?.error && (
           <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700">{state.error}</p>
         )}

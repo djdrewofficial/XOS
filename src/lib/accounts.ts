@@ -60,14 +60,29 @@ function button(href: string, label: string): string {
   </div>`;
 }
 
-function inviteHtml(greeting: string, link: string, type: AccountType): string {
+type AppLinks = { ios?: string | null; android?: string | null; web?: string | null };
+
+/** App-store buttons appended to client invites so they can download and log in. */
+function appLinksHtml(links: AppLinks | null): string {
+  if (!links) return "";
+  const rows = [
+    links.ios ? button(links.ios, "Download for iPhone") : "",
+    links.android ? button(links.android, "Download for Android") : "",
+    links.web && !links.ios && !links.android ? button(links.web, "Open the planner") : "",
+  ].filter(Boolean);
+  if (!rows.length) return "";
+  return `<p style="font-size:13px;color:#4a4a52;line-height:1.6;margin:18px 0 4px;font-weight:600;">Get the Xpress app to plan your event:</p>${rows.join("")}`;
+}
+
+function inviteHtml(greeting: string, link: string, type: AccountType, appLinks: AppLinks | null = null): string {
   const what =
     type === "staff"
       ? "Your Xpress Entertainment team account is ready."
-      : "You've been invited to your event planning portal.";
+      : "Your event planning account is ready.";
   return `<p style="font-size:15px;color:#1d1d22;margin:0 0 10px;">${greeting}</p>
     <p style="font-size:14px;color:#4a4a52;line-height:1.6;margin:0 0 6px;">${what} Click below to set your password and sign in.</p>
     ${button(link, "Set My Password")}
+    ${appLinksHtml(appLinks)}
     <p style="font-size:12px;color:#8a8a94;line-height:1.6;margin:8px 0 0;">This link expires in 24 hours. If you didn't expect this, you can ignore this email.</p>`;
 }
 
@@ -125,10 +140,22 @@ export async function sendAccountInvite(args: {
 
     const link = await recoveryActionLink(admin, email, setPasswordUrlFor(args.type));
     const greeting = args.name ? `Hi ${args.name},` : "Hello,";
+
+    // clients get app-download links alongside their login
+    let appLinks: AppLinks | null = null;
+    if (args.type === "client") {
+      const { data: js } = await admin
+        .from("journey_settings")
+        .select("vibo_ios_url, vibo_android_url, vibo_web_url")
+        .eq("id", true)
+        .maybeSingle();
+      if (js) appLinks = { ios: js.vibo_ios_url, android: js.vibo_android_url, web: js.vibo_web_url };
+    }
+
     return await sendBrandedEmail({
       to: email,
-      subject: args.type === "staff" ? "Your XOS account is ready" : "You're invited — event planning portal",
-      contentHtml: inviteHtml(greeting, link, args.type),
+      subject: args.type === "staff" ? "Your XOS account is ready" : "Your Xpress account — set your password & download the app",
+      contentHtml: inviteHtml(greeting, link, args.type, appLinks),
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

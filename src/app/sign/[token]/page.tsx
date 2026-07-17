@@ -5,6 +5,7 @@ import DocumentShell from "@/components/DocumentShell";
 import PrintButton from "@/components/PrintButton";
 import SignPanel from "@/components/SignPanel";
 import { sanitizeBlocks, docTypeClientLabel } from "@/lib/documentBlocks";
+import { loadEventJourney } from "@/lib/eventJourney";
 import { signDocument } from "./actions";
 
 /* PUBLIC client signing page — no login; the unguessable token is the key.
@@ -42,7 +43,7 @@ export default async function PublicSignPage({
   const [{ data: doc }, { data: cs }] = await Promise.all([
     supabase
       .from("documents")
-      .select("*, event:events(id, name, event_date, pay_token, client:clients(first_name, last_name))")
+      .select("*, event:events(id, name, event_date, pay_token, journey_type_id, client:clients(first_name, last_name))")
       .eq("access_token", token)
       .maybeSingle(),
     supabase.from("company_settings").select("company_name, from_email").eq("id", true).maybeSingle(),
@@ -63,9 +64,18 @@ export default async function PublicSignPage({
     name: string;
     event_date: string | null;
     pay_token: string | null;
+    journey_type_id: string | null;
     client: { first_name: string; last_name: string } | null;
   } | null;
-  const payUrl = ev?.pay_token ? `/welcome/${ev.pay_token}` : null;
+  const journey = await loadEventJourney(supabase, ev?.journey_type_id);
+  // where "continue" goes after signing: payment on a normal journey, the final
+  // app/onboarding page on a no-payment venue-partner journey.
+  const continueUrl = ev?.pay_token
+    ? journey.step_payment
+      ? `/welcome/${ev.pay_token}`
+      : `/vibo/${ev.pay_token}`
+    : null;
+  const continueLabel = journey.step_payment ? "Continue to payment →" : "Download the app & book your onboarding →";
   const clientName = ev?.client ? `${ev.client.first_name} ${ev.client.last_name}`.trim() : null;
   const companyName = cs?.company_name ?? "Xpress Entertainment";
   const signAction = signDocument.bind(null, token);
@@ -98,12 +108,12 @@ export default async function PublicSignPage({
               Signed by <strong>{doc.signer_name}</strong> on {new Date(doc.signed_at).toLocaleString()}. This document
               is locked — print or save it for your records.
             </p>
-            {payUrl && (
+            {continueUrl && (
               <a
-                href={payUrl}
+                href={continueUrl}
                 className="mt-5 inline-block rounded-xl bg-gradient-to-r from-brand to-brand-light px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand/40"
               >
-                Continue to payment →
+                {continueLabel}
               </a>
             )}
           </div>
@@ -113,6 +123,8 @@ export default async function PublicSignPage({
             clientName={clientName}
             companyName={companyName}
             documentTitle={doc.title}
+            photoRelease={doc.photo_release === true}
+            forwardLabel={continueLabel}
           />
         )}
       </div>

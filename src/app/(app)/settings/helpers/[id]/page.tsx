@@ -28,6 +28,7 @@ type HelperAction = {
   minutes?: string;
   helper_id?: string;
   number?: string;
+  journey_type_id?: string;
 };
 
 const DATE_FIELDS = [
@@ -145,6 +146,7 @@ export default async function EditHelperPage({
     { data: employees },
     { data: dateDefs },
     { data: planningTemplates },
+    { data: journeyTypes },
   ] = await Promise.all([
     supabase.from("booking_helpers").select("*").eq("id", id).single(),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
@@ -157,6 +159,7 @@ export default async function EditHelperPage({
     supabase.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name"),
     supabase.from("custom_date_definitions").select("id, name").eq("is_active", true).order("sort_order"),
     supabase.from("planning_templates").select("id, name").eq("is_library", false).order("name"),
+    supabase.from("journey_types").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
 
   if (!helper) notFound();
@@ -315,6 +318,14 @@ export default async function EditHelperPage({
             <option value="">(don&apos;t change)</option>
             {(sources ?? []).map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </Row>
+        <Row label="Start Client Journey" hint="Puts the client on this onboarding journey (e.g. Venue Partner). Pair with a status change + welcome email above.">
+          <select name="action_journey_type_id" defaultValue={find("start_journey")?.journey_type_id ?? ""} className="input w-full">
+            <option value="">(don&apos;t change)</option>
+            {(journeyTypes ?? []).map((j) => (
+              <option key={j.id} value={j.id}>{j.name}</option>
             ))}
           </select>
         </Row>

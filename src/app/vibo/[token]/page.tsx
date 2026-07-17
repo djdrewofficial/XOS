@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
 import ViboDownload from "@/components/ViboDownload";
 import ViboInvite from "@/components/ViboInvite";
+import RawEmbed from "@/components/RawEmbed";
+import { loadEventJourney } from "@/lib/eventJourney";
 
 /* PUBLIC Vibo planning page — the post-payment "let's start planning" screen.
    Explains Vibo, device-aware download links, the join link (set by the Zapier
@@ -10,10 +12,10 @@ import ViboInvite from "@/components/ViboInvite";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-100 p-4 dark:bg-zinc-950">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-white/10 dark:bg-zinc-900 sm:p-8">
+      <div className={`w-full ${wide ? "max-w-xl" : "max-w-md"} rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-white/10 dark:bg-zinc-900 sm:p-8`}>
         <div className="mb-5 flex justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-light.png" alt="Xpress Entertainment" className="h-10 dark:hidden" />
@@ -40,7 +42,7 @@ export default async function ViboPage({ params }: { params: Promise<{ token: st
   const { token } = await params;
   const supabase = createAdminClient();
   const [{ data: event }, { data: js }] = await Promise.all([
-    supabase.from("events").select("name, custom_fields, client:clients(first_name)").eq("pay_token", token).maybeSingle(),
+    supabase.from("events").select("name, custom_fields, journey_type_id, client:clients(first_name)").eq("pay_token", token).maybeSingle(),
     supabase
       .from("journey_settings")
       .select("vibo_intro, vibo_video_url, vibo_ios_url, vibo_android_url, vibo_web_url")
@@ -58,6 +60,7 @@ export default async function ViboPage({ params }: { params: Promise<{ token: st
     );
   }
 
+  const journey = await loadEventJourney(supabase, event.journey_type_id);
   const first = (event.client as { first_name?: string } | null)?.first_name ?? "there";
   const viboLink = ((event.custom_fields as Record<string, string>) ?? {}).vibo_link || "";
   const s = (js ?? {}) as {
@@ -68,11 +71,16 @@ export default async function ViboPage({ params }: { params: Promise<{ token: st
     vibo_web_url?: string | null;
   };
   const embed = vimeoEmbed(s.vibo_video_url ?? null);
+  const showMeeting = journey.step_book_meeting && !!journey.calendar_embed;
+  const heading = journey.final_page_heading || "Let's start planning";
 
   return (
-    <Shell>
+    <Shell wide={showMeeting}>
       <div className="mb-4 text-center">
-        <h1 className="text-xl font-extrabold text-zinc-900 dark:text-white">Let&apos;s start planning, {first}! 🎶</h1>
+        <h1 className="text-xl font-extrabold text-zinc-900 dark:text-white">{heading}, {first}! 🎶</h1>
+        {journey.final_page_body && (
+          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{journey.final_page_body}</p>
+        )}
       </div>
 
       {embed && (
@@ -106,6 +114,16 @@ export default async function ViboPage({ params }: { params: Promise<{ token: st
           <ViboInvite token={token} />
         </div>
       </div>
+
+      {showMeeting && (
+        <div className="mt-6 border-t border-zinc-200 pt-5 dark:border-white/10">
+          <h2 className="mb-1 text-center text-base font-bold text-zinc-900 dark:text-white">
+            Book your Exclusive Venue Onboarding
+          </h2>
+          <p className="mb-3 text-center text-xs text-zinc-500">Pick a time that works for you — this is where we plan the details together.</p>
+          <RawEmbed html={journey.calendar_embed as string} />
+        </div>
+      )}
 
       <p className="mt-5 text-center text-[11px] text-zinc-400">
         Planning together makes it perfect — invite your partner, planner, or anyone helping with the day.

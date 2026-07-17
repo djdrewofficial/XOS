@@ -118,6 +118,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
           { href: "/events?settings=1", label: "Event List Settings", icon: faListCheck, module: "settings" },
           { href: "/settings/signing", label: "Event Type Workflows", icon: faListCheck, module: "settings" },
           { href: "/settings/journey", label: "Client Journey", icon: faRoute, module: "settings" },
+          { href: "/settings/journeys", label: "Journey Types", icon: faRoute, module: "settings" },
           { href: "/settings/helpers", label: "Booking Helpers", icon: faBolt, module: "settings" },
           { href: "/settings/planner", label: "XOS Planner", icon: faMusic, module: "settings" },
           { href: "/settings/photobooth", label: "Photo Booth", icon: faCamera, module: "settings" },

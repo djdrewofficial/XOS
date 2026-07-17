@@ -10,6 +10,8 @@ import { sanitizeBlocks, docTypeClientLabel, type DocBlock } from "@/lib/documen
 import { appUrl, signingEmailHtml } from "@/lib/signing";
 import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations } from "@/lib/automations";
+import { loadEventJourney } from "@/lib/eventJourney";
+import { sendAccountInvite } from "@/lib/accounts";
 
 export type SignResult = {
   ok: boolean;
@@ -28,13 +30,14 @@ export async function signDocument(
 ): Promise<SignResult> {
   const signerName = (formData.get("signer_name") ?? "").toString().trim();
   const consent = formData.get("consent") === "on";
+  const photoOptOut = formData.get("photo_optout") === "on";
   if (signerName.length < 3) return { ok: false, error: "Please type your full legal name." };
   if (!consent) return { ok: false, error: "Please check the agreement box to continue." };
 
   const supabase = createAdminClient();
   const { data: doc } = await supabase
     .from("documents")
-    .select("*, event:events(id, name, event_date, client:clients(first_name, last_name, email))")
+    .select("*, event:events(id, name, event_date, journey_type_id, client:clients(id, first_name, last_name, email))")
     .eq("access_token", token)
     .maybeSingle();
 
@@ -78,6 +81,8 @@ export async function signDocument(
       signer_ip: ip,
       signer_user_agent: userAgent,
       doc_hash: docHash,
+      // record the media-release choice only on docs that offer the opt-out
+      photo_release_declined: doc.photo_release ? photoOptOut : null,
       updated_at: signedAt.toISOString(),
     })
     .eq("id", doc.id)
@@ -87,8 +92,13 @@ export async function signDocument(
   const ev = doc.event as unknown as {
     id: string;
     name: string;
-    client: { first_name: string; last_name: string; email: string | null } | null;
+    journey_type_id: string | null;
+    client: { id: string; first_name: string; last_name: string; email: string | null } | null;
   } | null;
+
+  // which journey is this event on? drives the after-sign destination + whether
+  // we send the client their app login.
+  const journey = await loadEventJourney(supabase, ev?.journey_type_id);
 
   // auto-name unnamed events now that the couple's info is confirmed
   if (ev?.id) await autoNameEvent(supabase, ev.id);
@@ -104,11 +114,14 @@ export async function signDocument(
       .eq("id", doc.template_id)
       .maybeSingle();
     afterSignUrl = t?.after_sign_url ?? null;
-    // default forward: the payment page. Relative on purpose — the redirect is
-    // client-side same-origin, so it works no matter what NEXT_PUBLIC_APP_URL is.
+    // Default forward: payment page on a normal journey, or the final app/
+    // onboarding page on a no-payment venue-partner journey. Relative on purpose
+    // — the redirect is client-side same-origin.
     if (!afterSignUrl && ev?.id) {
       const { data: evp } = await supabase.from("events").select("pay_token").eq("id", ev.id).maybeSingle();
-      if (evp?.pay_token) afterSignUrl = `/welcome/${evp.pay_token}`;
+      if (evp?.pay_token) {
+        afterSignUrl = journey.step_payment ? `/welcome/${evp.pay_token}` : `/vibo/${evp.pay_token}`;
+      }
     }
     if (t?.after_sign_helper_id && ev?.id) {
       const { error: helperError } = await supabase.rpc("run_booking_helper", {
@@ -130,6 +143,18 @@ export async function signDocument(
   // fire any "document signed" automations (configured per event type) — separate
   // from the template's after_sign_helper above, which stays for back-compat
   if (ev?.id) await runAutomations(supabase, ev.id, "document_signed");
+
+  // App-onboarding journeys: now that they've signed, email the client their
+  // initial login (set-password, deep-links into the app) + app download links,
+  // so they can onboard themselves. The final page also shows the download links.
+  if (journey.step_app_onboarding && ev?.client?.email) {
+    await sendAccountInvite({
+      type: "client",
+      email: ev.client.email,
+      name: ev.client.first_name || null,
+      clientId: ev.client.id,
+    });
+  }
 
   // office notification (respects the General settings allowlist)
   await supabase.rpc("create_notification", {

@@ -234,6 +234,8 @@ export async function generateDocumentRow(
       doc_type: template.doc_type,
       blocks: rendered,
       status,
+      // carry the photo-release opt-out flag so /sign shows the opt-out control
+      photo_release: template.photo_release ?? false,
     })
     .select("id, title, access_token, doc_type")
     .single();

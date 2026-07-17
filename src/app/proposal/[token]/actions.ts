@@ -6,6 +6,7 @@ import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { type SchedulePlan } from "@/lib/paymentSchedule";
 import { writeSchedulePreservingPaid } from "@/lib/scheduleWrite";
 import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConfig";
+import { loadEventJourney } from "@/lib/eventJourney";
 import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations } from "@/lib/automations";
 import { findOrCreateClient } from "@/lib/clients";
@@ -27,11 +28,13 @@ export async function confirmProposal(token: string, formData: FormData) {
 
   const { data: event } = await supabase
     .from("events")
-    .select("id, event_date, deposit_value, venue_id, package_id, event_type_id, billing_terms, billing_terms_count")
+    .select("id, event_date, deposit_value, venue_id, package_id, event_type_id, billing_terms, billing_terms_count, journey_type_id")
     .eq("pay_token", token)
     .maybeSingle();
   if (!event) redirect(`/proposal/${token}?error=invalid`);
   const eventId = event.id as string;
+
+  const journeyType = await loadEventJourney(supabase, event.journey_type_id);
 
   // resolve this event type's workflow (contract template + payment chooser)
   const [typeRes, jsRes] = await Promise.all([
@@ -139,13 +142,14 @@ export async function confirmProposal(token: string, formData: FormData) {
     .eq("id", eventId);
 
   // ---- 2) (re)build the payment schedule -----------------------------------
+  // No-payment journeys (venue partner) skip the schedule entirely.
   const bundle = await loadEventBundle(supabase, eventId); // fresh totals after edits
   const total = bundle?.total ?? 0;
   const deposit = Number(event.deposit_value ?? 0);
 
   let terms: "days_before" | "net_days_after" = "days_before";
   let termsDays = 30;
-  if (event.package_id) {
+  if (journeyType.step_payment && event.package_id) {
     const { data: pkg } = await supabase
       .from("packages")
       .select("payment_terms, payment_terms_days")
@@ -169,7 +173,10 @@ export async function confirmProposal(token: string, formData: FormData) {
   }
 
   // Never disturb already-paid installments; only (re)build the unpaid portion.
-  await writeSchedulePreservingPaid(supabase, eventId, { total, deposit, eventDate: newDate, terms, termsDays, plan });
+  // Skipped for no-payment journeys — the venue bills the client, not us.
+  if (journeyType.step_payment) {
+    await writeSchedulePreservingPaid(supabase, eventId, { total, deposit, eventDate: newDate, terms, termsDays, plan });
+  }
 
   // auto-name the event now that the couple's info is in ("Alex & Sam's Wedding")
   await autoNameEvent(supabase, eventId);
@@ -177,8 +184,10 @@ export async function confirmProposal(token: string, formData: FormData) {
   // fire any "proposal confirmed" automations (configured per event type)
   await runAutomations(supabase, eventId, "proposal_confirmed");
 
-  // ---- 4) generate the per-type contract, then send them to sign -----------
-  const templateId = journey.templateId ?? BOOKING_AGREEMENT_ID;
+  // ---- 4) generate the agreement, then send them to sign -------------------
+  // A journey's own agreement (e.g. the Venue Partner Agreement) wins over the
+  // per-event-type contract and the built-in default.
+  const templateId = journeyType.agreement_template_id ?? journey.templateId ?? BOOKING_AGREEMENT_ID;
   const doc = await generateDocumentRow(supabase, templateId, eventId, "sent");
   if (!doc) redirect(`/proposal/${token}?error=gen`);
 
