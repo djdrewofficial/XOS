@@ -140,6 +140,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
         icon: faRobot,
         module: "settings",
         items: [
+          { href: "/settings/notifications", label: "Notifications", icon: faBell, module: "settings" },
           { href: "/settings/assistant", label: "AI", icon: faRobot, module: "settings" },
           { href: "/settings/email", label: "Email", icon: faEnvelope, module: "settings" },
           { href: "/settings/merge-tags", label: "Merge Tags", icon: faTags, module: "settings" },

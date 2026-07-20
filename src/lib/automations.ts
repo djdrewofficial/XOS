@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { reseedEventPlanning } from "@/lib/planning";
+import { dispatchNotification } from "@/lib/notify";
 
 /* Automation dispatcher — the keystone of the trigger→action engine. Lifecycle
    moments (event created, proposal confirmed, document signed, payment received,
@@ -43,6 +44,20 @@ export async function runAutomations(
   if (!ev) return;
   // archived events are frozen — no helper runs, webhooks, or queued sends
   if (ev.archived_at) return;
+
+  // Fan out the matching notification (bell/push/email/SMS per Notification
+  // Settings) — independent of whether any booking helper matches this trigger.
+  const NOTIF_FOR_TRIGGER: Partial<Record<AutomationTrigger, string>> = {
+    event_created: "event_created",
+    proposal_confirmed: "proposal_confirmed",
+    document_signed: "agreement_signed",
+    payment_received: "payment_received",
+    status_changed: "event_status_changed",
+  };
+  const notifType = NOTIF_FOR_TRIGGER[trigger];
+  if (notifType) {
+    await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId });
+  }
 
   const { data: helpers } = await supabase
     .from("booking_helpers")
