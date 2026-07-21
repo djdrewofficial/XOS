@@ -34,15 +34,37 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "expoPushToken is required" }, { status: 400 });
   }
 
-  // Map the login to an employee row (null for the owner/unlinked login).
-  const { data: emp } = await supabase.from("employees").select("id").eq("auth_user_id", authUserId).maybeSingle();
+  // Map the login to an employee row. The owner/unlinked staff login has no
+  // employees row — resolve it via accounts (the mobile app's source of truth),
+  // and treat owner/unlinked-staff as master_admin for role-based push targeting.
+  const { data: acct } = await supabase
+    .from("accounts")
+    .select("account_type, employee_id")
+    .eq("auth_user_id", authUserId)
+    .maybeSingle();
+
+  let employeeId = (acct?.employee_id as string | null) ?? null;
+  if (!employeeId) {
+    const { data: emp } = await supabase.from("employees").select("id").eq("auth_user_id", authUserId).maybeSingle();
+    employeeId = (emp?.id as string | null) ?? null;
+  }
+
+  let effectiveTier: string | null = null;
+  if (employeeId) {
+    const { data: e } = await supabase.from("employees").select("permission_tier").eq("id", employeeId).maybeSingle();
+    effectiveTier = (e?.permission_tier as string | null) ?? null;
+  } else if (!acct || acct.account_type === "staff") {
+    // owner / unlinked staff login
+    effectiveTier = "master_admin";
+  }
 
   const { error } = await supabase
     .from("device_tokens")
     .upsert(
       {
         auth_user_id: authUserId,
-        employee_id: emp?.id ?? null,
+        employee_id: employeeId,
+        effective_tier: effectiveTier,
         expo_push_token: pushToken,
         platform: platform ?? null,
         device_name: deviceName ?? null,

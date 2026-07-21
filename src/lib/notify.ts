@@ -159,9 +159,12 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
   }
 
   // ---- Push (Expo) ----
+  // Resolved recipients cover employees; role audiences with push on ALSO reach
+  // owner/unlinked-staff devices (no employee_id) via device_tokens.effective_tier.
   const pushEmpIds = recipients.filter((r) => r.ch.push).map((r) => r.emp.id);
-  if (pushEmpIds.length) {
-    await sendPushToEmployees(supabase, pushEmpIds, { title, body: body ?? undefined, href });
+  const pushTiers = rows.filter((r) => STATIC_ROLES.has(r.audience) && r.push).map((r) => r.audience);
+  if (pushEmpIds.length || pushTiers.length) {
+    await sendPush(supabase, pushEmpIds, pushTiers, { title, body: body ?? undefined, href });
   }
 
   // ---- Email (staff alert) ----
@@ -248,18 +251,37 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Look up active Expo push tokens for the given employees and send. */
-async function sendPushToEmployees(
+/** Look up active Expo push tokens for the given employees OR owner/unlinked
+    devices matching one of the role tiers, then send. */
+async function sendPush(
   supabase: SupabaseClient,
   employeeIds: string[],
+  ownerTiers: string[],
   msg: { title: string; body?: string; href?: string | null }
 ): Promise<void> {
-  const { data: tokens } = await supabase
-    .from("device_tokens")
-    .select("expo_push_token")
-    .in("employee_id", employeeIds)
-    .eq("is_active", true);
-  const list = (tokens ?? []).map((t) => (t as { expo_push_token: string }).expo_push_token).filter(Boolean);
+  const tokens = new Set<string>();
+
+  if (employeeIds.length) {
+    const { data } = await supabase
+      .from("device_tokens")
+      .select("expo_push_token")
+      .in("employee_id", employeeIds)
+      .eq("is_active", true);
+    for (const t of (data ?? []) as { expo_push_token: string }[]) if (t.expo_push_token) tokens.add(t.expo_push_token);
+  }
+
+  // Owner/unlinked-staff devices (no employee_id) matched by effective tier.
+  if (ownerTiers.length) {
+    const { data } = await supabase
+      .from("device_tokens")
+      .select("expo_push_token")
+      .is("employee_id", null)
+      .in("effective_tier", ownerTiers)
+      .eq("is_active", true);
+    for (const t of (data ?? []) as { expo_push_token: string }[]) if (t.expo_push_token) tokens.add(t.expo_push_token);
+  }
+
+  const list = [...tokens];
   if (list.length === 0) return;
   await sendExpoPush(
     list.map((to) => ({
