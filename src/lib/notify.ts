@@ -138,11 +138,13 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
   const recipients = [...perEmployee.values()];
 
   // ---- In-app bell (targeted per employee) ----
-  // These two types still have a legacy DB trigger writing an (untargeted) bell
-  // entry that catches every code path — skip in-app here to avoid duplicates.
-  // Inserts go through the SECURITY DEFINER create_targeted_notification so they
-  // succeed regardless of the acting caller's RLS context.
-  const LEGACY_INAPP = new Set(["payment_received", "agreement_signed"]);
+  // payment_received still has a live legacy DB trigger (notify_payment →
+  // 'new_payment_received') that writes a broadcast bell on every payment path,
+  // so skip in-app here for it to avoid a duplicate. Everything else (including
+  // agreement_signed — its legacy office bell is suppressed by the notif_types
+  // allowlist) is owned by the dispatcher. Inserts go through the SECURITY
+  // DEFINER create_targeted_notification so they succeed from any RLS context.
+  const LEGACY_INAPP = new Set(["payment_received"]);
   if (!LEGACY_INAPP.has(typeKey)) {
     for (const r of recipients.filter((r) => r.ch.in_app)) {
       await supabase.rpc("create_targeted_notification", {
