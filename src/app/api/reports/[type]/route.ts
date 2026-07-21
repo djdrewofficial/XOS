@@ -15,17 +15,29 @@ import {
 
 export const dynamic = "force-dynamic";
 
+// Every report exposes sensitive data, so each requires view access on its
+// module (Settings → Permissions). The middleware permission gate doesn't cover
+// /api/* routes, so this handler must enforce it for every type — not just leads.
+const REPORT_MODULE: Record<string, string> = {
+  received: "payments",
+  scheduled: "payments",
+  summary: "payments",
+  monthly: "payments",
+  outstanding: "payments",
+  commissions: "commissions",
+  leads: "reports",
+};
+
 export async function GET(req: Request, { params }: { params: Promise<{ type: string }> }) {
   const { type } = await params;
   const supabase = await createClient();
   const url = new URL(req.url);
   const year = parseInt(url.searchParams.get("year") ?? "") || new Date().getFullYear();
 
-  // Leads & Sales report needs Reports access (Settings → Permissions)
-  if (type === "leads") {
-    const access = await moduleAccess("reports", supabase);
-    if (!accessAtLeast(access, "view")) return new NextResponse("Forbidden", { status: 403 });
-  }
+  const moduleKey = REPORT_MODULE[type];
+  if (!moduleKey) return new NextResponse("Unknown report", { status: 404 });
+  const access = await moduleAccess(moduleKey, supabase);
+  if (!accessAtLeast(access, "view")) return new NextResponse("Forbidden", { status: 403 });
 
   let doc: ReportDoc;
   switch (type) {

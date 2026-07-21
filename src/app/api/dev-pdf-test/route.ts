@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { moduleAccess } from "@/lib/auth";
+import { accessAtLeast } from "@/lib/permissions";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
 
-// PDF smoke test — login-walled by middleware; renders the latest document.
+// PDF smoke test — renders the latest document to PDF. This exposes real client
+// contract content, so gate it to the same access that viewing a document
+// requires; middleware's permission gate doesn't cover /api/* routes.
 export async function GET() {
   const supabase = await createClient();
+  const access = await moduleAccess("documents", supabase);
+  if (!accessAtLeast(access, "view")) return new NextResponse("Forbidden", { status: 403 });
   const { data: doc } = await supabase
     .from("documents")
     .select("id, title")
