@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { refreshConversation, syncHighLevelConversations } from "@/lib/highlevel";
+import { dispatchNotification } from "@/lib/notify";
 
 /* Real-time inbound push from HighLevel (PUBLIC route — exempted in middleware).
    Wire it in GHL: Automation → Workflow, trigger "Customer Replied" →
@@ -57,6 +58,27 @@ export async function POST(req: Request) {
 
   if (target) {
     await refreshConversation(supabase, target);
+    // "Customer Replied" = an inbound message. Notify per settings (salesperson +
+    // admins). Resolve the client's most recent live event so the event's
+    // salesperson is targeted; falls back to role audiences if there's no event.
+    try {
+      const { data: conv } = await supabase.from("hl_conversations").select("client_id").eq("id", target).maybeSingle();
+      let eventId: string | null = null;
+      if (conv?.client_id) {
+        const { data: ev } = await supabase
+          .from("events")
+          .select("id")
+          .eq("client_id", conv.client_id)
+          .is("archived_at", null)
+          .order("event_date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        eventId = (ev?.id as string | null) ?? null;
+      }
+      await dispatchNotification(supabase, "inbound_message", { eventId });
+    } catch {
+      /* notification is best-effort */
+    }
     // bump unread so the list highlights without waiting for the next full sync
     return NextResponse.json({ refreshed: target });
   }

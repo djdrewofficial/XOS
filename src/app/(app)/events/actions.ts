@@ -10,6 +10,7 @@ import { writeSchedulePreservingPaid } from "@/lib/scheduleWrite";
 import { loadEventBundle } from "@/lib/documentRender";
 import { buildEventName, autoNameEvent, type NamingClient } from "@/lib/eventName";
 import { runAutomations, fireHelperWebhook } from "@/lib/automations";
+import { dispatchNotification } from "@/lib/notify";
 import { findOrCreateClient } from "@/lib/clients";
 import { reseedEventPlanning, assignAddonSections } from "@/lib/planning";
 import { requireModule } from "@/lib/auth";
@@ -725,6 +726,7 @@ export async function assignStaff(eventId: string, formData: FormData) {
     flat_wage: num(formData.get("flat_wage")),
   });
   if (error) throw new Error(error.message);
+  await dispatchNotification(supabase, "staff_assigned", { eventId, employeeIds: [employeeId] });
   revalidatePath(`/events/${eventId}`);
 }
 
@@ -748,6 +750,7 @@ export async function markStaff(
     .update({ [field]: new Date().toISOString() })
     .eq("id", staffId);
   if (error) throw new Error(error.message);
+  if (field === "confirmed_at") await dispatchNotification(supabase, "staff_confirmed", { eventId });
   revalidatePath(`/events/${eventId}`);
 }
 
@@ -788,6 +791,7 @@ export async function requestTimesheetChange(eventStaffId: string, formData: For
     reason: clean(formData.get("reason")),
   });
   if (error) throw new Error(error.message);
+  await dispatchNotification(supabase, "timesheet_submitted", {});
   revalidatePath("/");
 }
 

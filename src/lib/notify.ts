@@ -144,7 +144,7 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
   // agreement_signed — its legacy office bell is suppressed by the notif_types
   // allowlist) is owned by the dispatcher. Inserts go through the SECURITY
   // DEFINER create_targeted_notification so they succeed from any RLS context.
-  const LEGACY_INAPP = new Set(["payment_received"]);
+  const LEGACY_INAPP = new Set(["payment_received", "time_off_request"]);
   if (!LEGACY_INAPP.has(typeKey)) {
     for (const r of recipients.filter((r) => r.ch.in_app)) {
       await supabase.rpc("create_targeted_notification", {

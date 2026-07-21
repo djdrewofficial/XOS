@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/auth";
 import { sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
+import { dispatchNotification } from "@/lib/notify";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -150,14 +151,17 @@ export async function addTimeOff(employeeId: string, formData: FormData) {
   const supabase = await createClient();
   const start = clean(formData.get("start_date"));
   if (!start) return;
+  const status = clean(formData.get("status")) ?? "approved";
   const { error } = await supabase.from("employee_time_off").insert({
     employee_id: employeeId,
     start_date: start,
     end_date: clean(formData.get("end_date")) ?? start,
-    status: clean(formData.get("status")) ?? "approved",
+    status,
     notes: clean(formData.get("notes")),
   });
   if (error) throw new Error(error.message);
+  // Only a pending submission is a "request" that needs admin attention.
+  if (status === "pending") await dispatchNotification(supabase, "time_off_request", {});
   revalidatePath(`/employees/${employeeId}`);
   revalidatePath("/");
 }
