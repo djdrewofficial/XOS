@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireApiUser } from "@/lib/apiAuth";
+import { accessAtLeast, moduleForPath } from "@/lib/permissions";
 
 export type SearchResult = {
   type: string;
@@ -35,13 +37,18 @@ const PAGES: { label: string; href: string; keywords: string }[] = [
 ];
 
 export async function GET(request: Request) {
+  const supabase = await createClient();
+  // /api/* skips the middleware RBAC gate. Search spans several modules, so we
+  // require a signed-in user and then include each result category ONLY if the
+  // user can view that module — otherwise low-privilege staff could read
+  // clients, employees, etc. they aren't allowed to see.
+  const me = await requireApiUser(supabase);
+  if (me instanceof NextResponse) return me;
+  const canView = (m: string | null) => !!m && accessAtLeast(me.can[m] ?? "none", "view");
+
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get("q") ?? "").trim();
   if (q.length < 2) return NextResponse.json({ results: [] });
-
-  const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth?.user) return NextResponse.json({ results: [] }, { status: 401 });
 
   const like = `%${q}%`;
   const lower = q.toLowerCase();
@@ -65,30 +72,46 @@ export async function GET(request: Request) {
   const pageHits: SearchResult[] = PAGES.filter(
     (p) => p.label.toLowerCase().includes(lower) || p.keywords.includes(lower)
   )
+    // Only surface screens the user can actually open.
+    .filter((p) => canView(moduleForPath(p.href.split("?")[0])))
     .slice(0, 5)
     .map((p) => ({ type: "Page", label: p.label, href: p.href }));
 
+  // Run a category's query ONLY if the caller can view that module. Skipping
+  // (rather than fetching-then-discarding) means an employee with clients=none
+  // never pulls client emails/phones — or the staff roster, venues, vendors —
+  // into the server at all. This is the RBAC gate: /api/* bypasses middleware,
+  // and these tables aren't RLS-scoped per role.
+  const gated = <T>(allowed: boolean, run: () => PromiseLike<{ data: T[] | null }>) =>
+    allowed ? run() : Promise.resolve({ data: [] as T[] });
+
   const [clients, events, venues, vendors, employees, packages] = await Promise.all([
-    supabase
-      .from("clients")
-      .select("id, first_name, last_name, email, cell_phone")
-      .or(nameOr(["first_name", "last_name", "email", "cell_phone"]))
-      .limit(5),
-    supabase
-      .from("events")
-      .select("id, name, event_date, status:event_statuses(name)")
-      .is("archived_at", null)
-      .ilike("name", like)
-      .order("event_date", { ascending: false })
-      .limit(5),
-    supabase.from("venues").select("id, name, city").ilike("name", like).limit(4),
-    supabase.from("vendors").select("id, company_name, category").ilike("company_name", like).limit(4),
-    supabase
-      .from("employees")
-      .select("id, first_name, last_name, permission_tier")
-      .or(nameOr(["first_name", "last_name"]))
-      .limit(4),
-    supabase.from("packages").select("id, name").ilike("name", like).limit(4),
+    gated(canView("clients"), () =>
+      supabase
+        .from("clients")
+        .select("id, first_name, last_name, email, cell_phone")
+        .or(nameOr(["first_name", "last_name", "email", "cell_phone"]))
+        .limit(5)),
+    gated(canView("events"), () =>
+      supabase
+        .from("events")
+        .select("id, name, event_date, status:event_statuses(name)")
+        .is("archived_at", null)
+        .ilike("name", like)
+        .order("event_date", { ascending: false })
+        .limit(5)),
+    gated(canView("venues"), () =>
+      supabase.from("venues").select("id, name, city").ilike("name", like).limit(4)),
+    gated(canView("vendors"), () =>
+      supabase.from("vendors").select("id, company_name, category").ilike("company_name", like).limit(4)),
+    gated(canView("employees"), () =>
+      supabase
+        .from("employees")
+        .select("id, first_name, last_name, permission_tier")
+        .or(nameOr(["first_name", "last_name"]))
+        .limit(4)),
+    gated(canView("packages"), () =>
+      supabase.from("packages").select("id, name").ilike("name", like).limit(4)),
   ]);
 
   const results: SearchResult[] = [

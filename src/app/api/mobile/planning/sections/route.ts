@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireMobileStaffModule } from "@/lib/apiAuth";
 import { resolveEventRole } from "@/lib/planning";
 
 /* Mobile section management (reorder / delete / restore). Staff + hosts only —
    guests are rejected. Hosts can't write planning_sections under RLS (staff-only
    write policy), so after verifying the caller's role we mutate via the admin
    client — mirroring the web planner's server actions. JWT-verified via the
-   /api/mobile/ prefix (exempt from the origin-lock + login-wall). */
+   /api/mobile/ prefix (exempt from the origin-lock + login-wall).
+   Staff callers must additionally hold events=edit (the per-screen RBAC the web
+   enforces) so a restricted staffer can't edit an event's planner from the app;
+   hosts (the couple) are gated by event membership only, exactly like the web. */
 export async function POST(req: Request) {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,6 +35,13 @@ export async function POST(req: Request) {
   const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
   const role = await resolveEventRole(rls, uid, accountType, eventId);
   if (role !== "staff" && role !== "host") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  // Staff must clear the same module gate the web planner's server actions use;
+  // hosts (couples) are already scoped to their own event by resolveEventRole.
+  if (role === "staff") {
+    const denied = await requireMobileStaffModule(rls, token, "events", "edit");
+    if (denied) return denied;
+  }
 
   const admin = createAdminClient();
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireApiModule } from "@/lib/apiAuth";
 import { chatComplete, isOpenAIConfigured } from "@/lib/openai";
 
 // Whitelisted source columns (must match render_merge_tags in migration 00111).
@@ -12,8 +13,10 @@ const FIELDS = {
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Merge-tag authoring lives under Settings; gate on settings access since
+  // /api/* skips the middleware RBAC gate.
+  const denied = await requireApiModule("settings", "view", supabase);
+  if (denied) return denied;
   if (!isOpenAIConfigured()) return NextResponse.json({ error: "OpenAI is not configured (OPENAI_API_KEY missing)." }, { status: 400 });
 
   const { request: ask } = await req.json();

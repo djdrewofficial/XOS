@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireMobileStaffModule } from "@/lib/apiAuth";
 import { processSmsOutbox, refreshConversation } from "@/lib/highlevel";
 
 /* Mobile-app SMS send. The XOS Mobile app authenticates with the user's
    Supabase access token (Bearer header) instead of cookies, so this route is
    exempted from the cookie login-wall in middleware and verifies the token
-   itself. Mirrors sendInboxReply in src/app/(app)/inbox/actions.ts. */
+   itself. Mirrors sendInboxReply in src/app/(app)/inbox/actions.ts, INCLUDING
+   its requireModule("inbox","edit") gate — otherwise a staffer restricted from
+   the inbox on the web could still send company SMS from the app. */
 export async function POST(req: Request) {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,10 +22,9 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     }
   );
-  const { data: userData, error: userError } = await supabase.auth.getUser(token);
-  if (userError || !userData?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Same per-screen RBAC the web inbox enforces (JWT verified inside).
+  const denied = await requireMobileStaffModule(supabase, token, "inbox", "edit");
+  if (denied) return denied;
 
   const { conversationId, body } = (await req.json().catch(() => ({}))) as {
     conversationId?: string;

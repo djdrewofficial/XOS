@@ -9,6 +9,8 @@ import {
   resolveAccessMap,
   accessAtLeast,
   defaultAccess,
+  isOwnerEmail,
+  DENY_ALL_ACCESS,
   DEFAULT_LANDING,
   type Access,
   type Role,
@@ -36,15 +38,34 @@ const NO_ACCESS: Record<string, Access> = {};
 
 /** Load the current user with their resolved account type, role, permission map
     and landing. Client/Event-Guest accounts route to the portal with no admin
-    access. A signed-in user with no account row is treated as the owner
-    (master_admin) so Drew can never lock himself out. Returns null if not signed in. */
+    access. Deny-by-default: a signed-in user with no employee row gets NO access
+    (routed to /no-access) — the only exception is an OWNER_EMAILS break-glass
+    match, which bootstraps master_admin so the owner can never be locked out.
+    Returns null if not signed in. */
 export async function getMe(supabase?: Client): Promise<Me | null> {
   const sb = supabase ?? (await createClient());
   const {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) return null;
+  return resolveMe(sb, user);
+}
 
+/** getMe for a mobile (Bearer-token) request. The anon client carries the JWT in
+    its Authorization header — so its RLS reads are user-scoped like a web session
+    — but auth.getUser() needs the token passed explicitly (there's no stored
+    session). Returns the same Me the web would resolve, or null if the token is
+    invalid. Lets mobile routes reuse the exact web RBAC (see requireMobileStaffModule). */
+export async function getMobileMe(supabase: Client, token: string): Promise<Me | null> {
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) return null;
+  return resolveMe(supabase, data.user);
+}
+
+/** Resolve a signed-in user's account type, role, permission map and landing.
+    Shared by getMe (web/cookie) and getMobileMe (mobile/Bearer) so both honor the
+    identical RBAC. `user` is the already-authenticated auth user. */
+async function resolveMe(sb: Client, user: { id: string; email?: string }): Promise<Me> {
   // accounts is the source of truth for who this login is.
   const { data: account } = await sb
     .from("accounts")
@@ -64,14 +85,38 @@ export async function getMe(supabase?: Client): Promise<Me | null> {
     };
   }
 
-  // Staff (or no account row → owner fallback): resolve the employee + tier.
+  // Staff: resolve the employee + tier.
   const empQuery = account?.employee_id
     ? sb.from("employees").select("id, permission_tier, landing_page").eq("id", account.employee_id)
     : sb.from("employees").select("id, permission_tier, landing_page").eq("auth_user_id", user.id);
   const { data: emp } = await empQuery.maybeSingle();
 
-  const role = ((emp?.permission_tier as Role | undefined) ?? "master_admin") as Role;
-  const employeeId = (emp?.id as string | undefined) ?? null;
+  // No employee row → this user has no staff identity. DENY by default. The one
+  // exception is a configured owner email (OWNER_EMAILS), which break-glass
+  // bootstraps master_admin so the owner can't be locked out of their own app.
+  if (!emp) {
+    if (isOwnerEmail(user.email)) {
+      return {
+        userId: user.id,
+        accountType: "staff",
+        employeeId: null,
+        role: "master_admin",
+        can: resolveAccessMap("master_admin", [], []),
+        landing: DEFAULT_LANDING.master_admin,
+      };
+    }
+    return {
+      userId: user.id,
+      accountType: "staff",
+      employeeId: null,
+      role: "employee",
+      can: DENY_ALL_ACCESS,
+      landing: "/no-access",
+    };
+  }
+
+  const role = emp.permission_tier as Role;
+  const employeeId = emp.id as string;
 
   if (role === "master_admin") {
     return {

@@ -4,6 +4,7 @@ import {
   moduleForPath,
   resolveAccessMap,
   accessAtLeast,
+  isOwnerEmail,
   type Access,
   type Role,
 } from "@/lib/permissions";
@@ -97,10 +98,11 @@ export async function middleware(request: NextRequest) {
   }
 
   // Permission gate: block screens the signed-in user lacks "view" access to.
-  // Master Admin (and anyone with no employee row) bypasses. /no-access maps to
-  // no module, so redirecting there can never loop. The gate fails OPEN on any
-  // unexpected error — a guard must never take the whole app down (sensitive
-  // money/reports pages re-check server-side anyway).
+  // Master Admin bypasses; a user with no employee row is denied (routed to
+  // /no-access) unless they match the OWNER_EMAILS break-glass list. /no-access
+  // maps to no module, so redirecting there can never loop. The gate fails OPEN
+  // on any unexpected error — a guard must never take the whole app down
+  // (sensitive money/reports pages re-check server-side anyway).
   if (user) {
     try {
       // External users (client / event guest) live in the planning portal only.
@@ -125,8 +127,28 @@ export async function middleware(request: NextRequest) {
         .select("id, permission_tier")
         .eq("auth_user_id", user.id)
         .maybeSingle();
-      const role = ((emp?.permission_tier as Role | undefined) ?? "master_admin") as Role;
-      const empId = (emp?.id as string | undefined) ?? null;
+
+      let role: Role;
+      let empId: string | null;
+      if (emp) {
+        role = emp.permission_tier as Role;
+        empId = emp.id as string;
+      } else if (isOwnerEmail(user.email)) {
+        // Break-glass: configured owner with no employee row → bootstrap owner.
+        role = "master_admin";
+        empId = null;
+      } else {
+        // Deny-by-default: a signed-in user with no staff identity (and not the
+        // configured owner) gets no screens. Route them to /no-access, which
+        // maps to no module so it can never loop.
+        if (!pathname.startsWith("/no-access")) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/no-access";
+          url.search = "";
+          return NextResponse.redirect(url);
+        }
+        return response;
+      }
 
       // 2FA gate. Anyone with an enrolled factor must complete the TOTP challenge
       // (aal1 -> aal2). Master admins, admins, and salespeople MUST have 2FA — if

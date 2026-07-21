@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { moduleAccess } from "@/lib/auth";
-import { accessAtLeast } from "@/lib/permissions";
+import { requireApiModule } from "@/lib/apiAuth";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
 
@@ -10,8 +9,8 @@ import { htmlToPdf } from "@/lib/pdf";
 // requires; middleware's permission gate doesn't cover /api/* routes.
 export async function GET() {
   const supabase = await createClient();
-  const access = await moduleAccess("documents", supabase);
-  if (!accessAtLeast(access, "view")) return new NextResponse("Forbidden", { status: 403 });
+  const denied = await requireApiModule("documents", "view", supabase);
+  if (denied) return denied;
   const { data: doc } = await supabase
     .from("documents")
     .select("id, title")

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireApiModule } from "@/lib/apiAuth";
 import { emailShell } from "@/lib/signing";
 
 // Sample values so the preview reads like a real send. Tags not listed here
@@ -54,8 +55,10 @@ function brandWrap(html: string, companyName: string): string {
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Template preview lives under Settings → Email; gate on settings access
+  // since /api/* skips the middleware RBAC gate.
+  const denied = await requireApiModule("settings", "view", supabase);
+  if (denied) return denied;
 
   const { body_html = "", subject = "", branded = true, sms = false } = await req.json();
   const { data: company } = await supabase

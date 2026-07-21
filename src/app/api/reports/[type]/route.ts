@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { moduleAccess } from "@/lib/auth";
-import { accessAtLeast } from "@/lib/permissions";
+import { requireApiModule } from "@/lib/apiAuth";
 import { renderReportPdf, type ReportDoc } from "@/lib/reportPdf";
 import {
   buildReceived,
@@ -36,8 +35,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ type: st
 
   const moduleKey = REPORT_MODULE[type];
   if (!moduleKey) return new NextResponse("Unknown report", { status: 404 });
-  const access = await moduleAccess(moduleKey, supabase);
-  if (!accessAtLeast(access, "view")) return new NextResponse("Forbidden", { status: 403 });
+  const denied = await requireApiModule(moduleKey, "view", supabase);
+  if (denied) return denied;
 
   let doc: ReportDoc;
   switch (type) {

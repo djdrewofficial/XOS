@@ -114,6 +114,32 @@ export function defaultAccess(role: Role, moduleKey: string): Access {
   return DEFAULT_ROLE_PERMISSIONS[role]?.[moduleKey] ?? "none";
 }
 
+/** Explicit "no access to anything" map — every known module pinned to "none".
+    Used as the effective access for a signed-in user who has no staff identity,
+    so nothing can fall back to a role default. */
+export const DENY_ALL_ACCESS: Record<string, Access> = Object.fromEntries(
+  MODULE_KEYS.map((k) => [k, "none"]),
+) as Record<string, Access>;
+
+/** Break-glass owner allowlist. Emails here may bootstrap master_admin access
+    when they have NO employee row yet — the safety net so the account owner can
+    never be locked out even if their DB rows go missing. Configured via the
+    server-side OWNER_EMAILS env var (comma-separated, never NEXT_PUBLIC so the
+    list is not exposed to the browser). Empty by default: with no employee row
+    and no owner match, access is DENIED rather than granted. This replaces the
+    old fail-open behavior where any account-less user became the owner. */
+export function isOwnerEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const raw = process.env.OWNER_EMAILS;
+  if (!raw) return false;
+  const target = email.trim().toLowerCase();
+  return raw
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(target);
+}
+
 /** Build the effective access map for a subject from the raw DB rows.
     `roleRows` = this role's role_permissions; `userRows` = this employee's
     employee_permissions (overrides). Master Admin short-circuits to full edit. */

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getMe } from "@/lib/auth";
+import { requireApiMaster } from "@/lib/apiAuth";
 import { isOpenAIConfigured } from "@/lib/openai";
 import { runAssistant } from "@/lib/assistant";
 
@@ -9,10 +9,8 @@ export const dynamic = "force-dynamic";
 /* XOS Assistant chat (web, cookie auth) — Master Admin only while in training. */
 export async function POST(req: Request) {
   const supabase = await createClient();
-  const me = await getMe(supabase);
-  if (!me || me.accountType !== "staff" || me.role !== "master_admin") {
-    return NextResponse.json({ error: "Not authorized." }, { status: 403 });
-  }
+  const denied = await requireApiMaster(supabase);
+  if (denied) return denied;
   if (!isOpenAIConfigured()) {
     return NextResponse.json({ error: "The assistant isn't configured yet (missing OpenAI key)." }, { status: 503 });
   }
