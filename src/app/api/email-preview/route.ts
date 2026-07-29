@@ -22,6 +22,19 @@ const SAMPLE: Record<string, string> = {
   total_fee: "$2,500.00", balance_due: "$1,250.00", payments_received: "$1,250.00",
   deposit_value: "$500.00", retainer_amount: "$500.00", retainer_due_date: "August 1, 2026",
   overtime_rate: "$150.00", current_date: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
+  // Table tags render HTML — give the preview a representative sample so it isn't
+  // swallowed by the browser as an unknown element (the real send fills this from
+  // the event's assigned staff via render_merge_tags).
+  employee_table4:
+    '<table style="border-collapse:collapse;width:100%;font-size:14px">' +
+    '<thead><tr>' +
+    '<th style="text-align:left;padding:6px 10px;border-bottom:2px solid #ccc">Role</th>' +
+    '<th style="text-align:left;padding:6px 10px;border-bottom:2px solid #ccc">Stage Name</th>' +
+    '<th style="text-align:left;padding:6px 10px;border-bottom:2px solid #ccc">Phone</th>' +
+    '</tr></thead><tbody>' +
+    '<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">DJ</td><td style="padding:6px 10px;border-bottom:1px solid #eee">DJ Drew</td><td style="padding:6px 10px;border-bottom:1px solid #eee">(555) 123-4567</td></tr>' +
+    '<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">MC</td><td style="padding:6px 10px;border-bottom:1px solid #eee">MC Alex</td><td style="padding:6px 10px;border-bottom:1px solid #eee">(555) 234-5678</td></tr>' +
+    "</tbody></table>",
 };
 
 function applySample(text: string, companyName: string, signature = ""): string {
