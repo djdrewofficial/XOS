@@ -17,7 +17,7 @@ const SAMPLE: Record<string, string> = {
   event_date: "08/15/2026", event_date_medium: "Aug 15, 2026",
   event_date_countdown: "50", venue_name: "The Grand Ballroom",
   venue_address: "456 Ocean Dr, Miami, FL", event_location: "The Grand Ballroom",
-  package_name: "Premier DJ Package",
+  package_name: "Premier DJ Package", package_price: "$2,200.00",
   package_description: "Professional DJ/MC 6 Hours<br>Access to our Xpress DJ Planning Mobile App<br>Complete Sound System with Wireless Microphones<br>Simple Dance Floor Lighting",
   addon_list_no_prices: "2× Cold Spark Machines<br>360 Photo Booth<br>Uplighting",
   setup_time: "4:00 PM",
