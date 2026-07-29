@@ -63,6 +63,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     { data: vendorCategories },
     { data: docTemplates },
     { data: mergeTags },
+    { data: fileLabels },
   ] = await Promise.all([
     supabase.from("email_templates").select("*").eq("id", id).single(),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
@@ -74,7 +75,9 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     supabase.from("vendor_categories").select("id, name").eq("is_active", true).order("name"),
     supabase.from("document_templates").select("id, name, doc_type").eq("is_active", true).order("name"),
     supabase.from("merge_tags").select("tag_key, group_name").eq("is_active", true).order("group_name").order("sort_order").order("tag_key"),
+    supabase.from("file_label_definitions").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
+  const fileLabelOptions = ((fileLabels ?? []) as { id: string; name: string }[]).map((l) => ({ value: l.id, label: l.name }));
 
   const { data: company } = await supabase
     .from("company_settings")
@@ -234,6 +237,16 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
           Quote-style merge tags for the body: <code className="rounded bg-black/5 px-1 dark:bg-white/10">&lt;quote_summary&gt;</code>{" "}
           (package + add-ons + Total Investment) and <code className="rounded bg-black/5 px-1 dark:bg-white/10">&lt;payment_plan&gt;</code>.
         </Note>
+
+        {fileLabelOptions.length > 0 && (
+          <Row label="Attach Files">
+            <Note>
+              Attach the event&apos;s files carrying these labels every time this email sends (upload &amp; label files on an
+              event&apos;s Documents tab). Small files are attached; large ones become secure download links.
+            </Note>
+            <CheckGroup name="attach_file_label_ids" options={fileLabelOptions} selected={(tpl.attach_file_label_ids ?? []) as string[]} />
+          </Row>
+        )}
       </Section>
       )}
 

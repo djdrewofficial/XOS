@@ -79,6 +79,8 @@ function buildPayload(formData: FormData) {
     // Attached document (e-sign link or PDF generated at send time)
     attach_template_id: clean(formData.get("attach_template_id")),
     attach_mode: clean(formData.get("attach_mode")) ?? "esign_link",
+    // Labeled event files to attach on every send
+    attach_file_label_ids: ids(formData, "attach_file_label_ids"),
     // OFF = plain email for deliverability (follow-ups)
     branded_shell: formData.get("branded_shell") === "on",
     // Body authored as raw HTML (BeeFree/Mailchimp import) vs the rich editor.

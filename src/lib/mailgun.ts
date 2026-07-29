@@ -106,7 +106,7 @@ async function enrichMessage(
   const attachments: EmailAttachment[] = [];
 
   // template settings drive branding + attachments
-  let tmpl: { attach_template_id?: string | null; attach_mode?: string | null; branded_shell?: boolean } | null = null;
+  let tmpl: { attach_template_id?: string | null; attach_mode?: string | null; branded_shell?: boolean; attach_file_label_ids?: string[] | null } | null = null;
   if (msg.template_id) {
     const { data } = await supabase.from("email_templates").select("*").eq("id", msg.template_id).maybeSingle();
     tmpl = data;
@@ -174,10 +174,12 @@ async function enrichMessage(
     html = replaceTag(html, "journey_start_button", url ? signButtonHtml(url, "Get Started") : "");
   }
 
-  // <document_LABEL> tags → attach the event's files carrying that label. Small
-  // files are attached; anything over the per-email budget becomes a download
-  // link so the message doesn't blow past provider size limits.
-  if (html.includes("document_")) {
+  // Attach the event's labeled files — from a <document_LABEL> body tag AND/OR
+  // labels picked in the template's Attach Document settings. Small files are
+  // attached; anything over the per-email budget becomes a secure download link
+  // so the message doesn't blow past provider size limits.
+  const configuredLabelIds = tmpl?.attach_file_label_ids ?? [];
+  if (html.includes("document_") || configuredLabelIds.length > 0) {
     const admin = createAdminClient();
     const { data: labels } = await admin
       .from("file_label_definitions")
@@ -185,9 +187,12 @@ async function enrichMessage(
       .eq("is_active", true);
     const ATTACH_BUDGET = 10 * 1024 * 1024; // ~10 MB attached per email
     let attachedBytes = attachments.reduce((n, a) => n + a.data.length, 0);
+    const seenPaths = new Set<string>();
     for (const lbl of labels ?? []) {
       const tag = `document_${lbl.slug}`;
-      if (!tagPresent(html, tag)) continue;
+      const inBody = tagPresent(html, tag);
+      const inConfig = configuredLabelIds.includes(lbl.id);
+      if (!inBody && !inConfig) continue;
       const { data: rows } = await admin
         .from("event_files")
         .select("name, path, content_type, size_bytes")
@@ -196,6 +201,8 @@ async function enrichMessage(
         .order("created_at", { ascending: false });
       const links: string[] = [];
       for (const f of rows ?? []) {
+        if (seenPaths.has(f.path)) continue; // a file attached once, even if two labels match
+        seenPaths.add(f.path);
         const size = Number(f.size_bytes ?? 0);
         let attached = false;
         if (size === 0 || attachedBytes + size <= ATTACH_BUDGET) {
@@ -214,8 +221,12 @@ async function enrichMessage(
           if (signed?.signedUrl) links.push(`<a href="${signed.signedUrl}">${f.name}</a>`);
         }
       }
-      const replacement = links.length ? `<p style="margin:0 0 12px;">${lbl.name}: ${links.join(" · ")}</p>` : "";
-      html = replaceTag(html, tag, replacement);
+      const linkLine = links.length ? `<p style="margin:0 0 12px;">${lbl.name}: ${links.join(" · ")}</p>` : "";
+      if (inBody) {
+        html = replaceTag(html, tag, linkLine); // place links where the tag sat
+      } else if (linkLine) {
+        html += linkLine; // configured-only: append any too-large links
+      }
     }
   }
 
