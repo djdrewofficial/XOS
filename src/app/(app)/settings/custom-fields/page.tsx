@@ -1,18 +1,20 @@
 import { createClient } from "@/lib/supabase/server";
 import { Section, Row, Note } from "@/components/SettingsForm";
 import SaveButton from "@/components/SaveButton";
-import { createClientRole, updateClientRole, createEventType, updateEventType } from "./actions";
+import { createClientRole, updateClientRole, createEventType, updateEventType, createFileLabel, updateFileLabel } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 type Role = { id: string; name: string; is_active: boolean; sort_order: number };
 type EventType = { id: string; name: string; is_active: boolean };
+type FileLabel = { id: string; name: string; slug: string; is_active: boolean; sort_order: number };
 
 export default async function CustomFieldsPage() {
   const supabase = await createClient();
-  const [{ data: roles, error }, { data: eventTypes }] = await Promise.all([
+  const [{ data: roles, error }, { data: eventTypes }, { data: fileLabels }] = await Promise.all([
     supabase.from("client_role_definitions").select("id, name, is_active, sort_order").order("sort_order").order("name"),
     supabase.from("event_types").select("id, name, is_active").order("name"),
+    supabase.from("file_label_definitions").select("id, name, slug, is_active, sort_order").order("sort_order").order("name"),
   ]);
 
   if (error) {
@@ -94,6 +96,38 @@ export default async function CustomFieldsPage() {
             <form action={createEventType} className="flex flex-wrap items-center gap-2">
               <input name="name" placeholder="New event type…" className="input w-52" required />
               <SaveButton className="btn-primary px-3 py-1.5 text-xs" savedLabel="Added">Add Type</SaveButton>
+            </form>
+          </Row>
+        </Section>
+      </div>
+
+      <div className="mt-5">
+        <Section title="File Labels">
+          <Note>
+            Labels for files uploaded on an event&apos;s Documents tab (e.g. <span className="font-semibold">Timeline</span>,{" "}
+            <span className="font-semibold">First Dance</span>). Each label creates an email merge tag —{" "}
+            a label named &ldquo;Timeline&rdquo; gives you <code className="rounded bg-black/5 px-1 dark:bg-white/10">&lt;document_timeline&gt;</code>,
+            which attaches every Timeline-labeled file to the email.
+          </Note>
+          {((fileLabels as FileLabel[] | null) ?? []).map((l) => (
+            <Row key={l.id} label="">
+              <form action={updateFileLabel.bind(null, l.id)} className="flex flex-wrap items-center gap-2">
+                <input name="name" defaultValue={l.name} className="input w-52" />
+                <code className="rounded bg-black/5 px-1.5 py-1 text-[11px] text-zinc-500 dark:bg-white/10">&lt;document_{l.slug}&gt;</code>
+                <input type="number" name="sort_order" defaultValue={l.sort_order} className="input w-20" title="Sort order" />
+                <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <input type="checkbox" name="is_active" defaultChecked={l.is_active} className="size-4 accent-brand-light" />
+                  Active
+                </label>
+                <SaveButton className="btn-ghost px-3 py-1.5 text-xs">Save</SaveButton>
+              </form>
+            </Row>
+          ))}
+          <Row label="">
+            <form action={createFileLabel} className="flex flex-wrap items-center gap-2">
+              <input name="name" placeholder="New label… (e.g. Timeline)" className="input w-52" required />
+              <input type="number" name="sort_order" placeholder="Sort" className="input w-20" />
+              <SaveButton className="btn-primary px-3 py-1.5 text-xs" savedLabel="Added">Add Label</SaveButton>
             </form>
           </Row>
         </Section>

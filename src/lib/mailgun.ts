@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { docTypeClientLabel } from "@/lib/documentBlocks";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell } from "@/lib/signing";
@@ -171,6 +172,51 @@ async function enrichMessage(
     const url = payToken ? `${appUrl()}/proposal/${payToken}` : "";
     html = replaceTag(html, "journey_start_link", url);
     html = replaceTag(html, "journey_start_button", url ? signButtonHtml(url, "Get Started") : "");
+  }
+
+  // <document_LABEL> tags → attach the event's files carrying that label. Small
+  // files are attached; anything over the per-email budget becomes a download
+  // link so the message doesn't blow past provider size limits.
+  if (html.includes("document_")) {
+    const admin = createAdminClient();
+    const { data: labels } = await admin
+      .from("file_label_definitions")
+      .select("id, slug, name")
+      .eq("is_active", true);
+    const ATTACH_BUDGET = 10 * 1024 * 1024; // ~10 MB attached per email
+    let attachedBytes = attachments.reduce((n, a) => n + a.data.length, 0);
+    for (const lbl of labels ?? []) {
+      const tag = `document_${lbl.slug}`;
+      if (!tagPresent(html, tag)) continue;
+      const { data: rows } = await admin
+        .from("event_files")
+        .select("name, path, content_type, size_bytes")
+        .eq("event_id", msg.event_id)
+        .eq("label_id", lbl.id)
+        .order("created_at", { ascending: false });
+      const links: string[] = [];
+      for (const f of rows ?? []) {
+        const size = Number(f.size_bytes ?? 0);
+        let attached = false;
+        if (size === 0 || attachedBytes + size <= ATTACH_BUDGET) {
+          const { data: blob } = await admin.storage.from("event-files").download(f.path);
+          if (blob) {
+            const buf = Buffer.from(await blob.arrayBuffer());
+            if (attachedBytes + buf.length <= ATTACH_BUDGET) {
+              attachments.push({ filename: f.name, data: buf, contentType: f.content_type || "application/octet-stream" });
+              attachedBytes += buf.length;
+              attached = true;
+            }
+          }
+        }
+        if (!attached) {
+          const { data: signed } = await admin.storage.from("event-files").createSignedUrl(f.path, 60 * 60 * 24 * 7);
+          if (signed?.signedUrl) links.push(`<a href="${signed.signedUrl}">${f.name}</a>`);
+        }
+      }
+      const replacement = links.length ? `<p style="margin:0 0 12px;">${lbl.name}: ${links.join(" · ")}</p>` : "";
+      html = replaceTag(html, tag, replacement);
+    }
   }
 
   // document attached to the email template?

@@ -51,6 +51,9 @@ function applySample(text: string, companyName: string, signature = ""): string 
     company_name: companyName,
   };
   for (const [k, v] of Object.entries(map)) out = out.split(`<${k}>`).join(v);
+  // <document_LABEL> tags attach files at send time — show a placeholder so the
+  // preview doesn't swallow the (unknown) tag as an empty HTML element.
+  out = out.replace(/<document_[a-z0-9_]+>/gi, '<em style="color:#8a8a94;">📎 (labeled files will be attached here)</em>');
   return out;
 }
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
@@ -865,6 +866,65 @@ export async function addLogisticsNote(eventId: string, formData: FormData) {
     kind: "logistics",
     author_name: await actorName(supabase),
   });
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+// ─────────────────────── Event files (uploads + labels) ───────────────────────
+
+const MAX_UPLOAD = 50 * 1024 * 1024; // 50 MB (project storage limit)
+
+/** Upload a file to the event's private files, optionally labeled. Music, photos,
+    PDFs — anything. Stored in the `event-files` bucket via the admin client. */
+export async function uploadEventFile(eventId: string, _prev: unknown, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const file = formData.get("file") as File | null;
+  if (!file || file.size === 0) return { ok: false as const, error: "Choose a file first." };
+  if (file.size > MAX_UPLOAD) return { ok: false as const, error: "File is too large (max 50MB)." };
+  const labelId = clean(formData.get("label_id"));
+
+  const admin = createAdminClient();
+  const ext = (file.name.split(".").pop() || "bin").replace(/[^a-zA-Z0-9]/g, "").slice(0, 6) || "bin";
+  const path = `${eventId}/${crypto.randomUUID()}.${ext}`;
+  const { error: upErr } = await admin.storage
+    .from("event-files")
+    .upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type || "application/octet-stream", upsert: true });
+  if (upErr) return { ok: false as const, error: upErr.message };
+
+  const { error } = await admin.from("event_files").insert({
+    event_id: eventId,
+    name: file.name || `File.${ext}`,
+    path,
+    content_type: file.type || "application/octet-stream",
+    size_bytes: file.size,
+    source: "upload",
+    label_id: labelId,
+  });
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath(`/events/${eventId}`);
+  return { ok: true as const };
+}
+
+/** Change (or clear) a file's label. */
+export async function setEventFileLabel(eventId: string, fileId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("event_files")
+    .update({ label_id: clean(formData.get("label_id")) })
+    .eq("id", fileId)
+    .eq("event_id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+/** Remove a file (storage object + row). */
+export async function deleteEventFile(eventId: string, fileId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const admin = createAdminClient();
+  const { data: f } = await admin.from("event_files").select("path").eq("id", fileId).eq("event_id", eventId).maybeSingle();
+  if (f?.path) await admin.storage.from("event-files").remove([f.path]);
+  const { error } = await admin.from("event_files").delete().eq("id", fileId).eq("event_id", eventId);
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
 }
