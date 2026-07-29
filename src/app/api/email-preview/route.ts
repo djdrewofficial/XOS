@@ -20,6 +20,7 @@ const SAMPLE: Record<string, string> = {
   package_name: "Premier DJ Package", package_price: "$2,200.00",
   package_description: "Professional DJ/MC 6 Hours<br>Access to our Xpress DJ Planning Mobile App<br>Complete Sound System with Wireless Microphones<br>Simple Dance Floor Lighting",
   addon_list_no_prices: "2× Cold Spark Machines<br>360 Photo Booth<br>Uplighting",
+  addon_list_line_breaks: "2× Cold Spark Machines — $500.00<br>360 Photo Booth — $800.00<br>Uplighting — $350.00",
   setup_time: "4:00 PM",
   start_time: "6:00 PM", end_time: "11:00 PM", guest_count: "150",
   total_fee: "$2,500.00", balance_due: "$1,250.00", payments_received: "$1,250.00",
