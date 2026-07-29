@@ -26,7 +26,7 @@ const SAMPLE: Record<string, string> = {
   // Kept internally consistent so the preview adds up: package $2,200 + add-ons
   // $1,650 − $500 discount = $3,350 total; $1,250 paid leaves $2,100 due. (Real
   // sends compute these from the event via render_merge_tags — illustrative only.)
-  discount: "Discount (Venue Partner): $500.00",
+  discount: "Discount (Venue Partner): -$500.00",
   total_fee: "$3,350.00", balance_due: "$2,100.00", payments_received: "$1,250.00",
   deposit_value: "$500.00", retainer_amount: "$500.00", retainer_due_date: "August 1, 2026",
   overtime_rate: "$150.00", current_date: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
