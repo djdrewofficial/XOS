@@ -24,9 +24,10 @@ const SAMPLE: Record<string, string> = {
   setup_time: "4:00 PM",
   start_time: "6:00 PM", end_time: "11:00 PM", guest_count: "150",
   // Kept internally consistent so the preview adds up: package $2,200 + add-ons
-  // $1,650 = $3,850 total; $1,250 paid leaves $2,600 due. (Real sends compute
-  // these from the event via render_merge_tags — these are illustrative only.)
-  total_fee: "$3,850.00", balance_due: "$2,600.00", payments_received: "$1,250.00",
+  // $1,650 − $500 discount = $3,350 total; $1,250 paid leaves $2,100 due. (Real
+  // sends compute these from the event via render_merge_tags — illustrative only.)
+  discount: "Discount (Venue Partner): $500.00",
+  total_fee: "$3,350.00", balance_due: "$2,100.00", payments_received: "$1,250.00",
   deposit_value: "$500.00", retainer_amount: "$500.00", retainer_due_date: "August 1, 2026",
   overtime_rate: "$150.00", current_date: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
   // Table tags render HTML — give the preview a representative sample so it isn't
