@@ -11,6 +11,7 @@ const SAMPLE: Record<string, string> = {
   client_email: "jordan@example.com", client_cell: "(555) 123-4567",
   client_organization: "Acme Co.", client_address: "123 Main St, Fort Lauderdale, FL",
   salesperson_first_name: "Drew", djemployee_name: "Drew",
+  djemployee1_stage_name: "DJ Drew", djemployee1_cell_phone: "(555) 234-5678",
   email: "jordan@example.com", cell_phone: "(555) 123-4567",
   event_name: "Jordan & Taylor’s Wedding", event_type: "Wedding",
   event_date_long: "Saturday, August 15, 2026", event_date_short: "08/15/2026",
