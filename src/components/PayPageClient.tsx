@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import type { PayInstallment } from "@/lib/payInfo";
 
@@ -51,7 +50,11 @@ export default function PayPageClient({
   const [zelleSent, setZelleSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
-  const router = useRouter();
+
+  // After paying, send the client to their planner portal (login-gated).
+  const goToPlanner = () => {
+    window.location.href = "/portal";
+  };
 
   const amount = useMemo(() => {
     if (mode === "balance") return balance;
@@ -99,7 +102,8 @@ export default function PayPageClient({
       <Success
         title="Payment received"
         body={`${fmt(done.base)} applied to your balance${done.fee > 0 ? ` (plus a ${fmt(done.fee)} card fee)` : ""}. A receipt is on its way. Thank you!`}
-        onClose={() => router.refresh()}
+        buttonLabel="Go to my planner →"
+        onClose={goToPlanner}
       />
     );
   }
@@ -109,7 +113,8 @@ export default function PayPageClient({
         emoji="⏳"
         title="Marked as sent"
         body={`Thanks! Your ${fmt(amount)} Zelle is pending our confirmation — we'll update your balance the moment it lands.`}
-        onClose={() => router.refresh()}
+        buttonLabel="Go to my planner →"
+        onClose={goToPlanner}
       />
     );
   }
@@ -258,13 +263,13 @@ export default function PayPageClient({
   );
 }
 
-function Success({ emoji = "🎉", title, body, onClose }: { emoji?: string; title: string; body: string; onClose: () => void }) {
+function Success({ emoji = "🎉", title, body, onClose, buttonLabel = "Done" }: { emoji?: string; title: string; body: string; onClose: () => void; buttonLabel?: string }) {
   return (
     <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center dark:border-emerald-500/30 dark:bg-emerald-500/10">
       <div className="text-2xl">{emoji}</div>
       <div className="mt-1 text-lg font-bold text-emerald-800 dark:text-emerald-300">{title}</div>
       <div className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">{body}</div>
-      <button onClick={onClose} className="btn-primary mt-4">Done</button>
+      <button onClick={onClose} className="btn-primary mt-4">{buttonLabel}</button>
     </div>
   );
 }
