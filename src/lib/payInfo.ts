@@ -18,6 +18,15 @@ export type PaySettings = {
   confetti: boolean;
 };
 
+export type PayInstallment = {
+  id: string;
+  seq: number;
+  label: string | null;
+  dueDate: string | null;
+  amount: number;
+  paid: boolean; // an approved payment is linked to this scheduled payment
+};
+
 export type PayInfo = {
   eventId: string;
   eventName: string | null;
@@ -29,6 +38,7 @@ export type PayInfo = {
   paid: number;
   balance: number;
   suggested: number; // prefill: the next uncovered scheduled payment, capped at balance
+  installments: PayInstallment[]; // the event's payment schedule, with paid flags
   settings: PaySettings;
 };
 
@@ -58,7 +68,7 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
       // only confirmed (approved) payments reduce the balance — a pending Zelle
       // claim is recorded but must not lower what the client still owes
       supabase.from("payments").select("amount, scheduled_payment_id").eq("event_id", event.id).eq("status", "approved"),
-      supabase.from("scheduled_payments").select("id, seq, amount").eq("event_id", event.id).order("seq"),
+      supabase.from("scheduled_payments").select("id, seq, amount, due_date, label").eq("event_id", event.id).order("seq"),
       supabase.from("payment_settings").select("*").eq("id", true).maybeSingle(),
       supabase.from("journey_settings").select("*").eq("id", true).maybeSingle(),
     ]);
@@ -76,6 +86,15 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
   const taken = new Set((payments ?? []).map((p) => p.scheduled_payment_id).filter(Boolean));
   const nextSched = (scheduled ?? []).find((s) => !taken.has(s.id));
   const suggested = Math.min(balance, Number(nextSched?.amount ?? balance)) || balance;
+
+  const installments: PayInstallment[] = (scheduled ?? []).map((s) => ({
+    id: s.id as string,
+    seq: Number(s.seq ?? 0),
+    label: (s.label as string) ?? null,
+    dueDate: (s.due_date as string) ?? null,
+    amount: round2(Number(s.amount ?? 0)),
+    paid: taken.has(s.id),
+  }));
 
   const client = event.client as { first_name?: string; last_name?: string; email?: string } | null;
   const ps = (pset ?? {}) as Record<string, unknown>;
@@ -104,6 +123,7 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
     paid: round2(paid),
     balance: round2(balance),
     suggested: round2(suggested),
+    installments,
     settings,
   };
 }

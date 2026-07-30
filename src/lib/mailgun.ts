@@ -152,9 +152,9 @@ async function enrichMessage(
     }
   }
 
-  // online payment link/button → the event's public /welcome page
+  // online payment link/button → the event's dedicated public /pay page
   if (tagPresent(html, "payment_link") || tagPresent(html, "payment_button")) {
-    const payUrl = payToken ? `${appUrl()}/welcome/${payToken}` : "";
+    const payUrl = payToken ? `${appUrl()}/pay/${payToken}` : "";
     html = replaceTag(html, "payment_link", payUrl);
     html = replaceTag(html, "payment_button", payUrl ? signButtonHtml(payUrl, "Pay Online") : "");
   }
