@@ -29,6 +29,7 @@ const SAMPLE: Record<string, string> = {
   discount: "Discount (Venue Partner): -$500.00",
   total_fee: "$3,350.00", balance_due: "$2,100.00", payments_received: "$1,250.00",
   deposit_value: "$500.00", retainer_amount: "$500.00", retainer_due_date: "August 1, 2026",
+  second_payment_amount: "$1,250.00", second_payment_date: "September 1, 2026",
   overtime_rate: "$150.00", current_date: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
   // Table tags render HTML — give the preview a representative sample so it isn't
   // swallowed by the browser as an unknown element (the real send fills this from
