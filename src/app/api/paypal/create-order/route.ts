@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createPaypalOrder, isPaypalConfigured } from "@/lib/paypal";
 import { loadPayInfo, withFee } from "@/lib/payInfo";
+import { payVerifyRequired, isPayVerified, PAY_SESSION_COOKIE } from "@/lib/payVerify";
 
 /* PUBLIC (middleware-exempt). Creates a PayPal order for a pay_token's event.
    The unguessable token is the authorization; the amount is validated against
@@ -26,6 +28,13 @@ export async function POST(req: Request) {
   const info = await loadPayInfo(supabase, token);
   if (!info) return NextResponse.json({ error: "This payment link isn't valid." }, { status: 404 });
   if (info.balance <= 0) return NextResponse.json({ error: "This event is paid in full." }, { status: 400 });
+
+  if (await payVerifyRequired(supabase)) {
+    const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
+    if (!(await isPayVerified(supabase, token, sess))) {
+      return NextResponse.json({ error: "Please verify your phone to continue." }, { status: 401 });
+    }
+  }
 
   if (!info.settings.paypalEnabled) {
     return NextResponse.json({ error: "Card payments aren't available right now." }, { status: 400 });

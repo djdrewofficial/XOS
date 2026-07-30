@@ -42,6 +42,7 @@ export async function savePaymentSettings(formData: FormData) {
       zelle_display_name: clean(formData.get("zelle_display_name")) ?? "Xpress Entertainment",
       zelle_handle: clean(formData.get("zelle_handle")),
       zelle_memo: clean(formData.get("zelle_memo")) ?? "Include your event date in the memo",
+      require_pay_verification: formData.get("require_pay_verification") === "on",
       updated_at: new Date().toISOString(),
     })
     .eq("id", true);

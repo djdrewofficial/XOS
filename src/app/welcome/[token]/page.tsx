@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPayInfo } from "@/lib/payInfo";
+import { payVerifyRequired, isPayVerified, PAY_SESSION_COOKIE } from "@/lib/payVerify";
 import WelcomePayment from "@/components/WelcomePayment";
+import PayGate from "@/components/PayGate";
 
 /* PUBLIC payment step — where the sign flow forwards a newly booked client to
    set up autopay or make a one-time payment. The celebration + planning portal
@@ -46,6 +49,14 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
   const first = info.firstName ?? "there";
   const paidInFull = info.balance <= 0;
 
+  // Phone-verification gate: until the client verifies the number on file, hide
+  // the balance and pay options. Skipped when paid in full or gate disabled.
+  let needsVerify = false;
+  if (!paidInFull && (await payVerifyRequired(supabase))) {
+    const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
+    needsVerify = !(await isPayVerified(supabase, token, sess));
+  }
+
   return (
     <Shell>
       <div className="mb-5 text-center">
@@ -53,7 +64,9 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
           {paidInFull ? `You're all set, ${first}! 🎉` : `You're booked, ${first}! 🎉`}
         </h1>
         {!paidInFull && (
-          <p className="mt-1 text-sm text-zinc-500">Let&apos;s take care of your payment to lock everything in.</p>
+          <p className="mt-1 text-sm text-zinc-500">
+            {needsVerify ? "Let's verify it's you before we pull up your payment." : "Let's take care of your payment to lock everything in."}
+          </p>
         )}
       </div>
 
@@ -71,6 +84,8 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
             Start planning in Vibo →
           </a>
         </div>
+      ) : needsVerify ? (
+        <PayGate token={token} />
       ) : (
         <>
           <dl className="mb-5 space-y-1.5 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-white/10 dark:bg-white/[0.03]">

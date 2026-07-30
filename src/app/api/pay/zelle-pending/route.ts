@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPayInfo } from "@/lib/payInfo";
+import { payVerifyRequired, isPayVerified, PAY_SESSION_COOKIE } from "@/lib/payVerify";
 
 /* PUBLIC (middleware-exempt). The client tapped "I've sent my Zelle" on the
    welcome page. We record a PENDING payment (status='pending') so it shows in
@@ -24,6 +26,13 @@ export async function POST(req: Request) {
   const supabase = createAdminClient();
   const info = await loadPayInfo(supabase, token);
   if (!info) return NextResponse.json({ error: "This payment link isn't valid." }, { status: 404 });
+
+  if (await payVerifyRequired(supabase)) {
+    const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
+    if (!(await isPayVerified(supabase, token, sess))) {
+      return NextResponse.json({ error: "Please verify your phone to continue." }, { status: 401 });
+    }
+  }
 
   const requested = Number(body.amount);
   const amount = Math.min(info.balance, Number.isFinite(requested) && requested > 0 ? requested : info.suggested);

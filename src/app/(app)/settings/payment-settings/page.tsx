@@ -29,6 +29,7 @@ type PaymentSettings = {
   zelle_display_name?: string;
   zelle_handle?: string | null;
   zelle_memo?: string;
+  require_pay_verification?: boolean;
 };
 
 export default async function PaymentSettingsPage() {
@@ -164,6 +165,12 @@ export default async function PaymentSettingsPage() {
           </Note>
           <Row label="Enable Online Payments" hint="Master switch for the welcome / pay page">
             <CheckBoxField name="online_pay_enabled" label="Enabled" defaultChecked={s.online_pay_enabled ?? true} />
+          </Row>
+          <Row
+            label="Require Phone Verification"
+            hint="Before paying, clients enter the mobile number on file and a 6-digit code we text them. Blocks spam/fraud attempts. Auto-skipped if SMS isn't configured."
+          >
+            <CheckBoxField name="require_pay_verification" label="Enabled" defaultChecked={s.require_pay_verification ?? true} />
           </Row>
           <Row label="Accept Card / PayPal / Venmo">
             <CheckBoxField name="paypal_pay_enabled" label="Enabled" defaultChecked={s.paypal_pay_enabled ?? true} />

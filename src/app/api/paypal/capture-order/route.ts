@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { capturePaypalOrder, isPaypalConfigured } from "@/lib/paypal";
 import { loadPayInfo } from "@/lib/payInfo";
 import { recordPaypalPayment } from "@/lib/paypalRecord";
+import { payVerifyRequired, isPayVerified, PAY_SESSION_COOKIE } from "@/lib/payVerify";
 
 /* PUBLIC (middleware-exempt). Captures an approved order and records the
    payment. Money only moves on capture; we record only when COMPLETED.
@@ -27,6 +29,13 @@ export async function POST(req: Request) {
   const supabase = createAdminClient();
   const info = await loadPayInfo(supabase, token);
   if (!info) return NextResponse.json({ error: "This payment link isn't valid." }, { status: 404 });
+
+  if (await payVerifyRequired(supabase)) {
+    const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
+    if (!(await isPayVerified(supabase, token, sess))) {
+      return NextResponse.json({ error: "Please verify your phone to continue." }, { status: 401 });
+    }
+  }
 
   const result = await capturePaypalOrder(orderId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
