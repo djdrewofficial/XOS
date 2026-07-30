@@ -45,6 +45,8 @@ import {
 import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/actions";
 import InlineEditCard from "@/components/InlineEditCard";
 import EventFilesSection from "@/components/EventFilesSection";
+import SpotifyExport from "@/components/SpotifyExport";
+import { getSpotifyConnection } from "@/lib/spotifyAuth";
 import ConfirmCodeButton from "@/components/ConfirmCodeButton";
 import ClientPicker from "@/components/ClientPicker";
 import BookingInfoEditor from "@/components/BookingInfoEditor";
@@ -193,6 +195,23 @@ export default async function EventDetailPage({
     .select("id, name")
     .eq("is_library", false)
     .order("name");
+
+  // Spotify export (staff-only): the signed-in staffer's connection + this
+  // event's timeline sections with song counts, for the "Export to Spotify" tool.
+  const spotifyConn = authUser?.user
+    ? await getSpotifyConnection(authUser.user.id)
+    : { connected: false, canWrite: false, displayName: null };
+  const { data: plannerSections } = await supabase
+    .from("planning_sections")
+    .select("id, title, planning_songs(count)")
+    .eq("event_id", id)
+    .eq("section_type", "timeline")
+    .order("sort_order");
+  const spotifySections = (plannerSections ?? []).map((s) => ({
+    id: s.id as string,
+    title: (s.title as string) ?? "Section",
+    songCount: (s.planning_songs as { count: number }[] | null)?.[0]?.count ?? 0,
+  }));
 
   // Photo Booth: the couple's saved selection (shown in its own tab when the
   // event has a photo-booth). Resolve the backdrop image + who last picked.
@@ -607,9 +626,18 @@ export default async function EventDetailPage({
           <p className="w-full text-[11px] text-zinc-400">Choosing a template rebuilds this event&apos;s planner from it (clears current planner sections).</p>
         </form>
 
-        <a href={`/portal/plan/${id}`} target="_blank" className="btn-primary">
-          Open planner ↗
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <a href={`/portal/plan/${id}`} target="_blank" className="btn-primary">
+            Open planner ↗
+          </a>
+          <SpotifyExport
+            eventId={id}
+            connected={spotifyConn.connected}
+            canWrite={spotifyConn.canWrite}
+            displayName={spotifyConn.displayName}
+            sections={spotifySections}
+          />
+        </div>
       </div>
 
       <div className="card p-5">

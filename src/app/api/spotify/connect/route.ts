@@ -15,9 +15,13 @@ export async function GET(request: Request) {
 
   const eventId = searchParams.get("eventId") ?? "";
   const section = searchParams.get("section") ?? undefined;
+  // Optional explicit return path (e.g. staff exporting from /events/[id]); when
+  // absent the callback falls back to the couple planner.
+  const returnTo = searchParams.get("returnTo") ?? undefined;
+  const returnPath = returnTo && returnTo.startsWith("/") ? returnTo : undefined;
   const redirectUri = spotifyRedirectUri(origin);
   // `ret` = the origin the user is actually on, so we can bounce them back there
   // (the callback may land on a different registered origin, e.g. 127.0.0.1 dev).
-  const state = signState({ uid: user.id, eventId, section, ret: origin });
+  const state = signState({ uid: user.id, eventId, section, ret: origin, returnPath });
   return NextResponse.redirect(buildAuthUrl(redirectUri, state));
 }

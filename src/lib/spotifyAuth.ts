@@ -5,7 +5,8 @@ import "server-only";
 import { createHmac } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export const SPOTIFY_SCOPES = "playlist-read-private playlist-read-collaborative";
+export const SPOTIFY_SCOPES =
+  "playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private";
 
 function creds() {
   const id = process.env.SPOTIFY_CLIENT_ID;
@@ -23,7 +24,7 @@ export function spotifyRedirectUri(origin: string): string {
 }
 
 // ── CSRF-safe state (carries who/where, HMAC-signed) ──
-type StatePayload = { uid: string; eventId: string; section?: string; ret?: string; mobile?: boolean };
+type StatePayload = { uid: string; eventId: string; section?: string; ret?: string; mobile?: boolean; returnPath?: string };
 const stateKey = () => process.env.CRON_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "xos-spotify";
 
 export function signState(p: StatePayload): string {
@@ -127,10 +128,68 @@ export async function getValidAccessToken(userId: string): Promise<string | null
   }
 }
 
-export async function getSpotifyConnection(userId: string): Promise<{ connected: boolean; displayName: string | null }> {
+export async function getSpotifyConnection(
+  userId: string,
+): Promise<{ connected: boolean; displayName: string | null; canWrite: boolean }> {
   const admin = createAdminClient();
-  const { data } = await admin.from("spotify_accounts").select("display_name").eq("auth_user_id", userId).maybeSingle();
-  return { connected: !!data, displayName: data?.display_name ?? null };
+  const { data } = await admin.from("spotify_accounts").select("display_name, scope").eq("auth_user_id", userId).maybeSingle();
+  // canWrite = the stored grant includes playlist-modify. Accounts connected
+  // before write scopes existed will be read-only until they reconnect.
+  const canWrite = !!data && ((data.scope as string | null) ?? "").includes("playlist-modify");
+  return { connected: !!data, displayName: data?.display_name ?? null, canWrite };
+}
+
+/** The user's Spotify user id (needed to create playlists). Cached on the row;
+    falls back to a /v1/me lookup and backfills. */
+async function spotifyUserId(userId: string, token: string): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("spotify_accounts").select("spotify_user_id").eq("auth_user_id", userId).maybeSingle();
+  if (data?.spotify_user_id) return data.spotify_user_id as string;
+  const me = await fetch("https://api.spotify.com/v1/me", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!me.ok) return null;
+  const j = (await me.json()) as { id?: string };
+  const id = j.id ?? null;
+  if (id) await admin.from("spotify_accounts").update({ spotify_user_id: id }).eq("auth_user_id", userId);
+  return id;
+}
+
+/** Create a private playlist in the user's own Spotify account. */
+export async function createSpotifyPlaylist(
+  userId: string,
+  name: string,
+  description: string,
+): Promise<{ id: string; url: string } | { error: "not_connected" | "no_profile" | "scope" | "failed" }> {
+  const token = await getValidAccessToken(userId);
+  if (!token) return { error: "not_connected" };
+  const sid = await spotifyUserId(userId, token);
+  if (!sid) return { error: "no_profile" };
+  const res = await fetch(`https://api.spotify.com/v1/users/${encodeURIComponent(sid)}/playlists`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name.slice(0, 100), description: description.slice(0, 300), public: false }),
+    cache: "no-store",
+  });
+  if (res.status === 401 || res.status === 403) return { error: "scope" };
+  if (!res.ok) return { error: "failed" };
+  const j = (await res.json()) as { id: string; external_urls?: { spotify?: string } };
+  return { id: j.id, url: j.external_urls?.spotify ?? `https://open.spotify.com/playlist/${j.id}` };
+}
+
+/** Add track URIs (spotify:track:ID) to a playlist, 100 per request. */
+export async function addTracksToSpotifyPlaylist(userId: string, playlistId: string, uris: string[]): Promise<boolean> {
+  if (!uris.length) return true;
+  const token = await getValidAccessToken(userId);
+  if (!token) return false;
+  for (let i = 0; i < uris.length; i += 100) {
+    const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ uris: uris.slice(i, i + 100) }),
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+  }
+  return true;
 }
 
 export async function disconnectSpotify(userId: string): Promise<void> {

@@ -24,7 +24,12 @@ export async function GET(request: Request) {
   }
 
   const ret = parsed?.ret || origin;
-  const back = parsed?.eventId ? `${ret}/portal/plan/${parsed.eventId}` : `${ret}/portal`;
+  // Explicit return path wins (staff export flow); else the couple planner.
+  const back = parsed?.returnPath
+    ? `${ret}${parsed.returnPath}`
+    : parsed?.eventId
+      ? `${ret}/portal/plan/${parsed.eventId}`
+      : `${ret}/portal`;
 
   if (error || !code || !parsed) {
     return NextResponse.redirect(`${back}?spotify=error`);
