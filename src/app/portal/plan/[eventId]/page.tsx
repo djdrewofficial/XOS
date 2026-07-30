@@ -16,6 +16,8 @@ import {
 import Planner from "@/components/planner/Planner";
 import ThemeToggleIcon from "@/components/planner/ThemeToggleIcon";
 import SignOutButton from "@/components/SignOutButton";
+import SpotifyExport from "@/components/SpotifyExport";
+import { getSpotifyConnection } from "@/lib/spotifyAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +65,34 @@ export default async function PlannerPage({
   const { data: socialRows } = await supabase.rpc("social_prompt_state");
   const socialState = ((socialRows as SocialState[] | null) ?? [])[0] ?? null;
 
+  // Staff-only floating "Export to Spotify" button (this staffer's connection +
+  // the event's timeline sections with song counts).
+  let spotifyExportEl: React.ReactNode = null;
+  if (role === "staff") {
+    const conn = await getSpotifyConnection(me.userId);
+    const { data: secs } = await supabase
+      .from("planning_sections")
+      .select("id, title, planning_songs(count)")
+      .eq("event_id", eventId)
+      .eq("section_type", "timeline")
+      .order("sort_order");
+    const spotifySections = (secs ?? []).map((s) => ({
+      id: s.id as string,
+      title: (s.title as string) ?? "Section",
+      songCount: (s.planning_songs as { count: number }[] | null)?.[0]?.count ?? 0,
+    }));
+    spotifyExportEl = (
+      <SpotifyExport
+        eventId={eventId}
+        connected={conn.connected}
+        canWrite={conn.canWrite}
+        displayName={conn.displayName}
+        sections={spotifySections}
+        variant="fab"
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <header className="sticky top-0 z-30 border-b border-zinc-200/70 bg-white/80 backdrop-blur-xl dark:border-white/[0.06] dark:bg-zinc-950/80">
@@ -103,6 +133,7 @@ export default async function PlannerPage({
         paypalClientId={process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? null}
       />
       <SocialPrompt state={socialState} />
+      {spotifyExportEl}
     </div>
   );
 }
