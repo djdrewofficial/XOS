@@ -21,12 +21,24 @@ export async function POST(req: Request) {
   if (!file || file.size === 0) return NextResponse.json({ error: "No file" }, { status: 400 });
   if (file.size > 12 * 1024 * 1024) return NextResponse.json({ error: "Image too large (max 12MB)" }, { status: 413 });
 
+  // The community bucket is PUBLIC and served inline, so only allow image types —
+  // otherwise a client could upload text/html or SVG that renders as active
+  // content from the storage origin. The stored content-type is forced, not trusted.
+  const IMAGE_TYPES: Record<string, string> = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+    "image/gif": "gif", "image/heic": "heic", "image/heif": "heif",
+  };
+  const contentType = IMAGE_TYPES[file.type] ? file.type : null;
+  if (!contentType) {
+    return NextResponse.json({ error: "Only image uploads are allowed (JPG, PNG, WEBP, GIF, HEIC)." }, { status: 415 });
+  }
+
   const admin = createAdminClient();
-  const ext = (file.name.split(".").pop() || "jpg").replace(/[^a-zA-Z0-9]/g, "").slice(0, 5) || "jpg";
+  const ext = IMAGE_TYPES[contentType];
   const path = `${uid}/${crypto.randomUUID()}.${ext}`;
   const { error: upErr } = await admin.storage
     .from("community")
-    .upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type || "image/jpeg", upsert: true });
+    .upload(path, Buffer.from(await file.arrayBuffer()), { contentType, upsert: true });
   if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
   const url = admin.storage.from("community").getPublicUrl(path).data.publicUrl;
