@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { PASSWORD_RULES, passwordMeetsPolicy } from "@/lib/passwordPolicy";
 
 export default function SetPasswordPage() {
   const router = useRouter();
@@ -64,8 +65,8 @@ export default function SetPasswordPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (pw.length < 8) {
-      setError("Use at least 8 characters.");
+    if (!passwordMeetsPolicy(pw)) {
+      setError("Your password doesn't meet all the requirements below.");
       return;
     }
     if (pw !== pw2) {
@@ -88,6 +89,8 @@ export default function SetPasswordPage() {
       router.refresh();
     }, 900);
   }
+
+  const canSubmit = passwordMeetsPolicy(pw) && pw === pw2;
 
   return (
     <div className="flex min-h-screen items-center justify-center">
@@ -121,20 +124,51 @@ export default function SetPasswordPage() {
               required
               value={pw}
               onChange={(e) => setPw(e.target.value)}
-              className="input mb-4 w-full"
+              className="input mb-3 w-full"
               autoComplete="new-password"
             />
+
+            {/* Live requirement checklist — mirrors the Supabase Auth policy. */}
+            <ul className="mb-4 space-y-1">
+              {PASSWORD_RULES.map((rule) => {
+                const met = rule.test(pw);
+                return (
+                  <li
+                    key={rule.key}
+                    className={`flex items-center gap-2 text-xs ${
+                      met
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-zinc-500 dark:text-zinc-400"
+                    }`}
+                  >
+                    <span aria-hidden className="w-3 text-center">{met ? "✓" : "○"}</span>
+                    {rule.label}
+                  </li>
+                );
+              })}
+            </ul>
+
             <label className="label-xs">Confirm password</label>
             <input
               type="password"
               required
               value={pw2}
               onChange={(e) => setPw2(e.target.value)}
-              className="input mb-5 w-full"
+              className="input mb-2 w-full"
               autoComplete="new-password"
             />
+            {pw2.length > 0 && pw !== pw2 && (
+              <p className="mb-3 text-xs text-red-600 dark:text-red-400">Passwords don&apos;t match.</p>
+            )}
+            <p className="mb-4 mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
+              For your security, passwords found in known data breaches can&apos;t be used.
+            </p>
             {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
-            <button type="submit" disabled={saving} className="btn-primary w-full disabled:opacity-50">
+            <button
+              type="submit"
+              disabled={saving || !canSubmit}
+              className="btn-primary w-full disabled:opacity-50"
+            >
               {saving ? "Saving…" : "Set Password & Sign In"}
             </button>
           </form>
