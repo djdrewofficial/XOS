@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireApiModule } from "@/lib/apiAuth";
-import { emailShell } from "@/lib/signing";
+import { emailShell, signButtonHtml, appUrl } from "@/lib/signing";
 
 // Sample values so the preview reads like a real send. Tags not listed here
 // (incl. DJEP tags XOS doesn't support yet) stay visible as <tag> so the editor
@@ -31,6 +31,7 @@ const SAMPLE: Record<string, string> = {
   // $1,650 − $500 discount = $3,350 total; $1,250 paid leaves $2,100 due. (Real
   // sends compute these from the event via render_merge_tags — illustrative only.)
   discount: "Discount (Venue Partner): -$500.00",
+  addon_total_price: "$1,650.00",
   total_fee: "$3,350.00", balance_due: "$2,100.00", payments_received: "$1,250.00",
   deposit_value: "$500.00", retainer_amount: "$500.00", retainer_due_date: "August 1, 2026",
   second_payment_amount: "$1,250.00", second_payment_date: "September 1, 2026",
@@ -68,6 +69,35 @@ function applySample(text: string, companyName: string, signature = ""): string 
   return out;
 }
 
+// Interactive CTA tags (pay button/link, review-&-sign, journey start, e-sign
+// link) are resolved from the event's pay/proposal token at real send time by
+// enrichMessage() in lib/mailgun.ts. The preview has no real event, so render
+// representative versions here — otherwise an unresolved <payment_button> is
+// swallowed by the browser as an empty unknown element and the button "vanishes"
+// even though real sends produce it. In SMS mode a button degrades to its URL,
+// matching how the SMS pipeline flattens HTML.
+function applyCtaTags(html: string, sms: boolean): string {
+  const base = appUrl();
+  const payUrl = `${base}/pay/sample`;
+  const proposalUrl = `${base}/proposal/sample`;
+  const button = (url: string, label: string) => (sms ? url : signButtonHtml(url, label));
+  const replaceAll = (s: string, tag: string, value: string) => s.split(`<${tag}>`).join(value);
+
+  let out = html;
+  out = replaceAll(out, "payment_button", button(payUrl, "Pay Online"));
+  out = replaceAll(out, "payment_link", payUrl);
+  out = replaceAll(out, "review_sign_button", button(proposalUrl, "Review & Sign"));
+  out = replaceAll(out, "review_sign_link", proposalUrl);
+  out = replaceAll(out, "journey_start_button", button(proposalUrl, "Get Started"));
+  out = replaceAll(out, "journey_start_link", proposalUrl);
+  // (document_sign_link is already shown as a placeholder by the <document_*>
+  //  rule in applySample.)
+  // quote_summary / payment_plan build a table/list from the event at send time.
+  out = replaceAll(out, "quote_summary", '<em style="color:#8a8a94;">(quote summary appears here)</em>');
+  out = replaceAll(out, "payment_plan", '<em style="color:#8a8a94;">(payment schedule appears here)</em>');
+  return out;
+}
+
 // Mirrors brandWrap() in lib/mailgun.ts so the preview matches a real send.
 function brandWrap(html: string, companyName: string): string {
   if (/^\s*(<!doctype|<html)/i.test(html)) return html;
@@ -96,7 +126,9 @@ export async function POST(req: NextRequest) {
   const companyName = company?.company_name ?? "Xpress Entertainment";
   const signature = company?.email_signature_html ?? "";
 
-  const body = applySample(body_html, companyName, signature);
+  // applySample fills field tags; applyCtaTags renders the interactive buttons/
+  // links (body only — never inject button HTML into a subject line).
+  const body = applyCtaTags(applySample(body_html, companyName, signature), sms);
   let html: string;
   if (sms) {
     html = `<div style="background:#f4f2fa;padding:24px;font-family:ui-sans-serif,system-ui,Arial,sans-serif;">
