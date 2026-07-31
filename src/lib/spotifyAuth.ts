@@ -2,7 +2,7 @@
    and import private playlists. Server-only. Tokens stored in spotify_accounts
    via the service-role client; access tokens auto-refresh. */
 import "server-only";
-import { createHmac } from "crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const SPOTIFY_SCOPES =
@@ -24,8 +24,32 @@ export function spotifyRedirectUri(origin: string): string {
 }
 
 // ── CSRF-safe state (carries who/where, HMAC-signed) ──
-type StatePayload = { uid: string; eventId: string; section?: string; ret?: string; mobile?: boolean; returnPath?: string };
+// The HMAC stops tampering, but a signed state alone isn't tied to the browser
+// that started the flow — so a state minted in one session could be replayed in
+// another (account-linking CSRF). The web flow additionally binds the state to
+// an httpOnly `nonce` cookie set at initiation and re-checked in the callback.
+type StatePayload = { uid: string; eventId: string; section?: string; ret?: string; mobile?: boolean; returnPath?: string; nonce?: string };
 const stateKey = () => process.env.CRON_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "xos-spotify";
+
+/** httpOnly cookie holding the per-flow OAuth nonce (web flow only). */
+export const SPOTIFY_NONCE_COOKIE = "sp_oauth_nonce";
+
+/** A fresh unguessable nonce to bind one connect→callback round-trip. */
+export function makeOAuthNonce(): string {
+  return randomBytes(18).toString("base64url");
+}
+
+/** Constant-time check that the callback's cookie nonce matches the state's.
+    Returns true when the state carries no nonce (the dev cross-origin flow, where
+    connect + callback are on different hosts and can't share a cookie — there is
+    nothing to bind). A state WITH a nonce (every prod web flow) must match. */
+export function nonceMatches(cookieNonce: string | undefined, stateNonce: string | undefined): boolean {
+  if (!stateNonce) return true;
+  if (!cookieNonce) return false;
+  const a = Buffer.from(cookieNonce);
+  const b = Buffer.from(stateNonce);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 export function signState(p: StatePayload): string {
   const data = Buffer.from(JSON.stringify(p)).toString("base64url");
