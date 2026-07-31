@@ -37,11 +37,13 @@ RPO/RTO targets (what to aim for):
    Settings → Add-ons). PITR lets you restore to any moment (down to ~2 min),
    which is the real protection against a mid-day migration mistake. It is a **paid
    add-on** (~$100/mo at the smallest tier). Turn it on if the business can't
-   tolerate losing a day of bookings/payments. **Status as of this runbook: assume
-   OFF until verified in the dashboard.**
-3. Record here once checked:
-   - Daily backups: ______ (retention ____ days) — checked by ____ on ____
-   - PITR: ON / OFF — checked by ____ on ____
+   tolerate losing a day of bookings/payments.
+3. Current posture (recorded state):
+   - **Daily backups: ON** — confirmed by Drew, 2026-07-31. RPO = up to 24 h.
+   - **PITR: OFF** — accepted for now; daily backups + the §2 pre-migration
+     snapshots are the safety net. Re-evaluate if daily-loss risk becomes unacceptable.
+   - **Dev = prod DB: accepted** (no separate dev project); mitigated by snapshots
+     before risky migrations. Re-verify backups + this posture quarterly.
 
 ---
 
