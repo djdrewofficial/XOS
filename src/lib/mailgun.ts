@@ -339,7 +339,7 @@ function brandWrap(html: string, companyName: string): string {
     Pass a service-role client when running without a user session (cron route). */
 export async function processOutbox(
   client?: SupabaseClient
-): Promise<{ sent: number; failed: number; skipped: string | null }> {
+): Promise<{ sent: number; failed: number; skipped: string | null; error?: string }> {
   const { domain } = mailgunConfig();
   if (!isMailgunConfigured()) {
     return { sent: 0, failed: 0, skipped: "Mailgun not configured (set MAILGUN_API_KEY and MAILGUN_DOMAIN in .env.local)" };
@@ -353,12 +353,19 @@ export async function processOutbox(
     .eq("id", true)
     .maybeSingle();
   const companyName = csRow?.company_name ?? "Xpress Entertainment";
-  const { data: queued } = await supabase
+  const { data: queued, error: queueError } = await supabase
     .from("email_log")
     .select("*")
     .eq("status", "queued")
     .order("created_at")
     .limit(50);
+
+  // A failed select must NOT masquerade as an empty queue ("sent 0, healthy") —
+  // surface it so the cron reports failure instead of silently sending nothing.
+  if (queueError) {
+    console.error("processOutbox: email_log query failed:", queueError);
+    return { sent: 0, failed: 0, skipped: null, error: `email_log query failed: ${queueError.message}` };
+  }
 
   let sent = 0;
   let failed = 0;

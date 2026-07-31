@@ -26,7 +26,17 @@ async function run(req: Request) {
   // ?full=1 forces a complete conversation backfill (first run / repairs)
   const full = new URL(req.url).searchParams.get("full") === "1";
   const inbox = await syncHighLevelConversations(admin, { full });
-  return NextResponse.json({ email, sms, inbox });
+
+  // If any stage reported a query/fetch error, fail the cron (500) so the
+  // scheduler / uptime check sees it — a broken drainer must not return a
+  // healthy 200 while nothing sends.
+  const errors = [
+    email.error && `email: ${email.error}`,
+    sms.error && `sms: ${sms.error}`,
+    inbox.error && `inbox: ${inbox.error}`,
+  ].filter(Boolean);
+  const status = errors.length ? 500 : 200;
+  return NextResponse.json({ email, sms, inbox, ...(errors.length ? { errors } : {}) }, { status });
 }
 
 export async function POST(req: Request) {

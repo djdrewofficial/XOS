@@ -453,7 +453,7 @@ export async function syncHighLevelConversations(
     Pass a service-role client when running without a user session (cron, sign flow). */
 export async function processSmsOutbox(
   client?: SupabaseClient
-): Promise<{ sent: number; failed: number; suppressed: number; skipped: string | null }> {
+): Promise<{ sent: number; failed: number; suppressed: number; skipped: string | null; error?: string }> {
   if (!isHighLevelConfigured()) {
     return {
       sent: 0,
@@ -464,12 +464,19 @@ export async function processSmsOutbox(
   }
 
   const supabase = client ?? (await createClient());
-  const { data: queued } = await supabase
+  const { data: queued, error: queueError } = await supabase
     .from("sms_log")
     .select("*, client:clients(first_name, last_name, email)")
     .eq("status", "queued")
     .order("created_at")
     .limit(50);
+
+  // A failed select must NOT masquerade as an empty queue ("sent 0, healthy") —
+  // surface it so the cron reports failure instead of silently sending nothing.
+  if (queueError) {
+    console.error("processSmsOutbox: sms_log query failed:", queueError);
+    return { sent: 0, failed: 0, suppressed: 0, skipped: null, error: `sms_log query failed: ${queueError.message}` };
+  }
 
   let sent = 0;
   let failed = 0;
