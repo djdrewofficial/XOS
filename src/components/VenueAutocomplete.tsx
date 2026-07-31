@@ -25,10 +25,15 @@ const inputCls =
 export default function VenueAutocomplete({
   defaultName,
   defaultAddress,
+  token,
 }: {
   defaultName: string;
   defaultAddress: string;
+  /** Proposal pay_token — authorizes the public /proposal flow to use /api/places
+      (staff pickers authorize via their session instead, so this is optional). */
+  token?: string;
 }) {
+  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
   // start "selected" from the event's existing venue (no place_id → confirm
   // action won't clobber stored city/state unless the client re-picks)
   const [selected, setSelected] = useState<Selected | null>(
@@ -50,7 +55,7 @@ export default function VenueAutocomplete({
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/places?q=${encodeURIComponent(query)}`);
+        const res = await fetch(`/api/places?q=${encodeURIComponent(query)}${tokenParam}`);
         const data = (await res.json()) as { suggestions?: Suggestion[] };
         setResults(data.suggestions ?? []);
         setOpen(true);
@@ -76,7 +81,7 @@ export default function VenueAutocomplete({
     setOpen(false);
     setLoading(true);
     try {
-      const res = await fetch(`/api/places?id=${encodeURIComponent(s.placeId)}`);
+      const res = await fetch(`/api/places?id=${encodeURIComponent(s.placeId)}${tokenParam}`);
       const d = (await res.json()) as Selected;
       setSelected({
         name: d.name || s.primary,

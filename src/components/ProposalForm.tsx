@@ -181,7 +181,7 @@ export default function ProposalForm(props: ProposalFormProps) {
       {/* ---- Venue ---- */}
       <div>
         <SectionLabel>Venue</SectionLabel>
-        <VenueAutocomplete defaultName={props.venue.name} defaultAddress={props.venue.address} />
+        <VenueAutocomplete defaultName={props.venue.name} defaultAddress={props.venue.address} token={props.token} />
       </div>
 
       {/* ---- Timing (setup time is internal — not shown to clients) ---- */}
