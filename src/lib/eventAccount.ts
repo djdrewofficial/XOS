@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlannerRole } from "@/lib/planning";
+import { sanitizeEmailHtml } from "@/lib/sanitizeEmailHtml";
 
 /* Client-facing "My Event" data for the planner: package + add-ons + financials
    (mirrors the mobile app's loadAccount price logic — override → locked → live
@@ -142,7 +143,9 @@ export async function loadClientMessages(admin: SupabaseClient, eventId: string)
     emails: (em ?? [])
       .filter((e) => !failed(e.status))
       .slice(0, 30)
-      .map((e) => ({ id: e.id, subject: e.subject, to: e.to_address, status: e.status, sentAt: e.sent_at ?? e.created_at, openedAt: e.opened_at, bodyHtml: e.body_html })),
+      // Sanitize before it reaches the portal — merge tags splice client-supplied
+      // fields into this HTML, and MyEventTab renders it via dangerouslySetInnerHTML.
+      .map((e) => ({ id: e.id, subject: e.subject, to: e.to_address, status: e.status, sentAt: e.sent_at ?? e.created_at, openedAt: e.opened_at, bodyHtml: sanitizeEmailHtml(e.body_html) })),
     texts: (sms ?? [])
       .filter((s) => !failed(s.status))
       .slice(0, 30)
