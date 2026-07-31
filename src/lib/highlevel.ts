@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+// toE164 lives in lib/phone (neutral module) so lib/smsOptOut can use it without a
+// circular import back to this file. Re-exported below for existing importers.
+import { toE164 } from "@/lib/phone";
+import { isPhoneOptedOut, recordSmsOptSignal, classifySmsKeyword } from "@/lib/smsOptOut";
 
 /* ============ HighLevel (LeadConnector API v2) config ============
    Set in .env.local (and Netlify env for prod):
@@ -24,14 +28,7 @@ export function isHighLevelConfigured(): boolean {
 }
 
 /** US-centric E.164 normalization — GHL matches/creates contacts by phone. */
-export function toE164(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("+")) return `+${trimmed.replace(/\D/g, "")}`;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return null;
-}
+export { toE164 };
 
 async function hlFetch(
   path: string,
@@ -272,6 +269,25 @@ async function upsertConversationMessages(
   }
 
   await supabase.from("hl_messages").upsert(rows, { onConflict: "id" });
+
+  // Maintain the TCPA opt-out list from inbound STOP / START replies. The
+  // monotonic signal_at guard in recordSmsOptSignal makes re-syncing old
+  // messages a no-op, so this is safe to run on every sync.
+  for (const r of rows) {
+    if ((r.direction ?? "").toLowerCase() !== "inbound") continue;
+    if (!(r.message_type ?? "").toUpperCase().includes("SMS")) continue;
+    const kind = classifySmsKeyword(r.body);
+    if (!kind || !r.from_number) continue;
+    const parsed = r.date_added ? new Date(r.date_added as string | number) : null;
+    const signalAt = parsed && !isNaN(parsed.getTime()) ? parsed : undefined;
+    await recordSmsOptSignal(supabase, r.from_number, {
+      optedOut: kind === "stop",
+      source: kind === "stop" ? "inbound_stop" : "inbound_start",
+      reason: (r.body ?? "").slice(0, 60),
+      signalAt,
+    });
+  }
+
   return rows.length;
 }
 
@@ -437,11 +453,12 @@ export async function syncHighLevelConversations(
     Pass a service-role client when running without a user session (cron, sign flow). */
 export async function processSmsOutbox(
   client?: SupabaseClient
-): Promise<{ sent: number; failed: number; skipped: string | null }> {
+): Promise<{ sent: number; failed: number; suppressed: number; skipped: string | null }> {
   if (!isHighLevelConfigured()) {
     return {
       sent: 0,
       failed: 0,
+      suppressed: 0,
       skipped: "HighLevel not configured (set HIGHLEVEL_PI_TOKEN and HIGHLEVEL_LOCATION_ID)",
     };
   }
@@ -456,12 +473,26 @@ export async function processSmsOutbox(
 
   let sent = 0;
   let failed = 0;
+  let suppressed = 0;
 
   for (const msg of queued ?? []) {
     const fail = async (error: string) => {
       await supabase.from("sms_log").update({ status: "failed", error }).eq("id", msg.id);
       failed++;
     };
+
+    // TCPA opt-out gate — the single chokepoint every queued SMS drains through
+    // (booking helpers, payment reminders, notifications, pay codes). Never text
+    // a number that replied STOP. Channel messages (IG/FB) have no phone → skip.
+    const channel = (msg.channel ?? "SMS") as CommChannel;
+    if (channel === "SMS" && msg.to_number && (await isPhoneOptedOut(supabase, msg.to_number))) {
+      await supabase
+        .from("sms_log")
+        .update({ status: "suppressed", error: "recipient opted out of SMS (STOP)" })
+        .eq("id", msg.id);
+      suppressed++;
+      continue;
+    }
 
     // resolve the GHL contact: channel replies carry it directly (IG/FB have
     // no phone number); SMS sends fall back to phone upsert
@@ -511,5 +542,5 @@ export async function processSmsOutbox(
     }
   }
 
-  return { sent, failed, skipped: null };
+  return { sent, failed, suppressed, skipped: null };
 }

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/auth";
 import { sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
 import { formatPhone } from "@/lib/phone";
+import { recordSmsOptSignal } from "@/lib/smsOptOut";
 import { findOrCreateClient } from "@/lib/clients";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -35,6 +36,25 @@ export async function resetClientPassword(id: string): Promise<{ ok: boolean; er
   const { data: c } = await supabase.from("clients").select("email").eq("id", id).maybeSingle();
   if (!c?.email) return { ok: false, error: "No email on file." };
   return await sendPasswordReset(c.email);
+}
+
+/** Manually set a client's SMS opt-out state (STOP suppression). Use only when a
+    client asks staff directly — inbound STOP/START replies are handled
+    automatically. Staff-only (clients:edit); the manual signal timestamps to now
+    so it overrides any older inbound message. */
+export async function setClientSmsOptOut(id: string, optedOut: boolean): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  await requireModule("clients", "edit", { mode: "throw", supabase });
+  const { data: c } = await supabase.from("clients").select("cell_phone").eq("id", id).maybeSingle();
+  if (!c?.cell_phone) return { ok: false, error: "No mobile number on file for this client." };
+  const res = await recordSmsOptSignal(supabase, c.cell_phone, {
+    optedOut,
+    source: "manual",
+    reason: optedOut ? "Opted out by staff" : "Re-subscribed by staff",
+  });
+  if (!res.ok) return { ok: false, error: "That mobile number isn't a valid US number." };
+  revalidatePath(`/clients/${id}`);
+  return { ok: true };
 }
 
 async function payload(supabase: Awaited<ReturnType<typeof createClient>>, formData: FormData) {

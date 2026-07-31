@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ClientProfileCard from "@/components/ClientProfileCard";
 import LoginAccess from "@/components/LoginAccess";
-import { updateClientRecord, inviteClient, resetClientPassword } from "../actions";
+import SmsSubscription from "@/components/SmsSubscription";
+import { updateClientRecord, inviteClient, resetClientPassword, setClientSmsOptOut } from "../actions";
+import { getSmsOptStatus } from "@/lib/smsOptOut";
 import { money, eventTotal, type Client, type XEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +29,8 @@ export default async function ClientDetailPage({
   ]);
 
   if (!client) notFound();
+
+  const smsStatus = await getSmsOptStatus(supabase, (client as Client).cell_phone ?? null);
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -95,6 +99,8 @@ export default async function ClientDetailPage({
           </>
         }
       />
+
+      <SmsSubscription clientId={id} status={smsStatus} action={setClientSmsOptOut} />
     </div>
   );
 }

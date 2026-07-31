@@ -147,7 +147,7 @@ export async function loadClientMessages(admin: SupabaseClient, eventId: string)
       // fields into this HTML, and MyEventTab renders it via dangerouslySetInnerHTML.
       .map((e) => ({ id: e.id, subject: e.subject, to: e.to_address, status: e.status, sentAt: e.sent_at ?? e.created_at, openedAt: e.opened_at, bodyHtml: sanitizeEmailHtml(e.body_html) })),
     texts: (sms ?? [])
-      .filter((s) => !failed(s.status))
+      .filter((s) => !failed(s.status) && s.status !== "suppressed")
       .slice(0, 30)
       .map((s) => ({ id: s.id, body: stripHL(s.body), to: s.to_number, status: s.status, sentAt: s.sent_at ?? s.created_at }))
       .filter((s) => s.body),
