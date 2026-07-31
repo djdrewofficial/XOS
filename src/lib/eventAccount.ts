@@ -67,7 +67,7 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
     ? { displayName: (ps.zelle_display_name as string) ?? "Xpress Entertainment", handle: (ps.zelle_handle as string) ?? null, memo: (ps.zelle_memo as string) ?? "Include your event date in the memo" }
     : null;
   const pays = financialsVisible
-    ? (await admin.from("payments").select("id, amount, status, paid_at, method, reason, scheduled_payment_id").eq("event_id", eventId).order("paid_at", { ascending: true })).data
+    ? (await admin.from("payments").select("id, amount, status, paid_at, method, reason, scheduled_payment_id").eq("event_id", eventId).is("deleted_at", null).order("paid_at", { ascending: true })).data
     : null;
   const sched = financialsVisible
     ? (await admin.from("scheduled_payments").select("id, seq, due_date, amount, label").eq("event_id", eventId).order("seq", { ascending: true })).data

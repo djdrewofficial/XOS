@@ -605,7 +605,8 @@ export async function confirmPayment(paymentId: string, eventId: string, formDat
       .from("payments")
       .select("scheduled_payment_id")
       .eq("event_id", eventId)
-      .eq("status", "approved"),
+      .eq("status", "approved")
+      .is("deleted_at", null),
   ]);
   const taken = new Set((priorPayments ?? []).map((p) => p.scheduled_payment_id).filter(Boolean));
   const scheduledId = (scheduled ?? []).find((s) => !taken.has(s.id))?.id ?? null;
@@ -625,11 +626,42 @@ export async function confirmPayment(paymentId: string, eventId: string, formDat
 }
 
 /* Remove a payment row — used to reject a false/duplicate Zelle claim, or undo
-   a mistaken entry. */
+   a mistaken entry. SOFT delete: stamps deleted_at/deleted_by so it stops counting
+   toward the balance immediately but can be restored from the "Recently removed"
+   list (money records must be recoverable, never hard-deleted). */
 export async function removePayment(paymentId: string, eventId: string) {
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
-  const { error } = await supabase.from("payments").delete().eq("id", paymentId).eq("event_id", eventId);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: emp } = user
+    ? await supabase.from("employees").select("first_name, last_name, stage_name").eq("auth_user_id", user.id).maybeSingle()
+    : { data: null };
+  const by = emp
+    ? emp.stage_name || `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim() || null
+    : user?.email ?? null;
+
+  const { error } = await supabase
+    .from("payments")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: by })
+    .eq("id", paymentId)
+    .eq("event_id", eventId)
+    .is("deleted_at", null);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/payments");
+}
+
+/* Restore a soft-deleted payment from the "Recently removed" list. */
+export async function restorePayment(paymentId: string, eventId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("payments")
+    .update({ deleted_at: null, deleted_by: null })
+    .eq("id", paymentId)
+    .eq("event_id", eventId);
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/payments");

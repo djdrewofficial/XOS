@@ -259,6 +259,7 @@ export async function RecentPayments() {
     .from("payments")
     .select("*, event:events(id, name)")
     .eq("status", "approved")
+    .is("deleted_at", null)
     .order("paid_at", { ascending: false })
     .limit(6);
 

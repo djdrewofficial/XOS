@@ -29,7 +29,7 @@ export async function writeSchedulePreservingPaid(
 
   const [{ data: existing }, { data: approved }] = await Promise.all([
     supabase.from("scheduled_payments").select("id, seq, amount").eq("event_id", eventId).order("seq"),
-    supabase.from("payments").select("scheduled_payment_id").eq("event_id", eventId).eq("status", "approved"),
+    supabase.from("payments").select("scheduled_payment_id").eq("event_id", eventId).eq("status", "approved").is("deleted_at", null),
   ]);
 
   const paidIds = new Set(

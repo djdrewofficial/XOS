@@ -28,7 +28,7 @@ export async function recordPaypalPayment(
   // link to the earliest scheduled payment that has no payment against it yet
   const [{ data: scheduled }, { data: priorPayments }] = await Promise.all([
     supabase.from("scheduled_payments").select("id, seq").eq("event_id", params.eventId).order("seq"),
-    supabase.from("payments").select("scheduled_payment_id").eq("event_id", params.eventId).eq("status", "approved"),
+    supabase.from("payments").select("scheduled_payment_id").eq("event_id", params.eventId).eq("status", "approved").is("deleted_at", null),
   ]);
   const taken = new Set((priorPayments ?? []).map((p) => p.scheduled_payment_id).filter(Boolean));
   const scheduledId = (scheduled ?? []).find((s) => !taken.has(s.id))?.id ?? null;

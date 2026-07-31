@@ -67,7 +67,7 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
         .eq("event_id", event.id),
       // only confirmed (approved) payments reduce the balance — a pending Zelle
       // claim is recorded but must not lower what the client still owes
-      supabase.from("payments").select("amount, scheduled_payment_id").eq("event_id", event.id).eq("status", "approved"),
+      supabase.from("payments").select("amount, scheduled_payment_id").eq("event_id", event.id).eq("status", "approved").is("deleted_at", null),
       supabase.from("scheduled_payments").select("id, seq, amount, due_date, label").eq("event_id", event.id).order("seq"),
       supabase.from("payment_settings").select("*").eq("id", true).maybeSingle(),
       supabase.from("journey_settings").select("*").eq("id", true).maybeSingle(),

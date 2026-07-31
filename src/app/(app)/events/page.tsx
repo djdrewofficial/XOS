@@ -26,7 +26,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
       supabase.from("event_staff").select("event_id, employee:employees(first_name, last_name)"),
       supabase.from("event_vendors").select("event_id, vendor:vendors(company_name)"),
       supabase.from("event_addons").select("event_id, quantity, price_override, price_locked, addon:addons(name, default_price)"),
-      supabase.from("payments").select("event_id, amount").eq("status", "approved"),
+      supabase.from("payments").select("event_id, amount").eq("status", "approved").is("deleted_at", null),
     ]);
 
   const staffByEvent = new Map<string, string[]>();

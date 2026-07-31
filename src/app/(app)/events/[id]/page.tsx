@@ -6,6 +6,7 @@ import {
   addPayment,
   confirmPayment,
   removePayment,
+  restorePayment,
   addScheduledPayments,
   addEventNote,
   addContractNote,
@@ -137,7 +138,7 @@ export default async function EventDetailPage({
       .eq("id", id)
       .maybeSingle<XEvent & { inquiry_source: { name: string } | null }>(),
     supabase.from("scheduled_payments").select("*").eq("event_id", id).order("seq"),
-    supabase.from("payments").select("*").eq("event_id", id).order("paid_at"),
+    supabase.from("payments").select("*").eq("event_id", id).is("deleted_at", null).order("paid_at"),
     supabase.from("event_notes").select("*").eq("event_id", id).order("created_at", { ascending: false }),
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
     supabase.from("booking_helpers").select("*").eq("is_active", true).order("position"),
@@ -195,6 +196,14 @@ export default async function EventDetailPage({
     .select("id, name")
     .eq("is_library", false)
     .order("name");
+
+  // Soft-deleted payments for this event → the "Recently removed" restore list.
+  const { data: deletedPayments } = await supabase
+    .from("payments")
+    .select("id, amount, method, reason, paid_at, deleted_at, deleted_by")
+    .eq("event_id", id)
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false });
 
   // Spotify export (staff-only): the signed-in staffer's connection + this
   // event's timeline sections with song counts, for the "Export to Spotify" tool.
@@ -1194,6 +1203,32 @@ export default async function EventDetailPage({
             {(payments ?? []).length === 0 && <li className="py-2 text-zinc-500">No payments yet.</li>}
           </ul>
         </div>
+
+        {(deletedPayments ?? []).length > 0 && (
+          <div className="card p-5">
+            <h2 className="card-title">Recently Removed Payments</h2>
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Removed payments are kept here so a mistaken deletion can be undone — they don&apos;t count toward the balance.
+            </p>
+            <ul className="divide-y divide-zinc-100 text-sm dark:divide-white/10">
+              {(deletedPayments ?? []).map((p) => (
+                <li key={p.id as string} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <div className="font-medium text-zinc-700 line-through dark:text-zinc-300">{money(Number(p.amount))}</div>
+                    <div className="truncate text-xs text-zinc-400">
+                      {[p.method, p.reason].filter(Boolean).join(" · ")}
+                      {p.deleted_by ? ` · removed by ${p.deleted_by}` : ""}
+                      {p.deleted_at ? ` · ${new Date(p.deleted_at as string).toLocaleDateString()}` : ""}
+                    </div>
+                  </div>
+                  <form action={restorePayment.bind(null, p.id as string, id)}>
+                    <SaveButton className="btn-ghost px-2 py-1 text-[11px]" savedLabel="Restored">Restore</SaveButton>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="card p-5">
           <h2 className="card-title">Event Profitability</h2>

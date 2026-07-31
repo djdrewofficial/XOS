@@ -23,6 +23,7 @@ export async function buildReceived(supabase: SupabaseClient, y: number): Promis
     .from("payments")
     .select("amount, method, reason, paid_at, status, event:events(name)")
     .eq("status", "approved")
+    .is("deleted_at", null)
     .gte("paid_at", `${y}-01-01T00:00:00`)
     .lte("paid_at", `${y}-12-31T23:59:59`)
     .order("paid_at", { ascending: false });
