@@ -162,6 +162,56 @@ export async function sendAccountInvite(args: {
   }
 }
 
+/** "Invite to XOS" onboarding for a client tied to an event. Ensures a login,
+    links the account, then emails the editable Client Invite template
+    (company_settings.invite_template_id) rendered for the event, injecting a
+    per-recipient set/reset-password link into <set_password_button> /
+    <set_password_link>. One recovery link covers both cases — a brand-new login
+    sets a password, an existing one resets it. Falls back to the built-in invite
+    email if no template is configured. */
+export async function inviteClientToXos(args: {
+  clientId: string;
+  eventId: string;
+  email: string | null | undefined;
+  name?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const email = (args.email ?? "").trim().toLowerCase();
+  if (!email) return { ok: false, error: "No email on file — add one first." };
+  const admin = createAdminClient();
+  try {
+    const userId = await ensureAuthUser(admin, email);
+    await admin.from("accounts").upsert(
+      { auth_user_id: userId, account_type: "client", client_id: args.clientId, email, updated_at: new Date().toISOString() },
+      { onConflict: "auth_user_id" },
+    );
+
+    const link = await recoveryActionLink(admin, email, setPasswordUrlFor("client"));
+
+    const { data: cs } = await admin.from("company_settings").select("invite_template_id").eq("id", true).maybeSingle();
+    const templateId = (cs?.invite_template_id as string | null | undefined) ?? null;
+    const { data: tpl } = templateId
+      ? await admin.from("email_templates").select("subject, body_html").eq("id", templateId).eq("is_active", true).maybeSingle()
+      : { data: null };
+
+    // No template configured/active → fall back to the built-in invite email.
+    if (!tpl) return await sendAccountInvite({ type: "client", email, name: args.name, clientId: args.clientId });
+
+    const render = async (text: string): Promise<string> => {
+      const { data } = await admin.rpc("render_merge_tags", { p_event_id: args.eventId, p_template: text });
+      return (data as string | null) ?? text;
+    };
+    const subject = await render((tpl.subject as string) || "Set your password");
+    let body = await render((tpl.body_html as string) ?? "");
+    // The set-password tags are per-recipient and can't come from render_merge_tags
+    // (they need a freshly minted recovery link), so inject them here.
+    body = body.split("<set_password_button>").join(button(link, "Set My Password")).split("<set_password_link>").join(link);
+
+    return await sendBrandedEmail({ to: email, subject, contentHtml: body });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** Email a password-reset link to an existing login. */
 export async function sendPasswordReset(
   email: string | null | undefined,

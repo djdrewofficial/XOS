@@ -15,6 +15,7 @@ import { dispatchNotification } from "@/lib/notify";
 import { findOrCreateClient } from "@/lib/clients";
 import { reseedEventPlanning, assignAddonSections } from "@/lib/planning";
 import { requireModule } from "@/lib/auth";
+import { inviteClientToXos } from "@/lib/accounts";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -1163,6 +1164,19 @@ export async function toggleContractHolder(eventId: string, eventClientId: strin
   const { error } = await supabase.from("event_clients").update({ is_contract_holder: value }).eq("id", eventClientId);
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
+}
+
+/** "Invite to XOS": onboard this event's client to the planning portal — creates
+    their login if needed and emails the editable Client Invite template with a
+    set/reset-password link. */
+export async function inviteEventClientToXos(eventId: string, clientId: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  await requireModule("events", "edit", { mode: "throw", supabase });
+  const { data: c } = await supabase.from("clients").select("email, first_name").eq("id", clientId).maybeSingle();
+  if (!c?.email) return { ok: false, error: "Add an email to this client first." };
+  const res = await inviteClientToXos({ clientId, eventId, email: c.email, name: c.first_name });
+  if (res.ok) revalidatePath(`/events/${eventId}`);
+  return res;
 }
 
 export async function addClientNote(eventId: string, clientId: string, formData: FormData) {

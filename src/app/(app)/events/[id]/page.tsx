@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
+import InviteToXosButton from "@/components/InviteToXosButton";
 import {
   addPayment,
   confirmPayment,
@@ -15,6 +16,7 @@ import {
   removeEventClient,
   setPrimaryEventClient,
   toggleContractHolder,
+  inviteEventClientToXos,
   addClientNote,
   updateBookingInfo,
   updateBookingDates,
@@ -259,6 +261,18 @@ export default async function EventDetailPage({
   const docIds = (eventDocs ?? []).map((d) => d.id);
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
 
+  // Which of this event's clients already have a portal login (drives the
+  // "Invite to XOS" vs "Resend / Reset" button on each client card).
+  const clientIdsWithLogin = new Set<string>();
+  if (linkedClientIds.length) {
+    const { data: acctRows } = await supabase
+      .from("accounts")
+      .select("client_id")
+      .eq("account_type", "client")
+      .in("client_id", linkedClientIds);
+    for (const a of acctRows ?? []) if (a.client_id) clientIdsWithLogin.add(a.client_id as string);
+  }
+
   const convOr: string[] = [];
   if (linkedClientIds.length) convOr.push(`client_id.in.(${linkedClientIds.join(",")})`);
   for (const ec of eventClients ?? []) {
@@ -485,6 +499,14 @@ export default async function EventDetailPage({
                     <form action={setPrimaryEventClient.bind(null, id, ec.id)}>
                       <button className="font-semibold text-brand dark:text-brand-lighter hover:underline">Make Primary</button>
                     </form>
+                  )}
+                  {c.email && (
+                    <InviteToXosButton
+                      eventId={id}
+                      clientId={c.id}
+                      hasLogin={clientIdsWithLogin.has(c.id)}
+                      action={inviteEventClientToXos}
+                    />
                   )}
                   {canRemove && !ec.is_primary && (
                     <form action={removeEventClient.bind(null, id, ec.id)}>
