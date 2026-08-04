@@ -1346,6 +1346,32 @@ export async function addContractNote(eventId: string, formData: FormData) {
   revalidatePath(`/events/${eventId}`);
 }
 
+export async function updateEventNote(eventId: string, noteId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const body = clean(formData.get("body"));
+  if (!body) return;
+  const { error } = await supabase
+    .from("event_notes")
+    .update({ body })
+    .eq("id", noteId)
+    .eq("event_id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function deleteEventNote(eventId: string, noteId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("event_notes")
+    .delete()
+    .eq("id", noteId)
+    .eq("event_id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
 export async function updateEventDetails(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
 import InviteToXosButton from "@/components/InviteToXosButton";
+import NoteItem from "@/components/NoteItem";
 import {
   addPayment,
   confirmPayment,
@@ -11,6 +12,8 @@ import {
   addScheduledPayments,
   addEventNote,
   addContractNote,
+  updateEventNote,
+  deleteEventNote,
   addEventClient,
   createClientAndAttach,
   removeEventClient,
@@ -802,12 +805,12 @@ export default async function EventDetailPage({
         </form>
         <ul className="space-y-2 text-sm">
           {contractNotes.map((n) => (
-            <li key={n.id} className="rounded-lg bg-black/[0.04] dark:bg-white/[0.05] p-3">
-              <span className="text-zinc-700 dark:text-zinc-300">{n.body}</span>
-              <div className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-600">
-                {n.author_name ?? "unknown"} · {new Date(n.created_at).toLocaleString()}
-              </div>
-            </li>
+            <NoteItem
+              key={n.id}
+              note={n}
+              updateAction={updateEventNote.bind(null, id, n.id)}
+              deleteAction={deleteEventNote.bind(null, id, n.id)}
+            />
           ))}
           {contractNotes.length === 0 && <li className="text-sm text-zinc-400 dark:text-zinc-600">No contract notes yet.</li>}
         </ul>
@@ -1642,12 +1645,12 @@ export default async function EventDetailPage({
       )}
       <ul className="space-y-2 text-sm">
         {internalNotes.map((n: { id: string; body: string; created_at: string; author_name?: string | null }) => (
-          <li key={n.id} className="rounded-lg bg-black/[0.04] dark:bg-white/[0.05] p-3">
-            <span className="text-zinc-700 dark:text-zinc-300">{n.body}</span>
-            <div className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-600">
-              {n.author_name ?? "unknown"} · {new Date(n.created_at).toLocaleString()}
-            </div>
-          </li>
+          <NoteItem
+            key={n.id}
+            note={n}
+            updateAction={updateEventNote.bind(null, id, n.id)}
+            deleteAction={deleteEventNote.bind(null, id, n.id)}
+          />
         ))}
         {internalNotes.length === 0 && !event.internal_notes && (
           <li className="text-zinc-500">No notes yet.</li>
