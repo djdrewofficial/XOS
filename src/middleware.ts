@@ -71,6 +71,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/pay/") ||
     pathname.startsWith("/welcome/") ||
     pathname.startsWith("/proposal/") ||
+    pathname.startsWith("/offer/") ||
     pathname.startsWith("/p/") ||
     pathname.startsWith("/vibo/") ||
     pathname.startsWith("/auth/") ||

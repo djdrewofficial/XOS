@@ -681,7 +681,8 @@ export async function getProposalShortLink(eventId: string): Promise<{ url: stri
     const url = await getOrCreateShortLink(admin, {
       eventId,
       kind: "proposal",
-      targetPath: `/proposal/${ev.pay_token}`,
+      // Land on the email-content cover page, which then continues into /proposal.
+      targetPath: `/offer/${ev.pay_token}`,
     });
     return { url };
   } catch {
