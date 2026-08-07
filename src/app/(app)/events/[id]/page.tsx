@@ -66,6 +66,7 @@ import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
 import type { ConvRow } from "@/components/InboxShell";
 import SigningChecklist from "@/components/SigningChecklist";
+import CopyProposalLink from "@/components/CopyProposalLink";
 import { resolveRequiredFields, getMissingSigningFields } from "@/lib/signingRequirements";
 import { summarizeHelperActions, type HelperAction } from "@/lib/helperSummary";
 import { resolveUserNames } from "@/lib/planning";
@@ -1677,6 +1678,15 @@ export default async function EventDetailPage({
 
   const documentsTab = (
     <div className="space-y-6">
+      {/* ---------- send proposal link ---------- */}
+      <div className="card max-w-2xl p-5">
+        <h2 className="card-title">Send Proposal Link</h2>
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          A short link to this event&apos;s proposal (review &amp; sign) page — copy it to text or email the client.
+        </p>
+        <CopyProposalLink eventId={id} />
+      </div>
+
       {/* ---------- generator ---------- */}
       <div className="card max-w-2xl p-5">
         <h2 className="card-title">Generate Document</h2>

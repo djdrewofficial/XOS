@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getOrCreateShortLink } from "@/lib/shortLinks";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
@@ -666,6 +667,26 @@ export async function restorePayment(paymentId: string, eventId: string) {
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/payments");
+}
+
+/* Mint (or reuse) a short link for this event's proposal — a tidy
+   xos.xpressdjs.com/p/<code> URL that redirects to /proposal/<pay_token>, for
+   staff to copy and send to a client. */
+export async function getProposalShortLink(eventId: string): Promise<{ url: string } | { error: string }> {
+  await requireModule("events", "view", { mode: "throw" });
+  const admin = createAdminClient();
+  const { data: ev } = await admin.from("events").select("pay_token").eq("id", eventId).maybeSingle();
+  if (!ev?.pay_token) return { error: "This event has no proposal link yet." };
+  try {
+    const url = await getOrCreateShortLink(admin, {
+      eventId,
+      kind: "proposal",
+      targetPath: `/proposal/${ev.pay_token}`,
+    });
+    return { url };
+  } catch {
+    return { error: "Couldn't generate the link — please try again." };
+  }
 }
 
 export async function addScheduledPayments(eventId: string, formData: FormData) {
