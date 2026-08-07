@@ -56,11 +56,12 @@ export type EventBundle = {
   addons: { quantity: number; price_override: number | null; price_locked: number | null; addon: { name: string; client_facing_name?: string | null; description: string | null; default_price: number } | null }[];
   schedule: { seq: number; due_date: string | null; amount: number; label: string | null }[];
   pinnedDescription: string | null;
+  contractNotes: string[];
   total: number;
 };
 
 export async function loadEventBundle(supabase: SupabaseClient, eventId: string): Promise<EventBundle | null> {
-  const [{ data: event }, { data: addons }, { data: schedule }] = await Promise.all([
+  const [{ data: event }, { data: addons }, { data: schedule }, { data: notes }] = await Promise.all([
     supabase
       .from("events")
       .select(
@@ -73,8 +74,13 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
       .select("quantity, price_override, price_locked, addon:addons(name, client_facing_name, description, default_price)")
       .eq("event_id", eventId),
     supabase.from("scheduled_payments").select("seq, due_date, amount, label").eq("event_id", eventId).order("seq"),
+    supabase.from("event_notes").select("body").eq("event_id", eventId).eq("kind", "contract").order("created_at"),
   ]);
   if (!event) return null;
+
+  const contractNotes = ((notes ?? []) as { body: string | null }[])
+    .map((n) => (n.body ?? "").trim())
+    .filter(Boolean);
 
   // description pinned to the version the event was sold with
   let pinnedDescription = (event.package as { description?: string | null } | null)?.description ?? null;
@@ -105,7 +111,7 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
     Number(e.discount1_amount) -
     Number(e.discount2_amount);
 
-  return { event: e, addons: addonRows, schedule: schedule ?? [], pinnedDescription, total };
+  return { event: e, addons: addonRows, schedule: schedule ?? [], pinnedDescription, contractNotes, total };
 }
 
 /** Structured fee lines — shared by the document fee table and the quote-style emails. */

@@ -91,6 +91,17 @@ export function quoteSummaryHtml(bundle: EventBundle): string {
   const packageSection = fees.packageLine
     ? `<div style="${SECTION_LABEL}">Your Package</div>${lineHtml(fees.packageLine.name, fees.packageLine.amount, fees.packageLine.description)}`
     : "";
+  // Contract Notes — staff-authored notes shown to the client, directly under
+  // the package so they read as part of what's included.
+  const contractSection = bundle.contractNotes.length
+    ? `<div style="${SECTION_LABEL}">Contract Notes</div>` +
+      bundle.contractNotes
+        .map(
+          (n) =>
+            `<div style="font-size:13.5px;color:#2c2c33;line-height:1.55;padding:5px 0;white-space:pre-line;"><span style="color:#8b6fd6;">•</span>&nbsp;${esc(n)}</div>`
+        )
+        .join("")
+    : "";
   const addonSection = fees.addonLines.length
     ? `<div style="${SECTION_LABEL}">Add-Ons</div>${fees.addonLines.map((a) => lineHtml(a.name, a.amount, a.description)).join("")}`
     : "";
@@ -106,7 +117,7 @@ export function quoteSummaryHtml(bundle: EventBundle): string {
     </tr>
   </table>`;
 
-  return `${summaryCard}${packageSection}${addonSection}${feeSection}${discountSection}${totalRow}`;
+  return `${summaryCard}${packageSection}${contractSection}${addonSection}${feeSection}${discountSection}${totalRow}`;
 }
 
 /** Payment plan block — also the <payment_plan> merge tag in email templates. */

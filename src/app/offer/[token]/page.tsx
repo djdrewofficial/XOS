@@ -50,7 +50,8 @@ export default async function OfferPage({ params }: { params: Promise<{ token: s
   const continueUrl = `/proposal/${token}`;
 
   // The proposal email = the active BOOKING AGREEMENT template with the full quote.
-  const [{ data: tpl }, bundle, { data: contractNotes }] = await Promise.all([
+  // Contract Notes ride along inside <quote_summary> (rendered under Your Package).
+  const [{ data: tpl }, bundle] = await Promise.all([
     admin
       .from("email_templates")
       .select("body_html")
@@ -60,12 +61,6 @@ export default async function OfferPage({ params }: { params: Promise<{ token: s
       .limit(1)
       .maybeSingle(),
     loadEventBundle(admin, event.id),
-    admin
-      .from("event_notes")
-      .select("id, body")
-      .eq("event_id", event.id)
-      .eq("kind", "contract")
-      .order("created_at"),
   ]);
 
   let content = "";
@@ -107,21 +102,6 @@ export default async function OfferPage({ params }: { params: Promise<{ token: s
             style={{ color: "#2c2c33", fontSize: "15px", lineHeight: 1.6 }}
             dangerouslySetInnerHTML={{ __html: content }}
           />
-          {(contractNotes ?? []).length > 0 && (
-            <div className="border-t border-zinc-200 px-6 py-6 sm:px-8">
-              <div style={{ fontSize: "11px", letterSpacing: "0.2em", textTransform: "uppercase", color: "#8b6fd6", fontWeight: 800, marginBottom: "8px" }}>
-                Contract Notes
-              </div>
-              <ul className="space-y-2.5">
-                {(contractNotes ?? []).map((n) => (
-                  <li key={n.id as string} className="flex gap-2" style={{ color: "#2c2c33", fontSize: "14px", lineHeight: 1.55 }}>
-                    <span style={{ color: "#8b6fd6" }}>•</span>
-                    <span className="whitespace-pre-line">{n.body as string}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
         <p className="mt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
           Having trouble? Reply to us and we&apos;ll help you get booked.
