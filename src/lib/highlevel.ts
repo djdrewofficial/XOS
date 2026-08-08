@@ -125,6 +125,66 @@ async function sendConversationMessage(
   return { ok: true, messageId: typeof id === "string" ? id : null };
 }
 
+/** Find-or-create the GHL contact for this email address (email is the match
+    key). Used by the email outbox so a sent email threads into the contact's
+    conversation. */
+async function upsertContactByEmail(opts: {
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+}): Promise<{ ok: true; contactId: string } | { ok: false; error: string }> {
+  const { locationId } = highlevelConfig();
+  const result = await hlFetch("/contacts/upsert", "2021-07-28", {
+    locationId,
+    email: opts.email,
+    ...(opts.firstName ? { firstName: opts.firstName } : {}),
+    ...(opts.lastName ? { lastName: opts.lastName } : {}),
+    ...(opts.phone ? { phone: opts.phone } : {}),
+  });
+  if (!result.ok) return result;
+  const contact = result.data.contact as { id?: string } | undefined;
+  if (!contact?.id) return { ok: false, error: "upsert returned no contact id" };
+  return { ok: true, contactId: contact.id };
+}
+
+/** Sends a fully-rendered HTML email through HighLevel so it threads into the
+    recipient's conversation (visible in the event Comms tab and HighLevel).
+    Unlike sendConversationMessage's plain-text Email path, this passes the
+    branded HTML through untouched. attachmentUrls must be publicly fetchable
+    (GHL downloads them at send time) — the outbox hands it signed storage URLs. */
+export async function sendEmailViaHighLevel(opts: {
+  toEmail: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  subject: string;
+  html: string;
+  attachmentUrls?: string[];
+}): Promise<{ ok: true; messageId: string | null; contactId: string } | { ok: false; error: string }> {
+  if (!isHighLevelConfigured()) return { ok: false, error: "HighLevel not configured" };
+  const contact = await upsertContactByEmail({
+    email: opts.toEmail,
+    firstName: opts.firstName,
+    lastName: opts.lastName,
+    phone: opts.phone,
+  });
+  if (!contact.ok) return { ok: false, error: `contact upsert: ${contact.error}` };
+
+  const payload: Record<string, unknown> = {
+    type: "Email",
+    contactId: contact.contactId,
+    emailTo: opts.toEmail,
+    subject: opts.subject || "Message from Xpress Entertainment",
+    html: opts.html,
+    ...(opts.attachmentUrls?.length ? { attachments: opts.attachmentUrls } : {}),
+  };
+  const result = await hlFetch("/conversations/messages", "2021-04-15", payload);
+  if (!result.ok) return { ok: false, error: result.error };
+  const id = (result.data.messageId ?? result.data.msg ?? null) as string | null;
+  return { ok: true, messageId: typeof id === "string" ? id : null, contactId: contact.contactId };
+}
+
 /* ============ Conversation sync (Communications Hub) ============
    Polls GHL conversations into hl_conversations / hl_messages, keyed by GHL
    ids (idempotent upserts). A watermark in hl_sync_state keeps incremental

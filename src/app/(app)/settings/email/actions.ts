@@ -79,6 +79,18 @@ export async function saveCompanySettings(formData: FormData) {
   revalidatePath("/settings/email");
 }
 
+export async function saveEmailProvider(formData: FormData) {
+  await requireModule("settings", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const provider = clean(formData.get("email_provider")) === "highlevel" ? "highlevel" : "mailgun";
+  const { error } = await supabase
+    .from("company_settings")
+    .update({ email_provider: provider, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) throw new Error(error.message);
+  revalidatePath("/settings/email");
+}
+
 export async function saveEmailSignature(formData: FormData) {
   await requireModule("settings", "edit", { mode: "throw" });
   const supabase = await createClient();

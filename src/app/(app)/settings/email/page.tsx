@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import SaveButton from "@/components/SaveButton";
-import { sendQueuedEmails, saveCompanySettings, saveEmailSignature, saveSocialLinks, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
+import { sendQueuedEmails, saveCompanySettings, saveEmailProvider, saveEmailSignature, saveSocialLinks, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
 import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
 import { templateReviewReasons } from "@/lib/emailTemplateReview";
 import { mapTemplateHelperUsage, type HelperRow, type HelperRef } from "@/lib/templateUsage";
@@ -110,6 +110,9 @@ export default async function EmailPage() {
   const helperUsage = mapTemplateHelperUsage((helpers ?? []) as HelperRow[]);
 
   const mailgunConfigured = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
+  const highlevelConfigured = !!(process.env.HIGHLEVEL_PI_TOKEN && process.env.HIGHLEVEL_LOCATION_ID);
+  const emailProvider = (company?.email_provider ?? "mailgun") as "mailgun" | "highlevel";
+  const sendReady = emailProvider === "highlevel" ? highlevelConfigured || mailgunConfigured : mailgunConfigured;
   const region = (process.env.MAILGUN_REGION ?? "us").toUpperCase();
   const queuedCount = (log ?? []).filter((m) => m.status === "queued").length;
 
@@ -167,6 +170,44 @@ export default async function EmailPage() {
         )}
       </div>
 
+      <div>
+        <h2 className="card-title">Sending Provider</h2>
+        <form action={saveEmailProvider} className="card space-y-3 p-5">
+          <p className="text-xs text-zinc-500">
+            Who actually delivers your automated emails. <strong>HighLevel</strong> routes each email through the
+            client’s conversation, so it shows up in the event <strong>Comms</strong> tab and in HighLevel — the full
+            branded design is preserved. <strong>Mailgun</strong> sends directly from your verified domain (best
+            deliverability, but those sends won’t appear in Comms).
+          </p>
+          <div className="space-y-2">
+            <label className="flex items-start gap-3 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
+              <input type="radio" name="email_provider" value="highlevel" defaultChecked={emailProvider === "highlevel"} className="mt-1" />
+              <span className="text-sm">
+                <span className="font-semibold text-zinc-900 dark:text-white">HighLevel</span>
+                <span className="ml-2 text-xs text-zinc-500">Threads into Comms + HighLevel · keeps the design</span>
+                {!highlevelConfigured && (
+                  <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400">
+                    Not configured — will fall back to Mailgun
+                  </span>
+                )}
+                <span className="mt-1 block text-xs text-zinc-500">
+                  Authenticate your sending domain in HighLevel (Settings → Email Services) so mail lands in the inbox,
+                  not spam. Sends use HighLevel’s connected From address — per-email salesperson/DJ From overrides don’t apply.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
+              <input type="radio" name="email_provider" value="mailgun" defaultChecked={emailProvider === "mailgun"} className="mt-1" />
+              <span className="text-sm">
+                <span className="font-semibold text-zinc-900 dark:text-white">Mailgun</span>
+                <span className="ml-2 text-xs text-zinc-500">Direct from your domain · not logged in Comms</span>
+              </span>
+            </label>
+          </div>
+          <SaveButton>Save Provider</SaveButton>
+        </form>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
           <h2 className="card-title">Company Sending Identity</h2>
@@ -208,8 +249,8 @@ export default async function EmailPage() {
               <label className={label}>To Address</label>
               <input name="test_to" type="email" required placeholder="you@example.com" className={input} />
             </div>
-            <SaveButton disabled={!mailgunConfigured}>
-              {mailgunConfigured ? "Send Test" : "Configure Mailgun first"}
+            <SaveButton disabled={!sendReady}>
+              {sendReady ? "Send Test" : "Configure a provider first"}
             </SaveButton>
           </form>
         </div>

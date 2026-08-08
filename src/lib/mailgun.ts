@@ -6,6 +6,7 @@ import { docTypeClientLabel } from "@/lib/documentBlocks";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell } from "@/lib/signing";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
+import { isHighLevelConfigured, sendEmailViaHighLevel } from "@/lib/highlevel";
 
 /* ============ Mailgun config ============
    Set in .env.local:
@@ -335,24 +336,65 @@ function brandWrap(html: string, companyName: string): string {
   );
 }
 
-/** Drains queued rows from the outbox through Mailgun, using each row's stored sender identity.
+/** Uploads buffer attachments to a temp path in event-files and returns signed
+    URLs (24h) — HighLevel fetches these when it sends the email. Uses the
+    service-role admin client so it works from the cron with no user session. */
+async function attachmentsToSignedUrls(
+  admin: SupabaseClient,
+  msgId: string,
+  attachments: EmailAttachment[]
+): Promise<string[]> {
+  const urls: string[] = [];
+  for (const att of attachments) {
+    const safe = att.filename.replace(/[^\w.\-]+/g, "_") || "attachment";
+    const path = `outbox-tmp/${msgId}/${safe}`;
+    const { error: upErr } = await admin.storage
+      .from("event-files")
+      .upload(path, att.data, { contentType: att.contentType, upsert: true });
+    if (upErr) {
+      console.error("HighLevel attachment upload failed:", upErr.message);
+      continue;
+    }
+    const { data: signed } = await admin.storage.from("event-files").createSignedUrl(path, 60 * 60 * 24);
+    if (signed?.signedUrl) urls.push(signed.signedUrl);
+  }
+  return urls;
+}
+
+/** Drains queued rows from the outbox, using each row's stored sender identity.
+    Sends through the tenant's configured provider (Mailgun or HighLevel); a
+    HighLevel failure falls back to Mailgun so client mail never silently drops.
     Pass a service-role client when running without a user session (cron route). */
 export async function processOutbox(
   client?: SupabaseClient
 ): Promise<{ sent: number; failed: number; skipped: string | null; error?: string }> {
   const { domain } = mailgunConfig();
-  if (!isMailgunConfigured()) {
-    return { sent: 0, failed: 0, skipped: "Mailgun not configured (set MAILGUN_API_KEY and MAILGUN_DOMAIN in .env.local)" };
-  }
-
-  const fallbackFrom = process.env.MAIL_FROM ?? `Xpress Entertainment <events@${domain}>`;
   const supabase = client ?? (await createClient());
   const { data: csRow } = await supabase
     .from("company_settings")
-    .select("company_name")
+    .select("company_name, email_provider")
     .eq("id", true)
     .maybeSingle();
   const companyName = csRow?.company_name ?? "Xpress Entertainment";
+  const provider = (csRow?.email_provider ?? "mailgun") as "mailgun" | "highlevel";
+
+  const mailgunReady = isMailgunConfigured();
+  const highlevelReady = isHighLevelConfigured();
+  // The chosen provider must be usable — or Mailgun available as a fallback.
+  const canSend = provider === "highlevel" ? highlevelReady || mailgunReady : mailgunReady;
+  if (!canSend) {
+    return {
+      sent: 0,
+      failed: 0,
+      skipped:
+        provider === "highlevel"
+          ? "HighLevel not configured (set HIGHLEVEL_PI_TOKEN and HIGHLEVEL_LOCATION_ID), and no Mailgun fallback"
+          : "Mailgun not configured (set MAILGUN_API_KEY and MAILGUN_DOMAIN in .env.local)",
+    };
+  }
+
+  const fallbackFrom = process.env.MAIL_FROM ?? `Xpress Entertainment <events@${domain}>`;
+  const admin = createAdminClient(); // storage + signed URLs run service-role
   const { data: queued, error: queueError } = await supabase
     .from("email_log")
     .select("*")
@@ -389,15 +431,44 @@ export async function processOutbox(
       continue;
     }
 
-    const result = await mailgunSend({
-      from,
-      to: msg.to_address,
-      subject: msg.subject,
-      html,
-      replyTo: msg.reply_to,
-      tags: ["xos", msg.event_id ? "event" : "manual"],
-      attachments,
-    });
+    const sendViaMailgun = () =>
+      mailgunSend({
+        from,
+        to: msg.to_address,
+        subject: msg.subject,
+        html,
+        replyTo: msg.reply_to,
+        tags: ["xos", msg.event_id ? "event" : "manual"],
+        attachments,
+      });
+
+    // Route through HighLevel when selected so the email threads into the
+    // client's conversation (Comms + HighLevel), carrying the full branded HTML.
+    // Any failure falls back to Mailgun so the message still goes out.
+    let result: { ok: true; id: string } | { ok: false; error: string };
+    if (provider === "highlevel" && highlevelReady && msg.to_address) {
+      const attachmentUrls = attachments.length
+        ? await attachmentsToSignedUrls(admin, msg.id, attachments)
+        : [];
+      // Recipient name isn't on the log row; GHL matches/creates the contact by
+      // email and the conversation sync links it back to the XOS client.
+      const hl = await sendEmailViaHighLevel({
+        toEmail: msg.to_address,
+        subject: msg.subject,
+        html,
+        attachmentUrls,
+      });
+      if (hl.ok) {
+        result = { ok: true, id: hl.messageId ?? "" };
+      } else if (mailgunReady) {
+        console.error("HighLevel email failed; falling back to Mailgun:", hl.error);
+        result = await sendViaMailgun();
+      } else {
+        result = { ok: false, error: `HighLevel: ${hl.error}` };
+      }
+    } else {
+      result = await sendViaMailgun();
+    }
 
     if (result.ok) {
       await supabase
@@ -473,29 +544,47 @@ export async function sendBrandedEmail(opts: {
 
 export async function sendTestEmail(to: string): Promise<{ ok: boolean; error?: string }> {
   const { domain } = mailgunConfig();
-  if (!isMailgunConfigured()) return { ok: false, error: "Mailgun not configured" };
 
   const supabase = await createClient();
   const { data: cs } = await supabase
     .from("company_settings")
-    .select("from_name, from_email, reply_to")
+    .select("from_name, from_email, reply_to, company_name, email_provider")
     .eq("id", true)
     .maybeSingle();
 
+  const provider = (cs?.email_provider ?? "mailgun") as "mailgun" | "highlevel";
+  const useHighLevel = provider === "highlevel" && isHighLevelConfigured();
+  if (!useHighLevel && !isMailgunConfigured()) return { ok: false, error: "Email provider not configured" };
+
   const fromName = cs?.from_name ?? "Xpress Entertainment";
   const fromEmail = cs?.from_email ?? `events@${domain}`;
+  const companyName = cs?.company_name ?? "Xpress Entertainment";
   const subject = "XOS test email";
-  const html = `<p>This is a test email from XOS, sent through Mailgun (<strong>${domain}</strong>).</p>
-    <p>If you're reading this, sending is configured correctly.</p>`;
+  // Send the test in the branded shell so it also confirms the design survives
+  // whichever provider is active.
+  const html = emailShell(
+    companyName,
+    `<div style="padding:30px;color:#2c2c33;font-size:15px;line-height:1.6;">
+      <p>This is a test email from XOS, sent through <strong>${useHighLevel ? "HighLevel" : "Mailgun"}</strong>.</p>
+      <p>If you're reading this, sending is configured correctly${useHighLevel ? " — and this message should also appear in the client's Comms thread" : ""}.</p>
+    </div>`
+  );
 
-  const result = await mailgunSend({
-    from: fmtSender(fromName, fromEmail),
-    to,
-    subject,
-    html,
-    replyTo: cs?.reply_to ?? fromEmail,
-    tags: ["xos", "test"],
-  });
+  const result = useHighLevel
+    ? await (async () => {
+        const hl = await sendEmailViaHighLevel({ toEmail: to, subject, html });
+        return hl.ok
+          ? ({ ok: true, id: hl.messageId ?? "" } as const)
+          : ({ ok: false, error: hl.error } as const);
+      })()
+    : await mailgunSend({
+        from: fmtSender(fromName, fromEmail),
+        to,
+        subject,
+        html,
+        replyTo: cs?.reply_to ?? fromEmail,
+        tags: ["xos", "test"],
+      });
 
   await supabase.from("email_log").insert({
     to_address: to,
