@@ -174,10 +174,13 @@ export default async function EmailPage() {
         <h2 className="card-title">Sending Provider</h2>
         <form action={saveEmailProvider} className="card space-y-3 p-5">
           <p className="text-xs text-zinc-500">
-            Who actually delivers your automated emails. <strong>HighLevel</strong> routes each email through the
-            client’s conversation, so it shows up in the event <strong>Comms</strong> tab and in HighLevel — the full
-            branded design is preserved. <strong>Mailgun</strong> sends directly from your verified domain (best
-            deliverability, but those sends won’t appear in Comms).
+            To protect deliverability, automated and account emails (booking agreements, receipts, invites, password
+            resets) always send through your domain-authenticated <strong>Mailgun</strong> domain — it confirms
+            delivery and reports bounces, so an agreement can’t be silently marked “sent” yet never arrive.
+            <strong> HighLevel</strong> is used as an automatic fallback if Mailgun is ever unavailable, and inbound
+            replies still thread into the event <strong>Comms</strong> tab. The selector below controls which provider
+            the <strong>Send a Test Email</strong> button exercises, so you can verify HighLevel’s sending-domain
+            authentication before relying on it.
           </p>
           <div className="space-y-2">
             <label className="flex items-start gap-3 rounded-lg border border-zinc-200 p-3 dark:border-white/10">

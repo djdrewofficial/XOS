@@ -158,6 +158,15 @@ export async function sendEmailViaHighLevel(opts: {
   firstName?: string | null;
   lastName?: string | null;
   phone?: string | null;
+  /** Company/salesperson From identity. Without it GHL sends from its own
+      sub-account address; passing it keeps the sender consistent with the rest
+      of XOS. GHL uses this address as the reply target too, so replies come back
+      to the company. Must be a verified sender in GHL. */
+  fromEmail?: string | null;
+  /** Accepted for forward-compatibility; GHL's email send currently derives the
+      reply target from emailFrom rather than a separate reply-to field, so we
+      don't send an unrecognized field that could get the request rejected. */
+  replyTo?: string | null;
   subject: string;
   html: string;
   attachmentUrls?: string[];
@@ -175,6 +184,7 @@ export async function sendEmailViaHighLevel(opts: {
     type: "Email",
     contactId: contact.contactId,
     emailTo: opts.toEmail,
+    ...(opts.fromEmail ? { emailFrom: opts.fromEmail } : {}),
     subject: opts.subject || "Message from Xpress Entertainment",
     html: opts.html,
     ...(opts.attachmentUrls?.length ? { attachments: opts.attachmentUrls } : {}),
