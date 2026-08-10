@@ -6,7 +6,8 @@ import { docTypeClientLabel } from "@/lib/documentBlocks";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell } from "@/lib/signing";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
-import { isHighLevelConfigured, sendEmailViaHighLevel, isHighLevelThreadingConfigured, logOutboundEmailToHighLevel } from "@/lib/highlevel";
+import { isHighLevelConfigured, sendEmailViaHighLevel } from "@/lib/highlevel";
+import { isThreadingConfigured, threadOutboundEmailViaOAuth } from "@/lib/highlevelOAuth";
 
 /* ============ Mailgun config ============
    Set in .env.local:
@@ -492,14 +493,15 @@ export async function processOutbox(
       sent++;
 
       // Best-effort: thread a copy of the Mailgun-delivered email into the
-      // client's GHL conversation WITHOUT re-sending it (so outbound mail still
-      // shows in Comms). Dormant unless a GHL Conversation Provider is configured.
-      // A GHL-fallback send already threaded itself, so only the Mailgun path logs.
-      if (deliveredViaMailgun && msg.to_address && isHighLevelThreadingConfigured()) {
+      // client's GHL conversation WITHOUT re-sending it (via the Marketplace-App
+      // OAuth token + Conversation Provider), so outbound mail still shows in
+      // Comms. Dormant until the app is connected. A GHL-fallback send already
+      // threaded itself, so only the Mailgun path logs a copy.
+      if (deliveredViaMailgun && msg.to_address && isThreadingConfigured()) {
         const attachmentUrls = attachments.length
           ? await attachmentsToSignedUrls(admin, msg.id, attachments)
           : [];
-        await logOutboundEmailToHighLevel({
+        await threadOutboundEmailViaOAuth(admin, {
           toEmail: msg.to_address,
           fromName: msg.from_name,
           fromEmail: msg.from_address,

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import SaveButton from "@/components/SaveButton";
-import { sendQueuedEmails, saveCompanySettings, saveEmailProvider, saveEmailSignature, saveSocialLinks, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate } from "./actions";
+import { sendQueuedEmails, saveCompanySettings, saveEmailProvider, saveEmailSignature, saveSocialLinks, sendTest, runScheduledNow, saveSendingLimits, addBlackoutDate, removeBlackoutDate, connectHighLevel, disconnectHighLevel } from "./actions";
+import { isMarketplaceOAuthConfigured, isThreadingConfigured, isHighLevelOAuthConnected } from "@/lib/highlevelOAuth";
 import { createBlankTemplate, deleteTemplate, duplicateTemplate } from "./templates/actions";
 import { templateReviewReasons } from "@/lib/emailTemplateReview";
 import { mapTemplateHelperUsage, type HelperRow, type HelperRef } from "@/lib/templateUsage";
@@ -97,8 +99,9 @@ function TemplateGroups({ templates, usage }: { templates: Tpl[]; usage: Record<
   );
 }
 
-export default async function EmailPage() {
+export default async function EmailPage({ searchParams }: { searchParams: Promise<{ hloauth?: string; reason?: string }> }) {
   const supabase = await createClient();
+  const { hloauth, reason: hlReason } = await searchParams;
   const [{ data: templates }, { data: log }, { data: company }, { data: blackouts }, { data: helpers }] = await Promise.all([
     supabase.from("email_templates").select("*").eq("is_active", true).order("group_name").order("name"),
     supabase.from("email_log").select("*").order("created_at", { ascending: false }).limit(50),
@@ -106,6 +109,11 @@ export default async function EmailPage() {
     supabase.from("email_blackout_dates").select("*").order("day"),
     supabase.from("booking_helpers").select("id, title, actions, is_active").order("position"),
   ]);
+
+  // HighLevel Marketplace-App OAuth status (for native outbound-email threading).
+  const hlMarketplaceConfigured = isMarketplaceOAuthConfigured();
+  const hlThreadingConfigured = isThreadingConfigured();
+  const hlConnected = hlMarketplaceConfigured ? await isHighLevelOAuthConnected(createAdminClient()) : false;
 
   const helperUsage = mapTemplateHelperUsage((helpers ?? []) as HelperRow[]);
 
@@ -180,9 +188,8 @@ export default async function EmailPage() {
             <strong> HighLevel</strong> is used as an automatic fallback if Mailgun is ever unavailable, and inbound
             replies still thread into the event <strong>Comms</strong> tab. The selector below controls which provider
             the <strong>Send a Test Email</strong> button exercises, so you can verify HighLevel’s sending-domain
-            authentication before relying on it. To also show <em>outbound</em> emails in Comms, register a HighLevel
-            Conversation Provider and set <code>HIGHLEVEL_CONVERSATION_PROVIDER_ID</code> — XOS then logs a copy of each
-            Mailgun-delivered email into the conversation without HighLevel re-sending it.
+            authentication before relying on it. To also show <em>outbound</em> emails in Comms, connect a HighLevel
+            Marketplace App under <strong>HighLevel Comms Threading</strong> below.
           </p>
           <div className="space-y-2">
             <label className="flex items-start gap-3 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
@@ -211,6 +218,62 @@ export default async function EmailPage() {
           </div>
           <SaveButton>Save Provider</SaveButton>
         </form>
+      </div>
+
+      <div>
+        <h2 className="card-title">HighLevel Comms Threading <span className="ml-1 rounded bg-zinc-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-zinc-500">Advanced</span></h2>
+        <div className="card space-y-3 p-5">
+          {hloauth === "connected" && (
+            <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-200">
+              HighLevel connected — outbound emails will now also appear in the client’s conversation.
+            </div>
+          )}
+          {hloauth === "error" && (
+            <div className="rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-800 dark:text-red-200">
+              Couldn’t connect HighLevel{hlReason ? `: ${hlReason}` : ""}. Try again.
+            </div>
+          )}
+          <p className="text-xs text-zinc-500">
+            Emails always <strong>deliver</strong> through Mailgun. Connecting a HighLevel Marketplace App with a
+            Conversation Provider lets XOS also <em>log a copy</em> of each sent email into the client’s HighLevel
+            conversation (so it shows in <strong>Comms</strong>) — without HighLevel re-sending it. One-time setup in the
+            GHL Marketplace: create an app, add a Conversation Provider (type Email), set its Redirect URL to{" "}
+            <code>{"<APP_URL>"}/api/highlevel-oauth/callback</code>, then set the env vars{" "}
+            <code>GHL_MARKETPLACE_CLIENT_ID</code>, <code>GHL_MARKETPLACE_CLIENT_SECRET</code>, and{" "}
+            <code>HIGHLEVEL_CONVERSATION_PROVIDER_ID</code>.
+          </p>
+          {!hlMarketplaceConfigured ? (
+            <p className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
+              Set <code>GHL_MARKETPLACE_CLIENT_ID</code> and <code>GHL_MARKETPLACE_CLIENT_SECRET</code> in the environment,
+              then reload this page to enable the Connect button.
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                  hlConnected
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    : "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300"
+                }`}
+              >
+                {hlConnected ? "Connected" : "Not connected"}
+              </span>
+              {!hlThreadingConfigured && (
+                <span className="rounded bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                  Set HIGHLEVEL_CONVERSATION_PROVIDER_ID to start threading
+                </span>
+              )}
+              <form action={connectHighLevel}>
+                <SaveButton className="btn-primary text-sm">{hlConnected ? "Reconnect" : "Connect HighLevel"}</SaveButton>
+              </form>
+              {hlConnected && (
+                <form action={disconnectHighLevel}>
+                  <button className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">Disconnect</button>
+                </form>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

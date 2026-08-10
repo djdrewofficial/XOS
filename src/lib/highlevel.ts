@@ -195,63 +195,10 @@ export async function sendEmailViaHighLevel(opts: {
   return { ok: true, messageId: typeof id === "string" ? id : null, contactId: contact.contactId };
 }
 
-/** True when GHL conversation-threading of Mailgun-sent mail is enabled — i.e.
-    a GHL Conversation Provider has been registered and its id supplied. */
-export function isHighLevelThreadingConfigured(): boolean {
-  return isHighLevelConfigured() && !!process.env.HIGHLEVEL_CONVERSATION_PROVIDER_ID;
-}
-
-/** Logs an email that was ALREADY delivered (by Mailgun) into the recipient's
-    GHL conversation WITHOUT GHL re-sending it, so outbound mail still threads
-    into the event Comms tab. Uses the /conversations/messages/outbound endpoint,
-    which requires a registered GHL Conversation Provider — set its id in
-    HIGHLEVEL_CONVERSATION_PROVIDER_ID (Settings → Conversation Providers in GHL).
-
-    STRICTLY BEST-EFFORT: the message has already reached the client via Mailgun,
-    so every failure here is swallowed (logged, never thrown) and can never delay
-    or block delivery. Returns whether the copy was logged, for callers that want
-    to record it. */
-export async function logOutboundEmailToHighLevel(opts: {
-  toEmail: string;
-  fromName?: string | null;
-  fromEmail?: string | null;
-  subject: string;
-  html: string;
-  attachmentUrls?: string[];
-}): Promise<{ ok: boolean; messageId?: string | null; error?: string }> {
-  const providerId = process.env.HIGHLEVEL_CONVERSATION_PROVIDER_ID;
-  if (!isHighLevelConfigured() || !providerId) return { ok: false, error: "threading not configured" };
-  try {
-    const contact = await upsertContactByEmail({ email: opts.toEmail });
-    if (!contact.ok) return { ok: false, error: `contact upsert: ${contact.error}` };
-    // Thread into the contact's existing conversation when there is one; the
-    // endpoint opens one from contactId otherwise.
-    const conversationId = await findConversationIdByContact(contact.contactId);
-    const payload: Record<string, unknown> = {
-      type: "Email",
-      conversationProviderId: providerId,
-      contactId: contact.contactId,
-      ...(conversationId ? { conversationId } : {}),
-      subject: opts.subject || "Message from Xpress Entertainment",
-      html: opts.html,
-      emailTo: [opts.toEmail],
-      ...(opts.fromEmail
-        ? { emailFrom: opts.fromName ? `${opts.fromName} <${opts.fromEmail}>` : opts.fromEmail }
-        : {}),
-      ...(opts.attachmentUrls?.length ? { attachments: opts.attachmentUrls } : {}),
-    };
-    const result = await hlFetch("/conversations/messages/outbound", "2021-04-15", payload);
-    if (!result.ok) {
-      console.warn("GHL thread-log (outbound message) failed:", result.error);
-      return { ok: false, error: result.error };
-    }
-    const id = (result.data.messageId ?? result.data.msg ?? null) as string | null;
-    return { ok: true, messageId: typeof id === "string" ? id : null };
-  } catch (err) {
-    console.warn("GHL thread-log (outbound message) error:", err);
-    return { ok: false, error: String(err).slice(0, 300) };
-  }
-}
+/* Native outbound-email threading (logging a Mailgun-sent email into a GHL
+   conversation without re-sending) lives in lib/highlevelOAuth.ts — it needs the
+   Marketplace-App OAuth token + a Conversation Provider, which the Private
+   Integration Token used here cannot do. */
 
 /* ============ Conversation sync (Communications Hub) ============
    Polls GHL conversations into hl_conversations / hl_messages, keyed by GHL

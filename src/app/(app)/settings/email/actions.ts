@@ -1,9 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { randomUUID } from "node:crypto";
 import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { processOutbox, sendTestEmail } from "@/lib/mailgun";
+import { buildAuthorizeUrl, isMarketplaceOAuthConfigured } from "@/lib/highlevelOAuth";
 import { normalizeSignatureConfig, renderSignatureHtml } from "@/lib/emailSignature";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -51,6 +56,33 @@ export async function deleteTemplate(id: string) {
 export async function sendQueuedEmails() {
   await requireModule("settings", "edit", { mode: "throw" });
   await processOutbox();
+  revalidatePath("/settings/email");
+}
+
+/** Start the HighLevel Marketplace-App OAuth flow (native outbound threading).
+    Sets a CSRF `state` cookie, then redirects the admin to GHL's consent page. */
+export async function connectHighLevel() {
+  await requireModule("settings", "edit", { mode: "throw" });
+  if (!isMarketplaceOAuthConfigured()) {
+    throw new Error("Set GHL_MARKETPLACE_CLIENT_ID and GHL_MARKETPLACE_CLIENT_SECRET first.");
+  }
+  const state = randomUUID();
+  const jar = await cookies();
+  jar.set("hl_oauth_state", state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 600,
+  });
+  redirect(buildAuthorizeUrl(state));
+}
+
+/** Forget the stored HighLevel OAuth tokens (outbound threading stops). */
+export async function disconnectHighLevel() {
+  await requireModule("settings", "edit", { mode: "throw" });
+  const admin = createAdminClient();
+  await admin.from("hl_oauth_tokens").delete().neq("location_id", "");
   revalidatePath("/settings/email");
 }
 
