@@ -6,10 +6,11 @@ import { appUrl } from "@/lib/signing";
 
 /* OAuth callback for the HighLevel Marketplace App (native outbound-email
    threading). GHL redirects the admin's browser here after they grant consent.
-   The route is NOT in the middleware public list, so it only runs for a signed-in
-   staff session; the `state` cookie (set by the connectHighLevel action) is the
-   CSRF check. On success the per-location OAuth tokens are stored and the admin
-   is returned to Settings → Email. */
+   Path deliberately avoids the word "highlevel" — GHL's white-label validation
+   rejects redirect URLs containing it. The route is NOT in the middleware public
+   list, so it only runs for a signed-in staff session; the `state` cookie (set by
+   the connectHighLevel action) is the CSRF check. On success the per-location
+   OAuth tokens are stored and the admin is returned to Settings → Email. */
 
 export const dynamic = "force-dynamic";
 

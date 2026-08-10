@@ -238,7 +238,7 @@ export default async function EmailPage({ searchParams }: { searchParams: Promis
             Conversation Provider lets XOS also <em>log a copy</em> of each sent email into the client’s HighLevel
             conversation (so it shows in <strong>Comms</strong>) — without HighLevel re-sending it. One-time setup in the
             GHL Marketplace: create an app, add a Conversation Provider (type Email), set its Redirect URL to{" "}
-            <code>{"<APP_URL>"}/api/highlevel-oauth/callback</code>, then set the env vars{" "}
+            <code>{"<APP_URL>"}/api/comms-oauth/callback</code>, then set the env vars{" "}
             <code>GHL_MARKETPLACE_CLIENT_ID</code>, <code>GHL_MARKETPLACE_CLIENT_SECRET</code>, and{" "}
             <code>HIGHLEVEL_CONVERSATION_PROVIDER_ID</code>.
           </p>

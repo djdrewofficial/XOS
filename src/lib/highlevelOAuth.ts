@@ -13,7 +13,7 @@ import { appUrl } from "@/lib/signing";
      2. Add OAuth scopes: contacts.write, conversations.readonly,
         conversations.write, conversations/message.write.
      3. Add a Conversation Provider (type Email) -> copy its Provider ID.
-     4. Set the Redirect URL to  <APP_URL>/api/highlevel-oauth/callback.
+     4. Set the Redirect URL to  <APP_URL>/api/comms-oauth/callback.
    Then set env: GHL_MARKETPLACE_CLIENT_ID, GHL_MARKETPLACE_CLIENT_SECRET,
    HIGHLEVEL_CONVERSATION_PROVIDER_ID — and click Connect in Settings -> Email. */
 
@@ -52,7 +52,9 @@ export function isThreadingConfigured(): boolean {
 }
 
 export function oauthRedirectUri(): string {
-  return `${appUrl()}/api/highlevel-oauth/callback`;
+  // Path avoids the word "highlevel" — GHL's white-label validation rejects
+  // redirect URLs (and app assets) that reference it.
+  return `${appUrl()}/api/comms-oauth/callback`;
 }
 
 /** The GHL consent URL to send an admin to when connecting the app. */
