@@ -6,7 +6,7 @@ import { docTypeClientLabel } from "@/lib/documentBlocks";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell } from "@/lib/signing";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
-import { isHighLevelConfigured, sendEmailViaHighLevel } from "@/lib/highlevel";
+import { isHighLevelConfigured, sendEmailViaHighLevel, isHighLevelThreadingConfigured, logOutboundEmailToHighLevel } from "@/lib/highlevel";
 
 /* ============ Mailgun config ============
    Set in .env.local:
@@ -453,8 +453,10 @@ export async function processOutbox(
     // configured do we fall back to HighLevel — passing the message's own From so
     // GHL sends from the company/salesperson identity, not GHL's default sender.
     let result: { ok: true; id: string } | { ok: false; error: string };
+    let deliveredViaMailgun = false;
     if (mailgunReady) {
       result = await sendViaMailgun();
+      deliveredViaMailgun = result.ok;
     } else if (highlevelReady && msg.to_address) {
       const attachmentUrls = attachments.length
         ? await attachmentsToSignedUrls(admin, msg.id, attachments)
@@ -488,6 +490,24 @@ export async function processOutbox(
         })
         .eq("id", msg.id);
       sent++;
+
+      // Best-effort: thread a copy of the Mailgun-delivered email into the
+      // client's GHL conversation WITHOUT re-sending it (so outbound mail still
+      // shows in Comms). Dormant unless a GHL Conversation Provider is configured.
+      // A GHL-fallback send already threaded itself, so only the Mailgun path logs.
+      if (deliveredViaMailgun && msg.to_address && isHighLevelThreadingConfigured()) {
+        const attachmentUrls = attachments.length
+          ? await attachmentsToSignedUrls(admin, msg.id, attachments)
+          : [];
+        await logOutboundEmailToHighLevel({
+          toEmail: msg.to_address,
+          fromName: msg.from_name,
+          fromEmail: msg.from_address,
+          subject: msg.subject,
+          html,
+          attachmentUrls,
+        });
+      }
     } else {
       await supabase.from("email_log").update({ status: "failed", error: result.error }).eq("id", msg.id);
       failed++;

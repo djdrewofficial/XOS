@@ -180,7 +180,9 @@ export default async function EmailPage() {
             <strong> HighLevel</strong> is used as an automatic fallback if Mailgun is ever unavailable, and inbound
             replies still thread into the event <strong>Comms</strong> tab. The selector below controls which provider
             the <strong>Send a Test Email</strong> button exercises, so you can verify HighLevel’s sending-domain
-            authentication before relying on it.
+            authentication before relying on it. To also show <em>outbound</em> emails in Comms, register a HighLevel
+            Conversation Provider and set <code>HIGHLEVEL_CONVERSATION_PROVIDER_ID</code> — XOS then logs a copy of each
+            Mailgun-delivered email into the conversation without HighLevel re-sending it.
           </p>
           <div className="space-y-2">
             <label className="flex items-start gap-3 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
