@@ -506,28 +506,63 @@ export async function sendBrandedEmail(opts: {
   supabase?: SupabaseClient;
 }): Promise<{ ok: boolean; error?: string }> {
   const { domain } = mailgunConfig();
-  if (!isMailgunConfigured()) return { ok: false, error: "Mailgun not configured" };
 
   const supabase = opts.supabase ?? (await createClient());
   const { data: cs } = await supabase
     .from("company_settings")
-    .select("from_name, from_email, reply_to, company_name")
+    .select("from_name, from_email, reply_to, company_name, email_provider")
     .eq("id", true)
     .maybeSingle();
+
+  // Invites & resets must follow the same provider switch as the template
+  // outbox — otherwise a tenant that moved to HighLevel and de-provisioned
+  // Mailgun would silently lose every invite/reset. HighLevel-preferred with a
+  // Mailgun fallback, mirroring processOutbox.
+  const provider = (cs?.email_provider ?? "mailgun") as "mailgun" | "highlevel";
+  const mailgunReady = isMailgunConfigured();
+  const highlevelReady = isHighLevelConfigured();
+  const canSend = provider === "highlevel" ? highlevelReady || mailgunReady : mailgunReady;
+  if (!canSend) {
+    return {
+      ok: false,
+      error:
+        provider === "highlevel"
+          ? "HighLevel not configured (set HIGHLEVEL_PI_TOKEN and HIGHLEVEL_LOCATION_ID), and no Mailgun fallback"
+          : "Mailgun not configured (set MAILGUN_API_KEY and MAILGUN_DOMAIN)",
+    };
+  }
 
   const fromName = cs?.from_name ?? "Xpress Entertainment";
   const fromEmail = cs?.from_email ?? `events@${domain}`;
   const companyName = cs?.company_name ?? "Xpress Entertainment";
   const html = emailShell(companyName, `<div style="padding:30px;">${opts.contentHtml}</div>`);
 
-  const result = await mailgunSend({
-    from: fmtSender(fromName, fromEmail),
-    to: opts.to,
-    subject: opts.subject,
-    html,
-    replyTo: cs?.reply_to ?? fromEmail,
-    tags: ["xos", "account"],
-  });
+  const sendViaMailgun = () =>
+    mailgunSend({
+      from: fmtSender(fromName, fromEmail),
+      to: opts.to,
+      subject: opts.subject,
+      html,
+      replyTo: cs?.reply_to ?? fromEmail,
+      tags: ["xos", "account"],
+    });
+
+  // Route through HighLevel when selected (threads into the client's Comms), and
+  // fall back to Mailgun on any HighLevel failure so account mail never drops.
+  let result: { ok: true; id: string } | { ok: false; error: string };
+  if (provider === "highlevel" && highlevelReady) {
+    const hl = await sendEmailViaHighLevel({ toEmail: opts.to, subject: opts.subject, html });
+    if (hl.ok) {
+      result = { ok: true, id: hl.messageId ?? "" };
+    } else if (mailgunReady) {
+      console.error("HighLevel branded email failed; falling back to Mailgun:", hl.error);
+      result = await sendViaMailgun();
+    } else {
+      result = { ok: false, error: `HighLevel: ${hl.error}` };
+    }
+  } else {
+    result = await sendViaMailgun();
+  }
 
   await supabase.from("email_log").insert({
     to_address: opts.to,
