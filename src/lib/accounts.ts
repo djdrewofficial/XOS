@@ -13,11 +13,21 @@ export type AccountType = "staff" | "client" | "event_guest";
 type Admin = ReturnType<typeof createAdminClient>;
 
 const SET_PASSWORD_URL = `${appUrl()}/auth/set-password`;
-/* Client/guest invites deep-link into the Xpress Entertainment app so couples
-   set their password in-app (works on a phone — the web URL may be localhost in
-   dev / unreachable). Configurable via CLIENT_APP_REDIRECT. */
-const CLIENT_SET_PASSWORD_URL = process.env.CLIENT_APP_REDIRECT || "xpressclient://auth/set-password";
-const setPasswordUrlFor = (type: AccountType) => (type === "staff" ? SET_PASSWORD_URL : CLIENT_SET_PASSWORD_URL);
+/* Everyone — staff, clients, and guests — sets their password on the universal
+   web page /auth/set-password, which handles both PKCE code and hash-token
+   recovery links and works on any device. (It previously deep-linked clients to
+   "xpressclient://auth/set-password", which dead-ends on a laptop or a phone
+   without the app installed.) CLIENT_APP_REDIRECT can override the client/guest
+   target, but ONLY with an http(s) universal link / interstitial — a bare custom
+   scheme is ignored so it can't reintroduce the dead end. The recovery target
+   must also be in Supabase's Redirect-URL allowlist; the web URL already is
+   because staff use it. */
+function clientSetPasswordUrl(): string {
+  const override = process.env.CLIENT_APP_REDIRECT?.trim();
+  if (override && /^https?:\/\//i.test(override)) return override;
+  return SET_PASSWORD_URL;
+}
+const setPasswordUrlFor = (type: AccountType) => (type === "staff" ? SET_PASSWORD_URL : clientSetPasswordUrl());
 
 /** Find an existing auth user id by email (paged scan — fine at our scale). */
 async function findAuthUserByEmail(admin: Admin, email: string): Promise<string | null> {
