@@ -395,18 +395,21 @@ export async function processOutbox(
 
   const fallbackFrom = process.env.MAIL_FROM ?? `Xpress Entertainment <events@${domain}>`;
   const admin = createAdminClient(); // storage + signed URLs run service-role
-  const { data: queued, error: queueError } = await supabase
-    .from("email_log")
-    .select("*")
-    .eq("status", "queued")
-    .order("created_at")
-    .limit(50);
+  // Atomically claim queued rows (queued -> sending) before sending. This drain
+  // fires from ~38 inline call sites + the 10-min cron + the mobile drain, so a
+  // plain `where status='queued'` select left every row claimable for the whole
+  // provider round-trip — two overlapping drains would send the same email twice.
+  // claim_email_outbox flips each row under FOR UPDATE SKIP LOCKED so a row is
+  // only ever handed to the one caller that owns it.
+  const { data: queued, error: queueError } = await supabase.rpc("claim_email_outbox", {
+    p_limit: 50,
+  });
 
-  // A failed select must NOT masquerade as an empty queue ("sent 0, healthy") —
+  // A failed claim must NOT masquerade as an empty queue ("sent 0, healthy") —
   // surface it so the cron reports failure instead of silently sending nothing.
   if (queueError) {
-    console.error("processOutbox: email_log query failed:", queueError);
-    return { sent: 0, failed: 0, skipped: null, error: `email_log query failed: ${queueError.message}` };
+    console.error("processOutbox: email_log claim failed:", queueError);
+    return { sent: 0, failed: 0, skipped: null, error: `email_log claim failed: ${queueError.message}` };
   }
 
   let sent = 0;

@@ -524,18 +524,46 @@ export async function processSmsOutbox(
   }
 
   const supabase = client ?? (await createClient());
-  const { data: queued, error: queueError } = await supabase
-    .from("sms_log")
-    .select("*, client:clients(first_name, last_name, email)")
-    .eq("status", "queued")
-    .order("created_at")
-    .limit(50);
+  // Atomically claim queued rows (queued -> sending) before sending. This drain
+  // fires from many inline call sites + the 10-min cron + the mobile drain, so a
+  // plain `where status='queued'` select left every row claimable for the whole
+  // provider round-trip — two overlapping drains would text the same client
+  // twice. claim_sms_outbox flips each row under FOR UPDATE SKIP LOCKED so a row
+  // is only ever handed to the one caller that owns it.
+  const { data: claimed, error: queueError } = await supabase.rpc("claim_sms_outbox", {
+    p_limit: 50,
+  });
 
-  // A failed select must NOT masquerade as an empty queue ("sent 0, healthy") —
+  // A failed claim must NOT masquerade as an empty queue ("sent 0, healthy") —
   // surface it so the cron reports failure instead of silently sending nothing.
   if (queueError) {
-    console.error("processSmsOutbox: sms_log query failed:", queueError);
-    return { sent: 0, failed: 0, suppressed: 0, skipped: null, error: `sms_log query failed: ${queueError.message}` };
+    console.error("processSmsOutbox: sms_log claim failed:", queueError);
+    return { sent: 0, failed: 0, suppressed: 0, skipped: null, error: `sms_log claim failed: ${queueError.message}` };
+  }
+
+  // The claim RPC returns bare sms_log rows (no join), so pull the sender-name /
+  // email fields for the claimed rows' clients in one lookup — used only to
+  // enrich the GHL contact on first upsert.
+  const queued = (claimed ?? []) as Array<{
+    id: string;
+    client_id: string | null;
+    to_number: string | null;
+    channel: string | null;
+    body: string;
+    subject: string | null;
+    to_address: string | null;
+    attachments: string[] | null;
+    reply_to_message_id: string | null;
+    hl_target_contact_id: string | null;
+  }>;
+  const clientIds = [...new Set(queued.map((m) => m.client_id).filter(Boolean) as string[])];
+  const clientById = new Map<string, { first_name?: string; last_name?: string; email?: string }>();
+  if (clientIds.length) {
+    const { data: clientRows } = await supabase
+      .from("clients")
+      .select("id, first_name, last_name, email")
+      .in("id", clientIds);
+    for (const c of clientRows ?? []) clientById.set(c.id as string, c);
   }
 
   let sent = 0;
@@ -570,7 +598,7 @@ export async function processSmsOutbox(
         await fail(`invalid phone number: ${msg.to_number}`);
         continue;
       }
-      const cl = msg.client as { first_name?: string; last_name?: string; email?: string } | null;
+      const cl = msg.client_id ? clientById.get(msg.client_id) : undefined;
       const contact = await upsertContact({
         phone,
         firstName: cl?.first_name,
