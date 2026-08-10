@@ -28,7 +28,8 @@ export async function middleware(request: NextRequest) {
       p.startsWith("/api/mailgun/") || p.startsWith("/api/highlevel/") ||
       p.startsWith("/api/paypal/") || p.startsWith("/api/pay/") ||
       p.startsWith("/api/places") || p.startsWith("/api/mobile/") ||
-      p.startsWith("/api/music/") || p.startsWith("/api/cron/");
+      p.startsWith("/api/music/") || p.startsWith("/api/cron/") ||
+      p.startsWith("/api/comms-delivery");
     if (!machineEndpoint && request.headers.get("x-origin-verify") !== originSecret) {
       return new NextResponse("Forbidden", { status: 403 });
     }
@@ -84,7 +85,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/places") ||
     pathname.startsWith("/api/mobile/") ||
     pathname.startsWith("/api/music/") ||
-    pathname.startsWith("/api/cron/");
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/api/comms-delivery");
   if (isPublic) return response;
 
   const isLoginPage = pathname.startsWith("/login");
