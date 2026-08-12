@@ -1062,6 +1062,25 @@ export async function deleteEvent(eventId: string) {
   const supabase = await createClient();
   // hard delete is master_admin only — everyone else archives instead
   await requireTier(supabase, ["master_admin"]);
+
+  // Never orphan money history. payments.event_id is ON DELETE SET NULL, so a hard
+  // delete would strand every payment row (event link gone → unattributable, drops
+  // out of all per-event views). If the event has ANY payment record — approved,
+  // pending, or already soft-deleted — refuse the delete and steer to archive,
+  // which hides the event and stops automations while keeping the money records
+  // attributable. Count via the service-role client so RLS can't hide rows and let
+  // the guard fail open.
+  const admin = createAdminClient();
+  const { count: payCount } = await admin
+    .from("payments")
+    .select("id", { count: "exact", head: true })
+    .eq("event_id", eventId);
+  if ((payCount ?? 0) > 0) {
+    throw new Error(
+      "This event has payment history and can't be permanently deleted — that would orphan its payment records. Archive it instead: it'll be hidden and all automations stop, but the money records stay attributable.",
+    );
+  }
+
   const { error } = await supabase.from("events").delete().eq("id", eventId);
   if (error) throw new Error(error.message);
   revalidatePath("/events");
