@@ -147,6 +147,15 @@ export async function confirmProposal(token: string, formData: FormData) {
   const total = bundle?.total ?? 0;
   const deposit = Number(event.deposit_value ?? 0);
 
+  // Don't let a client book/sign before the quote is priced. A $0 total on a
+  // payment journey means pricing isn't finished — proceeding would generate a
+  // $0 agreement with an empty payment plan and tell them they owe nothing.
+  // (No-payment / venue-partner journeys legitimately have no total and bill the
+  // client elsewhere, so they're exempt.)
+  if (journeyType.step_payment && total <= 0) {
+    redirect(`/proposal/${token}?error=unpriced`);
+  }
+
   let terms: "days_before" | "net_days_after" = "days_before";
   let termsDays = 30;
   if (journeyType.step_payment && event.package_id) {

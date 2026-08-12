@@ -35,6 +35,7 @@ export type PayInfo = {
   lastName: string | null;
   clientEmail: string | null;
   total: number;
+  priced: boolean; // total > 0 — distinguishes "nothing owed" from "not priced yet"
   paid: number;
   balance: number;
   suggested: number; // prefill: the next uncovered scheduled payment, capped at balance
@@ -120,6 +121,7 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
     lastName: client?.last_name ?? null,
     clientEmail: client?.email ?? null,
     total: round2(total),
+    priced: round2(total) > 0,
     paid: round2(paid),
     balance: round2(balance),
     suggested: round2(suggested),

@@ -119,6 +119,24 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
   const total = bundle?.total ?? 0;
   const deposit = Number(event.deposit_value ?? 0);
 
+  // Quote not finalized (payment journey, $0 total) — don't show the confirm/sign
+  // form. Otherwise the client would sign a $0 agreement and be told they owe
+  // nothing. confirmProposal enforces the same guard server-side.
+  if (journeyType.step_payment && total <= 0) {
+    return (
+      <Shell>
+        <div className="text-center">
+          <div className="text-3xl">📝</div>
+          <h1 className="mt-2 text-lg font-bold text-zinc-900 dark:text-white">Your quote is being finalized</h1>
+          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            We&apos;re putting the finishing touches on your pricing and will send your agreement to
+            review and sign as soon as it&apos;s ready. Please reach out if you have any questions.
+          </p>
+        </div>
+      </Shell>
+    );
+  }
+
   // office-set payment terms → a fixed, read-only schedule the client just sees
   const today = new Date().toISOString().slice(0, 10);
   const officeRows =

@@ -47,12 +47,14 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
   }
 
   const first = info.firstName ?? "there";
-  const paidInFull = info.balance <= 0;
+  // Only "paid in full" once the event is actually priced — a $0 total means the
+  // quote isn't finished, not that nothing is owed.
+  const paidInFull = info.priced && info.balance <= 0;
 
   // Phone-verification gate: until the client verifies the number on file, hide
-  // the balance and pay options. Skipped when paid in full or gate disabled.
+  // the balance and pay options. Skipped when paid in full, unpriced, or gate off.
   let needsVerify = false;
-  if (!paidInFull && (await payVerifyRequired(supabase))) {
+  if (info.priced && !paidInFull && (await payVerifyRequired(supabase))) {
     const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
     needsVerify = !(await isPayVerified(supabase, token, sess));
   }
@@ -65,12 +67,30 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
         </h1>
         {!paidInFull && (
           <p className="mt-1 text-sm text-zinc-500">
-            {needsVerify ? "Let's verify it's you before we pull up your payment." : "Let's take care of your payment to lock everything in."}
+            {!info.priced
+              ? "We're finalizing your pricing — you can start planning now and we'll follow up."
+              : needsVerify
+                ? "Let's verify it's you before we pull up your payment."
+                : "Let's take care of your payment to lock everything in."}
           </p>
         )}
       </div>
 
-      {paidInFull ? (
+      {!info.priced ? (
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-5 py-6 text-center dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="text-2xl">📝</div>
+          <div className="mt-1 font-bold text-zinc-800 dark:text-zinc-200">Your quote is being finalized</div>
+          <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            We&apos;ll send your pricing shortly. In the meantime, you can get a head start on planning.
+          </div>
+          <a
+            href={`/vibo/${token}`}
+            className="mt-4 inline-block rounded-xl bg-gradient-to-r from-brand to-brand-light px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand/30"
+          >
+            Start planning in Vibo →
+          </a>
+        </div>
+      ) : paidInFull ? (
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center dark:border-emerald-500/30 dark:bg-emerald-500/10">
           <div className="text-2xl">✅</div>
           <div className="mt-1 font-bold text-emerald-800 dark:text-emerald-300">You&apos;re all paid up</div>

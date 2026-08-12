@@ -47,11 +47,13 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
   }
 
   const first = info.firstName ?? "there";
-  const paidInFull = info.balance <= 0;
+  // Only "paid in full" once the event is actually priced — a $0 total means the
+  // quote isn't finished, not that nothing is owed.
+  const paidInFull = info.priced && info.balance <= 0;
 
   // Phone-verification gate: hide the balance/schedule until verified.
   let needsVerify = false;
-  if (!paidInFull && (await payVerifyRequired(supabase))) {
+  if (info.priced && !paidInFull && (await payVerifyRequired(supabase))) {
     const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
     needsVerify = !(await isPayVerified(supabase, token, sess));
   }
@@ -60,18 +62,28 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
     <Shell>
       <div className="mb-5 text-center">
         <h1 className="text-xl font-extrabold text-zinc-900 dark:text-white">
-          {paidInFull ? "You're all paid up 🎉" : "Make a Payment"}
+          {!info.priced ? "Your quote is on the way" : paidInFull ? "You're all paid up 🎉" : "Make a Payment"}
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          {paidInFull
-            ? `Thanks, ${first} — nothing is owed right now.`
-            : needsVerify
-              ? `Hi ${first} — let's verify it's you before we pull up your balance.`
-              : `${info.eventName ?? "Your event"}`}
+          {!info.priced
+            ? `Hang tight, ${first} — we're finalizing your pricing.`
+            : paidInFull
+              ? `Thanks, ${first} — nothing is owed right now.`
+              : needsVerify
+                ? `Hi ${first} — let's verify it's you before we pull up your balance.`
+                : `${info.eventName ?? "Your event"}`}
         </p>
       </div>
 
-      {paidInFull ? (
+      {!info.priced ? (
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-5 py-6 text-center dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="text-2xl">📝</div>
+          <div className="mt-1 font-bold text-zinc-800 dark:text-zinc-200">Your quote is being finalized</div>
+          <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            We&apos;re putting the finishing touches on your pricing and will send it over shortly. Please reach out if you have any questions.
+          </div>
+        </div>
+      ) : paidInFull ? (
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center dark:border-emerald-500/30 dark:bg-emerald-500/10">
           <div className="text-2xl">✅</div>
           <div className="mt-1 font-bold text-emerald-800 dark:text-emerald-300">Balance paid in full</div>
