@@ -5,13 +5,19 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/auth";
 import { sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
-import { formatPhone } from "@/lib/phone";
+import { formatPhone, toE164 } from "@/lib/phone";
 import { recordSmsOptSignal } from "@/lib/smsOptOut";
 import { findOrCreateClient } from "@/lib/clients";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
   return s === "" ? null : s;
+}
+
+/** Pragmatic email-shape check — catches real typos (missing @, no domain dot,
+    spaces) without chasing full RFC 5322. */
+function isEmail(v: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
 /** Invite a client to the planning portal (creates/ensures their login). */
@@ -66,19 +72,36 @@ async function payload(supabase: Awaited<ReturnType<typeof createClient>>, formD
     .eq("id", true)
     .maybeSingle();
   const phone = clean(formData.get("cell_phone"));
+  const email = clean(formData.get("email"));
+  const repEmail = clean(formData.get("authorized_rep_email"));
+  const repPhone = clean(formData.get("authorized_rep_phone"));
+
+  // Reject typo'd contact info before it enters the CRM — a bad email or phone
+  // silently breaks proposal/contract email + SMS delivery. Empty is fine (these
+  // are optional); phones use the same US/E.164 rule as the SMS pipeline (toE164),
+  // so an international number must include a leading +.
+  const invalid: string[] = [];
+  if (email && !isEmail(email)) invalid.push("email address");
+  if (repEmail && !isEmail(repEmail)) invalid.push("authorized rep email");
+  if (phone && !toE164(phone)) invalid.push("mobile number");
+  if (repPhone && !toE164(repPhone)) invalid.push("authorized rep phone");
+  if (invalid.length) {
+    throw new Error(`Please enter a valid ${invalid.join(" and ")} (or leave it blank).`);
+  }
+
   return {
     first_name: clean(formData.get("first_name")) ?? "",
     last_name: clean(formData.get("last_name")) ?? "",
     organization: clean(formData.get("organization")),
     cell_phone: cs?.phone_format_enabled === false ? phone : formatPhone(phone),
-    email: clean(formData.get("email")),
+    email,
     mailing_address: clean(formData.get("mailing_address")),
     instagram: normalizeHandle(clean(formData.get("instagram"))),
     tiktok: normalizeHandle(clean(formData.get("tiktok"))),
     authorized_rep_name: clean(formData.get("authorized_rep_name")),
     authorized_rep_title: clean(formData.get("authorized_rep_title")),
-    authorized_rep_email: clean(formData.get("authorized_rep_email")),
-    authorized_rep_phone: clean(formData.get("authorized_rep_phone")),
+    authorized_rep_email: repEmail,
+    authorized_rep_phone: repPhone,
     notes: clean(formData.get("notes")),
   };
 }
