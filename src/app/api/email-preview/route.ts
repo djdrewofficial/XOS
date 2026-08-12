@@ -3,21 +3,26 @@ import { createClient } from "@/lib/supabase/server";
 import { requireApiModule } from "@/lib/apiAuth";
 import { emailShell, signButtonHtml, appUrl } from "@/lib/signing";
 
-// Sample values so the preview reads like a real send. Tags not listed here
-// (incl. DJEP tags XOS doesn't support yet) stay visible as <tag> so the editor
-// can still see what's unfilled.
+// Sample values so the preview reads like a real send. Every key here is a tag the
+// real renderer actually resolves (see supported_merge_tags() / render_merge_tags) —
+// we deliberately do NOT sample tags the renderer drops, so unimplemented DJEP tags
+// surface as red flags (see flagUnknownTags) instead of looking filled.
 const SAMPLE: Record<string, string> = {
   first_name: "Jordan", last_name: "Rivera", client_name: "Jordan Rivera",
   client_email: "jordan@example.com", client_cell: "(555) 123-4567",
   client_organization: "Acme Co.", client_address: "123 Main St, Fort Lauderdale, FL",
-  salesperson_first_name: "Drew", djemployee_name: "Drew",
+  authorized_rep_name: "Jordan Rivera", authorized_rep_title: "Owner",
+  authorized_rep_email: "jordan@example.com", authorized_rep_phone: "(555) 123-4567",
+  decision_maker_name: "Jordan Rivera", decision_maker_phone: "(555) 123-4567",
+  decision_maker_email: "jordan@example.com",
+  poc_name: "Drew Ramos", poc_first_name: "Drew", poc_last_name: "Ramos",
+  poc_email: "drew@xpressdjs.com", poc_phone: "(555) 010-2020",
+  billing_terms: "Installments", legal_venue: "Broward County, Florida",
   djemployee1_stage_name: "DJ Drew", djemployee1_cell_phone: "(555) 234-5678",
-  email: "jordan@example.com", cell_phone: "(555) 123-4567",
   event_name: "Jordan & Taylor’s Wedding", event_type: "Wedding",
   event_date_long: "Saturday, August 15, 2026", event_date_short: "08/15/2026",
-  event_date: "08/15/2026", event_date_medium: "Aug 15, 2026",
   event_date_countdown: "50", venue_name: "The Grand Ballroom",
-  venue_address: "456 Ocean Dr, Miami, FL", event_location: "The Grand Ballroom",
+  venue_address: "456 Ocean Dr, Miami, FL",
   event_location_manager: "Maria Gonzalez", event_location_cell_phone: "(305) 555-0199",
   event_location_comments: "Load-in via rear dock. Sound curfew 11 PM.",
   booking_comments: "Client prefers no line dancing. Grand entrance at 7:15 PM.",
@@ -52,7 +57,7 @@ const SAMPLE: Record<string, string> = {
     "</tbody></table>",
 };
 
-function applySample(text: string, companyName: string, signature = ""): string {
+function applySample(text: string, companyName: string, supported: Set<string>, signature = ""): string {
   let out = (text || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
   // Signature keys go before company_name so a <company_name> *inside* the
   // signature still resolves on the same pass.
@@ -62,11 +67,55 @@ function applySample(text: string, companyName: string, signature = ""): string 
     email_signature: signature,
     company_name: companyName,
   };
-  for (const [k, v] of Object.entries(map)) out = out.split(`<${k}>`).join(v);
+  // Only fill tags the real renderer actually resolves. Unsupported tags are left
+  // in place for flagUnknownTags() to mark in red, so the preview can never make an
+  // unimplemented DJEP tag look filled.
+  for (const [k, v] of Object.entries(map)) {
+    if (!supported.has(k)) continue;
+    out = out.split(`<${k}>`).join(v);
+  }
   // <document_LABEL> tags attach files at send time — show a placeholder so the
   // preview doesn't swallow the (unknown) tag as an empty HTML element.
   out = out.replace(/<document_[a-z0-9_]+>/gi, '<em style="color:#8a8a94;">📎 (labeled files will be attached here)</em>');
   return out;
+}
+
+// One source of truth with the renderer: which <tags> the system actually resolves
+// (render_merge_tags built-ins + CTA/set-password tags filled downstream + active
+// custom tags). See supported_merge_tags() / migration 00175.
+async function fetchSupportedTags(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Set<string>> {
+  const { data } = await supabase.rpc("supported_merge_tags");
+  const set = new Set<string>();
+  for (const row of (data ?? []) as Array<{ tag?: string } | string>) {
+    const t = typeof row === "string" ? row : row?.tag;
+    if (t) set.add(t.toLowerCase());
+  }
+  return set;
+}
+
+// Final pass, mirroring the renderer's strip. Any bare <tag> still present after
+// sampling is either a supported field we had no sample for (shown muted — it fills
+// from the event on a real send) or an UNIMPLEMENTED tag the renderer drops (flagged
+// red, because enabling such a template ships blank sentences). Real HTML elements
+// (<br>, <strong>, styled tags…) never look like an unknown merge tag, so they pass
+// through untouched.
+function flagUnknownTags(html: string, supported: Set<string>): string {
+  return html.replace(/<([a-zA-Z][a-zA-Z0-9_]*)>/g, (full, tag: string) => {
+    const key = tag.toLowerCase();
+    if (supported.has(key)) {
+      return `<span style="color:#8a8a94;" title="Fills from the event on a real send">‹${tag}›</span>`;
+    }
+    const looksLikeMergeTag = tag.includes("_") || key === "email" || key === "name" || key === "comments";
+    if (!looksLikeMergeTag) return full; // real HTML element — leave untouched
+    return (
+      `<span style="background:#fdecec;color:#c0392b;border:1px solid #f5b7b1;border-radius:3px;` +
+      `padding:0 4px;white-space:nowrap;font-weight:600;" ` +
+      `title="This tag isn't supported — it will be blank in real sends. Remove it or use a supported tag.">` +
+      `⚠ &lt;${tag}&gt;</span>`
+    );
+  });
 }
 
 // Interactive CTA tags (pay button/link, review-&-sign, journey start, e-sign
@@ -125,10 +174,12 @@ export async function POST(req: NextRequest) {
     .from("company_settings").select("company_name, email_signature_html").eq("id", true).maybeSingle();
   const companyName = company?.company_name ?? "Xpress Entertainment";
   const signature = company?.email_signature_html ?? "";
+  const supported = await fetchSupportedTags(supabase);
 
   // applySample fills field tags; applyCtaTags renders the interactive buttons/
-  // links (body only — never inject button HTML into a subject line).
-  const body = applyCtaTags(applySample(body_html, companyName, signature), sms);
+  // links; flagUnknownTags marks any tag the renderer would drop in red (body only —
+  // never inject button/flag HTML into a subject line).
+  const body = flagUnknownTags(applyCtaTags(applySample(body_html, companyName, supported, signature), sms), supported);
   let html: string;
   if (sms) {
     html = `<div style="background:#f4f2fa;padding:24px;font-family:ui-sans-serif,system-ui,Arial,sans-serif;">
@@ -140,5 +191,7 @@ export async function POST(req: NextRequest) {
     html = `<div style="padding:24px;font-family:ui-sans-serif,system-ui,Arial,sans-serif;color:#2c2c33;font-size:15px;line-height:1.6;">${body}</div>`;
   }
 
-  return NextResponse.json({ html, subject: applySample(subject, companyName) });
+  // Subject is plain text — fill supported tags but don't inject flag HTML; an
+  // unsupported tag stays visible as literal <tag> so the editor still sees it.
+  return NextResponse.json({ html, subject: applySample(subject, companyName, supported) });
 }
