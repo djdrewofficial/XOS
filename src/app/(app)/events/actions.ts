@@ -1539,22 +1539,62 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
   const supabase = await createClient();
   const { data: before } = await supabase
     .from("events")
-    .select("package_id, event_date")
+    .select("package_id, event_date, venue_id")
     .eq("id", eventId)
     .single();
   const newPackageId = clean(formData.get("package_id"));
   const overrideSubmitted = clean(formData.get("package_price_override")) != null;
 
+  // num() coerces bad input to 0 and let negatives through — clamp every money
+  // field to >= 0 (the events_*_nonneg CHECK constraints are the DB backstop).
+  const nn = (name: string) => Math.max(0, num(formData.get(name)));
+  const override = overrideSubmitted ? nn("package_price_override") : null;
+  const deposit = nn("deposit_value");
+  const overtime = nn("overtime_fee");
+  const travel = nn("travel_fee");
+  let discount1 = nn("discount1_amount");
+  let discount2 = nn("discount2_amount");
+
+  // Total-floor guard: clamp the combined discounts so the event total can't go
+  // negative. Subtotal = resolved package price + fees + add-ons + venue setup.
+  // Only clamp when the subtotal is genuinely positive, so a lookup glitch can't
+  // silently wipe a legitimate discount.
+  const pkgId = newPackageId ?? before?.package_id ?? null;
+  let pkgPrice = override ?? 0;
+  if (override == null && pkgId) {
+    const { data: pkg } = await supabase.from("packages").select("default_price").eq("id", pkgId).maybeSingle();
+    pkgPrice = Number(pkg?.default_price ?? 0);
+  }
+  const [{ data: eAddons }, venueRes] = await Promise.all([
+    supabase
+      .from("event_addons")
+      .select("quantity, price_override, price_locked, addon:addons(default_price)")
+      .eq("event_id", eventId),
+    before?.venue_id
+      ? supabase.from("venues").select("setup_fee").eq("id", before.venue_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const addonsTotal = (eAddons ?? []).reduce((s, a) => {
+    const unit = a.price_override ?? a.price_locked ?? (a.addon as { default_price?: number } | null)?.default_price ?? 0;
+    return s + Number(a.quantity) * Number(unit);
+  }, 0);
+  const venueSetup = Number((venueRes.data as { setup_fee?: number } | null)?.setup_fee ?? 0);
+  const subtotal = pkgPrice + overtime + travel + addonsTotal + venueSetup;
+  if (subtotal > 0) {
+    discount1 = Math.min(discount1, subtotal);
+    discount2 = Math.min(discount2, Math.max(0, subtotal - discount1));
+  }
+
   const { error } = await supabase
     .from("events")
     .update({
       package_id: newPackageId,
-      package_price_override: overrideSubmitted ? num(formData.get("package_price_override")) : null,
-      deposit_value: num(formData.get("deposit_value")),
-      overtime_fee: num(formData.get("overtime_fee")),
-      travel_fee: num(formData.get("travel_fee")),
-      discount1_amount: num(formData.get("discount1_amount")),
-      discount2_amount: num(formData.get("discount2_amount")),
+      package_price_override: override,
+      deposit_value: deposit,
+      overtime_fee: overtime,
+      travel_fee: travel,
+      discount1_amount: discount1,
+      discount2_amount: discount2,
     })
     .eq("id", eventId);
   if (error) throw new Error(error.message);
