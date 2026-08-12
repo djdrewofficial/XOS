@@ -3,21 +3,41 @@ import { processOutbox } from "@/lib/mailgun";
 import { signingEmailHtml, appUrl } from "@/lib/signing";
 import { runAutomations } from "@/lib/automations";
 
+/** Split a gross PayPal charge (base + convenience fee) back into its base and
+    fee using the current fee %. The client is charged base*(1+feePct/100) at order
+    creation, so this recovers the base that reduces the balance. */
+export function splitPaypalCharge(charged: number, feePct: number): { base: number; fee: number } {
+  const base = Math.round((charged / (1 + (feePct || 0) / 100)) * 100) / 100;
+  const fee = Math.round((charged - base) * 100) / 100;
+  return { base, fee };
+}
+
 /* Records a completed PayPal capture into the payments table — idempotent on
    paypal_capture_id, so the capture endpoint and the webhook can both call it
-   and the payment lands exactly once. Links to the earliest still-unpaid
-   scheduled payment and emails the client a receipt. */
+   and the payment lands exactly once. Takes the GROSS charged amount and splits
+   the convenience fee out HERE, so both callers credit the same base to the
+   balance (the webhook used to record the fee-inclusive amount → over-credit).
+   Links to the earliest still-unpaid scheduled payment and emails a receipt. */
 export async function recordPaypalPayment(
   supabase: SupabaseClient,
-  params: { eventId: string; amount: number; captureId: string; payerEmail: string | null; payerName?: string | null; processingFee?: number }
-): Promise<{ recorded: boolean; duplicate?: boolean }> {
+  params: { eventId: string; chargedAmount: number; captureId: string; payerEmail: string | null; payerName?: string | null }
+): Promise<{ recorded: boolean; duplicate?: boolean; base: number; fee: number }> {
+  // one source of truth for the fee split — the global convenience-fee %
+  const { data: ps } = await supabase
+    .from("payment_settings")
+    .select("paypal_fee_pct")
+    .eq("id", true)
+    .maybeSingle();
+  const feePct = Number(ps?.paypal_fee_pct ?? 0);
+  const { base, fee } = splitPaypalCharge(params.chargedAmount, feePct);
+
   // already recorded? (capture endpoint or webhook beat us here)
   const { data: existing } = await supabase
     .from("payments")
     .select("id")
     .eq("paypal_capture_id", params.captureId)
     .maybeSingle();
-  if (existing) return { recorded: false, duplicate: true };
+  if (existing) return { recorded: false, duplicate: true, base, fee };
 
   const { data: ev } = await supabase
     .from("events")
@@ -36,19 +56,19 @@ export async function recordPaypalPayment(
   const { error } = await supabase.from("payments").insert({
     event_id: params.eventId,
     scheduled_payment_id: scheduledId,
-    amount: params.amount,
-    processing_fee: params.processingFee ?? 0,
+    amount: base,
+    processing_fee: fee,
     method: "paypal",
     status: "approved",
     paypal_capture_id: params.captureId,
     payer_name: params.payerName ?? null,
     notes: params.payerEmail
-      ? `PayPal · ${params.payerEmail}${params.processingFee ? ` · +${params.processingFee.toFixed(2)} fee` : ""}`
+      ? `PayPal · ${params.payerEmail}${fee ? ` · +${fee.toFixed(2)} fee` : ""}`
       : "PayPal",
   });
   // a concurrent insert may win the unique index — treat as already-recorded
   if (error) {
-    if (error.code === "23505") return { recorded: false, duplicate: true };
+    if (error.code === "23505") return { recorded: false, duplicate: true, base, fee };
     throw new Error(error.message);
   }
 
@@ -62,7 +82,7 @@ export async function recordPaypalPayment(
       .maybeSingle();
     const companyName = cs?.company_name ?? "Xpress Entertainment";
     const first = client.first_name ?? "there";
-    const amt = params.amount.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    const amt = base.toLocaleString("en-US", { style: "currency", currency: "USD" });
     await supabase.from("email_log").insert({
       event_id: params.eventId,
       to_address: client.email,
@@ -86,5 +106,5 @@ export async function recordPaypalPayment(
   // fire any "payment received" automations (welcome email, etc.)
   await runAutomations(supabase, params.eventId, "payment_received");
 
-  return { recorded: true };
+  return { recorded: true, base, fee };
 }

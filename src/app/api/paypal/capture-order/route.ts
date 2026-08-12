@@ -47,6 +47,14 @@ export async function POST(req: Request) {
     }
   }
 
+  // Nothing owed → don't capture. Guards the two-tabs race: if another order (or a
+  // Zelle/manual payment) already cleared the balance, we never move money for a
+  // second full-balance order. (idempotency is per-capture-id, so it wouldn't dedupe
+  // two distinct orders.)
+  if (info.balance <= 0) {
+    return NextResponse.json({ error: "This event is already paid in full." }, { status: 400 });
+  }
+
   const result = await capturePaypalOrder(orderId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
   const { capture } = result;
@@ -54,20 +62,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Payment was not completed." }, { status: 402 });
   }
 
-  // the captured amount includes the convenience fee — split it back out so the
-  // balance drops by the base and the fee is tracked separately
-  const feePct = info.settings.paypalFeePct;
-  const base = Math.round((capture.amount / (1 + feePct / 100)) * 100) / 100;
-  const fee = Math.round((capture.amount - base) * 100) / 100;
-
-  await recordPaypalPayment(supabase, {
+  // recordPaypalPayment splits the convenience fee out and credits the base.
+  const rec = await recordPaypalPayment(supabase, {
     eventId: info.eventId,
-    amount: base,
-    processingFee: fee,
+    chargedAmount: capture.amount,
     captureId: capture.captureId,
     payerEmail: capture.payerEmail,
     payerName: capture.payerName,
   });
 
-  return NextResponse.json({ ok: true, amount: base, fee, charged: capture.amount });
+  // Money already moved at PayPal, so we record it — but if the base credited
+  // exceeds what was owed at capture time (a truly simultaneous double-capture that
+  // slipped past the balance guard), alert staff to reconcile / partial-refund.
+  if (rec.recorded && rec.base > info.balance + 0.01) {
+    try {
+      await supabase.rpc("create_notification", {
+        p_type: "system_alert",
+        p_title: "PayPal payment exceeds balance",
+        p_body: `${info.eventName ?? "Event"}: captured $${rec.base.toFixed(2)} against a $${info.balance.toFixed(2)} balance — may need a partial refund.`,
+        p_href: `/events/${info.eventId}`,
+      });
+    } catch {
+      /* alert is best-effort */
+    }
+  }
+
+  return NextResponse.json({ ok: true, amount: rec.base, fee: rec.fee, charged: capture.amount });
 }

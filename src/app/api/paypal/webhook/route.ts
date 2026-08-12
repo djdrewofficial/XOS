@@ -42,9 +42,12 @@ export async function POST(req: Request) {
 
   const payer = (resource.payer as { email_address?: string } | undefined) ?? undefined;
   const supabase = createAdminClient();
+  // `amount` is the GROSS captured charge (base + convenience fee). recordPaypalPayment
+  // splits the fee out so the balance is credited the base — the same as the capture
+  // endpoint (previously the webhook recorded the fee-inclusive amount → over-credit).
   await recordPaypalPayment(supabase, {
     eventId,
-    amount,
+    chargedAmount: amount,
     captureId,
     payerEmail: payer?.email_address ?? null,
   });

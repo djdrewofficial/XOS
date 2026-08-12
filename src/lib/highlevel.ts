@@ -424,19 +424,29 @@ export async function syncHighLevelConversations(
     .eq("id", true)
     .maybeSingle();
 
-  // run claim: skip if another sync started moments ago (page loads can stack;
-  // the realtime tick uses a short window so the inbox stays near-live)
+  // Atomic run-claim: skip if another sync started moments ago (page loads stack;
+  // the realtime tick uses a short window so the inbox stays near-live). A plain
+  // read-then-write let two near-simultaneous triggers both pass and both walk the
+  // whole GHL API. Instead, claim the row with a CONDITIONAL update that only
+  // matches when it's actually stale, and proceed only if a row came back — so of
+  // two racing runs, exactly one wins (the loser's WHERE no longer matches after
+  // the winner commits).
   const claimSeconds = opts?.claimSeconds ?? 90;
-  if (!opts?.full && state?.last_synced_at) {
-    const sinceMs = Date.now() - new Date(state.last_synced_at).getTime();
-    if (sinceMs < claimSeconds * 1000) {
+  if (opts?.full || !state) {
+    // full runs bypass the claim; first-ever run has no row to claim — seed + proceed
+    await supabase.from("hl_sync_state").upsert({ id: true, last_synced_at: new Date().toISOString() });
+  } else {
+    const cutoffIso = new Date(Date.now() - claimSeconds * 1000).toISOString();
+    const { data: claimed } = await supabase
+      .from("hl_sync_state")
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq("id", true)
+      .or(`last_synced_at.is.null,last_synced_at.lt.${cutoffIso}`)
+      .select("id");
+    if (!claimed || claimed.length === 0) {
       return { conversations: 0, messages: 0, skipped: "synced moments ago" };
     }
   }
-  await supabase
-    .from("hl_sync_state")
-    .update({ last_synced_at: new Date().toISOString() })
-    .eq("id", true);
   // 1h overlap so late status updates (delivered/read) on recent messages get re-pulled
   const watermarkMs =
     !opts?.full && state?.last_message_watermark
