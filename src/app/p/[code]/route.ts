@@ -25,7 +25,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     () => {},
   );
 
+  // Open-redirect guard: only ever redirect within our own origin. Codes are
+  // written server-side with internal paths, so a target that isn't a plain
+  // same-origin path — external URL, protocol-relative "//host", or "/\host" —
+  // is bad/corrupt data, not a valid link.
   const path = data.target_path as string;
-  const target = path.startsWith("http") ? path : `${appUrl()}${path.startsWith("/") ? "" : "/"}${path}`;
-  return NextResponse.redirect(target, 302);
+  const safeInternal = path.startsWith("/") && path[1] !== "/" && path[1] !== "\\";
+  if (!safeInternal) {
+    return new NextResponse("This link isn't valid or has expired.", {
+      status: 404,
+      headers: { "content-type": "text/plain" },
+    });
+  }
+  return NextResponse.redirect(`${appUrl()}${path}`, 302);
 }
