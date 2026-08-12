@@ -776,14 +776,17 @@ export async function updateBillingTerms(eventId: string, formData: FormData) {
 
 export async function runBookingHelper(eventId: string, helperId: string) {
   await requireModule("events", "edit", { mode: "throw" });
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("run_booking_helper", {
+  // SECURITY DEFINER — service-role client so a signed-in client/guest can't call
+  // run_booking_helper directly (authenticated EXECUTE revoked, migration 00166).
+  // Staff access is already gated by requireModule above.
+  const admin = createAdminClient();
+  const { error } = await admin.rpc("run_booking_helper", {
     p_helper_id: helperId,
     p_event_id: eventId,
   });
   if (error) throw new Error(error.message);
   // fire this helper's webhook too (so a manual click can test the Zap)
-  await fireHelperWebhook(supabase, helperId, eventId);
+  await fireHelperWebhook(admin, helperId, eventId);
   // deliver anything the helper queued right away (attachments/sign links
   // are handled at send time) instead of waiting for the 10-minute cron
   await processOutbox();

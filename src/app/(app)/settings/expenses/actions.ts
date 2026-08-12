@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -94,8 +95,9 @@ export async function saveVenueMileage(venueId: string, formData: FormData) {
 
 export async function runAutoMileageNow() {
   await requireModule("settings", "edit", { mode: "throw" });
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("run_auto_mileage");
+  // SECURITY DEFINER batch action — service-role client so a signed-in
+  // client/guest can't invoke it (authenticated EXECUTE revoked, migration 00166).
+  const { error } = await createAdminClient().rpc("run_auto_mileage");
   if (error) throw new Error(error.message);
   revalidatePath("/settings/expenses");
   revalidatePath("/events");

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /* Unified notification dispatcher — the single fan-out for the Notification
    System (migration 00126). Given a notification type + context, it:
@@ -146,8 +147,13 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
   // DEFINER create_targeted_notification so they succeed from any RLS context.
   const LEGACY_INAPP = new Set(["payment_received", "time_off_request"]);
   if (!LEGACY_INAPP.has(typeKey)) {
+    // create_targeted_notification is SECURITY DEFINER and no longer executable by
+    // the `authenticated` role (migration 00166); dispatchNotification runs from
+    // staff actions and admin/webhook contexts, so call it via the service-role
+    // client to keep working while blocking direct client/guest /rpc calls.
+    const admin = createAdminClient();
     for (const r of recipients.filter((r) => r.ch.in_app)) {
-      await supabase.rpc("create_targeted_notification", {
+      await admin.rpc("create_targeted_notification", {
         p_type: typeKey,
         p_title: title,
         p_body: body ?? null,

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { reseedEventPlanning } from "@/lib/planning";
@@ -99,11 +100,16 @@ export async function runAutomations(
     }
   }
 
+  // run_booking_helper is SECURITY DEFINER and no longer executable by the
+  // `authenticated` role (migration 00166), so invoke it via the service-role
+  // client — runAutomations is called from staff actions AND public token flows,
+  // both of which are already authorized before reaching here.
+  const admin = createAdminClient();
   for (const h of matched) {
     try {
       // run_booking_helper enforces its own visibility + one-shot guards (raises
       // if it shouldn't run) — skip those quietly
-      await supabase.rpc("run_booking_helper", { p_helper_id: h.id, p_event_id: eventId });
+      await admin.rpc("run_booking_helper", { p_helper_id: h.id, p_event_id: eventId });
     } catch {
       continue;
     }

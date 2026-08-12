@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireModule } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 function str(v: FormDataEntryValue | null): string {
   return (v ?? "").toString().trim();
@@ -62,8 +63,10 @@ export async function deleteReminderRule(id: string) {
 /** Run the reminder pass now (respects active rules). Queues to the outbox. */
 export async function runRemindersNow() {
   await requireModule("settings", "edit", { mode: "throw" });
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("run_payment_reminders");
+  // SECURITY DEFINER batch action — invoked via the service-role client so it is
+  // NOT executable by a signed-in client/guest (authenticated EXECUTE is revoked;
+  // see migration 00166). Staff access is already gated by requireModule above.
+  const { error } = await createAdminClient().rpc("run_payment_reminders");
   if (error) throw new Error(error.message);
   revalidatePath("/settings/payment-reminders");
 }

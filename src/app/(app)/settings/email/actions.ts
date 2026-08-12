@@ -88,8 +88,9 @@ export async function disconnectHighLevel() {
 
 export async function runScheduledNow() {
   await requireModule("settings", "edit", { mode: "throw" });
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("run_scheduled_emails");
+  // SECURITY DEFINER batch action — service-role client so a signed-in
+  // client/guest can't invoke it (authenticated EXECUTE revoked, migration 00166).
+  const { error } = await createAdminClient().rpc("run_scheduled_emails");
   if (error) throw new Error(error.message);
   revalidatePath("/settings/email");
 }
