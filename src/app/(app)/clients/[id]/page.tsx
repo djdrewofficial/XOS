@@ -5,7 +5,7 @@ import ClientProfileCard from "@/components/ClientProfileCard";
 import LoginAccess from "@/components/LoginAccess";
 import SmsSubscription from "@/components/SmsSubscription";
 import AnonymizeClient from "@/components/AnonymizeClient";
-import { updateClientRecord, inviteClient, resetClientPassword, setClientSmsOptOut, anonymizeClient } from "../actions";
+import { updateClientRecord, inviteClient, resetClientPassword, setClientSmsOptOut, setClientSmsConsent, anonymizeClient } from "../actions";
 import { getSmsOptStatus } from "@/lib/smsOptOut";
 import { money, eventTotal, type Client, type XEvent } from "@/lib/types";
 
@@ -101,7 +101,14 @@ export default async function ClientDetailPage({
         }
       />
 
-      <SmsSubscription clientId={id} status={smsStatus} action={setClientSmsOptOut} />
+      <SmsSubscription
+        clientId={id}
+        status={smsStatus}
+        action={setClientSmsOptOut}
+        marketingConsent={(client as { sms_opt_in?: boolean }).sms_opt_in === true}
+        marketingConsentAt={(client as { sms_opt_in_at?: string | null }).sms_opt_in_at ?? null}
+        consentAction={setClientSmsConsent}
+      />
 
       <AnonymizeClient
         clientId={id}

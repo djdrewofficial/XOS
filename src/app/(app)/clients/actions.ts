@@ -64,6 +64,26 @@ export async function setClientSmsOptOut(id: string, optedOut: boolean): Promise
   return { ok: true };
 }
 
+/** Record (or revoke) a client's consent to receive marketing/promotional text
+    messages — TCPA prior-express-consent capture. Timestamps sms_opt_in_at so we
+    have a dated record of consent; marketing SMS are gated on it at send time
+    (processSmsOutbox). Distinct from the STOP suppression list. Staff-gated. */
+export async function setClientSmsConsent(id: string, consented: boolean): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  await requireModule("clients", "edit", { mode: "throw", supabase });
+  const { error } = await supabase
+    .from("clients")
+    .update({
+      sms_opt_in: consented,
+      sms_opt_in_at: consented ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/clients/${id}`);
+  return { ok: true };
+}
+
 /** Honor a "delete my data" (GDPR/CCPA right-to-erasure) request: scrub the
     client's PII in place and remove their portal login, while KEEPING the row so
     their events and payment history stay attributable (financial records are

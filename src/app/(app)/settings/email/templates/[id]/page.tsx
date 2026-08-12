@@ -184,6 +184,18 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
         <Row label="Status">
           <CheckBoxField name="is_active" label="Active" defaultChecked={tpl.is_active} />
         </Row>
+        {isSms && (
+          <Row
+            label="Marketing / Promotional"
+            hint="ON: TCPA-gated — only sent to clients who have recorded SMS marketing consent. Leave OFF for transactional texts (reminders, confirmations, codes)."
+          >
+            <CheckBoxField
+              name="sms_marketing"
+              label="This is a promotional/marketing message (requires consent)"
+              defaultChecked={(tpl as { sms_marketing?: boolean }).sms_marketing ?? false}
+            />
+          </Row>
+        )}
         {!isSms && (
           <Row
             label="Branded Design"

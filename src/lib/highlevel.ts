@@ -570,13 +570,14 @@ export async function processSmsOutbox(
     attachments: string[] | null;
     reply_to_message_id: string | null;
     hl_target_contact_id: string | null;
+    is_marketing: boolean | null;
   }>;
   const clientIds = [...new Set(queued.map((m) => m.client_id).filter(Boolean) as string[])];
-  const clientById = new Map<string, { first_name?: string; last_name?: string; email?: string }>();
+  const clientById = new Map<string, { first_name?: string; last_name?: string; email?: string; sms_opt_in?: boolean }>();
   if (clientIds.length) {
     const { data: clientRows } = await supabase
       .from("clients")
-      .select("id, first_name, last_name, email")
+      .select("id, first_name, last_name, email, sms_opt_in")
       .in("id", clientIds);
     for (const c of clientRows ?? []) clientById.set(c.id as string, c);
   }
@@ -602,6 +603,22 @@ export async function processSmsOutbox(
         .eq("id", msg.id);
       suppressed++;
       continue;
+    }
+
+    // TCPA marketing-consent gate — a message flagged as marketing may only send
+    // to a recipient who has recorded SMS consent (clients.sms_opt_in). No client
+    // on file → no consent record → suppress. Transactional messages (default
+    // is_marketing=false) are unaffected.
+    if (channel === "SMS" && msg.is_marketing) {
+      const consented = msg.client_id ? clientById.get(msg.client_id)?.sms_opt_in === true : false;
+      if (!consented) {
+        await supabase
+          .from("sms_log")
+          .update({ status: "suppressed", error: "no SMS marketing consent on file" })
+          .eq("id", msg.id);
+        suppressed++;
+        continue;
+      }
     }
 
     // resolve the GHL contact: channel replies carry it directly (IG/FB have

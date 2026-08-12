@@ -21,19 +21,45 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 /** SMS subscription status + staff opt-out/opt-in toggle for a client's mobile
-    number. Reflects the XOS opt-out list (STOP replies, staff changes). */
+    number. Reflects the XOS opt-out list (STOP replies, staff changes). Also
+    captures TCPA marketing consent (a dated record that marketing SMS are gated
+    on at send time — distinct from the STOP suppression list). */
 export default function SmsSubscription({
   clientId,
   status,
   action,
+  marketingConsent,
+  marketingConsentAt,
+  consentAction,
 }: {
   clientId: string;
   status: SmsStatusProps;
   action: (clientId: string, optedOut: boolean) => Promise<Result>;
+  marketingConsent: boolean;
+  marketingConsentAt: string | null;
+  consentAction: (clientId: string, consented: boolean) => Promise<Result>;
 }) {
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [optedOut, setOptedOut] = useState(status.optedOut);
+  const [consent, setConsent] = useState(marketingConsent);
+  const [consentWhen, setConsentWhen] = useState<string | null>(marketingConsentAt);
+  const [consentPending, startConsent] = useTransition();
+  const [consentMsg, setConsentMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  function toggleConsent(next: boolean) {
+    setConsentMsg(null);
+    startConsent(async () => {
+      const r = await consentAction(clientId, next);
+      if (r.ok) {
+        setConsent(next);
+        setConsentWhen(next ? new Date().toISOString() : null);
+        setConsentMsg({ ok: true, text: next ? "Marketing consent recorded." : "Marketing consent revoked." });
+      } else {
+        setConsentMsg({ ok: false, text: r.error ?? "Something went wrong." });
+      }
+    });
+  }
 
   function toggle(next: boolean) {
     setMsg(null);
@@ -105,6 +131,41 @@ export default function SmsSubscription({
             Clients who text STOP are unsubscribed automatically; START re-subscribes them. Use this only when a
             client asks you directly to change their preference.
           </p>
+
+          {/* TCPA marketing consent — a dated record. Marketing SMS are gated on
+              this at send time; transactional texts (reminders, codes) are not. */}
+          <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-white/10">
+            <div className="flex items-center gap-2 text-sm">
+              <span className={`inline-block size-2 rounded-full ${consent ? "bg-green-500" : "bg-zinc-300 dark:bg-zinc-600"}`} />
+              <span className="font-semibold text-zinc-700 dark:text-zinc-200">
+                {consent ? "Marketing texts: consent on file" : "Marketing texts: no consent on file"}
+              </span>
+            </div>
+            {consent && consentWhen && (
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                Recorded {new Date(consentWhen).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.
+              </p>
+            )}
+            <div className="mt-3">
+              <button
+                type="button"
+                disabled={consentPending}
+                onClick={() => toggleConsent(!consent)}
+                className="btn-ghost px-4 py-1.5 text-xs disabled:opacity-50"
+              >
+                {consentPending ? "Working…" : consent ? "Revoke marketing consent" : "Record marketing consent"}
+              </button>
+            </div>
+            {consentMsg && (
+              <p className={`mt-2 text-sm ${consentMsg.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                {consentMsg.text}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-zinc-400">
+              Record this only when the client has agreed to receive promotional texts (e.g. at booking). It does not
+              affect transactional messages like payment reminders.
+            </p>
+          </div>
         </>
       )}
     </div>

@@ -81,6 +81,9 @@ function buildPayload(formData: FormData) {
     attach_mode: clean(formData.get("attach_mode")) ?? "esign_link",
     // Labeled event files to attach on every send
     attach_file_label_ids: ids(formData, "attach_file_label_ids"),
+    // SMS templates only: promotional/marketing → gated on client SMS consent at
+    // send time (processSmsOutbox). Transactional SMS leave this off.
+    sms_marketing: formData.get("sms_marketing") === "on",
     // OFF = plain email for deliverability (follow-ups)
     branded_shell: formData.get("branded_shell") === "on",
     // Body authored as raw HTML (BeeFree/Mailchimp import) vs the rich editor.
