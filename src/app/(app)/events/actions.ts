@@ -216,6 +216,11 @@ export async function createEvent(formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const payload = eventPayload(formData);
+  // Every event needs a billable client — downstream naming, automations, and
+  // the proposal/pay flow all assume one. The tabbed onboarding path enforces a
+  // primary client via its own guard; this closes the simple create path too so
+  // no code path can produce an orphan (clientless) event.
+  if (!payload.client_id) throw new Error("Select a client before creating the event.");
   const { data, error } = await supabase
     .from("events")
     .insert(payload)
