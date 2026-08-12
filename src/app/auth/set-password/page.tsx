@@ -42,8 +42,14 @@ export default function SetPasswordPage() {
           }
         }
       }
+      // Validity is resolved by the actual auth outcome, not a timer: we've
+      // awaited the code exchange / setSession above, so a session here means the
+      // link was good, and its absence means it's invalid/expired. A slow network
+      // just makes those awaits take longer — it can no longer be misread as
+      // "expired". onAuthStateChange below is a backup that can only upgrade
+      // invalid → ready if a session materializes asynchronously.
       const { data } = await supabase.auth.getSession();
-      if (active && data.session) setStatus("ready");
+      if (active) setStatus(data.session ? "ready" : "invalid");
     }
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -51,15 +57,10 @@ export default function SetPasswordPage() {
     });
 
     init();
-    // If no session materialises, the link is bad/expired.
-    const timer = setTimeout(() => {
-      if (active) setStatus((s) => (s === "loading" ? "invalid" : s));
-    }, 4000);
 
     return () => {
       active = false;
       sub.subscription.unsubscribe();
-      clearTimeout(timer);
     };
   }, []);
 
