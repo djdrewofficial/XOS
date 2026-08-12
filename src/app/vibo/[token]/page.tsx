@@ -119,28 +119,39 @@ export default async function ViboPage({ params }: { params: Promise<{ token: st
         <ViboDownload iosUrl={s.vibo_ios_url ?? null} androidUrl={s.vibo_android_url ?? null} webUrl={s.vibo_web_url ?? null} />
 
         {viboLink ? (
-          <a
-            href={viboLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block w-full rounded-xl border-2 border-brand px-4 py-3 text-center text-sm font-bold text-brand transition-colors hover:bg-brand/5 dark:text-brand-lighter"
-          >
-            Join your event in Vibo →
-          </a>
+          <>
+            <a
+              href={viboLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full rounded-xl border-2 border-brand px-4 py-3 text-center text-sm font-bold text-brand transition-colors hover:bg-brand/5 dark:text-brand-lighter"
+            >
+              Join your event in Vibo →
+            </a>
+            {/* Partner invite only makes sense once there's a real event link to share. */}
+            <div className="pt-1">
+              <ViboInvite token={token} />
+            </div>
+          </>
         ) : (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-            Your event is being set up — check back here shortly for your join link. (You can download the app now.)
+          // No join link yet (the sign-time Zapier zap hasn't populated it). Don't
+          // leave the client "checking back" for a link that may not appear —
+          // reassure them it arrives by email and give a clear contact path.
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-4 text-center dark:border-white/10 dark:bg-white/[0.03]">
+            <div className="text-sm font-bold text-zinc-800 dark:text-zinc-100">You&apos;re booked — nothing more to do right now! 🎉</div>
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+              We&apos;re setting up your planning workspace and will <strong>email your join link</strong> shortly. Go ahead and
+              download the app above so you&apos;re ready — and reply to us any time if you&apos;d like it sooner.
+            </p>
           </div>
         )}
-
-        <div className="pt-1">
-          <ViboInvite token={token} />
-        </div>
       </div>
 
-      <p className="mt-5 text-center text-[11px] text-zinc-400">
-        Planning together makes it perfect — invite your partner, planner, or anyone helping with the day.
-      </p>
+      {viboLink && (
+        <p className="mt-5 text-center text-[11px] text-zinc-400">
+          Planning together makes it perfect — invite your partner, planner, or anyone helping with the day.
+        </p>
+      )}
     </Shell>
   );
 }
