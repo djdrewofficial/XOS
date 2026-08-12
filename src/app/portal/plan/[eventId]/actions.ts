@@ -141,13 +141,26 @@ async function requireStaff(eventId: string) {
   return c;
 }
 
+/** Throw unless the caller is a member of THIS event — staff, host, or an event
+    guest. The app-layer cross-tenant gate for the host/guest-editable planner
+    actions (song lists, answers, likes): a signed-in user with no relationship to
+    the event is rejected before any query runs. The finer per-section guest rules
+    stay with RLS, so RLS is defense-in-depth rather than the sole control. */
+async function requireEventMember(eventId: string) {
+  const c = await ctx(eventId);
+  const role = await resolveEventRole(c.supabase, c.me.userId, c.me.accountType, eventId);
+  if (!role) throw new Error("Not allowed");
+  return { ...c, role };
+}
+
 export async function saveAnswer(eventId: string, questionId: string, answer: string) {
-  const { supabase, me, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await requireEventMember(eventId);
   // Read the value we're about to replace, so the history can restore it.
   const { data: prev } = await supabase
     .from("planning_question_answers")
     .select("answer")
     .eq("question_id", questionId)
+    .eq("event_id", eventId)
     .maybeSingle();
   const before = prev?.answer ?? null;
 
@@ -187,7 +200,7 @@ export async function saveAnswer(eventId: string, questionId: string, answer: st
 }
 
 export async function addSong(eventId: string, song: SongInput) {
-  const { supabase, me, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await requireEventMember(eventId);
 
   // Append to the end of the section.
   const { data: last } = await supabase
@@ -231,10 +244,10 @@ export async function addSong(eventId: string, song: SongInput) {
 }
 
 export async function removeSong(eventId: string, songId: string) {
-  const { supabase, me, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await requireEventMember(eventId);
   // Snapshot the whole row before deleting — this is what "Restore" re-inserts.
-  const { data: song } = await supabase.from("planning_songs").select("*").eq("id", songId).maybeSingle();
-  const { error } = await supabase.from("planning_songs").delete().eq("id", songId);
+  const { data: song } = await supabase.from("planning_songs").select("*").eq("id", songId).eq("event_id", eventId).maybeSingle();
+  const { error } = await supabase.from("planning_songs").delete().eq("id", songId).eq("event_id", eventId);
   if (error) throw new Error(error.message);
   await logAction(supabase, eventId, me, "Removed song", songLabel(song), {
     songId,
@@ -248,7 +261,7 @@ export async function removeSong(eventId: string, songId: string) {
 }
 
 export async function toggleMustPlay(eventId: string, songId: string, value: boolean) {
-  const { supabase, me, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await requireEventMember(eventId);
 
   if (value) {
     // Enforce the staff-set must-play limit for the song's section.
@@ -256,6 +269,7 @@ export async function toggleMustPlay(eventId: string, songId: string, value: boo
       .from("planning_songs")
       .select("section_id, title")
       .eq("id", songId)
+      .eq("event_id", eventId)
       .maybeSingle();
     if (song) {
       const { data: section } = await supabase
@@ -281,8 +295,9 @@ export async function toggleMustPlay(eventId: string, songId: string, value: boo
     .from("planning_songs")
     .select("title, artist, section_id")
     .eq("id", songId)
+    .eq("event_id", eventId)
     .maybeSingle();
-  const { error } = await supabase.from("planning_songs").update({ must_play: value }).eq("id", songId);
+  const { error } = await supabase.from("planning_songs").update({ must_play: value }).eq("id", songId).eq("event_id", eventId);
   if (error) return { ok: false, error: error.message };
   await logAction(supabase, eventId, me, value ? "Marked must-play" : "Unmarked must-play", songLabel(row), {
     songId,
@@ -298,17 +313,19 @@ export async function toggleMustPlay(eventId: string, songId: string, value: boo
 }
 
 export async function updateSongNote(eventId: string, songId: string, note: string) {
-  const { supabase, me, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await requireEventMember(eventId);
   const { data: row } = await supabase
     .from("planning_songs")
     .select("title, artist, note, section_id")
     .eq("id", songId)
+    .eq("event_id", eventId)
     .maybeSingle();
   const before = row?.note ?? null;
   const { error } = await supabase
     .from("planning_songs")
     .update({ note: note || null })
-    .eq("id", songId);
+    .eq("id", songId)
+    .eq("event_id", eventId);
   if (error) throw new Error(error.message);
   if ((before ?? "") !== note) {
     await logAction(supabase, eventId, me, before ? "Changed song note" : "Added song note", songLabel(row), {
@@ -325,11 +342,11 @@ export async function updateSongNote(eventId: string, songId: string, note: stri
 }
 
 export async function reorderSongs(eventId: string, sectionId: string, orderedIds: string[]) {
-  const { supabase, me, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await requireEventMember(eventId);
   // Persist new positions one-by-one (sections are small).
   await Promise.all(
     orderedIds.map((id, i) =>
-      supabase.from("planning_songs").update({ sort_order: i }).eq("id", id).eq("section_id", sectionId),
+      supabase.from("planning_songs").update({ sort_order: i }).eq("id", id).eq("section_id", sectionId).eq("event_id", eventId),
     ),
   );
   await logAction(supabase, eventId, me, "Reordered songs", undefined, {
@@ -340,7 +357,7 @@ export async function reorderSongs(eventId: string, sectionId: string, orderedId
 }
 
 export async function toggleLike(eventId: string, songId: string, liked: boolean) {
-  const { supabase, me, revalidate } = await ctx(eventId);
+  const { supabase, me, revalidate } = await requireEventMember(eventId);
   if (liked) {
     await supabase.from("planning_song_likes").insert({ song_id: songId, account_id: me.userId });
   } else {
@@ -1234,7 +1251,7 @@ export type BoothSelection = {
 export async function loadPhotoBooth(
   eventId: string,
 ): Promise<{ backdrops: BoothBackdrop[]; selection: BoothSelection }> {
-  const { supabase } = await ctx(eventId);
+  const { supabase } = await requireEventMember(eventId);
   const [{ data: backdrops }, { data: sel }] = await Promise.all([
     supabase
       .from("photobooth_backdrops")
