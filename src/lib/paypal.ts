@@ -18,6 +18,58 @@ export function paypalLive(): boolean {
   return (process.env.PAYPAL_ENV ?? "sandbox").toLowerCase() === "live";
 }
 
+/** True when this deploy serves real clients (a deployed https host), not local dev.
+    NEXT_PUBLIC_APP_URL is the canonical "where clients reach us" value (prod = the
+    live domain, dev = http://localhost:3000). */
+export function paypalDeployedHost(): boolean {
+  const u = (process.env.NEXT_PUBLIC_APP_URL ?? "").toLowerCase();
+  return u.startsWith("https://") && !u.includes("localhost") && !u.includes("127.0.0.1");
+}
+
+export type PaypalConfigStatus = {
+  configured: boolean;          // client id + secret present
+  envExplicit: boolean;         // PAYPAL_ENV set to a valid value (not silently defaulted)
+  live: boolean;                // PAYPAL_ENV=live
+  webhookVerification: boolean; // PAYPAL_WEBHOOK_ID present (webhook backstop can verify)
+  deployedHost: boolean;        // serving real clients (not localhost)
+  safeForRealPayments: boolean; // OK to actually take a card payment right now
+  issues: string[];             // human-readable problems to fix before go-live
+};
+
+/** Single read of the PayPal env posture. Used to (a) FAIL CLOSED on the live site
+    so a real client never pays into the sandbox — the CRITICAL risk — and (b) surface
+    config health in Settings → Payment so a silent sandbox/webhook misconfig is
+    visible before onboarding. */
+export function paypalConfigStatus(): PaypalConfigStatus {
+  const configured = isPaypalConfigured();
+  const envRaw = process.env.PAYPAL_ENV?.toLowerCase();
+  const envExplicit = envRaw === "live" || envRaw === "sandbox";
+  const live = envRaw === "live";
+  const webhookVerification = !!process.env.PAYPAL_WEBHOOK_ID;
+  const deployedHost = paypalDeployedHost();
+
+  const issues: string[] = [];
+  if (configured && deployedHost && !live) {
+    issues.push(
+      "PayPal is in SANDBOX on the live site — real card payments would hit the sandbox and never settle. " +
+        "Set PAYPAL_ENV=live plus live PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET / NEXT_PUBLIC_PAYPAL_CLIENT_ID in Netlify.",
+    );
+  } else if (configured && !envExplicit) {
+    issues.push("PAYPAL_ENV isn't set — it's defaulting to sandbox. Set it explicitly to 'live' or 'sandbox'.");
+  }
+  if (configured && live && !webhookVerification) {
+    issues.push(
+      "PAYPAL_WEBHOOK_ID isn't set — the capture-webhook backstop is disabled, so a payment where the client " +
+        "closes the tab mid-capture won't auto-record. Add the live webhook id in Netlify.",
+    );
+  }
+
+  // Only safe when configured AND either local dev OR explicitly live. On the live
+  // host in sandbox mode we must NOT take the payment.
+  const safeForRealPayments = configured && (!deployedHost || live);
+  return { configured, envExplicit, live, webhookVerification, deployedHost, safeForRealPayments, issues };
+}
+
 function apiBase(): string {
   return paypalLive() ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
 }

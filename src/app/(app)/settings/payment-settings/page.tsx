@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Section, Row, Note, CheckBoxField } from "@/components/SettingsForm";
 import SaveButton from "@/components/SaveButton";
 import Tabs from "@/components/Tabs";
+import { paypalConfigStatus } from "@/lib/paypal";
 import { savePaymentSettings } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -57,9 +58,63 @@ export default async function PaymentSettingsPage() {
 
   const s = settings as PaymentSettings;
 
+  // PayPal env health — makes a silent sandbox-on-prod / missing-webhook misconfig
+  // visible before onboarding. Mirrors the fail-closed guard in the order routes.
+  const paypal = paypalConfigStatus();
+  const paypalCritical = paypal.configured && paypal.deployedHost && !paypal.live;
+  const paypalBanner: { tone: "red" | "amber" | "green"; title: string; lines: string[] } | null = !paypal.configured
+    ? paypal.deployedHost
+      ? {
+          tone: "amber",
+          title: "PayPal isn’t configured",
+          lines: [
+            "Card payments won’t work until PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET and NEXT_PUBLIC_PAYPAL_CLIENT_ID are set in Netlify.",
+          ],
+        }
+      : null
+    : paypal.issues.length
+      ? {
+          tone: paypalCritical ? "red" : "amber",
+          title: paypalCritical ? "PayPal is NOT ready for live payments" : "PayPal configuration warning",
+          lines: paypal.issues,
+        }
+      : {
+          tone: "green",
+          title: `PayPal is ${paypal.live ? "LIVE" : "in sandbox (dev)"}${
+            paypal.live && paypal.webhookVerification ? " · webhook signature verification on" : ""
+          }`,
+          lines: [],
+        };
+  const bannerTone: Record<"red" | "amber" | "green", string> = {
+    red: "border-red-300 bg-red-50 text-red-800 dark:border-red-800/60 dark:bg-red-950/40 dark:text-red-200",
+    amber: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200",
+    green: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200",
+  };
+
   return (
     <div className="max-w-[1700px]">
       <h1 className="page-title mb-5">Payment Settings</h1>
+      {paypalBanner && (
+        <div className={`mb-5 rounded-lg border p-4 text-sm ${bannerTone[paypalBanner.tone]}`}>
+          <p className="font-semibold">
+            {paypalBanner.tone === "green" ? "✓ " : "⚠ "}
+            {paypalBanner.title}
+          </p>
+          {paypalBanner.lines.length > 0 && (
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {paypalBanner.lines.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          )}
+          {paypalCritical && (
+            <p className="mt-2 text-xs opacity-90">
+              While this is unresolved, the pay page refuses card orders (fail-safe) so no client can pay into the
+              sandbox — they’re asked to contact you instead.
+            </p>
+          )}
+        </div>
+      )}
       <form action={savePaymentSettings} className="space-y-5">
         <Tabs
           tabs={[

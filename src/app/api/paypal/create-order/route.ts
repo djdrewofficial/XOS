@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createPaypalOrder, isPaypalConfigured } from "@/lib/paypal";
+import { createPaypalOrder, isPaypalConfigured, paypalConfigStatus } from "@/lib/paypal";
 import { loadPayInfo, withFee } from "@/lib/payInfo";
 import { payVerifyRequired, isPayVerified, PAY_SESSION_COOKIE } from "@/lib/payVerify";
 
@@ -14,6 +14,17 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   if (!isPaypalConfigured()) {
     return NextResponse.json({ error: "Payments aren't set up yet." }, { status: 503 });
+  }
+  // Fail closed: never create a sandbox order on the live site (a real client would
+  // "pay" into the sandbox and it would never settle). See Settings → Payment for
+  // the exact env vars to set.
+  const cfg = paypalConfigStatus();
+  if (!cfg.safeForRealPayments) {
+    console.error("[paypal] refusing to create order —", cfg.issues.join(" | "));
+    return NextResponse.json(
+      { error: "Card payments are temporarily unavailable — please contact us to pay another way." },
+      { status: 503 },
+    );
   }
   let body: { token?: string; amount?: number } = {};
   try {
