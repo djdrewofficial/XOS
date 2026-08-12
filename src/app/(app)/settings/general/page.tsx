@@ -44,6 +44,7 @@ type GeneralSettings = {
   default_template_event_id: string | null;
   landing_page: string;
   legal_venue: string | null;
+  postal_address: string | null;
   instagram_url: string | null;
   tiktok_url: string | null;
 };
@@ -126,6 +127,23 @@ export default async function GeneralSettingsPage() {
               className="input w-full max-w-md"
             />
           </Row>
+          <Row
+            label="Business Mailing Address"
+            hint="Shown in the footer of every automated email — required by CAN-SPAM for commercial mail. A street address or PO box where you can receive mail."
+          >
+            <textarea
+              name="postal_address"
+              defaultValue={s.postal_address ?? ""}
+              rows={2}
+              placeholder="Xpress Entertainment, 123 Main St, Fort Lauderdale, FL 33301"
+              className="input w-full max-w-md"
+            />
+          </Row>
+          <Note>
+            The address (and, on marketing emails, a one-click unsubscribe link) appears in the footer of automated
+            mail. Recipients who unsubscribe are added to a suppression list and skipped for marketing sends —
+            transactional mail (agreements, receipts, reminders) still goes out.
+          </Note>
         </Section>
 
         <Section title="Social Links">

@@ -31,9 +31,34 @@ function fmtTime(t: string | null | undefined): string | null {
   return `${hr}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+/** Email footer: company name, physical postal address (CAN-SPAM), and — for
+    commercial/marketing mail — a one-click unsubscribe link. Transactional mail
+    passes no unsubscribeUrl. */
+export type EmailFooter = { postalAddress?: string | null; unsubscribeUrl?: string | null };
+
+export function complianceFooterHtml(companyName: string, footer?: EmailFooter): string {
+  const addr = footer?.postalAddress?.trim();
+  const unsub = footer?.unsubscribeUrl;
+  return `<div style="padding:18px 30px;border-top:1px solid #efecf7;color:#8a8a94;font-size:12px;text-align:center;line-height:1.6;">
+    <div>${esc(companyName)}</div>
+    ${addr ? `<div style="margin-top:3px;">${esc(addr).replace(/\r?\n/g, " · ")}</div>` : ""}
+    ${unsub ? `<div style="margin-top:8px;"><a href="${esc(unsub)}" style="color:#8a8a94;text-decoration:underline;">Unsubscribe from these emails</a></div>` : ""}
+  </div>`;
+}
+
+/** Append the compliance footer to an email whose body is NOT wrapped by
+    emailShell (a plain/unbranded body or a full-HTML template). No-op when there's
+    nothing compliance-relevant to add (no address and not marketing). */
+export function withComplianceFooter(html: string, companyName: string, footer?: EmailFooter): string {
+  if (!footer?.postalAddress?.trim() && !footer?.unsubscribeUrl) return html;
+  const block = `<div style="max-width:600px;margin:0 auto;">${complianceFooterHtml(companyName, footer)}</div>`;
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${block}</body>`) : html + block;
+}
+
 /** Branded email wrapper: gradient header with the white logo, white card body.
-    The outbox wraps every template email in this at send time. */
-export function emailShell(companyName: string, contentHtml: string): string {
+    The outbox wraps every template email in this at send time. Pass `footer` to
+    include the postal address (all mail) and an unsubscribe link (marketing mail). */
+export function emailShell(companyName: string, contentHtml: string, footer?: EmailFooter): string {
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head><body style="margin:0;padding:0;background:#f4f2fa;font-family:ui-sans-serif,system-ui,'Segoe UI',Arial,sans-serif;">
   <div style="max-width:600px;margin:0 auto;padding:28px 14px;">
     <div style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e8e4f3;">
@@ -41,7 +66,7 @@ export function emailShell(companyName: string, contentHtml: string): string {
         <img src="${appUrl()}/logo-dark.png" alt="${esc(companyName)}" width="210" style="display:inline-block;max-width:210px;" />
       </div>
       ${contentHtml}
-      <div style="padding:18px 30px;border-top:1px solid #efecf7;color:#8a8a94;font-size:12px;text-align:center;">${esc(companyName)}</div>
+      ${complianceFooterHtml(companyName, footer)}
     </div>
   </div>
 </body></html>`;

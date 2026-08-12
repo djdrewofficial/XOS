@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { docTypeClientLabel } from "@/lib/documentBlocks";
-import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell } from "@/lib/signing";
+import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell, withComplianceFooter, type EmailFooter } from "@/lib/signing";
+import { isEmailOptedOut, unsubscribeToken } from "@/lib/emailOptOut";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
 import { isHighLevelConfigured, sendEmailViaHighLevel } from "@/lib/highlevel";
@@ -45,6 +46,8 @@ async function mailgunSend(opts: {
   replyTo?: string | null;
   tags?: string[];
   attachments?: EmailAttachment[];
+  /** Marketing mail: sets List-Unsubscribe + one-click List-Unsubscribe-Post. */
+  listUnsubscribeUrl?: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const { apiKey, domain, base } = mailgunConfig();
   if (!apiKey || !domain) return { ok: false, error: "Mailgun not configured" };
@@ -55,6 +58,11 @@ async function mailgunSend(opts: {
   form.append("subject", opts.subject?.trim() || "(no subject)");
   form.append("html", opts.html || "<p>(empty)</p>");
   if (opts.replyTo) form.append("h:Reply-To", opts.replyTo);
+  if (opts.listUnsubscribeUrl) {
+    // RFC 8058 one-click unsubscribe — required for bulk senders by Gmail/Yahoo.
+    form.append("h:List-Unsubscribe", `<${opts.listUnsubscribeUrl}>`);
+    form.append("h:List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+  }
   for (const tag of opts.tags ?? []) form.append("o:tag", tag);
   for (const att of opts.attachments ?? []) {
     form.append("attachment", new Blob([new Uint8Array(att.data)], { type: att.contentType }), att.filename);
@@ -103,19 +111,22 @@ async function enrichMessage(
     body_html: string;
     attached_document_id: string | null;
   }
-): Promise<{ html: string; attachments: EmailAttachment[]; branded: boolean }> {
+): Promise<{ html: string; attachments: EmailAttachment[]; branded: boolean; isMarketing: boolean }> {
   let html = msg.body_html ?? "";
   const attachments: EmailAttachment[] = [];
 
   // template settings drive branding + attachments
-  let tmpl: { attach_template_id?: string | null; attach_mode?: string | null; branded_shell?: boolean; attach_file_label_ids?: string[] | null } | null = null;
+  let tmpl: { attach_template_id?: string | null; attach_mode?: string | null; branded_shell?: boolean; attach_file_label_ids?: string[] | null; is_marketing?: boolean } | null = null;
   if (msg.template_id) {
     const { data } = await supabase.from("email_templates").select("*").eq("id", msg.template_id).maybeSingle();
     tmpl = data;
   }
   const branded = tmpl?.branded_shell ?? true;
+  // Commercial mail (proposal-reminder drips, promos) → CAN-SPAM unsubscribe +
+  // suppression. Untemplated / transactional templates stay false.
+  const isMarketing = tmpl?.is_marketing === true;
 
-  if (!msg.event_id) return { html, attachments, branded };
+  if (!msg.event_id) return { html, attachments, branded, isMarketing };
 
   // shared: this event's public pay token + whether the new proposal/confirm flow
   // is on. When on, the e-sign CTA points to /proposal (couple confirms details +
@@ -235,7 +246,7 @@ async function enrichMessage(
   // document attached to the email template?
   if (!tmpl?.attach_template_id) {
     // no attachment configured — still clean up a dangling sign-link tag
-    return { html: replaceTag(html, "document_sign_link", ""), attachments, branded };
+    return { html: replaceTag(html, "document_sign_link", ""), attachments, branded, isMarketing };
   }
 
   const attachTemplateId = tmpl.attach_template_id as string;
@@ -250,7 +261,7 @@ async function enrichMessage(
       } else {
         html += signButtonHtml(url, `Review & Sign ${docTypeClientLabel("contract")}`);
       }
-      return { html: replaceTag(html, "document_sign_link", ""), attachments, branded };
+      return { html: replaceTag(html, "document_sign_link", ""), attachments, branded, isMarketing };
     }
     // reuse the latest unsigned document for this event+template, else generate fresh
     const { data: existing } = await supabase
@@ -317,12 +328,12 @@ async function enrichMessage(
     }
   }
 
-  return { html: replaceTag(html, "document_sign_link", ""), attachments, branded };
+  return { html: replaceTag(html, "document_sign_link", ""), attachments, branded, isMarketing };
 }
 
 /** Wraps editor-authored bodies in the branded shell (logo header + white card).
     Emails that are already complete HTML documents pass through untouched. */
-function brandWrap(html: string, companyName: string): string {
+function brandWrap(html: string, companyName: string, footer?: EmailFooter): string {
   if (/^\s*(<!doctype|<html)/i.test(html)) return html;
   // minimal inline styling for editor content (email clients ignore stylesheets)
   const styled = html
@@ -333,7 +344,8 @@ function brandWrap(html: string, companyName: string): string {
     .replace(/<p(?![^>]*style)/gi, '<p style="margin:0 0 12px;"');
   return emailShell(
     companyName,
-    `<div style="padding:28px 30px;color:#2c2c33;font-size:15px;line-height:1.6;font-family:ui-sans-serif,system-ui,'Segoe UI',Arial,sans-serif;">${styled}</div>`
+    `<div style="padding:28px 30px;color:#2c2c33;font-size:15px;line-height:1.6;font-family:ui-sans-serif,system-ui,'Segoe UI',Arial,sans-serif;">${styled}</div>`,
+    footer,
   );
 }
 
@@ -368,15 +380,16 @@ async function attachmentsToSignedUrls(
     Pass a service-role client when running without a user session (cron route). */
 export async function processOutbox(
   client?: SupabaseClient
-): Promise<{ sent: number; failed: number; skipped: string | null; error?: string }> {
+): Promise<{ sent: number; failed: number; suppressed?: number; skipped: string | null; error?: string }> {
   const { domain } = mailgunConfig();
   const supabase = client ?? (await createClient());
   const { data: csRow } = await supabase
     .from("company_settings")
-    .select("company_name")
+    .select("company_name, postal_address")
     .eq("id", true)
     .maybeSingle();
   const companyName = csRow?.company_name ?? "Xpress Entertainment";
+  const postalAddress = (csRow?.postal_address as string | null) ?? null;
 
   const mailgunReady = isMailgunConfigured();
   const highlevelReady = isHighLevelConfigured();
@@ -419,6 +432,7 @@ export async function processOutbox(
 
   let sent = 0;
   let failed = 0;
+  let suppressed = 0;
 
   for (const msg of queued ?? []) {
     const from = msg.from_address ? fmtSender(msg.from_name, msg.from_address) : fallbackFrom;
@@ -426,9 +440,14 @@ export async function processOutbox(
     // send-time enrichment: quote tags + attached documents (e-sign link / PDF)
     let html = msg.body_html;
     let attachments: EmailAttachment[] = [];
+    let isMarketing = false;
+    let enrichedHtml = msg.body_html;
+    let branded = true;
     try {
       const enriched = await enrichMessage(supabase, msg);
-      html = enriched.branded ? brandWrap(enriched.html, companyName) : enriched.html;
+      isMarketing = enriched.isMarketing;
+      enrichedHtml = enriched.html;
+      branded = enriched.branded;
       attachments = enriched.attachments;
     } catch (err) {
       await supabase
@@ -439,6 +458,27 @@ export async function processOutbox(
       continue;
     }
 
+    // CAN-SPAM: never send marketing mail to an unsubscribed address. Transactional
+    // mail (agreements, receipts, invites, reminders) is exempt and always sends.
+    if (isMarketing && msg.to_address && (await isEmailOptedOut(admin, msg.to_address))) {
+      await supabase
+        .from("email_log")
+        .update({ status: "cancelled", error: "Suppressed — recipient unsubscribed from marketing email", sent_at: null })
+        .eq("id", msg.id);
+      suppressed++;
+      continue;
+    }
+
+    // Footer: postal address on all mail; one-click unsubscribe on marketing mail.
+    const unsubUrl =
+      isMarketing && msg.to_address ? `${appUrl()}/api/unsubscribe/${unsubscribeToken(msg.to_address)}` : null;
+    const footer: EmailFooter = { postalAddress, unsubscribeUrl: unsubUrl };
+    // brandWrap embeds the footer via emailShell when it actually wraps; if the body
+    // was already full HTML (brandWrap returns it unchanged) or the mail is unbranded,
+    // append the footer so the address/unsubscribe is present exactly once.
+    const wrapped = branded ? brandWrap(enrichedHtml, companyName, footer) : enrichedHtml;
+    html = wrapped === enrichedHtml ? withComplianceFooter(wrapped, companyName, footer) : wrapped;
+
     const sendViaMailgun = () =>
       mailgunSend({
         from,
@@ -446,8 +486,9 @@ export async function processOutbox(
         subject: msg.subject,
         html,
         replyTo: msg.reply_to,
-        tags: ["xos", msg.event_id ? "event" : "manual"],
+        tags: ["xos", msg.event_id ? "event" : "manual", ...(isMarketing ? ["marketing"] : [])],
         attachments,
+        listUnsubscribeUrl: unsubUrl,
       });
 
     // Deliver via Mailgun (verified, delivery-tracked). Only when Mailgun isn't
@@ -516,7 +557,7 @@ export async function processOutbox(
     }
   }
 
-  return { sent, failed, skipped: null };
+  return { sent, failed, suppressed, skipped: null };
 }
 
 /** Sends a one-off test email and records it in the outbox/log. */
@@ -535,7 +576,7 @@ export async function sendBrandedEmail(opts: {
   const supabase = opts.supabase ?? (await createClient());
   const { data: cs } = await supabase
     .from("company_settings")
-    .select("from_name, from_email, reply_to, company_name")
+    .select("from_name, from_email, reply_to, company_name, postal_address")
     .eq("id", true)
     .maybeSingle();
 
@@ -558,7 +599,10 @@ export async function sendBrandedEmail(opts: {
   const fromName = cs?.from_name ?? "Xpress Entertainment";
   const fromEmail = cs?.from_email ?? `events@${domain}`;
   const companyName = cs?.company_name ?? "Xpress Entertainment";
-  const html = emailShell(companyName, `<div style="padding:30px;">${opts.contentHtml}</div>`);
+  // Transactional (invites/resets): include the postal address, no unsubscribe.
+  const html = emailShell(companyName, `<div style="padding:30px;">${opts.contentHtml}</div>`, {
+    postalAddress: (cs?.postal_address as string | null) ?? null,
+  });
 
   // Deliver via Mailgun; fall back to HighLevel (from the company identity) only
   // when Mailgun isn't configured.

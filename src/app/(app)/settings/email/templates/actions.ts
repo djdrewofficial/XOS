@@ -86,6 +86,9 @@ function buildPayload(formData: FormData) {
     sms_marketing: formData.get("sms_marketing") === "on",
     // OFF = plain email for deliverability (follow-ups)
     branded_shell: formData.get("branded_shell") === "on",
+    // Email templates only: commercial/marketing → CAN-SPAM unsubscribe + suppression
+    // at send time (processOutbox). Transactional email leaves this off.
+    is_marketing: formData.get("is_marketing") === "on",
     // Body authored as raw HTML (BeeFree/Mailchimp import) vs the rich editor.
     is_raw_html: formData.get("is_raw_html") === "on",
   };

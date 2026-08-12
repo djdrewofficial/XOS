@@ -208,6 +208,18 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
             />
           </Row>
         )}
+        {!isSms && (
+          <Row
+            label="Marketing / Promotional"
+            hint="ON: CAN-SPAM commercial mail — adds a one-click unsubscribe link + List-Unsubscribe header, and skips anyone who has unsubscribed. Turn ON for drip follow-ups & promos; leave OFF for transactional mail (agreements, receipts, reminders, invites)."
+          >
+            <CheckBoxField
+              name="is_marketing"
+              label="This is commercial/marketing email (unsubscribe required)"
+              defaultChecked={(tpl as { is_marketing?: boolean }).is_marketing ?? false}
+            />
+          </Row>
+        )}
       </Section>
 
       {!isSms && (

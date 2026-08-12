@@ -25,6 +25,7 @@ export async function saveGeneralSettings(formData: FormData) {
       default_template_event_id: clean(formData.get("default_template_event_id")),
       landing_page: clean(formData.get("landing_page")) ?? "/",
       legal_venue: clean(formData.get("legal_venue")),
+      postal_address: clean(formData.get("postal_address")),
       instagram_url: clean(formData.get("instagram_url")),
       tiktok_url: clean(formData.get("tiktok_url")),
       updated_at: new Date().toISOString(),
