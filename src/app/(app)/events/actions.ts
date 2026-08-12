@@ -583,9 +583,15 @@ export async function setEventStatus(id: string, statusId: string) {
 export async function addPayment(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
+  // num() coerces empty/non-numeric input to 0 and passes negatives through, so
+  // guard explicitly: a payment must be a real, positive amount. !(amount > 0)
+  // rejects 0, negatives, and NaN in one check. (The DB CHECK backstops every
+  // insert path; this gives staff a clear message.)
+  const amount = num(formData.get("amount"));
+  if (!(amount > 0)) throw new Error("Enter a payment amount greater than $0.");
   const { error } = await supabase.from("payments").insert({
     event_id: eventId,
-    amount: num(formData.get("amount")),
+    amount,
     method: clean(formData.get("method")) ?? "other",
     reason: clean(formData.get("reason")),
     paid_at: clean(formData.get("paid_at")) ?? new Date().toISOString(),
@@ -604,6 +610,17 @@ export async function confirmPayment(paymentId: string, eventId: string, formDat
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   const note = formData ? clean(formData.get("note")) : null;
+
+  // A pending claim only counts toward the balance once approved, so verify it's
+  // a real positive amount before it enters the ledger (defense in depth).
+  const { data: pending } = await supabase
+    .from("payments")
+    .select("amount")
+    .eq("id", paymentId)
+    .eq("event_id", eventId)
+    .maybeSingle();
+  if (!pending) throw new Error("Payment not found.");
+  if (!(Number(pending.amount) > 0)) throw new Error("This payment's amount is invalid — remove it and re-enter.");
 
   // link to the earliest scheduled payment with no approved payment against it
   const [{ data: scheduled }, { data: priorPayments }] = await Promise.all([
