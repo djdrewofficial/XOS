@@ -82,11 +82,14 @@ export async function startPayVerification(
   const onFile = toE164((client as { cell_phone?: string } | null)?.cell_phone ?? "");
   const entered = toE164(rawPhone ?? "");
 
-  if (!onFile) {
-    return { ok: false, error: "We don't have a mobile number on file for this booking. Please contact us to pay." };
-  }
-  if (!entered || entered !== onFile) {
-    return { ok: false, error: "That number doesn't match the mobile number on file for this booking." };
+  // One generic message for every non-match case — no number on file, an invalid
+  // entry, or a wrong guess — so a token-holder can't use the difference between
+  // "no number on file" and "doesn't match" to confirm a guessed number.
+  if (!onFile || !entered || entered !== onFile) {
+    return {
+      ok: false,
+      error: "We couldn't verify that mobile number for this booking. Double-check the number, or contact us and we'll help you pay.",
+    };
   }
 
   // simple per-event rate limit on code sends
