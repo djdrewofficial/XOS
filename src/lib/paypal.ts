@@ -15,7 +15,8 @@ export function isPaypalConfigured(): boolean {
 }
 
 export function paypalLive(): boolean {
-  return (process.env.PAYPAL_ENV ?? "sandbox").toLowerCase() === "live";
+  // trim() so a stray space in the env var (" live") can't silently fall back to sandbox
+  return (process.env.PAYPAL_ENV ?? "sandbox").trim().toLowerCase() === "live";
 }
 
 /** True when this deploy serves real clients (a deployed https host), not local dev.
@@ -42,7 +43,7 @@ export type PaypalConfigStatus = {
     visible before onboarding. */
 export function paypalConfigStatus(): PaypalConfigStatus {
   const configured = isPaypalConfigured();
-  const envRaw = process.env.PAYPAL_ENV?.toLowerCase();
+  const envRaw = process.env.PAYPAL_ENV?.trim().toLowerCase();
   const envExplicit = envRaw === "live" || envRaw === "sandbox";
   const live = envRaw === "live";
   const webhookVerification = !!process.env.PAYPAL_WEBHOOK_ID;
