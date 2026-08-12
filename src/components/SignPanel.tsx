@@ -3,6 +3,7 @@
 import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
 import type { SignResult } from "@/app/sign/[token]/actions";
+import { esignConsentText } from "@/lib/esignConsent";
 
 /* The e-sign action panel on the public document page. ESIGN/UETA flow:
    typed full name (intent) + explicit consent checkbox + clearly labeled
@@ -98,11 +99,9 @@ export default function SignPanel({
         </div>
         <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-zinc-50 p-3.5 text-sm text-zinc-700">
           <input type="checkbox" name="consent" required className="mt-0.5 size-4 accent-brand-light" />
-          <span>
-            I agree to do business electronically with {companyName}, and by typing my name and clicking{" "}
-            <strong>Sign Agreement</strong> I am electronically signing this document and agree to be bound by its
-            terms.
-          </span>
+          {/* Disclosure text is the versioned source of truth (esignConsent.ts);
+              the exact wording shown is recorded with the signature. */}
+          <span>{esignConsentText(companyName)}</span>
         </label>
         {photoRelease && (
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-200 p-3.5 text-sm text-zinc-700">

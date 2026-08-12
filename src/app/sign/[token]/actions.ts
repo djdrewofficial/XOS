@@ -12,6 +12,7 @@ import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations } from "@/lib/automations";
 import { loadEventJourney } from "@/lib/eventJourney";
 import { sendAccountInvite } from "@/lib/accounts";
+import { ESIGN_CONSENT_VERSION, esignConsentText } from "@/lib/esignConsent";
 
 export type SignResult = {
   ok: boolean;
@@ -71,6 +72,15 @@ export async function signDocument(
       : b
   );
 
+  // Company name shown in the consent disclosure (also reused for the signed-copy
+  // email below).
+  const { data: cs } = await supabase
+    .from("company_settings")
+    .select("company_name, from_name, from_email, reply_to")
+    .eq("id", true)
+    .maybeSingle();
+  const companyName = cs?.company_name ?? "Xpress Entertainment";
+
   const { error } = await supabase
     .from("documents")
     .update({
@@ -81,6 +91,11 @@ export async function signDocument(
       signer_ip: ip,
       signer_user_agent: userAgent,
       doc_hash: docHash,
+      // e-sign consent-to-electronic-records affirmation: the box + the exact
+      // disclosure (version + text) the signer agreed to (ESIGN/UETA trail).
+      consent_given: consent,
+      consent_disclosure_version: ESIGN_CONSENT_VERSION,
+      consent_disclosure_text: esignConsentText(companyName),
       // record the media-release choice only on docs that offer the opt-out
       photo_release_declined: doc.photo_release ? photoOptOut : null,
       updated_at: signedAt.toISOString(),
@@ -164,13 +179,7 @@ export async function signDocument(
     p_href: `/documents/${doc.id}`,
   });
 
-  // email the client their signed copy
-  const { data: cs } = await supabase
-    .from("company_settings")
-    .select("company_name, from_name, from_email, reply_to")
-    .eq("id", true)
-    .maybeSingle();
-  const companyName = cs?.company_name ?? "Xpress Entertainment";
+  // email the client their signed copy (cs / companyName loaded above)
   const clientEmail = ev?.client?.email ?? null;
   if (clientEmail) {
     await supabase.from("email_log").insert({
