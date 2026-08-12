@@ -148,6 +148,21 @@ declaring done.
 > `event-files`/`event-photos` objects, the objects themselves may still exist in
 > the bucket (or may need re-upload). A DB restore does not restore Storage.
 
+> **After ANY restore, re-verify pg_cron.** A restore can leave the `cron.job`
+> table empty — the queueing engines (scheduled emails, payment reminders, daily
+> status actions) then silently stop. Check with `select jobname, schedule, active
+> from cron.job;` — you should see all three. If any are missing, re-create them:
+> ```sql
+> select cron.schedule('xos-scheduled-emails',    '*/15 * * * *', 'select run_scheduled_emails()');
+> select cron.schedule('xos-payment-reminders',   '0 13 * * *',   'select run_payment_reminders()');
+> select cron.schedule('xos-daily-status-actions','0 9 * * *',    'select run_daily_status_actions()');
+> ```
+> Safety net: the outbox cron (`/api/cron/send-outbox`, driven by an external
+> scheduler independent of pg_cron) probes pg_cron's run log each minute via
+> `cron_job_health()` and **backstops** any engine pg_cron has missed, plus raises a
+> `system_alert` notification. So queueing keeps working even before you notice —
+> but still re-schedule the jobs so timing (1 pm reminders, 9 am status) is exact.
+
 ---
 
 ## 4. Dev/prod separation (fixing "dev = prod DB")

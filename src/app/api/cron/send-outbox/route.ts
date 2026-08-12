@@ -28,6 +28,65 @@ async function run(req: Request) {
   const full = new URL(req.url).searchParams.get("full") === "1";
   const inbox = await syncHighLevelConversations(admin, { full });
 
+  // --- pg_cron liveness backstop -------------------------------------------
+  // The three queueing engines (scheduled emails every 15 min, payment reminders +
+  // daily status actions once a day) are registered ONLY through pg_cron, which can
+  // silently stop after a restore — and nothing errors. Using pg_cron's own run log
+  // (cron_job_health, migration 00174), run any engine it has missed and alert. This
+  // cron is driven by an external scheduler (independent of pg_cron), so it keeps
+  // queueing alive even if pg_cron is dead. The engines self-dedupe
+  // (scheduled_email_runs / payment_reminder_sends / idempotent status writes) and
+  // advisory-lock, so a redundant backstop run is safe. An empty cron.job (the usual
+  // post-restore state) yields no rows → every engine reads as stale → all backstop.
+  const cronMisses: string[] = [];
+  try {
+    const { data: health } = await admin.rpc("cron_job_health");
+    const byName = new Map(
+      ((health ?? []) as Array<{ jobname: string; active: boolean; minutes_since: number | string | null }>).map(
+        (h) => [h.jobname, h],
+      ),
+    );
+    // job → engine RPC + how stale (minutes) counts as a miss.
+    const ENGINES = [
+      { job: "xos-scheduled-emails", rpc: "run_scheduled_emails", staleMin: 20 },
+      { job: "xos-payment-reminders", rpc: "run_payment_reminders", staleMin: 25 * 60 },
+      { job: "xos-daily-status-actions", rpc: "run_daily_status_actions", staleMin: 25 * 60 },
+    ] as const;
+    for (const e of ENGINES) {
+      const row = byName.get(e.job);
+      const mins = row && row.minutes_since != null ? Number(row.minutes_since) : null;
+      // job row absent, disabled, never-run, or overdue → pg_cron isn't running it
+      const stale = !row || row.active === false || mins === null || mins > e.staleMin;
+      if (!stale) continue;
+      cronMisses.push(`${e.job} (${mins === null ? "no run logged" : `${Math.round(mins)}m ago`})`);
+      try {
+        await admin.rpc(e.rpc); // self-deduping engine; safe to run as a backstop
+      } catch {
+        cronMisses.push(`${e.job}: backstop run failed`);
+      }
+    }
+  } catch {
+    /* probe missing/erroring — never fail the outbox drain over the liveness check */
+  }
+
+  // Alert (rate-limited to once / 30 min) when pg_cron has missed a cycle, so the
+  // office knows to re-enable it. The backstop above covers the gap meanwhile.
+  if (cronMisses.length) {
+    if (!(await isRateLimited(admin, "alert:cron_stalled", "global", 1, 30 * 60 * 1000))) {
+      await recordRateHit(admin, "alert:cron_stalled", "global", 30 * 60 * 1000);
+      try {
+        await admin.rpc("create_notification", {
+          p_type: "system_alert",
+          p_title: "Scheduled jobs (pg_cron) may have stopped",
+          p_body: `Backstopped: ${cronMisses.join(" · ")}. Check cron.job in Supabase — reminders & scheduled emails won't queue on their own until it's running again.`,
+          p_href: "/settings",
+        });
+      } catch {
+        /* best-effort — the cronMisses in the response body is the reliable signal */
+      }
+    }
+  }
+
   // Total send failure = a stage attempted sends this run and EVERY one failed
   // (e.g. a rotated/expired Mailgun/HighLevel key). A per-message failure only
   // increments `failed`, so without this the route would return a healthy 200
@@ -70,7 +129,10 @@ async function run(req: Request) {
   }
 
   const status = errors.length ? 500 : 200;
-  return NextResponse.json({ email, sms, inbox, ...(errors.length ? { errors } : {}) }, { status });
+  return NextResponse.json(
+    { email, sms, inbox, ...(cronMisses.length ? { cronMisses } : {}), ...(errors.length ? { errors } : {}) },
+    { status },
+  );
 }
 
 export async function POST(req: Request) {
