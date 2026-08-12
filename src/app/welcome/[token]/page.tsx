@@ -136,6 +136,10 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
           </a>
         </>
       )}
+
+      <p className="mt-5 text-center text-[10px] text-zinc-400">
+        <a href="/privacy" className="hover:underline">Privacy</a> · <a href="/terms" className="hover:underline">Terms</a>
+      </p>
     </Shell>
   );
 }

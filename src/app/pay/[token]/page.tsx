@@ -116,6 +116,10 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
           <p className="mt-4 text-center text-[11px] text-zinc-400">A receipt is emailed once your payment completes.</p>
         </>
       )}
+
+      <p className="mt-5 text-center text-[10px] text-zinc-400">
+        <a href="/privacy" className="hover:underline">Privacy</a> · <a href="/terms" className="hover:underline">Terms</a>
+      </p>
     </Shell>
   );
 }

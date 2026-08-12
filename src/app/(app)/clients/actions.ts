@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/auth";
 import { sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
 import { formatPhone, toE164 } from "@/lib/phone";
@@ -60,6 +61,60 @@ export async function setClientSmsOptOut(id: string, optedOut: boolean): Promise
   });
   if (!res.ok) return { ok: false, error: "That mobile number isn't a valid US number." };
   revalidatePath(`/clients/${id}`);
+  return { ok: true };
+}
+
+/** Honor a "delete my data" (GDPR/CCPA right-to-erasure) request: scrub the
+    client's PII in place and remove their portal login, while KEEPING the row so
+    their events and payment history stay attributable (financial records are
+    retained under a separate legal basis). Irreversible. Staff-gated (clients:edit).
+    Comms logs (SMS/email history) are retained as business records. */
+export async function anonymizeClient(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  await requireModule("clients", "edit", { mode: "throw", supabase });
+  const admin = createAdminClient();
+
+  const { error: upErr } = await admin
+    .from("clients")
+    .update({
+      first_name: "Deleted",
+      last_name: "Client",
+      organization: null,
+      cell_phone: null,
+      email: null,
+      mailing_address: null,
+      anniversary: null,
+      notes: null,
+      instagram: null,
+      tiktok: null,
+      authorized_rep_name: null,
+      authorized_rep_title: null,
+      authorized_rep_email: null,
+      authorized_rep_phone: null,
+      anonymized_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (upErr) return { ok: false, error: upErr.message };
+
+  // Remove their portal login. Deleting the auth user cascades the accounts row
+  // (accounts.auth_user_id references auth.users on delete cascade).
+  const { data: acct } = await admin
+    .from("accounts")
+    .select("auth_user_id")
+    .eq("account_type", "client")
+    .eq("client_id", id)
+    .maybeSingle();
+  if (acct?.auth_user_id) {
+    try {
+      await admin.auth.admin.deleteUser(acct.auth_user_id as string);
+    } catch {
+      /* best-effort — the PII is already scrubbed; a stale auth row can be cleaned up manually */
+    }
+  }
+
+  revalidatePath(`/clients/${id}`);
+  revalidatePath("/clients");
   return { ok: true };
 }
 

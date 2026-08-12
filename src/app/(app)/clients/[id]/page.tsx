@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import ClientProfileCard from "@/components/ClientProfileCard";
 import LoginAccess from "@/components/LoginAccess";
 import SmsSubscription from "@/components/SmsSubscription";
-import { updateClientRecord, inviteClient, resetClientPassword, setClientSmsOptOut } from "../actions";
+import AnonymizeClient from "@/components/AnonymizeClient";
+import { updateClientRecord, inviteClient, resetClientPassword, setClientSmsOptOut, anonymizeClient } from "../actions";
 import { getSmsOptStatus } from "@/lib/smsOptOut";
 import { money, eventTotal, type Client, type XEvent } from "@/lib/types";
 
@@ -101,6 +102,12 @@ export default async function ClientDetailPage({
       />
 
       <SmsSubscription clientId={id} status={smsStatus} action={setClientSmsOptOut} />
+
+      <AnonymizeClient
+        clientId={id}
+        anonymizedAt={(client as { anonymized_at?: string | null }).anonymized_at ?? null}
+        action={anonymizeClient}
+      />
     </div>
   );
 }
