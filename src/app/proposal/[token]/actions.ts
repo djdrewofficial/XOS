@@ -11,11 +11,37 @@ import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations } from "@/lib/automations";
 import { findOrCreateClient } from "@/lib/clients";
 
-const BOOKING_AGREEMENT_ID = "e2ae8026-0d1a-4681-be90-f130d572aec4";
-
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
   return s === "" ? null : s;
+}
+
+/** Last-resort lookup for the default booking-agreement contract, used only when
+    no journey/event-type proposal contract is configured. Prefers a template whose
+    name reads like the general booking agreement, else the oldest active contract.
+    Replaces a hardcoded template id that could be missing in a fresh tenant. */
+async function resolveDefaultAgreementTemplateId(
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<string | null> {
+  const { data: byName } = await supabase
+    .from("document_templates")
+    .select("id")
+    .eq("doc_type", "contract")
+    .eq("is_active", true)
+    .ilike("name", "%booking agreement%")
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (byName?.id) return byName.id as string;
+  const { data: anyContract } = await supabase
+    .from("document_templates")
+    .select("id")
+    .eq("doc_type", "contract")
+    .eq("is_active", true)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  return (anyContract?.id as string | undefined) ?? null;
 }
 
 /* Public confirm step: the couple/contact edits their details + (when they're
@@ -196,7 +222,13 @@ export async function confirmProposal(token: string, formData: FormData) {
   // ---- 4) generate the agreement, then send them to sign -------------------
   // A journey's own agreement (e.g. the Venue Partner Agreement) wins over the
   // per-event-type contract and the built-in default.
-  const templateId = journeyType.agreement_template_id ?? journey.templateId ?? BOOKING_AGREEMENT_ID;
+  // Resolve the agreement template: journey override → per-type/global proposal
+  // contract → a lookup for an active booking-agreement contract. No hardcoded id
+  // (which could be absent in a fresh tenant); if nothing resolves, tell the client
+  // clearly instead of dead-ending.
+  const templateId =
+    journeyType.agreement_template_id ?? journey.templateId ?? (await resolveDefaultAgreementTemplateId(supabase));
+  if (!templateId) redirect(`/proposal/${token}?error=notemplate`);
   const doc = await generateDocumentRow(supabase, templateId, eventId, "sent");
   if (!doc) redirect(`/proposal/${token}?error=gen`);
 

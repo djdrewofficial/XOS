@@ -39,8 +39,25 @@ type ClientLite = {
   organization?: string | null;
 } | null;
 
-export default async function ProposalPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function ProposalPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { token } = await params;
+  const { error: errorCode } = await searchParams;
+  // A failed confirm redirects back here with ?error=… — surface it so the client
+  // isn't silently bounced to the same form with no explanation.
+  const errorMessage =
+    errorCode === "gen"
+      ? "We hit a snag generating your agreement. Please try again below — if it keeps happening, reply to our email or text us and we'll finish getting you booked."
+      : errorCode === "notemplate"
+        ? "Your booking agreement isn't quite set up on our end yet. Please reply to our email or text us and we'll get this finished for you right away."
+        : errorCode === "invalid"
+          ? "Something went wrong with that link. Please reach out and we'll send you a fresh one."
+          : null;
   const supabase = createAdminClient();
 
   const { data: event } = await supabase
@@ -162,6 +179,11 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
 
   return (
     <Shell>
+      {errorMessage && (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          {errorMessage}
+        </div>
+      )}
       <div className="mb-5 text-center">
         <h1 className="text-xl font-extrabold text-zinc-900 dark:text-white">
           You&apos;re almost there, {firstName}! 🎉
