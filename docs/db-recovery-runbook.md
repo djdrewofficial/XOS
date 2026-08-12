@@ -7,6 +7,18 @@ This is the tested, do-this-when-it-breaks guide for the XOS database. Read the
 
 ---
 
+## GO-LIVE MUST-DO (owner: Drew — before onboarding paying clients)
+
+These three are the real safety net and are **dashboard/account actions** (not code):
+
+- [ ] **Turn on PITR** (§1.2) — the only protection against a mid-day migration mistake with < 24 h loss. Paid add-on (~$100/mo).
+- [ ] **Stand up a separate `xos-dev` project** and point local `.env.local` at it (§4) — so `npm run dev` stops reading/writing the live prod DB.
+- [ ] **Run the recovery drill once and sign off** (§5) — an untested backup is not a backup.
+
+Then, ongoing, before every risky migration (§2): `npm run db:snapshot` **and** `npm run db:storage-snapshot`.
+
+---
+
 ## 0. Architecture facts (why this matters)
 
 - **One production Postgres database.** Local `npm run dev` and prod
@@ -18,7 +30,9 @@ This is the tested, do-this-when-it-breaks guide for the XOS database. Read the
   **not** run through a staging DB first.
 - **Storage buckets** (`event-files`, `event-photos`, `sms-media`, etc.) are **not**
   part of the Postgres backup. They have their own retention — a DB restore does
-  **not** bring back deleted files.
+  **not** bring back deleted files. Use `npm run db:storage-snapshot` (§2) to
+  capture the critical bucket (`event-files` = signed contracts / generated PDFs)
+  plus a manifest of every object before risky changes.
 
 RPO/RTO targets (what to aim for):
 - **RPO** (max data loss): ≤ 24 h with daily backups; ≤ 2 min with PITR enabled.
@@ -40,10 +54,16 @@ RPO/RTO targets (what to aim for):
    tolerate losing a day of bookings/payments.
 3. Current posture (recorded state):
    - **Daily backups: ON** — confirmed by Drew, 2026-07-31. RPO = up to 24 h.
-   - **PITR: OFF** — accepted for now; daily backups + the §2 pre-migration
-     snapshots are the safety net. Re-evaluate if daily-loss risk becomes unacceptable.
-   - **Dev = prod DB: accepted** (no separate dev project); mitigated by snapshots
-     before risky migrations. Re-verify backups + this posture quarterly.
+   - **PITR: OFF** — ⚠️ **go-live blocker** (see checklist at top). Daily backups +
+     the §2 pre-migration snapshots are the interim net, but that's up to 24 h of
+     lost bookings/payments on a bad mid-day migration.
+   - **Dev = prod DB** — ⚠️ **go-live blocker**; no separate dev project yet, so a
+     bad local query hits real client data. Interim mitigation: snapshots before
+     risky migrations. Fix = stand up `xos-dev` (§4).
+   - **Storage backup: tooling added** — `npm run db:storage-snapshot` captures
+     signed contracts (`event-files`) + a full manifest. Run it alongside
+     `db:snapshot` before risky changes (it's not automatic).
+   - **Recovery drill: NOT yet run** — ⚠️ **go-live blocker** (§5 sign-off blank).
 
 ---
 
@@ -60,6 +80,19 @@ npm run db:snapshot
 
 This writes a timestamped schema+data dump to `backups/` (git-ignored). It uses the
 Supabase CLI under the hood, so no local Postgres client tools are required.
+
+**Also snapshot Storage** — the Postgres dump does not include buckets, so a DB
+restore won't bring back signed contracts / PDFs:
+
+```bash
+# needs NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY exported
+npm run db:storage-snapshot            # manifest all buckets + download event-files (contracts/PDFs)
+npm run db:storage-snapshot -- --all   # also download photos/media (large)
+```
+
+This writes `backups/storage/<timestamp>/manifest.json` (every object in every
+bucket) and downloads the critical `event-files` bucket, so signed agreements are
+recoverable independently of the DB.
 
 Get the connection string once: Supabase Dashboard → **Project Settings → Database
 → Connection string → URI** (the `postgresql://postgres:...@db.<ref>.supabase.co:5432/postgres`
