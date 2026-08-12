@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { resolveApiUser } from "@/lib/apiAuth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isRateLimited, recordRateHit } from "@/lib/rateLimit";
 import { searchMusic, resolveYouTubeUrl, parseYouTubeId, type MusicProvider } from "@/lib/music";
 
 export const dynamic = "force-dynamic";
+
+const MINUTE = 60 * 1000;
+const MAX_PER_USER_PER_MIN = 60; // generous for debounced typing; caps scripted quota abuse
 
 /* Music search for the planner's "Add songs" popover. Any signed-in user
    (staff or client/guest) may search. YouTube is intentionally excluded from
@@ -20,6 +25,14 @@ export async function GET(request: Request) {
 
   const { userId } = await resolveApiUser(request);
   if (!userId) return NextResponse.json({ results: [], providers: {} }, { status: 401 });
+
+  // Per-user throttle before any external (Spotify/Apple/YouTube) call, so one
+  // signed-in client can't loop this to burn provider quota.
+  const admin = createAdminClient();
+  if (await isRateLimited(admin, "music_search:user", userId, MAX_PER_USER_PER_MIN, MINUTE)) {
+    return NextResponse.json({ results: [], providers: {}, error: "rate_limited" }, { status: 429 });
+  }
+  await recordRateHit(admin, "music_search:user", userId, MINUTE);
 
   // A pasted YouTube URL resolves to that one video — never an open YouTube search.
   if (parseYouTubeId(q)) {
