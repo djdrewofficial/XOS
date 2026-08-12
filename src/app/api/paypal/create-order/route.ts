@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   if (!info) return NextResponse.json({ error: "This payment link isn't valid." }, { status: 404 });
   if (info.balance <= 0) return NextResponse.json({ error: "This event is paid in full." }, { status: 400 });
 
-  if (await payVerifyRequired(supabase)) {
+  if (await payVerifyRequired(supabase, token)) {
     const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
     if (!(await isPayVerified(supabase, token, sess))) {
       return NextResponse.json({ error: "Please verify your phone to continue." }, { status: 401 });

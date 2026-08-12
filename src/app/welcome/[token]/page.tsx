@@ -54,7 +54,7 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
   // Phone-verification gate: until the client verifies the number on file, hide
   // the balance and pay options. Skipped when paid in full, unpriced, or gate off.
   let needsVerify = false;
-  if (info.priced && !paidInFull && (await payVerifyRequired(supabase))) {
+  if (info.priced && !paidInFull && (await payVerifyRequired(supabase, token))) {
     const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
     needsVerify = !(await isPayVerified(supabase, token, sess));
   }

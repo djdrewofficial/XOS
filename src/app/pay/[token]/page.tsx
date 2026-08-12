@@ -53,7 +53,7 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
 
   // Phone-verification gate: hide the balance/schedule until verified.
   let needsVerify = false;
-  if (info.priced && !paidInFull && (await payVerifyRequired(supabase))) {
+  if (info.priced && !paidInFull && (await payVerifyRequired(supabase, token))) {
     const sess = (await cookies()).get(PAY_SESSION_COOKIE)?.value ?? null;
     needsVerify = !(await isPayVerified(supabase, token, sess));
   }

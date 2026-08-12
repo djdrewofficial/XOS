@@ -33,16 +33,36 @@ async function eventByToken(admin: SupabaseClient, token: string): Promise<Event
   return (data as EventRow | null) ?? null;
 }
 
-/** Whether the pay page should require phone verification. Off when SMS isn't
-    configured (so we never lock a client out with no way to deliver a code). */
-export async function payVerifyRequired(admin: SupabaseClient): Promise<boolean> {
+/** Whether the pay page should require phone verification for this booking. Off
+    when SMS isn't configured, when the setting is disabled, OR when the booking's
+    client has no usable mobile on file — otherwise those clients (landlines,
+    corporate / venue contacts) dead-end at "contact us to pay". With no number to
+    verify against, the unguessable pay_token is the authorization, same as before
+    the gate existed; a client who DOES have a mobile still gets the gate. */
+export async function payVerifyRequired(admin: SupabaseClient, token?: string): Promise<boolean> {
   if (!isHighLevelConfigured()) return false;
   const { data } = await admin
     .from("payment_settings")
     .select("require_pay_verification")
     .eq("id", true)
     .maybeSingle();
-  return (data as { require_pay_verification?: boolean } | null)?.require_pay_verification !== false;
+  if ((data as { require_pay_verification?: boolean } | null)?.require_pay_verification === false) return false;
+
+  // No usable mobile on file → verification is impossible, so don't gate it. Only
+  // skip when we can positively confirm there's no number; if the event/client
+  // can't be resolved, keep the gate on (fail safe).
+  if (token) {
+    const ev = await eventByToken(admin, token);
+    if (ev?.client_id) {
+      const { data: client } = await admin
+        .from("clients")
+        .select("cell_phone")
+        .eq("id", ev.client_id)
+        .maybeSingle();
+      if (!toE164((client as { cell_phone?: string } | null)?.cell_phone ?? "")) return false;
+    }
+  }
+  return true;
 }
 
 /** True when the cookie's session token is a live verified session for this token's event. */
