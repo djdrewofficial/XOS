@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash, randomInt, randomUUID } from "crypto";
+import { createHash, randomInt, randomUUID, timingSafeEqual } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toE164, isHighLevelConfigured, processSmsOutbox } from "@/lib/highlevel";
 
@@ -144,12 +144,25 @@ export async function checkPayCode(
     .maybeSingle();
   const challenge = chal as { id: string; code_hash: string; attempts: number } | null;
   if (!challenge) return { ok: false, error: "That code has expired. Please request a new one." };
-  if (challenge.attempts >= MAX_ATTEMPTS) {
+
+  // Atomically claim one attempt (increment only while under the cap). A null
+  // result means the row didn't qualify — over the limit, consumed, or expired —
+  // so we never exceed MAX_ATTEMPTS even under parallel requests (fixes the
+  // read-check-increment TOCTOU).
+  const { data: newAttempts } = await admin.rpc("pay_verify_attempt", {
+    p_id: challenge.id,
+    p_max: MAX_ATTEMPTS,
+  });
+  if (newAttempts == null) {
     return { ok: false, error: "Too many attempts. Please request a new code." };
   }
 
-  await admin.from("pay_verifications").update({ attempts: challenge.attempts + 1 }).eq("id", challenge.id);
-  if (hashCode(code) !== challenge.code_hash) {
+  // Constant-time compare so a wrong code can't be distinguished by response timing.
+  const computed = hashCode(code);
+  const codeOk =
+    computed.length === challenge.code_hash.length &&
+    timingSafeEqual(Buffer.from(computed), Buffer.from(challenge.code_hash));
+  if (!codeOk) {
     return { ok: false, error: "That code isn't right. Please try again." };
   }
 
