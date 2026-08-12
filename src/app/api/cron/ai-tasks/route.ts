@@ -54,7 +54,31 @@ async function run(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, tz, hour, date, ran });
+  // Surface failures instead of hiding them in a 200 body: log for the Netlify
+  // function logs, drop a best-effort staff notification, and return non-200 so
+  // the cron monitor flags the run (a failed task didn't set last_run_on, so it
+  // retries next tick).
+  const failed = ran.filter((r) => !r.ok);
+  if (failed.length) {
+    console.error("ai-tasks: task(s) failed:", failed);
+    for (const f of failed) {
+      try {
+        await admin.rpc("create_notification", {
+          p_type: "system_alert",
+          p_title: `Scheduled AI task failed: ${f.key}`,
+          p_body: f.error ?? "failed",
+          p_href: "/settings/ai-assistant",
+        });
+      } catch {
+        /* alerting is best-effort — the log + non-200 status are the reliable signals */
+      }
+    }
+  }
+
+  return NextResponse.json(
+    { ok: failed.length === 0, tz, hour, date, ran },
+    { status: failed.length ? 500 : 200 },
+  );
 }
 
 export async function GET(req: Request) {
