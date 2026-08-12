@@ -3,6 +3,9 @@ import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPayInfo } from "@/lib/payInfo";
 import { payVerifyRequired, isPayVerified, PAY_SESSION_COOKIE } from "@/lib/payVerify";
+import { isRateLimited, recordRateHit } from "@/lib/rateLimit";
+
+const HOUR = 60 * 60 * 1000;
 
 /* PUBLIC (middleware-exempt). The client tapped "I've sent my Zelle" on the
    welcome page. We record a PENDING payment (status='pending') so it shows in
@@ -33,6 +36,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Please verify your phone to continue." }, { status: 401 });
     }
   }
+
+  // Nothing owed → no claim (would insert a meaningless $0 pending row).
+  if (info.balance <= 0) {
+    return NextResponse.json({ error: "This booking is already paid in full — nothing is owed." }, { status: 400 });
+  }
+
+  // Dedupe: if there's already an open (pending, not-removed) Zelle claim for this
+  // event, don't insert another row / note / notification — repeated "I've sent my
+  // Zelle" taps just return ok until the office confirms or removes the first one.
+  const { data: openClaim } = await supabase
+    .from("payments")
+    .select("id")
+    .eq("event_id", info.eventId)
+    .eq("status", "pending")
+    .eq("method", "zelle")
+    .is("deleted_at", null)
+    .limit(1)
+    .maybeSingle();
+  if (openClaim) return NextResponse.json({ ok: true, deduped: true });
+
+  // Per-event backstop so distinct claims can't be spammed rapidly.
+  if (await isRateLimited(supabase, "zelle_pending:event", info.eventId, 3, HOUR)) {
+    return NextResponse.json(
+      { error: "We've already logged your Zelle note — please give us a moment to confirm it." },
+      { status: 429 },
+    );
+  }
+  await recordRateHit(supabase, "zelle_pending:event", info.eventId, HOUR);
 
   const requested = Number(body.amount);
   const amount = Math.min(info.balance, Number.isFinite(requested) && requested > 0 ? requested : info.suggested);
