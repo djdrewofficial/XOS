@@ -83,7 +83,11 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
       pkgDefault = num(pkg.default_price);
     }
   }
-  const packagePrice = financialsVisible ? num(ev.package_price_override) || num(ev.package_price_locked) || pkgDefault : 0;
+  // ?? (not ||) so a legitimate $0 comp override is honored — || treats 0 as
+  // falsy and would fall through to the catalog price. Coalesce the RAW values
+  // before num() so null (unset) falls through but 0 (comped) sticks. Mirrors
+  // eventTotal / feeSummary.
+  const packagePrice = financialsVisible ? num(ev.package_price_override ?? ev.package_price_locked ?? pkgDefault) : 0;
 
   const addonIds = (eAddons ?? []).map((a) => a.addon_id).filter(Boolean);
   const meta = new Map<string, { name: string; description: string | null; default_price: number }>();
@@ -93,7 +97,8 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   }
   const addons: AccountAddon[] = (eAddons ?? []).map((a) => {
     const mm = meta.get(a.addon_id);
-    const unit = num(a.price_override) || num(a.price_locked) || (mm?.default_price ?? 0);
+    // ?? (not ||) so a $0 comped/free add-on price is honored, matching feeSummary.
+    const unit = num(a.price_override ?? a.price_locked ?? mm?.default_price ?? 0);
     const qty = a.quantity ?? 1;
     return { name: mm?.name ?? "Add-on", detail: mm?.description ?? null, price: financialsVisible ? unit * qty : 0, qty };
   });
