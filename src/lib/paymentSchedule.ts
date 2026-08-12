@@ -47,8 +47,12 @@ export function buildScheduleRows(opts: {
   }
 
   const count = Math.max(1, Math.round(plan.count));
+  // Clamp the deposit to [0, total] so the schedule always sums to the total: a
+  // deposit larger than the total would otherwise show the full deposit while the
+  // remaining splits floor at $0, over-summing the schedule.
+  const dep = Math.max(0, Math.min(deposit, total));
   const rows: ScheduleRow[] = [
-    { seq: 1, amount: round2(deposit), label: "Deposit", due_date: today },
+    { seq: 1, amount: round2(dep), label: "Deposit", due_date: today },
   ];
 
   // final payment lands on the package's due date; earlier ones step back monthly
@@ -59,7 +63,7 @@ export function buildScheduleRows(opts: {
     else finalDue.setDate(finalDue.getDate() + termsDays);
   }
 
-  const remaining = Math.max(0, total - deposit);
+  const remaining = Math.max(0, total - dep);
   const per = Math.floor((remaining / count) * 100) / 100;
   for (let i = 0; i < count; i++) {
     const isLast = i === count - 1;
