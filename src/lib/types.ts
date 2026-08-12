@@ -159,5 +159,13 @@ export function money(n: number | null | undefined): string {
 export function eventTotal(e: XEvent): number {
   // override → price locked at assignment → live catalog price (pre-00030 fallback)
   const pkg = e.package_price_override ?? e.package_price_locked ?? e.package?.default_price ?? 0;
-  return Number(pkg) + e.overtime_fee + e.travel_fee - e.discount1_amount - e.discount2_amount;
+  // Cast every operand — if PostgREST ever returns these numeric columns as
+  // strings, an un-cast operand would string-concatenate instead of add.
+  return (
+    Number(pkg) +
+    Number(e.overtime_fee) +
+    Number(e.travel_fee) -
+    Number(e.discount1_amount) -
+    Number(e.discount2_amount)
+  );
 }
