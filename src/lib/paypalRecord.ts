@@ -41,7 +41,7 @@ export async function recordPaypalPayment(
 
   const { data: ev } = await supabase
     .from("events")
-    .select("id, client_id, name, client:clients(first_name, email)")
+    .select("id, client_id, name, pay_token, client:clients(first_name, email)")
     .eq("id", params.eventId)
     .maybeSingle();
 
@@ -83,6 +83,10 @@ export async function recordPaypalPayment(
     const companyName = cs?.company_name ?? "Xpress Entertainment";
     const first = client.first_name ?? "there";
     const amt = base.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    // The pay page is keyed by pay_token, NOT the event id — using the event id
+    // 404s and leaks the raw UUID. Fall back to the app home if a token is missing.
+    const payToken = (ev?.pay_token as string | null) ?? null;
+    const payUrl = payToken ? `${appUrl()}/pay/${payToken}` : appUrl();
     await supabase.from("email_log").insert({
       event_id: params.eventId,
       to_address: client.email,
@@ -96,7 +100,7 @@ export async function recordPaypalPayment(
           ev?.name ?? "your event"
         }.</p><p>This email is your receipt. We can't wait to celebrate with you!</p>`,
         buttonLabel: "View Your Event Balance",
-        buttonUrl: `${appUrl()}/pay/${params.eventId}`,
+        buttonUrl: payUrl,
         companyName,
       }),
     });
