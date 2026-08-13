@@ -11,7 +11,7 @@ This is the tested, do-this-when-it-breaks guide for the XOS database. Read the
 
 These three are the real safety net and are **dashboard/account actions** (not code):
 
-- [ ] **Turn on PITR** (§1.2) — the only protection against a mid-day migration mistake with < 24 h loss. Paid add-on (~$100/mo).
+- [x] **Turn on PITR** (§1.2) — ✅ **enabled** (confirmed 2026-08-13: continuous WAL archiving active on prod, 0 failures). RPO now ~2 min instead of up to 24 h.
 - [ ] **Stand up a separate `xos-dev` project** and point local `.env.local` at it (§4) — so `npm run dev` stops reading/writing the live prod DB.
 - [ ] **Run the recovery drill once and sign off** (§5) — an untested backup is not a backup.
 
@@ -54,9 +54,10 @@ RPO/RTO targets (what to aim for):
    tolerate losing a day of bookings/payments.
 3. Current posture (recorded state):
    - **Daily backups: ON** — confirmed by Drew, 2026-07-31. RPO = up to 24 h.
-   - **PITR: OFF** — ⚠️ **go-live blocker** (see checklist at top). Daily backups +
-     the §2 pre-migration snapshots are the interim net, but that's up to 24 h of
-     lost bookings/payments on a bad mid-day migration.
+   - **PITR: ON** — enabled 2026-08-13 (confirmed via active continuous WAL archiving:
+     `pg_stat_archiver` shows ~9.5k segments archived, most recent minutes ago, 0
+     failures). RPO now ~2 min. To restore: Dashboard → Database → Backups → Point in
+     Time (see §3-C).
    - **Dev = prod DB** — ⚠️ **go-live blocker**; no separate dev project yet, so a
      bad local query hits real client data. Interim mitigation: snapshots before
      risky migrations. Fix = stand up `xos-dev` (§4).
