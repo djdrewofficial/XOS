@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { processOutbox } from "@/lib/mailgun";
+import { processOutbox, cleanupOutboxTmp } from "@/lib/mailgun";
 import { processSmsOutbox, syncHighLevelConversations } from "@/lib/highlevel";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isRateLimited, recordRateHit } from "@/lib/rateLimit";
@@ -128,9 +128,29 @@ async function run(req: Request) {
     }
   }
 
+  // Once a day, prune expired HighLevel-attachment temp files (outbox-tmp/) so
+  // Storage doesn't grow unbounded. Rate-limited so only one of the frequent cron
+  // ticks does the work; best-effort so it never affects the drain result.
+  let tmpCleaned: number | undefined;
+  if (!(await isRateLimited(admin, "cleanup:outbox_tmp", "global", 1, 24 * 60 * 60 * 1000))) {
+    await recordRateHit(admin, "cleanup:outbox_tmp", "global", 24 * 60 * 60 * 1000);
+    try {
+      tmpCleaned = (await cleanupOutboxTmp(admin)).deleted;
+    } catch {
+      /* best-effort */
+    }
+  }
+
   const status = errors.length ? 500 : 200;
   return NextResponse.json(
-    { email, sms, inbox, ...(cronMisses.length ? { cronMisses } : {}), ...(errors.length ? { errors } : {}) },
+    {
+      email,
+      sms,
+      inbox,
+      ...(cronMisses.length ? { cronMisses } : {}),
+      ...(tmpCleaned ? { tmpCleaned } : {}),
+      ...(errors.length ? { errors } : {}),
+    },
     { status },
   );
 }

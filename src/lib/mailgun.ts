@@ -349,9 +349,14 @@ function brandWrap(html: string, companyName: string, footer?: EmailFooter): str
   );
 }
 
+// HighLevel fetches these URLs when it sends (which can be delayed/retried), so a
+// short TTL means a delayed send delivers a broken attachment. Give a 7-day window;
+// cleanupOutboxTmp() prunes the temp objects after they expire.
+const OUTBOX_TMP_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 /** Uploads buffer attachments to a temp path in event-files and returns signed
-    URLs (24h) — HighLevel fetches these when it sends the email. Uses the
-    service-role admin client so it works from the cron with no user session. */
+    URLs — HighLevel fetches these when it sends the email. Uses the service-role
+    admin client so it works from the cron with no user session. */
 async function attachmentsToSignedUrls(
   admin: SupabaseClient,
   msgId: string,
@@ -368,10 +373,41 @@ async function attachmentsToSignedUrls(
       console.error("HighLevel attachment upload failed:", upErr.message);
       continue;
     }
-    const { data: signed } = await admin.storage.from("event-files").createSignedUrl(path, 60 * 60 * 24);
+    const { data: signed } = await admin.storage.from("event-files").createSignedUrl(path, OUTBOX_TMP_TTL_SECONDS);
     if (signed?.signedUrl) urls.push(signed.signedUrl);
   }
   return urls;
+}
+
+/** Prune stale HighLevel-attachment temp objects under outbox-tmp/ — once their
+    signed URLs have expired (7 days) the files are dead weight. Storage has no
+    lifecycle policy, so a scheduled caller (the send-outbox cron) runs this daily.
+    Best-effort: never throws so it can't disturb the drain. */
+export async function cleanupOutboxTmp(
+  admin: SupabaseClient,
+  olderThanMs: number = OUTBOX_TMP_TTL_SECONDS * 1000,
+): Promise<{ deleted: number }> {
+  const cutoff = Date.now() - olderThanMs;
+  let deleted = 0;
+  try {
+    // outbox-tmp/<msgId>/<file> — list the per-message folders, then their files.
+    const { data: dirs } = await admin.storage.from("event-files").list("outbox-tmp", { limit: 1000 });
+    for (const dir of dirs ?? []) {
+      if (dir.id !== null) continue; // folders have id === null; skip stray files
+      const prefix = `outbox-tmp/${dir.name}`;
+      const { data: files } = await admin.storage.from("event-files").list(prefix, { limit: 1000 });
+      const stale = (files ?? [])
+        .filter((f) => f.id !== null && f.created_at && new Date(f.created_at).getTime() < cutoff)
+        .map((f) => `${prefix}/${f.name}`);
+      if (stale.length) {
+        const { error } = await admin.storage.from("event-files").remove(stale);
+        if (!error) deleted += stale.length;
+      }
+    }
+  } catch (err) {
+    console.error("cleanupOutboxTmp failed:", err instanceof Error ? err.message : String(err));
+  }
+  return { deleted };
 }
 
 /** Drains queued rows from the outbox, using each row's stored sender identity.
