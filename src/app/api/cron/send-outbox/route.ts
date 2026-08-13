@@ -1,27 +1,34 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { processOutbox, cleanupOutboxTmp } from "@/lib/mailgun";
 import { processSmsOutbox, syncHighLevelConversations } from "@/lib/highlevel";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isRateLimited, recordRateHit } from "@/lib/rateLimit";
 
-/* Protected outbox drainer. Trigger every minute from pg_cron (see migration 00023)
-   or any external scheduler, with header:  Authorization: Bearer <CRON_SECRET>.
-   Runs with the service-role client so it works with no user session. */
+/* Protected outbox drainer. Driven every minute by pg_cron (cron.schedule job
+   'xos-drain-outbox' → net.http_post here) — the reliable path on this project,
+   since the Netlify scheduled function doesn't fire. Also accepts the Netlify
+   CRON_SECRET. Runs with the service-role client so it works with no user session. */
 
 export const dynamic = "force-dynamic";
 
-function authorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
+async function authorized(req: Request, admin: SupabaseClient): Promise<boolean> {
   const header = req.headers.get("authorization") ?? "";
-  return header === `Bearer ${secret}`;
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!token) return false;
+  // 1) Netlify env secret (external scheduler / Netlify scheduled function).
+  if (process.env.CRON_SECRET && token === process.env.CRON_SECRET) return true;
+  // 2) DB-stored token used by the pg_cron drain job. service-role bypasses the
+  //    RLS on cron_auth, so only trusted server contexts can read it.
+  const { data } = await admin.from("cron_auth").select("token").limit(1).maybeSingle();
+  return !!data?.token && token === data.token;
 }
 
 async function run(req: Request) {
-  if (!authorized(req)) {
+  const admin = createAdminClient();
+  if (!(await authorized(req, admin))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const admin = createAdminClient();
   const email = await processOutbox(admin);
   const sms = await processSmsOutbox(admin);
   // ?full=1 forces a complete conversation backfill (first run / repairs)
