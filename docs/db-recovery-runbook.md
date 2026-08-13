@@ -170,12 +170,20 @@ declaring done.
 Today local dev reads/writes the live database. Options, cheapest first:
 
 1. **Separate dev Supabase project** (recommended) — ~$10/mo in this org (or a free
-   project if the org has free-tier capacity). One-time setup:
-   - Create project `xos-dev` in the same org.
-   - Apply every file in `supabase/migrations/` to it (schema parity).
-   - Seed minimal fake data (one test event/client/venue) — never copy real PII.
-   - Point **local** `.env.local` at `xos-dev` (URL + anon/service keys); leave
-     Netlify prod env untouched.
+   project if the org has free-tier capacity). One-time setup, ~10 min:
+   - Create project `xos-dev` in the same org (Dashboard → **New project**). Note its
+     **project ref** (the `abcd…` in the project URL).
+   - Apply the full schema — the Supabase CLI runs every file in
+     `supabase/migrations/` in order, so a fresh project ends up at exact parity:
+     ```bash
+     npx --yes supabase link --project-ref <xos-dev-ref>   # prompts for the db password
+     npx --yes supabase db push                            # applies all migrations
+     ```
+   - Seed minimal fake data (one test event/client/venue) — **never copy real PII**.
+   - Point **local** `.env.local` at `xos-dev`: from the new project's
+     **Settings → API**, copy Project URL + anon key + service-role key into
+     `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+     `SUPABASE_SERVICE_ROLE_KEY` (see `.env.local.example`). Leave Netlify prod env untouched.
    - Trade-off: local dev no longer shows real production data (that's the point).
 2. **Supabase branches** (~$0.013/hr, ephemeral) — spin up a branch DB to test a
    migration, merge if good, tear down. Great for CI/migration rehearsal; not a
