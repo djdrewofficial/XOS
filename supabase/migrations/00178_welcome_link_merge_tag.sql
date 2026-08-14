@@ -5,7 +5,7 @@
 insert into public.merge_tags (tag_key, label, group_name, description, source_type, source_value, is_builtin, is_active)
 values (
   'welcome_link',
-  'Welcome / Get-Started Link',
+  'XOS Welcome Link',
   'Client Journey',
   'The client''s per-event welcome page to start planning — https://xos.xpressdjs.com/welcome/<token>',
   'builtin',
