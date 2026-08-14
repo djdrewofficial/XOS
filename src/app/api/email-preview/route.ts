@@ -57,12 +57,21 @@ const SAMPLE: Record<string, string> = {
     "</tbody></table>",
 };
 
-function applySample(text: string, companyName: string, supported: Set<string>, signature = ""): string {
+function applySample(
+  text: string,
+  companyName: string,
+  supported: Set<string>,
+  extra: Record<string, string> = {},
+  signature = "",
+): string {
   let out = (text || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
   // Signature keys go before company_name so a <company_name> *inside* the
-  // signature still resolves on the same pass.
+  // signature still resolves on the same pass. `extra` carries custom static merge
+  // tags' real values (from the merge_tags table) so the preview shows what a real
+  // send produces instead of a muted placeholder.
   const map: Record<string, string> = {
     ...SAMPLE,
+    ...extra,
     company_email_signature: signature,
     email_signature: signature,
     company_name: companyName,
@@ -93,6 +102,28 @@ async function fetchSupportedTags(
     if (t) set.add(t.toLowerCase());
   }
   return set;
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Custom static merge tags (Settings → Merge Tags) resolve to a fixed value on a
+// real send, so fill them with that value in the preview — escaped like the real
+// renderer (xos_html_escape).
+async function fetchStaticCustomTags(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Record<string, string>> {
+  const { data } = await supabase
+    .from("merge_tags")
+    .select("tag_key, source_value")
+    .eq("is_active", true)
+    .eq("source_type", "static");
+  const out: Record<string, string> = {};
+  for (const r of (data ?? []) as Array<{ tag_key: string; source_value: string | null }>) {
+    if (r.tag_key) out[r.tag_key.toLowerCase()] = escHtml(r.source_value ?? "");
+  }
+  return out;
 }
 
 // Final pass, mirroring the renderer's strip. Any bare <tag> still present after
@@ -174,12 +205,18 @@ export async function POST(req: NextRequest) {
     .from("company_settings").select("company_name, email_signature_html").eq("id", true).maybeSingle();
   const companyName = company?.company_name ?? "Xpress Entertainment";
   const signature = company?.email_signature_html ?? "";
-  const supported = await fetchSupportedTags(supabase);
+  const [supported, customStatic] = await Promise.all([
+    fetchSupportedTags(supabase),
+    fetchStaticCustomTags(supabase),
+  ]);
 
-  // applySample fills field tags; applyCtaTags renders the interactive buttons/
-  // links; flagUnknownTags marks any tag the renderer would drop in red (body only —
-  // never inject button/flag HTML into a subject line).
-  const body = flagUnknownTags(applyCtaTags(applySample(body_html, companyName, supported, signature), sms), supported);
+  // applySample fills field tags (+ custom static tags' real values); applyCtaTags
+  // renders the interactive buttons/links; flagUnknownTags marks any tag the renderer
+  // would drop in red (body only — never inject button/flag HTML into a subject line).
+  const body = flagUnknownTags(
+    applyCtaTags(applySample(body_html, companyName, supported, customStatic, signature), sms),
+    supported,
+  );
   let html: string;
   if (sms) {
     html = `<div style="background:#f4f2fa;padding:24px;font-family:ui-sans-serif,system-ui,Arial,sans-serif;">
@@ -193,5 +230,5 @@ export async function POST(req: NextRequest) {
 
   // Subject is plain text — fill supported tags but don't inject flag HTML; an
   // unsupported tag stays visible as literal <tag> so the editor still sees it.
-  return NextResponse.json({ html, subject: applySample(subject, companyName, supported) });
+  return NextResponse.json({ html, subject: applySample(subject, companyName, supported, customStatic) });
 }
