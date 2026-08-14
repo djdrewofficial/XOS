@@ -19,6 +19,7 @@ const SAMPLE: Record<string, string> = {
   poc_email: "drew@xpressdjs.com", poc_phone: "(555) 010-2020",
   billing_terms: "Installments", legal_venue: "Broward County, Florida",
   djemployee1_stage_name: "DJ Drew", djemployee1_cell_phone: "(555) 234-5678",
+  dj_calendar_link: "https://xpressdjs.com/drewplanning",
   event_name: "Jordan & Taylor’s Wedding", event_type: "Wedding",
   xos_welcome_link: "https://xos.xpressdjs.com/welcome/sample",
   event_date_long: "Saturday, August 15, 2026", event_date_short: "08/15/2026",
