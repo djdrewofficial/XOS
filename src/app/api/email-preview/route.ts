@@ -20,7 +20,7 @@ const SAMPLE: Record<string, string> = {
   billing_terms: "Installments", legal_venue: "Broward County, Florida",
   djemployee1_stage_name: "DJ Drew", djemployee1_cell_phone: "(555) 234-5678",
   event_name: "Jordan & Taylor’s Wedding", event_type: "Wedding",
-  welcome_link: "https://xos.xpressdjs.com/welcome/sample",
+  xos_welcome_link: "https://xos.xpressdjs.com/welcome/sample",
   event_date_long: "Saturday, August 15, 2026", event_date_short: "08/15/2026",
   event_date_countdown: "50", venue_name: "The Grand Ballroom",
   venue_address: "456 Ocean Dr, Miami, FL",
