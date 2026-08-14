@@ -9,6 +9,7 @@ import { emailShell, signButtonHtml, appUrl } from "@/lib/signing";
 // surface as red flags (see flagUnknownTags) instead of looking filled.
 const SAMPLE: Record<string, string> = {
   first_name: "Jordan", last_name: "Rivera", client_name: "Jordan Rivera",
+  client_first_name: "Jordan",
   client_email: "jordan@example.com", client_cell: "(555) 123-4567",
   client_organization: "Acme Co.", client_address: "123 Main St, Fort Lauderdale, FL",
   authorized_rep_name: "Jordan Rivera", authorized_rep_title: "Owner",
