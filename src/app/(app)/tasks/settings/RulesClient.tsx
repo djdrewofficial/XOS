@@ -323,7 +323,7 @@ function RuleBuilder({
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Only if</span>
                 {draft.conditions.length > 1 && (
-                  <select value={draft.condition_logic} onChange={(e) => set({ condition_logic: e.target.value })} className="input h-6 text-xs">
+                  <select value={draft.condition_logic} onChange={(e) => set({ condition_logic: e.target.value })} className="input text-xs">
                     <option value="all">match ALL</option>
                     <option value="any">match ANY</option>
                   </select>
@@ -459,24 +459,24 @@ function ConditionRow({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select value={cond.field} onChange={(e) => changeField(e.target.value)} className="input h-8 text-xs">
+      <select value={cond.field} onChange={(e) => changeField(e.target.value)} className="input text-xs">
         {CONDITION_FIELDS.map((f) => (
           <option key={f.field} value={f.field}>{f.label}</option>
         ))}
       </select>
 
       {kind === "boolean" ? (
-        <select value={cond.op} onChange={(e) => onChange({ ...cond, op: e.target.value as ConditionOp })} className="input h-8 text-xs">
+        <select value={cond.op} onChange={(e) => onChange({ ...cond, op: e.target.value as ConditionOp })} className="input text-xs">
           <option value="is_true">is yes</option>
           <option value="is_false">is no</option>
         </select>
       ) : (
         <>
-          <select value={cond.op} onChange={(e) => onChange({ ...cond, op: e.target.value as ConditionOp })} className="input h-8 text-xs">
+          <select value={cond.op} onChange={(e) => onChange({ ...cond, op: e.target.value as ConditionOp })} className="input text-xs">
             <option value="is">is</option>
             <option value="is_not">is not</option>
           </select>
-          <select value={cond.value ?? ""} onChange={(e) => onChange({ ...cond, value: e.target.value })} className="input h-8 text-xs">
+          <select value={cond.value ?? ""} onChange={(e) => onChange({ ...cond, value: e.target.value })} className="input text-xs">
             {(enumValues ?? []).map((v) => (
               <option key={v} value={v}>{v}</option>
             ))}

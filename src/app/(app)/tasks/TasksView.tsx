@@ -134,16 +134,16 @@ export default function TasksView({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search tasks…"
-            className="input h-8 w-48 text-sm"
+            className="input w-48 text-sm"
           />
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)} className="input h-8 text-sm">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)} className="input text-sm">
             <option value="open">Open (not done)</option>
             <option value="not_started">Not started</option>
             <option value="in_progress">In progress</option>
             <option value="done">Done</option>
             <option value="all">All statuses</option>
           </select>
-          <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="input h-8 text-sm">
+          <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="input text-sm">
             <option value="all">Anyone</option>
             <option value="unassigned">Unassigned</option>
             {staff.map((s) => (
@@ -152,7 +152,7 @@ export default function TasksView({
               </option>
             ))}
           </select>
-          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="input h-8 text-sm">
+          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="input text-sm">
             <option value="all">All departments</option>
             {departments.map((d) => (
               <option key={d} value={d}>
@@ -336,7 +336,7 @@ function TaskDetail({
           <select
             defaultValue={task.assigned_employee_id ?? ""}
             onChange={(e) => start(async () => { await assignTask(task.id, e.target.value || null); onChanged(); })}
-            className="input h-7 text-xs"
+            className="input text-xs"
           >
             <option value="">Unassigned</option>
             {staff.map((s) => (
@@ -349,7 +349,7 @@ function TaskDetail({
           <select
             defaultValue={task.status}
             onChange={(e) => start(async () => { await setTaskStatus(task.id, e.target.value); onChanged(); })}
-            className="input h-7 text-xs"
+            className="input text-xs"
           >
             <option value="not_started">Not started</option>
             <option value="in_progress">In progress</option>
@@ -381,7 +381,7 @@ function TaskDetail({
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder="Add a comment…"
-              className="input h-7 flex-1 text-xs"
+              className="input flex-1 text-xs"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && comment.trim()) {
                   const body = comment;
