@@ -621,7 +621,7 @@ function MentionComposer({
   const suggestions = useMemo(() => {
     if (menu === null) return [];
     const n = menu.toLowerCase();
-    return staff.filter((s) => s.name.toLowerCase().includes(n)).slice(0, 6);
+    return staff.filter((s) => s.name.toLowerCase().includes(n)).slice(0, 30);
   }, [menu, staff]);
 
   function onChange(v: string) {
@@ -652,7 +652,7 @@ function MentionComposer({
   return (
     <div className="relative mt-3">
       {suggestions.length > 0 && (
-        <div className="absolute bottom-full mb-1 w-full overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900">
+        <div className="absolute bottom-full mb-1 max-h-56 w-full overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900">
           {suggestions.map((s) => (
             <button key={s.id} onClick={() => pick(s)} className="block w-full px-3 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10">
               {s.name} <span className="text-[11px] text-zinc-400">{s.department}</span>

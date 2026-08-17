@@ -56,11 +56,26 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
     commentCount.set(k, (commentCount.get(k) ?? 0) + 1);
   }
 
-  const staff: StaffOption[] = (rawStaff ?? []).map((s) => ({
-    id: s.id as string,
-    name: (s.stage_name as string) || [s.first_name, s.last_name].filter(Boolean).join(" "),
-    department: (s.staff_category as string) ?? null,
-  }));
+  // Active staff only (query filters is_active), ordered so Administrators &
+  // Salespeople surface first in every dropdown, then the rest, then by name.
+  const DEPT_RANK: Record<string, number> = {
+    Administrators: 0,
+    Salespeople: 1,
+    Production: 2,
+    "Live Musicians": 3,
+    Subcontractors: 4,
+  };
+  const staff: StaffOption[] = (rawStaff ?? [])
+    .map((s) => ({
+      id: s.id as string,
+      name: (s.stage_name as string) || [s.first_name, s.last_name].filter(Boolean).join(" "),
+      department: (s.staff_category as string) ?? null,
+    }))
+    .sort(
+      (a, b) =>
+        (DEPT_RANK[a.department ?? ""] ?? 9) - (DEPT_RANK[b.department ?? ""] ?? 9) ||
+        a.name.localeCompare(b.name),
+    );
 
   const events: EventOption[] = (rawEvents ?? []).map((e) => {
     const names = ((e.event_clients as unknown as { is_primary?: boolean; client?: { first_name?: string } }[]) ?? [])
