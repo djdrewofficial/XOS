@@ -60,6 +60,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
       { href: "/events", label: "Events", icon: faCalendarDays, module: "events" },
       { href: "/clients", label: "Clients", icon: faUsers, module: "clients" },
       { href: "/documents", label: "Documents", icon: faFileSignature, module: "documents" },
+      { href: "/tasks", label: "Tasks Manager", icon: faListCheck, module: "tasks" },
     ],
   },
   {
