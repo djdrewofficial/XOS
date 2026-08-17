@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   CONDITION_FIELDS,
@@ -107,6 +107,24 @@ function summarize(r: RuleRow): string {
 export default function RulesClient({ rules, options }: { rules: RuleRow[]; options: Options }) {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft | null>(null);
+  // mirror server rows locally so the toggle flips instantly (optimistic), then reconcile.
+  // Adjust-state-on-prop-change (no effect): re-sync when fresh server data arrives.
+  const [rows, setRows] = useState<RuleRow[]>(rules);
+  const [prevRules, setPrevRules] = useState(rules);
+  const [, startTransition] = useTransition();
+  if (rules !== prevRules) {
+    setPrevRules(rules);
+    setRows(rules);
+  }
+
+  function onToggle(r: RuleRow) {
+    const next = !r.is_active;
+    setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, is_active: next } : x)));
+    startTransition(async () => {
+      await toggleRule(r.id, next);
+      router.refresh();
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -116,16 +134,16 @@ export default function RulesClient({ rules, options }: { rules: RuleRow[]; opti
         </button>
       </div>
 
-      {rules.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="card p-10 text-center text-sm text-zinc-500">
           No rules yet. Create one to start auto-generating tasks — try &ldquo;4 days before the event, remind the DJ to review the timeline.&rdquo;
         </div>
       ) : (
         <div className="card divide-y divide-zinc-100 dark:divide-white/5">
-          {rules.map((r) => (
+          {rows.map((r) => (
             <div key={r.id} className="flex items-center gap-3 px-4 py-3">
               <button
-                onClick={async () => { await toggleRule(r.id, !r.is_active); router.refresh(); }}
+                onClick={() => onToggle(r)}
                 title={r.is_active ? "Active — click to pause" : "Paused — click to activate"}
                 className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${r.is_active ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-700"}`}
               >
@@ -143,7 +161,11 @@ export default function RulesClient({ rules, options }: { rules: RuleRow[]; opti
                 Edit
               </button>
               <button
-                onClick={async () => { if (confirm(`Delete rule "${r.name}"? Tasks it already created stay.`)) { await deleteRule(r.id); router.refresh(); } }}
+                onClick={() => {
+                  if (!confirm(`Delete rule "${r.name}"? Tasks it already created stay.`)) return;
+                  setRows((prev) => prev.filter((x) => x.id !== r.id));
+                  startTransition(async () => { await deleteRule(r.id); router.refresh(); });
+                }}
                 className="text-xs text-red-500 hover:underline"
               >
                 Delete

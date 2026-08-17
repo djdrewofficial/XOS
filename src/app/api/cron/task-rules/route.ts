@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { evaluateTaskRules } from "@/lib/taskRules";
+import { notifyAssignments } from "@/lib/taskNotify";
 
 /* Tasks Manager engine. Driven daily by pg_cron (cron.schedule job 'xos-task-rules'
    → net.http_post here) using the shared cron_auth token, same reliable path as the
@@ -25,6 +26,7 @@ async function run(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const result = await evaluateTaskRules(admin);
+  await notifyAssignments(result.created_tasks);
   return NextResponse.json(result, { status: result.ok ? 200 : 500 });
 }
 

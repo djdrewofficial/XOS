@@ -233,11 +233,14 @@ function renderTokens(tpl: string, ev: EvalEvent): string {
 
 // ---- The evaluator --------------------------------------------------------
 
+export type CreatedTask = { id: string; title: string; assigned_employee_id: string | null; event_id: string | null };
+
 export type EvaluateResult = {
   ok: boolean;
   created: number;
   rules_evaluated: number;
   events_scanned: number;
+  created_tasks: CreatedTask[];
   error?: string;
 };
 
@@ -258,7 +261,8 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
       )
       .eq("is_active", true);
     const activeRules = (rules ?? []) as RuleRow[];
-    if (activeRules.length === 0) return { ok: true, created: 0, rules_evaluated: 0, events_scanned: 0 };
+    if (activeRules.length === 0)
+      return { ok: true, created: 0, rules_evaluated: 0, events_scanned: 0, created_tasks: [] };
 
     // Candidate events: not archived, dated from yesterday onward (upcoming work).
     const fromIso = epochDayToIso(today - GRACE);
@@ -274,7 +278,8 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
       .is("archived_at", null)
       .gte("event_date", fromIso);
     const events = rawEvents ?? [];
-    if (events.length === 0) return { ok: true, created: 0, rules_evaluated: activeRules.length, events_scanned: 0 };
+    if (events.length === 0)
+      return { ok: true, created: 0, rules_evaluated: activeRules.length, events_scanned: 0, created_tasks: [] };
 
     const eventIds = events.map((e) => e.id as string);
 
@@ -435,12 +440,19 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
     }
 
     let created = 0;
+    const createdTasks: CreatedTask[] = [];
     if (inserts.length > 0) {
       // chunked insert; dedupe_key unique index is the final backstop
       for (let i = 0; i < inserts.length; i += 500) {
         const chunk = inserts.slice(i, i + 500);
-        const { error } = await admin.from("tasks").insert(chunk);
-        if (!error) created += chunk.length;
+        const { data, error } = await admin
+          .from("tasks")
+          .insert(chunk)
+          .select("id,title,assigned_employee_id,event_id");
+        if (!error && data) {
+          created += data.length;
+          for (const row of data) createdTasks.push(row as unknown as CreatedTask);
+        }
       }
     }
 
@@ -449,13 +461,14 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
       .update({ last_evaluated_at: new Date().toISOString() })
       .in("id", activeRules.map((r) => r.id));
 
-    return { ok: true, created, rules_evaluated: activeRules.length, events_scanned: ctx.length };
+    return { ok: true, created, rules_evaluated: activeRules.length, events_scanned: ctx.length, created_tasks: createdTasks };
   } catch (e) {
     return {
       ok: false,
       created: 0,
       rules_evaluated: 0,
       events_scanned: 0,
+      created_tasks: [],
       error: e instanceof Error ? e.message : String(e),
     };
   }

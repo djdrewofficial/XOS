@@ -2,17 +2,25 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule, getMe } from "@/lib/auth";
 import { DEPARTMENTS } from "@/lib/taskRules";
-import TasksView, { type TaskCard, type StaffOption } from "./TasksView";
+import TasksView, { type TaskCard, type StaffOption, type EventOption } from "./TasksView";
 
 export const dynamic = "force-dynamic";
 
-export default async function TasksPage() {
+const usDate = (iso: string | null) =>
+  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }) : "";
+
+export default async function TasksPage({ searchParams }: { searchParams: Promise<{ task?: string }> }) {
   const supabase = await createClient();
   await requireModule("tasks", "view", { supabase });
   const me = await getMe(supabase);
   const canEdit = me?.can["tasks"] === "edit";
+  const { task: openTaskId } = await searchParams;
 
-  const [{ data: rawTasks }, { data: rawStaff }, { data: counts }] = await Promise.all([
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 1);
+  const todayMinus1y = cutoff.toISOString().slice(0, 10);
+
+  const [{ data: rawTasks }, { data: rawStaff }, { data: counts }, { data: rawEvents }] = await Promise.all([
     supabase
       .from("tasks")
       .select(
@@ -29,6 +37,17 @@ export default async function TasksPage() {
       .eq("is_active", true)
       .order("first_name"),
     supabase.from("task_comments").select("task_id"),
+    supabase
+      .from("events")
+      .select(
+        `id,event_number,name,event_date,
+         event_type:event_types(name),
+         event_clients(is_primary,client:clients(first_name))`,
+      )
+      .is("archived_at", null)
+      .gte("event_date", todayMinus1y)
+      .order("event_date", { ascending: false })
+      .limit(500),
   ]);
 
   const commentCount = new Map<string, number>();
@@ -42,6 +61,19 @@ export default async function TasksPage() {
     name: (s.stage_name as string) || [s.first_name, s.last_name].filter(Boolean).join(" "),
     department: (s.staff_category as string) ?? null,
   }));
+
+  const events: EventOption[] = (rawEvents ?? []).map((e) => {
+    const names = ((e.event_clients as unknown as { is_primary?: boolean; client?: { first_name?: string } }[]) ?? [])
+      .slice()
+      .sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0))
+      .map((ec) => ec.client?.first_name)
+      .filter(Boolean)
+      .join(" & ");
+    const type = (e.event_type as unknown as { name?: string } | null)?.name ?? "Event";
+    const date = usDate(e.event_date as string | null);
+    const label = names ? `${names} · ${type}${date ? ` (${date})` : ""}` : (e.name as string) || `#${e.event_number}`;
+    return { id: e.id as string, label };
+  });
 
   const tasks: TaskCard[] = (rawTasks ?? []).map((t) => {
     const a = t.assignee as { id?: string; first_name?: string; last_name?: string; stage_name?: string } | null;
@@ -86,9 +118,11 @@ export default async function TasksPage() {
       <TasksView
         tasks={tasks}
         staff={staff}
+        events={events}
         departments={DEPARTMENTS as unknown as string[]}
         myEmployeeId={me?.employeeId ?? null}
         canEdit={canEdit}
+        initialOpenTaskId={openTaskId ?? null}
       />
     </div>
   );

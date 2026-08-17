@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getMe, requireModule } from "@/lib/auth";
+import { notifyAssignment, notifyAssignments, notifyMentions } from "@/lib/taskNotify";
 import {
   evaluateTaskRules,
   isConditionField,
@@ -53,16 +54,31 @@ export async function createTask(formData: FormData) {
   const assignee = clean(formData.get("assigned_employee_id"));
   let department = clean(formData.get("department"));
   if (assignee && !department) department = await deptOf(supabase, assignee);
-  await supabase.from("tasks").insert({
-    title,
-    body: clean(formData.get("body")),
-    assigned_employee_id: assignee,
-    department,
-    due_date: clean(formData.get("due_date")),
-    priority: PRIORITY_SET.has(clean(formData.get("priority")) ?? "") ? clean(formData.get("priority")) : "normal",
-    event_id: clean(formData.get("event_id")),
-    created_by: employeeId,
-  });
+  const eventId = clean(formData.get("event_id"));
+  // derive client from the linked event
+  let clientId: string | null = null;
+  if (eventId) {
+    const { data: ev } = await supabase.from("events").select("client_id").eq("id", eventId).maybeSingle();
+    clientId = (ev?.client_id as string) ?? null;
+  }
+  const { data: inserted } = await supabase
+    .from("tasks")
+    .insert({
+      title,
+      body: clean(formData.get("body")),
+      assigned_employee_id: assignee,
+      department,
+      due_date: clean(formData.get("due_date")),
+      priority: PRIORITY_SET.has(clean(formData.get("priority")) ?? "") ? clean(formData.get("priority")) : "normal",
+      event_id: eventId,
+      client_id: clientId,
+      created_by: employeeId,
+    })
+    .select("id")
+    .maybeSingle();
+  if (assignee && assignee !== employeeId && inserted?.id) {
+    await notifyAssignment(assignee, inserted.id as string, title);
+  }
   revalidatePath("/tasks");
 }
 
@@ -81,19 +97,47 @@ export async function setTaskStatus(id: string, status: string) {
   revalidatePath("/tasks");
 }
 
-export async function assignTask(id: string, employeeId: string | null) {
-  const { supabase } = await editContext();
-  const department = await deptOf(supabase, employeeId);
+export async function assignTask(id: string, assigneeId: string | null) {
+  const { supabase, employeeId: actorId } = await editContext();
+  const { data: task } = await supabase.from("tasks").select("title,assigned_employee_id").eq("id", id).maybeSingle();
+  const prev = (task?.assigned_employee_id as string) ?? null;
+  const department = await deptOf(supabase, assigneeId);
   await supabase
     .from("tasks")
-    .update({ assigned_employee_id: employeeId, department, updated_at: nowIso() })
+    .update({ assigned_employee_id: assigneeId, department, updated_at: nowIso() })
     .eq("id", id);
+  if (assigneeId && assigneeId !== actorId && assigneeId !== prev) {
+    await notifyAssignment(assigneeId, id, (task?.title as string) ?? "Task");
+  }
   revalidatePath("/tasks");
 }
 
 export async function deleteTask(id: string) {
   const { supabase } = await editContext();
   await supabase.from("tasks").delete().eq("id", id);
+  revalidatePath("/tasks");
+}
+
+/** Drawer edits: description, due date, priority, and the linked event. */
+export async function updateTask(
+  id: string,
+  patch: { body?: string | null; due_date?: string | null; priority?: string; event_id?: string | null },
+) {
+  const { supabase } = await editContext();
+  const row: Record<string, unknown> = { updated_at: nowIso() };
+  if (patch.body !== undefined) row.body = patch.body?.toString().trim() || null;
+  if (patch.due_date !== undefined) row.due_date = patch.due_date || null;
+  if (patch.priority !== undefined && PRIORITY_SET.has(patch.priority)) row.priority = patch.priority;
+  if (patch.event_id !== undefined) {
+    row.event_id = patch.event_id || null;
+    let clientId: string | null = null;
+    if (patch.event_id) {
+      const { data: ev } = await supabase.from("events").select("client_id").eq("id", patch.event_id).maybeSingle();
+      clientId = (ev?.client_id as string) ?? null;
+    }
+    row.client_id = clientId;
+  }
+  await supabase.from("tasks").update(row).eq("id", id);
   revalidatePath("/tasks");
 }
 
@@ -118,11 +162,24 @@ export async function getComments(taskId: string): Promise<TaskComment[]> {
   });
 }
 
-export async function addComment(taskId: string, body: string) {
+export async function addComment(taskId: string, body: string, mentions: string[] = []) {
   const { supabase, employeeId } = await editContext();
   const b = body.trim();
   if (!b) return;
   await supabase.from("task_comments").insert({ task_id: taskId, body: b, author_employee_id: employeeId });
+  // notify @mentioned staff (never the author)
+  const targets = [...new Set(mentions.filter((m) => m && m !== employeeId))];
+  if (targets.length) {
+    const [{ data: task }, { data: me }] = await Promise.all([
+      supabase.from("tasks").select("title").eq("id", taskId).maybeSingle(),
+      employeeId
+        ? supabase.from("employees").select("first_name,last_name,stage_name").eq("id", employeeId).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    const actorName =
+      (me?.stage_name as string) || [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "A teammate";
+    await notifyMentions(targets, taskId, (task?.title as string) ?? "a task", actorName);
+  }
   revalidatePath("/tasks");
 }
 
@@ -132,6 +189,7 @@ export async function runRulesNow() {
   await requireModule("tasks", "edit", { mode: "throw", supabase });
   const admin = createAdminClient();
   const res = await evaluateTaskRules(admin);
+  await notifyAssignments(res.created_tasks);
   revalidatePath("/tasks");
   return res;
 }
