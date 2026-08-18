@@ -44,6 +44,7 @@ import {
   faShieldHalved,
   faMusic,
   faCamera,
+  faSun,
 } from "@fortawesome/free-solid-svg-icons";
 
 type NavItem = { href: string; label: string; icon: IconDefinition; module: string };
@@ -142,6 +143,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
         module: "settings",
         items: [
           { href: "/settings/notifications", label: "Notifications", icon: faBell, module: "settings" },
+          { href: "/settings/briefings", label: "Daily Briefing", icon: faSun, module: "settings" },
           { href: "/settings/assistant", label: "AI", icon: faRobot, module: "settings" },
           { href: "/settings/email", label: "Email", icon: faEnvelope, module: "settings" },
           { href: "/settings/merge-tags", label: "Merge Tags", icon: faTags, module: "settings" },

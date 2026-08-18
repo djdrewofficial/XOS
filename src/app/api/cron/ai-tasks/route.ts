@@ -1,18 +1,26 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMorningBriefing } from "@/lib/morningBriefing";
+import { sendStaffBriefings } from "@/lib/staffBriefing";
 import { runVendorMatching } from "@/lib/vendorMatch";
 
 /* Hourly dispatcher for the daily AI tasks. Reads ai_tasks (managed in
    Settings → AI Assistant) and runs each enabled task once on its configured
-   hour, in the company's timezone. Trigger with Bearer <CRON_SECRET>. */
+   hour, in the company's timezone. Driven by pg_cron (reliable on this project;
+   the Netlify scheduled fn does not fire) which sends the shared cron_auth token;
+   also accepts Bearer <CRON_SECRET>. */
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-function authorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  return !!secret && (req.headers.get("authorization") ?? "") === `Bearer ${secret}`;
+async function authorized(req: Request, admin: SupabaseClient): Promise<boolean> {
+  const header = req.headers.get("authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!token) return false;
+  if (process.env.CRON_SECRET && token === process.env.CRON_SECRET) return true;
+  const { data } = await admin.from("cron_auth").select("token").limit(1).maybeSingle();
+  return !!data?.token && token === data.token;
 }
 
 function localParts(tz: string): { hour: number; date: string } {
@@ -24,8 +32,8 @@ function localParts(tz: string): { hour: number; date: string } {
 }
 
 async function run(req: Request) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const admin = createAdminClient();
+  if (!(await authorized(req, admin))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const force = new URL(req.url).searchParams.get("force") === "1";
 
   const { data: cs } = await admin.from("company_settings").select("timezone").eq("id", true).maybeSingle();
@@ -42,6 +50,8 @@ async function run(req: Request) {
     try {
       if (t.key === "morning_briefing") {
         await sendMorningBriefing(admin, cfg.recipients || "events@xpressdjs.com");
+      } else if (t.key === "staff_briefings") {
+        await sendStaffBriefings(admin);
       } else if (t.key === "vendor_matching") {
         await runVendorMatching(admin);
       } else {
