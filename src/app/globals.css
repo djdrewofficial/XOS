@@ -30,15 +30,15 @@
    whenever content overflowed the viewport */
 html {
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.07), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.05), transparent 60%),
+    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.07), transparent 100%),
+    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.05), transparent 100%),
     var(--background);
 }
 
 html.dark {
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.28), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.1), transparent 60%),
+    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.28), transparent 100%),
+    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.1), transparent 100%),
     var(--background);
 }
 
