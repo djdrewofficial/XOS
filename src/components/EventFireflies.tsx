@@ -31,6 +31,7 @@ export type FFMeeting = {
   audio_url: string | null;
   transcript_text: string | null;
   matched_by: string | null;
+  summary_status: string | null;
   suggestions: FFSuggestion[];
 };
 
@@ -168,6 +169,13 @@ function MeetingCard({
       </div>
 
       <div className="space-y-4 p-4">
+        {!m.summary_overview && !m.transcript_text && (
+          <p className="text-sm text-zinc-400">
+            {m.summary_status === "skipped"
+              ? "Fireflies skipped this meeting (silent or too short), so there's no summary or transcript."
+              : "No summary or transcript available for this call yet."}
+          </p>
+        )}
         {m.summary_overview && <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-300">{m.summary_overview}</p>}
 
         {m.keywords.length > 0 && (

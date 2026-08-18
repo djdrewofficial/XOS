@@ -76,7 +76,7 @@ import { resolveUserNames } from "@/lib/planning";
 
 export const dynamic = "force-dynamic";
 
-const EVENT_TABS = ["client", "details", "booking", "financials", "staff", "vendors", "logistics", "photobooth", "documents", "comms", "fireflies", "notes"] as const;
+const EVENT_TABS = ["client", "details", "booking", "financials", "staff", "vendors", "logistics", "photobooth", "documents", "comms", "notes"] as const;
 
 export default async function EventDetailPage({
   params,
@@ -314,15 +314,11 @@ export default async function EventDetailPage({
   const fileLinks = new Map<string, string>();
   for (const [fid, url] of signedUrlEntries) if (url) fileLinks.set(fid, url);
 
-  // ---- Fireflies: badge count always; full data only when the tab is open ----
-  const { count: ffCount } = await supabase
-    .from("fireflies_meetings")
-    .select("id", { count: "exact", head: true })
-    .eq("event_id", id);
+  // ---- Fireflies: lives inside the Notes tab; load its data only when that's open ----
   let ffMeetings: FFMeeting[] = [];
   let ffUnlinked: FFMeeting[] = [];
   let ffCanEdit = false;
-  if (activeTab === "fireflies") {
+  if (activeTab === "notes") {
     ffCanEdit = (await moduleAccess("events", supabase)) === "edit";
     const empName = (e: unknown): string | null => {
       const emp = e as { first_name?: string; last_name?: string; stage_name?: string } | null;
@@ -349,20 +345,21 @@ export default async function EventDetailPage({
       audio_url: (m.audio_url as string) ?? null,
       transcript_text: (m.transcript_text as string) ?? null,
       matched_by: (m.matched_by as string) ?? null,
+      summary_status: (m.summary_status as string) ?? null,
       suggestions: withSug ? ((m.suggestions as Record<string, unknown>[]) ?? []).map(mapSug) : [],
     });
     const [{ data: linkedM }, { data: unlinkedM }] = await Promise.all([
       supabase
         .from("fireflies_meetings")
         .select(
-          "id,title,meeting_date,duration_min,summary_overview,keywords,meeting_link,audio_url,transcript_text,matched_by, suggestions:fireflies_suggested_tasks(id,text,assignee_name,timestamp_label,status,task_id, employee:employees!fireflies_suggested_tasks_suggested_employee_id_fkey(first_name,last_name,stage_name))",
+          "id,title,meeting_date,duration_min,summary_overview,keywords,meeting_link,audio_url,transcript_text,matched_by,summary_status, suggestions:fireflies_suggested_tasks(id,text,assignee_name,timestamp_label,status,task_id, employee:employees!fireflies_suggested_tasks_suggested_employee_id_fkey(first_name,last_name,stage_name))",
         )
         .eq("event_id", id)
         .order("meeting_date", { ascending: false }),
       linkedClientIds.length
         ? supabase
             .from("fireflies_meetings")
-            .select("id,title,meeting_date,duration_min,summary_overview,keywords,meeting_link,audio_url,transcript_text,matched_by")
+            .select("id,title,meeting_date,duration_min,summary_overview,keywords,meeting_link,audio_url,transcript_text,matched_by,summary_status")
             .in("client_id", linkedClientIds)
             .is("event_id", null)
             .order("meeting_date", { ascending: false })
@@ -371,7 +368,6 @@ export default async function EventDetailPage({
     ffMeetings = ((linkedM ?? []) as Record<string, unknown>[]).map((m) => mapMeeting(m, true));
     ffUnlinked = ((unlinkedM ?? []) as Record<string, unknown>[]).map((m) => mapMeeting(m, false));
   }
-  const ffPending = ffMeetings.reduce((n, m) => n + m.suggestions.filter((s) => s.status === "suggested").length, 0);
 
   const { data: fileLabels } = await supabase
     .from("file_label_definitions")
@@ -1697,6 +1693,7 @@ export default async function EventDetailPage({
 
   /* ---------- TAB: Notes ---------- */
   const notesTab = (
+    <div className="space-y-6">
     <div className="card max-w-3xl p-5">
       <h2 className="card-title">Internal Notes / Booking Comments</h2>
       <form action={addNoteBound} className="mb-4 flex gap-2">
@@ -1719,6 +1716,12 @@ export default async function EventDetailPage({
           <li className="text-zinc-500">No notes yet.</li>
         )}
       </ul>
+    </div>
+
+    <div className="max-w-3xl">
+      <h2 className="card-title mb-2">Fireflies Calls</h2>
+      <EventFireflies eventId={id} meetings={ffMeetings} unlinked={ffUnlinked} canEdit={ffCanEdit} configured={firefliesConfigured()} />
+    </div>
     </div>
   );
 
@@ -2103,7 +2106,6 @@ export default async function EventDetailPage({
             : []),
           { id: "documents", label: "Documents", badge: (eventDocs ?? []).length || undefined, content: documentsTab },
           { id: "comms", label: "Comms", badge: commsThreads.length || undefined, content: <EventComms eventId={id} threads={commsThreads} startable={commsStartable} docs={(eventDocs ?? []).filter((d) => d.status !== "void").map((d) => ({ id: d.id, title: d.title }))} /> },
-          { id: "fireflies", label: "Fireflies", badge: ffPending > 0 ? `${ffPending} new` : (ffCount || undefined), content: <EventFireflies eventId={id} meetings={ffMeetings} unlinked={ffUnlinked} canEdit={ffCanEdit} configured={firefliesConfigured()} /> },
           { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />
