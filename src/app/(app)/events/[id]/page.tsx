@@ -68,6 +68,7 @@ import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
 import EventFireflies, { type FFMeeting, type FFSuggestion } from "@/components/EventFireflies";
 import EventAI from "@/components/EventAI";
+import RunOfShowButton from "@/components/RunOfShowButton";
 import { firefliesConfigured } from "@/lib/fireflies";
 import { isOpenAIConfigured } from "@/lib/openai";
 import { moduleAccess } from "@/lib/auth";
@@ -1809,6 +1810,9 @@ export default async function EventDetailPage({
 
       {/* AI assistant */}
       <EventAI eventId={id} configured={isOpenAIConfigured()} />
+
+      {/* Run of Show */}
+      {ffCanEdit && <RunOfShowButton eventId={id} configured={isOpenAIConfigured()} />}
 
       {/* Internal notes */}
       <div className="card p-5">

@@ -17,7 +17,12 @@ const nameOf = (e: unknown) => {
   return x ? x.stage_name || [x.first_name, x.last_name].filter(Boolean).join(" ") : "";
 };
 
-export async function buildEventContext(sb: SupabaseClient, eventId: string): Promise<string> {
+export async function buildEventContext(
+  sb: SupabaseClient,
+  eventId: string,
+  opts: { transcriptChars?: number } = {},
+): Promise<string> {
+  const transcriptChars = opts.transcriptChars ?? 5000;
   const { data: e } = await sb
     .from("events")
     .select(
@@ -107,7 +112,7 @@ export async function buildEventContext(sb: SupabaseClient, eventId: string): Pr
       L.push(`\n### Call: ${pick(m, "title") ?? "Untitled"} (${pick(m, "meeting_date") ?? ""})`);
       if (pick(m, "summary_overview")) L.push(`Summary: ${clamp(pick(m, "summary_overview") as string, 1500)}`);
       if (pick(m, "action_items_raw")) L.push(`Action items:\n${clamp(pick(m, "action_items_raw") as string, 1500)}`);
-      if (pick(m, "transcript_text")) L.push(`Transcript excerpt:\n${clamp(pick(m, "transcript_text") as string, 5000)}`);
+      if (pick(m, "transcript_text")) L.push(`Transcript:\n${clamp(pick(m, "transcript_text") as string, transcriptChars)}`);
     }
   }
 

@@ -619,6 +619,8 @@ export async function sendBrandedEmail(opts: {
   subject: string;
   /** Inner HTML placed inside the white card body of the branded shell. */
   contentHtml: string;
+  /** Optional file attachments (Mailgun path only, e.g. a run-of-show PDF). */
+  attachments?: { filename: string; data: Buffer; contentType: string }[];
   supabase?: SupabaseClient;
 }): Promise<{ ok: boolean; error?: string }> {
   const { domain } = mailgunConfig();
@@ -665,6 +667,7 @@ export async function sendBrandedEmail(opts: {
       html,
       replyTo: cs?.reply_to ?? fromEmail,
       tags: ["xos", "account"],
+      attachments: opts.attachments,
     });
   } else {
     const hl = await sendEmailViaHighLevel({
