@@ -29,7 +29,7 @@ export async function middleware(request: NextRequest) {
       p.startsWith("/api/paypal/") || p.startsWith("/api/pay/") ||
       p.startsWith("/api/places") || p.startsWith("/api/mobile/") ||
       p.startsWith("/api/music/") || p.startsWith("/api/cron/") ||
-      p.startsWith("/api/unsubscribe/") ||
+      p.startsWith("/api/unsubscribe/") || p.startsWith("/api/fireflies/") ||
       p.startsWith("/api/comms-delivery");
     if (!machineEndpoint && request.headers.get("x-origin-verify") !== originSecret) {
       return new NextResponse("Forbidden", { status: 403 });
@@ -82,6 +82,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/vibo/") ||
     pathname.startsWith("/api/spotify/") ||
     pathname.startsWith("/api/mailgun/") ||
+    pathname.startsWith("/api/fireflies/") ||
     pathname.startsWith("/api/highlevel/") ||
     pathname.startsWith("/api/paypal/") ||
     pathname.startsWith("/api/pay/") ||

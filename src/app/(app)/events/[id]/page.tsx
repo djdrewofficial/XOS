@@ -64,6 +64,9 @@ import UrlTabs from "@/components/UrlTabs";
 import SaveButton from "@/components/SaveButton";
 import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
+import EventFireflies, { type FFMeeting, type FFSuggestion } from "@/components/EventFireflies";
+import { firefliesConfigured } from "@/lib/fireflies";
+import { moduleAccess } from "@/lib/auth";
 import type { ConvRow } from "@/components/InboxShell";
 import SigningChecklist from "@/components/SigningChecklist";
 import CopyProposalLink from "@/components/CopyProposalLink";
@@ -73,7 +76,7 @@ import { resolveUserNames } from "@/lib/planning";
 
 export const dynamic = "force-dynamic";
 
-const EVENT_TABS = ["client", "details", "booking", "financials", "staff", "vendors", "logistics", "photobooth", "documents", "comms", "notes"] as const;
+const EVENT_TABS = ["client", "details", "booking", "financials", "staff", "vendors", "logistics", "photobooth", "documents", "comms", "fireflies", "notes"] as const;
 
 export default async function EventDetailPage({
   params,
@@ -310,6 +313,65 @@ export default async function EventDetailPage({
 
   const fileLinks = new Map<string, string>();
   for (const [fid, url] of signedUrlEntries) if (url) fileLinks.set(fid, url);
+
+  // ---- Fireflies: badge count always; full data only when the tab is open ----
+  const { count: ffCount } = await supabase
+    .from("fireflies_meetings")
+    .select("id", { count: "exact", head: true })
+    .eq("event_id", id);
+  let ffMeetings: FFMeeting[] = [];
+  let ffUnlinked: FFMeeting[] = [];
+  let ffCanEdit = false;
+  if (activeTab === "fireflies") {
+    ffCanEdit = (await moduleAccess("events", supabase)) === "edit";
+    const empName = (e: unknown): string | null => {
+      const emp = e as { first_name?: string; last_name?: string; stage_name?: string } | null;
+      if (!emp) return null;
+      return emp.stage_name || [emp.first_name, emp.last_name].filter(Boolean).join(" ") || null;
+    };
+    const mapSug = (s: Record<string, unknown>): FFSuggestion => ({
+      id: s.id as string,
+      text: s.text as string,
+      assignee_name: (s.assignee_name as string) ?? null,
+      suggested_employee_name: empName(s.employee),
+      timestamp_label: (s.timestamp_label as string) ?? null,
+      status: s.status as FFSuggestion["status"],
+      task_id: (s.task_id as string) ?? null,
+    });
+    const mapMeeting = (m: Record<string, unknown>, withSug: boolean): FFMeeting => ({
+      id: m.id as string,
+      title: (m.title as string) ?? null,
+      date: (m.meeting_date as string) ?? null,
+      duration_min: (m.duration_min as number) ?? null,
+      summary_overview: (m.summary_overview as string) ?? null,
+      keywords: (m.keywords as string[]) ?? [],
+      meeting_link: (m.meeting_link as string) ?? null,
+      audio_url: (m.audio_url as string) ?? null,
+      transcript_text: (m.transcript_text as string) ?? null,
+      matched_by: (m.matched_by as string) ?? null,
+      suggestions: withSug ? ((m.suggestions as Record<string, unknown>[]) ?? []).map(mapSug) : [],
+    });
+    const [{ data: linkedM }, { data: unlinkedM }] = await Promise.all([
+      supabase
+        .from("fireflies_meetings")
+        .select(
+          "id,title,meeting_date,duration_min,summary_overview,keywords,meeting_link,audio_url,transcript_text,matched_by, suggestions:fireflies_suggested_tasks(id,text,assignee_name,timestamp_label,status,task_id, employee:employees!fireflies_suggested_tasks_suggested_employee_id_fkey(first_name,last_name,stage_name))",
+        )
+        .eq("event_id", id)
+        .order("meeting_date", { ascending: false }),
+      linkedClientIds.length
+        ? supabase
+            .from("fireflies_meetings")
+            .select("id,title,meeting_date,duration_min,summary_overview,keywords,meeting_link,audio_url,transcript_text,matched_by")
+            .in("client_id", linkedClientIds)
+            .is("event_id", null)
+            .order("meeting_date", { ascending: false })
+        : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    ]);
+    ffMeetings = ((linkedM ?? []) as Record<string, unknown>[]).map((m) => mapMeeting(m, true));
+    ffUnlinked = ((unlinkedM ?? []) as Record<string, unknown>[]).map((m) => mapMeeting(m, false));
+  }
+  const ffPending = ffMeetings.reduce((n, m) => n + m.suggestions.filter((s) => s.status === "suggested").length, 0);
 
   const { data: fileLabels } = await supabase
     .from("file_label_definitions")
@@ -2041,6 +2103,7 @@ export default async function EventDetailPage({
             : []),
           { id: "documents", label: "Documents", badge: (eventDocs ?? []).length || undefined, content: documentsTab },
           { id: "comms", label: "Comms", badge: commsThreads.length || undefined, content: <EventComms eventId={id} threads={commsThreads} startable={commsStartable} docs={(eventDocs ?? []).filter((d) => d.status !== "void").map((d) => ({ id: d.id, title: d.title }))} /> },
+          { id: "fireflies", label: "Fireflies", badge: ffPending > 0 ? `${ffPending} new` : (ffCount || undefined), content: <EventFireflies eventId={id} meetings={ffMeetings} unlinked={ffUnlinked} canEdit={ffCanEdit} configured={firefliesConfigured()} /> },
           { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />
