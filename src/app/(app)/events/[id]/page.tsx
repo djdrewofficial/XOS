@@ -48,6 +48,7 @@ import {
   archiveEvent,
   unarchiveEvent,
   setEventCommsPaused,
+  uploadEventFileForm,
 } from "../actions";
 import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/actions";
 import InlineEditCard from "@/components/InlineEditCard";
@@ -302,7 +303,7 @@ export default async function EventDetailPage({
       : Promise.resolve({ data: [] as { id: string; client_id: string; body: string; created_at: string }[] }),
     // signed URLs hit Storage once per file — only generate them when the
     // Documents tab is actually open (URL-driven lazy load)
-    activeTab === "documents"
+    activeTab === "documents" || activeTab === "notes"
       ? Promise.all(
           (eventFiles ?? []).map(async (f) => {
             const { data: signed } = await supabase.storage.from("event-files").createSignedUrl(f.path, 3600);
@@ -317,6 +318,21 @@ export default async function EventDetailPage({
 
   // comms_paused isn't on the hand-written XEvent type; the DB column exists (select *).
   const commsPaused = (event as { comms_paused?: boolean }).comms_paused ?? false;
+
+  // ---- Planning / Notes hub: planner status (XOS vs Vibo legacy) ----
+  const planningSeeded = (event as { planning_seeded?: boolean }).planning_seeded ?? false;
+  const viboLink = ((event.custom_fields ?? {}) as Record<string, unknown>).vibo_link as string | undefined;
+  const plannerMode: "xos" | "vibo" | "none" = planningSeeded ? "xos" : viboLink ? "vibo" : "none";
+  let plannerSectionCount = 0;
+  let plannerSongCount = 0;
+  if (activeTab === "notes" && planningSeeded) {
+    const { data: secs } = await supabase.from("planning_sections").select("id, planning_songs(count)").eq("event_id", id);
+    plannerSectionCount = (secs ?? []).length;
+    plannerSongCount = (secs ?? []).reduce(
+      (n, s) => n + (((s.planning_songs as unknown as { count: number }[] | null)?.[0]?.count) ?? 0),
+      0,
+    );
+  }
 
   // ---- Fireflies: lives inside the Notes tab; load its data only when that's open ----
   let ffMeetings: FFMeeting[] = [];
@@ -1696,36 +1712,122 @@ export default async function EventDetailPage({
   const staffTab = <StaffSection eventId={id} staff={staff ?? []} employees={employees ?? []} />;
 
   /* ---------- TAB: Notes ---------- */
-  const notesTab = (
-    <div className="space-y-6">
-    <div className="card max-w-3xl p-5">
-      <h2 className="card-title">Internal Notes / Booking Comments</h2>
-      <form action={addNoteBound} className="mb-4 flex gap-2">
-        <input name="body" placeholder="Add a note…" className="input w-full" />
-        <button className="btn-primary px-5">Add</button>
-      </form>
-      {event.internal_notes && (
-        <p className="mb-3 rounded-lg bg-amber-400/10 p-3 text-sm text-amber-900 dark:text-amber-100">{event.internal_notes}</p>
-      )}
-      <ul className="space-y-2 text-sm">
-        {internalNotes.map((n: { id: string; body: string; created_at: string; author_name?: string | null }) => (
-          <NoteItem
-            key={n.id}
-            note={n}
-            updateAction={updateEventNote.bind(null, id, n.id)}
-            deleteAction={deleteEventNote.bind(null, id, n.id)}
-          />
-        ))}
-        {internalNotes.length === 0 && !event.internal_notes && (
-          <li className="text-zinc-500">No notes yet.</li>
-        )}
-      </ul>
-    </div>
+  // ---- Planning / Notes hub data ----
+  const hubStaff = ((staff ?? []) as Array<{ role?: string | null; employee?: { first_name?: string; last_name?: string; stage_name?: string } | null }>).map(
+    (s) => ({ name: s.employee?.stage_name || [s.employee?.first_name, s.employee?.last_name].filter(Boolean).join(" ") || "Staff", role: s.role || "Staff" }),
+  );
+  const hubAddons = (addonRows as unknown as Array<{ addon?: { name?: string } | null; quantity?: number }>).map((a) => ({ name: a.addon?.name ?? "Add-on", qty: a.quantity ?? 1 }));
+  const pkgName = (event.package as unknown as { name?: string } | null)?.name ?? null;
+  const viboFiles = (eventFiles ?? []).filter((f) => (f.source as string) === "upload" && ((f.content_type as string) ?? "").includes("pdf"));
+  const fileInputClass =
+    "block text-xs text-zinc-500 file:mr-3 file:rounded-lg file:border-0 file:bg-gradient-to-r file:from-brand file:to-brand-light file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:brightness-110";
 
-    <div className="max-w-3xl">
-      <h2 className="card-title mb-2">Fireflies Calls</h2>
-      <EventFireflies eventId={id} meetings={ffMeetings} unlinked={ffUnlinked} canEdit={ffCanEdit} configured={firefliesConfigured()} />
-    </div>
+  const notesTab = (
+    <div className="max-w-3xl space-y-6">
+      {/* Planner status */}
+      <div className="card p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="card-title">Event Planner</h2>
+          {plannerMode === "xos" && <span className="chip bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">XOS Planner</span>}
+          {plannerMode === "vibo" && <span className="chip bg-sky-500/15 text-sky-700 dark:text-sky-300">Vibo (Legacy)</span>}
+          {plannerMode === "none" && <span className="chip bg-zinc-500/15 text-zinc-600 dark:text-zinc-300">Not started</span>}
+        </div>
+        {plannerMode === "xos" && (
+          <p className="mt-1 text-sm text-zinc-500">
+            {plannerSectionCount} section{plannerSectionCount === 1 ? "" : "s"} · {plannerSongCount} song{plannerSongCount === 1 ? "" : "s"} in the in-house planner.
+          </p>
+        )}
+        {plannerMode === "vibo" && (
+          <div className="mt-2 space-y-3">
+            <p className="text-sm text-zinc-500">
+              This couple is still on Vibo (legacy).{" "}
+              {viboLink && (
+                <a href={viboLink} target="_blank" rel="noreferrer" className="text-brand hover:underline">Open Vibo →</a>
+              )}
+            </p>
+            <form action={uploadEventFileForm.bind(null, id)} className="flex flex-wrap items-center gap-2">
+              <input type="file" name="file" accept="application/pdf" required className={fileInputClass} />
+              <button className="btn-ghost px-3 py-1.5 text-xs">Upload Vibo export (PDF)</button>
+            </form>
+            {viboFiles.length > 0 && (
+              <ul className="space-y-1 text-xs">
+                {viboFiles.map((f) => (
+                  <li key={f.id as string}>
+                    {fileLinks.get(f.id as string) ? (
+                      <a href={fileLinks.get(f.id as string)} target="_blank" rel="noreferrer" className="text-brand hover:underline">📄 {f.name as string}</a>
+                    ) : (
+                      <span>📄 {f.name as string}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {plannerMode === "none" && (
+          <div className="mt-2 space-y-2">
+            <p className="text-sm text-zinc-500">No planner yet. The in-house planner seeds when the couple starts onboarding — or upload a Vibo/timeline PDF to work from.</p>
+            <form action={uploadEventFileForm.bind(null, id)} className="flex flex-wrap items-center gap-2">
+              <input type="file" name="file" accept="application/pdf" required className={fileInputClass} />
+              <button className="btn-ghost px-3 py-1.5 text-xs">Upload a timeline PDF</button>
+            </form>
+          </div>
+        )}
+      </div>
+
+      {/* On-site snapshot */}
+      <div className="card p-5">
+        <h2 className="card-title">On-Site Snapshot</h2>
+        <div className="mt-1 grid gap-4 text-sm sm:grid-cols-2">
+          <div>
+            <div className="label-xs">Staff working</div>
+            {hubStaff.length ? (
+              <ul className="space-y-0.5">
+                {hubStaff.map((s, i) => (
+                  <li key={i}>{s.name} <span className="text-zinc-400">· {s.role}</span></li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-zinc-500">None assigned yet</p>
+            )}
+          </div>
+          <div>
+            <div className="label-xs">Package &amp; Add-ons</div>
+            <p>{pkgName ?? "No package"}</p>
+            {hubAddons.length > 0 && (
+              <ul className="mt-1 text-zinc-500">
+                {hubAddons.map((a, i) => (
+                  <li key={i}>+ {a.name}{a.qty > 1 ? ` ×${a.qty}` : ""}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Internal notes */}
+      <div className="card p-5">
+        <h2 className="card-title">Internal Notes / Booking Comments</h2>
+        <form action={addNoteBound} className="mb-4 flex gap-2">
+          <input name="body" placeholder="Add a note…" className="input w-full" />
+          <button className="btn-primary px-5">Add</button>
+        </form>
+        {event.internal_notes && (
+          <p className="mb-3 rounded-lg bg-amber-400/10 p-3 text-sm text-amber-900 dark:text-amber-100">{event.internal_notes}</p>
+        )}
+        <ul className="space-y-2 text-sm">
+          {internalNotes.map((n: { id: string; body: string; created_at: string; author_name?: string | null }) => (
+            <NoteItem key={n.id} note={n} updateAction={updateEventNote.bind(null, id, n.id)} deleteAction={deleteEventNote.bind(null, id, n.id)} />
+          ))}
+          {internalNotes.length === 0 && !event.internal_notes && <li className="text-zinc-500">No notes yet.</li>}
+        </ul>
+      </div>
+
+      {/* Fireflies calls */}
+      <div>
+        <h2 className="card-title mb-2">Fireflies Calls</h2>
+        <EventFireflies eventId={id} meetings={ffMeetings} unlinked={ffUnlinked} canEdit={ffCanEdit} configured={firefliesConfigured()} />
+      </div>
     </div>
   );
 
@@ -2131,7 +2233,7 @@ export default async function EventDetailPage({
             : []),
           { id: "documents", label: "Documents", badge: (eventDocs ?? []).length || undefined, content: documentsTab },
           { id: "comms", label: "Comms", badge: commsThreads.length || undefined, content: <EventComms eventId={id} threads={commsThreads} startable={commsStartable} docs={(eventDocs ?? []).filter((d) => d.status !== "void").map((d) => ({ id: d.id, title: d.title }))} /> },
-          { id: "notes", label: "Notes", badge: internalNotes.length, content: notesTab },
+          { id: "notes", label: "Planning / Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />
 

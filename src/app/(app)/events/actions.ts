@@ -996,6 +996,12 @@ export async function uploadEventFile(eventId: string, _prev: unknown, formData:
   return { ok: true as const };
 }
 
+/** Plain-form wrapper around uploadEventFile (returns void so it can be a `<form action>`
+    directly — used by the Planning/Notes hub's Vibo/timeline PDF upload). */
+export async function uploadEventFileForm(eventId: string, formData: FormData) {
+  await uploadEventFile(eventId, null, formData);
+}
+
 /** Change (or clear) a file's label. */
 export async function setEventFileLabel(eventId: string, fileId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
