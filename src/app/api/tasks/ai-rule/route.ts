@@ -22,15 +22,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Describe the task automation you want." }, { status: 400 });
 
   // Real option lists so the model emits values that exist in this database.
-  const [{ data: types }, { data: journeys }, { data: statuses }, { data: emps }] = await Promise.all([
+  const [{ data: types }, { data: journeys }, { data: statuses }, { data: emps }, { data: addons }, { data: packages }] = await Promise.all([
     supabase.from("event_types").select("name").eq("is_active", true),
     supabase.from("journey_types").select("name"),
     supabase.from("event_statuses").select("name"),
     supabase.from("employees").select("id,first_name,last_name,stage_name").eq("is_active", true),
+    supabase.from("addons").select("name").eq("is_active", true),
+    supabase.from("packages").select("name").eq("is_active", true),
   ]);
   const typeNames = (types ?? []).map((t) => t.name);
   const journeyNames = (journeys ?? []).map((j) => j.name);
   const statusNames = (statuses ?? []).map((s) => s.name);
+  const addonNames = (addons ?? []).map((a) => a.name);
+  const packageNames = (packages ?? []).map((p) => p.name);
   const staffList = (emps ?? []).map(
     (e) => `${e.id} = ${e.stage_name || [e.first_name, e.last_name].filter(Boolean).join(" ")}`,
   );
@@ -43,6 +47,8 @@ export async function POST(req: NextRequest) {
     else if (f.source === "journey_types") ops = `op "is"/"is_not", value ∈ ${JSON.stringify(journeyNames)}`;
     else if (f.source === "statuses") ops = `op "is"/"is_not", value ∈ ${JSON.stringify(statusNames)}`;
     else if (f.source === "venues") ops = 'op "is"/"is_not", value = exact venue name';
+    else if (f.source === "addons") ops = `op "is" (event includes it) / "is_not", value ∈ ${JSON.stringify(addonNames)}`;
+    else if (f.source === "packages") ops = `op "is"/"is_not", value ∈ ${JSON.stringify(packageNames)}`;
     return `- "${f.field}" (${f.label})${f.help ? ` — ${f.help}` : ""}: ${ops}`;
   }).join("\n");
 

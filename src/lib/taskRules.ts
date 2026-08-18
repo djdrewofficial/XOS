@@ -46,7 +46,7 @@ export const CONDITION_FIELDS: Array<{
   field: string;
   label: string;
   kind: "boolean" | "enum" | "dynamic_enum";
-  source?: "event_types" | "journey_types" | "statuses" | "venues";
+  source?: "event_types" | "journey_types" | "statuses" | "venues" | "addons" | "packages";
   options?: readonly string[];
   help?: string;
 }> = [
@@ -55,6 +55,9 @@ export const CONDITION_FIELDS: Array<{
   { field: "status", label: "Event status", kind: "dynamic_enum", source: "statuses" },
   { field: "status_group", label: "Pipeline stage", kind: "enum", options: ["leads", "pending", "booked", "lost"] },
   { field: "venue", label: "Venue", kind: "dynamic_enum", source: "venues" },
+  { field: "package", label: "Package", kind: "dynamic_enum", source: "packages" },
+  { field: "has_addon", label: "Includes add-on", kind: "dynamic_enum", source: "addons", help: 'e.g. "Photo Booth", "Cold Sparks" — is = event includes it' },
+  { field: "has_photobooth", label: "Has a photo booth", kind: "boolean", help: "photo-booth add-on or a booth design already selected" },
   { field: "dj_assigned", label: "DJ assigned", kind: "boolean" },
   { field: "salesperson_assigned", label: "Salesperson assigned", kind: "boolean" },
   { field: "poc_assigned", label: "Point of contact assigned", kind: "boolean" },
@@ -131,6 +134,9 @@ type EvalEvent = {
   status_name: string | null;
   status_group: "leads" | "pending" | "booked" | "lost" | null;
   venue_name: string | null;
+  package_name: string | null;
+  addon_names: string[];
+  has_photobooth: boolean;
   dj_assigned: boolean;
   dj_employee_id: string | null;
   dj_name: string | null;
@@ -181,6 +187,12 @@ function evalCondition(cond: Condition, ev: EvalEvent): boolean {
     case "status_group":
       return cond.op === "is_not" ? ev.status_group !== cond.value : ev.status_group === cond.value;
     case "venue": return cmp(ev.venue_name);
+    case "package": return cmp(ev.package_name);
+    case "has_addon": {
+      const has = ev.addon_names.some((n) => eqi(n, cond.value));
+      return cond.op === "is_not" ? !has : has;
+    }
+    case "has_photobooth": return boolOp(ev.has_photobooth, cond.op);
     case "dj_assigned": return boolOp(ev.dj_assigned, cond.op);
     case "salesperson_assigned": return boolOp(!!ev.salesperson_id, cond.op);
     case "poc_assigned": return boolOp(!!ev.poc_employee_id, cond.op);
@@ -273,7 +285,8 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
          event_type:event_types(name),
          journey_type:journey_types(name),
          status:event_statuses(name,is_booked_group,is_pending_group,is_leads_group,is_lost_sale_group),
-         venue:venues(name)`,
+         venue:venues(name),
+         package:packages(name)`,
       )
       .is("archived_at", null)
       .gte("event_date", fromIso);
@@ -283,8 +296,9 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
 
     const eventIds = events.map((e) => e.id as string);
 
-    // event_staff → DJ assignment; event_clients → display names.
-    const [{ data: staffRows }, { data: clientRows }, { data: employees }, { data: existingTasks }] =
+    // event_staff → DJ assignment; event_clients → display names; event_addons →
+    // add-on names + photo-booth detection; event_photobooth_selection → booth chosen.
+    const [{ data: staffRows }, { data: clientRows }, { data: employees }, { data: existingTasks }, { data: addonRows }, { data: boothRows }] =
       await Promise.all([
         admin
           .from("event_staff")
@@ -296,6 +310,8 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
           .in("event_id", eventIds),
         admin.from("employees").select("id,staff_category"),
         admin.from("tasks").select("dedupe_key").not("dedupe_key", "is", null),
+        admin.from("event_addons").select("event_id,addon:addons(name)").in("event_id", eventIds),
+        admin.from("event_photobooth_selection").select("event_id").in("event_id", eventIds),
       ]);
 
     const empDept = new Map<string, string | null>(
@@ -325,6 +341,21 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
       else arr.push(cl.first_name);
       clientsByEvent.set(eid, arr);
     }
+
+    // add-on names per event + photo-booth detection (add-on name match OR a booth
+    // design already selected — mirrors the event page's hasPhotobooth logic).
+    const addonsByEvent = new Map<string, string[]>();
+    for (const a of addonRows ?? []) {
+      const eid = a.event_id as string;
+      const nm = (a.addon as unknown as { name?: string } | null)?.name;
+      if (!nm) continue;
+      const arr = addonsByEvent.get(eid) ?? [];
+      arr.push(nm);
+      addonsByEvent.set(eid, arr);
+    }
+    const boothEvents = new Set<string>((boothRows ?? []).map((b) => b.event_id as string));
+    const hasPhotobooth = (eid: string) =>
+      boothEvents.has(eid) || (addonsByEvent.get(eid) ?? []).some((n) => /photo[\s-]?booth/i.test(n));
 
     function statusGroup(s: {
       is_booked_group?: boolean;
@@ -368,6 +399,9 @@ export async function evaluateTaskRules(admin: SupabaseClient): Promise<Evaluate
         status_name: status?.name ?? null,
         status_group: statusGroup(status),
         venue_name: (e.venue as unknown as { name?: string } | null)?.name ?? null,
+        package_name: (e.package as unknown as { name?: string } | null)?.name ?? null,
+        addon_names: addonsByEvent.get(e.id as string) ?? [],
+        has_photobooth: hasPhotobooth(e.id as string),
         dj_assigned: !!dj,
         dj_employee_id: dj?.id ?? null,
         dj_name: dj?.name ?? null,

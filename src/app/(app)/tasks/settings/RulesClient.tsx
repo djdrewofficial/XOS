@@ -39,6 +39,8 @@ export type Options = {
   journey_types: string[];
   statuses: string[];
   venues: string[];
+  addons: string[];
+  packages: string[];
   departments: string[];
   staff: { id: string; name: string }[];
 };
