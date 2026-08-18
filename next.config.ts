@@ -21,8 +21,14 @@ const nextConfig: NextConfig = {
   // PDF engine: keep puppeteer/chromium out of the webpack bundle and force the
   // chromium binaries into the serverless function's traced files
   serverExternalPackages: ["puppeteer-core", "@sparticuz/chromium"],
+  // Every route that renders a PDF (htmlToPdf) must carry the chromium binary in its
+  // traced files, or it 500s in prod ("no Chromium executable"). Glob the PDF areas:
+  // dev test, event run-of-show, reports, and the outbox (contract PDF attachments).
   outputFileTracingIncludes: {
     "/api/dev-pdf-test": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/events/**": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/reports/**": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/cron/**": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

@@ -50,25 +50,27 @@ export async function generateRunOfShow(
   eventId: string,
 ): Promise<{ ok: boolean; pdf?: Buffer; filename?: string; eventName?: string; error?: string }> {
   if (!isOpenAIConfigured()) return { ok: false, error: "OpenAI isn't configured (OPENAI_API_KEY missing)." };
-  const ctx = await buildEventContext(sb, eventId, { transcriptChars: 15000 });
-  if (!ctx) return { ok: false, error: "Event not found." };
-  const { data: ev } = await sb.from("events").select("name, event_date").eq("id", eventId).maybeSingle();
-  const eventName = (ev?.name as string) || "Event";
-
-  let bodyHtml: string;
   try {
-    bodyHtml = await chatComplete([{ role: "system", content: SYSTEM }, { role: "user", content: `=== EVENT DATA ===\n${ctx}` }]);
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "AI request failed." };
-  }
-  bodyHtml = bodyHtml.replace(/^```html?/i, "").replace(/```$/i, "").trim();
+    const ctx = await buildEventContext(sb, eventId, { transcriptChars: 15000 });
+    if (!ctx) return { ok: false, error: "Event not found." };
+    const { data: ev } = await sb.from("events").select("name, event_date").eq("id", eventId).maybeSingle();
+    const eventName = (ev?.name as string) || "Event";
 
-  const title = `${eventName} — Run of Show`;
-  const subtitle = ev?.event_date ? `Event date: ${ev.event_date}` : "";
-  const html = await brandedShell(sb, title, subtitle, bodyHtml);
-  const pdf = await htmlToPdf(html);
-  const filename = `Run of Show — ${eventName.replace(/[^\w &'-]/g, "").slice(0, 60)}.pdf`;
-  return { ok: true, pdf, filename, eventName };
+    let bodyHtml = await chatComplete([{ role: "system", content: SYSTEM }, { role: "user", content: `=== EVENT DATA ===\n${ctx}` }]);
+    bodyHtml = bodyHtml.replace(/^```html?/i, "").replace(/```$/i, "").trim();
+    // strip anything that could stall the PDF renderer (external images/scripts).
+    bodyHtml = bodyHtml.replace(/<img[^>]*>/gi, "").replace(/<script[\s\S]*?<\/script>/gi, "");
+
+    const title = `${eventName} — Run of Show`;
+    const subtitle = ev?.event_date ? `Event date: ${ev.event_date}` : "";
+    const html = await brandedShell(sb, title, subtitle, bodyHtml);
+    const pdf = await htmlToPdf(html);
+    const filename = `Run of Show — ${eventName.replace(/[^\w &'-]/g, "").slice(0, 60)}.pdf`;
+    return { ok: true, pdf, filename, eventName };
+  } catch (e) {
+    console.error("[runOfShow] generate failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Generation failed." };
+  }
 }
 
 /** Save the PDF into the event's Docs (event-files, staff-only). Returns the file id. */

@@ -24,7 +24,18 @@ export default function RunOfShowButton({ eventId, configured }: { eventId: stri
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const json = await res.json();
+      let json: { ok?: boolean; error?: string; emailed?: number };
+      try {
+        json = await res.json();
+      } catch {
+        json = {
+          ok: false,
+          error:
+            res.status === 504 || res.status === 502
+              ? "Timed out while generating (this event may be very large). Please try again."
+              : `Server error (${res.status}). Please try again.`,
+        };
+      }
       if (!json.ok) {
         setErr(json.error ?? "Generation failed.");
       } else {

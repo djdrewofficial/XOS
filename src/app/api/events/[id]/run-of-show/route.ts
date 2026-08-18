@@ -12,23 +12,28 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const supabase = await createClient();
-  const denied = await requireApiModule("events", "edit", supabase);
-  if (denied) return denied;
+  try {
+    const { id } = await params;
+    const supabase = await createClient();
+    const denied = await requireApiModule("events", "edit", supabase);
+    if (denied) return denied;
 
-  const body = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({}));
 
-  const gen = await generateRunOfShow(supabase, id);
-  if (!gen.ok || !gen.pdf || !gen.filename) {
-    return NextResponse.json({ ok: false, error: gen.error ?? "Generation failed." }, { status: 400 });
+    const gen = await generateRunOfShow(supabase, id);
+    if (!gen.ok || !gen.pdf || !gen.filename) {
+      return NextResponse.json({ ok: false, error: gen.error ?? "Generation failed." }, { status: 400 });
+    }
+
+    const admin = createAdminClient();
+    const fileId = await saveRunOfShowToDocs(admin, id, gen.pdf, gen.filename);
+    let emailed = 0;
+    if (body?.email) emailed = await emailRunOfShowToStaff(admin, id, gen.pdf, gen.filename, gen.eventName ?? "Event");
+
+    revalidatePath(`/events/${id}`);
+    return NextResponse.json({ ok: true, fileName: gen.filename, saved: !!fileId, emailed });
+  } catch (e) {
+    console.error("[run-of-show route] failed", e);
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Run-of-show failed." }, { status: 500 });
   }
-
-  const admin = createAdminClient();
-  const fileId = await saveRunOfShowToDocs(admin, id, gen.pdf, gen.filename);
-  let emailed = 0;
-  if (body?.email) emailed = await emailRunOfShowToStaff(admin, id, gen.pdf, gen.filename, gen.eventName ?? "Event");
-
-  revalidatePath(`/events/${id}`);
-  return NextResponse.json({ ok: true, fileName: gen.filename, saved: !!fileId, emailed });
 }
