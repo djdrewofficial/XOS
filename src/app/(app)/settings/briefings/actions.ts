@@ -34,6 +34,16 @@ export async function setBriefingGlobal(patch: { enabled?: boolean; hour?: numbe
   revalidatePath("/settings/briefings");
 }
 
+/** The separate company-wide "Morning Briefing" digest (payments due, unsigned
+    agreements, this week's events) → events@xpressdjs.com. */
+export async function setCompanySummary(patch: { enabled?: boolean }) {
+  const supabase = await guard();
+  if (patch.enabled !== undefined) {
+    await supabase.from("ai_tasks").update({ enabled: patch.enabled }).eq("key", "morning_briefing");
+  }
+  revalidatePath("/settings/briefings");
+}
+
 /** Send today's briefings right now (for testing). Respects each staffer's enable/cadence. */
 export async function sendBriefingsNow(): Promise<{ sent: number }> {
   await guard();

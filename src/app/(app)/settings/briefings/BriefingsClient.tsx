@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { setBriefingPref, setBriefingGlobal, sendBriefingsNow } from "./actions";
+import { setBriefingPref, setBriefingGlobal, setCompanySummary, sendBriefingsNow } from "./actions";
 
 export type StaffRow = {
   id: string;
@@ -14,6 +14,7 @@ export type StaffRow = {
   last_sent_on: string | null;
 };
 export type GlobalCfg = { enabled: boolean; hour: number };
+export type CompanyCfg = { enabled: boolean; recipients: string };
 
 const FREQ = [
   { value: "daily", label: "Every day" },
@@ -39,9 +40,24 @@ function Toggle({ on, onClick, disabled }: { on: boolean; onClick: () => void; d
   );
 }
 
-export default function BriefingsClient({ rows, global }: { rows: StaffRow[]; global: GlobalCfg }) {
+export default function BriefingsClient({ rows, global, company }: { rows: StaffRow[]; global: GlobalCfg; company: CompanyCfg }) {
   const router = useRouter();
   const [, start] = useTransition();
+
+  const [comp, setComp] = useState(company);
+  const [prevComp, setPrevComp] = useState(company);
+  if (company !== prevComp) {
+    setPrevComp(company);
+    setComp(company);
+  }
+  function toggleCompany() {
+    const enabled = !comp.enabled;
+    setComp({ ...comp, enabled });
+    start(async () => {
+      await setCompanySummary({ enabled });
+      router.refresh();
+    });
+  }
 
   const [staff, setStaff] = useState(rows);
   const [prevRows, setPrevRows] = useState(rows);
@@ -132,6 +148,21 @@ export default function BriefingsClient({ rows, global }: { rows: StaffRow[]; gl
           Each enabled staffer gets their own email with their open tasks and upcoming events. When the whole feature is
           off, no briefings send regardless of individual settings.
         </p>
+      </div>
+
+      {/* Company summary (the separate events@ digest) */}
+      <div className="card p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Toggle on={comp.enabled} onClick={toggleCompany} />
+          <div className="min-w-0">
+            <div className="text-sm font-medium">Company summary email {comp.enabled ? "on" : "off"}</div>
+            <div className="text-xs text-zinc-500">
+              A daily ops digest — payments due, unsigned agreements, this week&apos;s events — sent to{" "}
+              <span className="text-zinc-700 dark:text-zinc-300">{comp.recipients}</span>. This is separate from the
+              personal staff briefings above.
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Per-staff table */}

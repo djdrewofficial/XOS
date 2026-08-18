@@ -16,13 +16,14 @@ export default async function BriefingsSettingsPage() {
   const supabase = await createClient();
   await requireModule("settings", "edit", { supabase });
 
-  const [{ data: emps }, { data: prefs }, { data: task }] = await Promise.all([
+  const [{ data: emps }, { data: prefs }, { data: task }, { data: companyTask }] = await Promise.all([
     supabase
       .from("employees")
       .select("id,first_name,last_name,stage_name,email,staff_category")
       .eq("is_active", true),
     supabase.from("staff_briefing_prefs").select("employee_id,enabled,frequency,last_sent_on"),
     supabase.from("ai_tasks").select("enabled,config").eq("key", "staff_briefings").maybeSingle(),
+    supabase.from("ai_tasks").select("enabled,config").eq("key", "morning_briefing").maybeSingle(),
   ]);
 
   const prefMap = new Map((prefs ?? []).map((p) => [p.employee_id as string, p]));
@@ -44,6 +45,11 @@ export default async function BriefingsSettingsPage() {
 
   const cfg = (task?.config as { hour?: number }) ?? {};
   const global: GlobalCfg = { enabled: (task?.enabled as boolean) ?? true, hour: cfg.hour ?? 7 };
+  const companyCfg = (companyTask?.config as { recipients?: string }) ?? {};
+  const company = {
+    enabled: (companyTask?.enabled as boolean) ?? false,
+    recipients: companyCfg.recipients || "events@xpressdjs.com",
+  };
 
   return (
     <div className="max-w-[1000px] space-y-5">
@@ -54,7 +60,7 @@ export default async function BriefingsSettingsPage() {
           often. Tasks are generated at 5:30am so they&apos;re included in the briefing.
         </p>
       </div>
-      <BriefingsClient rows={rows} global={global} />
+      <BriefingsClient rows={rows} global={global} company={company} />
     </div>
   );
 }
