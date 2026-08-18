@@ -41,7 +41,6 @@ import {
   faLock,
   faRobot,
   faPowerOff,
-  faShieldHalved,
   faMusic,
   faCamera,
   faSun,
@@ -293,11 +292,11 @@ export default function Sidebar({ can }: { can?: Record<string, string> }) {
       <div className="border-t border-zinc-200 dark:border-white/[0.06] p-3">
         <ThemeToggle />
         <Link
-          href="/account/security"
+          href="/account"
           className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.06] hover:text-zinc-900 dark:hover:text-white"
         >
-          <FontAwesomeIcon icon={faShieldHalved} className="mr-2 text-xs" />
-          My Security
+          <FontAwesomeIcon icon={faIdBadge} className="mr-2 text-xs" />
+          My Account
         </Link>
         <button
           onClick={signOut}

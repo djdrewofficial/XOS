@@ -1,5 +1,6 @@
 import TwoFactorSetup from "@/components/TwoFactorSetup";
 import { createClient } from "@/lib/supabase/server";
+import AccountNav from "../AccountNav";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export default async function AccountSecurityPage() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="page-title mb-5">My Security</h1>
+      <AccountNav active="security" />
       <div className="card p-6">
         <h2 className="card-title mb-1">Two-Factor Authentication</h2>
         <TwoFactorSetup required={required} />
