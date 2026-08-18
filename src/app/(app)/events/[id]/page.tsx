@@ -67,7 +67,9 @@ import SaveButton from "@/components/SaveButton";
 import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
 import EventFireflies, { type FFMeeting, type FFSuggestion } from "@/components/EventFireflies";
+import EventAI from "@/components/EventAI";
 import { firefliesConfigured } from "@/lib/fireflies";
+import { isOpenAIConfigured } from "@/lib/openai";
 import { moduleAccess } from "@/lib/auth";
 import type { ConvRow } from "@/components/InboxShell";
 import SigningChecklist from "@/components/SigningChecklist";
@@ -1804,6 +1806,9 @@ export default async function EventDetailPage({
           </div>
         </div>
       </div>
+
+      {/* AI assistant */}
+      <EventAI eventId={id} configured={isOpenAIConfigured()} />
 
       {/* Internal notes */}
       <div className="card p-5">
