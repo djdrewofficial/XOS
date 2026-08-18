@@ -1,12 +1,11 @@
 import {
-  assignStaff,
   removeStaff,
   markStaff,
   updateStaffDetails,
   toggleStaffPortal,
 } from "@/app/(app)/events/actions";
 import { money, type Employee } from "@/lib/types";
-import SaveButton from "@/components/SaveButton";
+import AssignStaffForm from "@/components/AssignStaffForm";
 
 type Staff = {
   id: string;
@@ -188,33 +187,7 @@ export default function StaffSection({
       {/* assign */}
       <div className="card max-w-2xl p-5">
         <h2 className="card-title">Assign Staff</h2>
-        <form action={assignStaff.bind(null, eventId)} className="flex flex-wrap items-end gap-2">
-          <div className="min-w-44 flex-1">
-            <label className="label-xs">Employee</label>
-            <select name="employee_id" required className={`${input} w-full`}>
-              <option value="">Select…</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label-xs">Role</label>
-            <input name="role" defaultValue="DJ" list="staff-roles" className={`${input} w-36`} />
-            <datalist id="staff-roles">
-              {["DJ", "MC", "Photo Booth Attendant", "Setup / Takedown", "Production Assistant", "Lighting Tech"].map((r) => (
-                <option key={r} value={r} />
-              ))}
-            </datalist>
-          </div>
-          <div>
-            <label className="label-xs">Wage ($)</label>
-            <input type="number" step="0.01" name="flat_wage" defaultValue={0} className={`${input} w-24`} />
-          </div>
-          <SaveButton savedLabel="Done">Assign</SaveButton>
-        </form>
+        <AssignStaffForm eventId={eventId} employees={employees} inputClass={input} />
       </div>
     </div>
   );
