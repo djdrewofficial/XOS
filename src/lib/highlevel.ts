@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { pausedEventIdSet } from "@/lib/commsPause";
 import { createClient } from "@/lib/supabase/server";
 // toE164 lives in lib/phone (neutral module) so lib/smsOptOut can use it without a
 // circular import back to this file. Re-exported below for existing importers.
@@ -571,6 +572,7 @@ export async function processSmsOutbox(
   // enrich the GHL contact on first upsert.
   const queued = (claimed ?? []) as Array<{
     id: string;
+    event_id: string | null;
     client_id: string | null;
     to_number: string | null;
     channel: string | null;
@@ -596,11 +598,24 @@ export async function processSmsOutbox(
   let failed = 0;
   let suppressed = 0;
 
+  // Per-event comms pause: events run in parallel with another system (e.g. DJEP)
+  // don't send client-facing SMS. Staff alerts (client_id null) still go out.
+  const pausedEvents = await pausedEventIdSet(supabase, (queued ?? []).map((m) => m.event_id as string | null));
+
   for (const msg of queued ?? []) {
     const fail = async (error: string) => {
       await supabase.from("sms_log").update({ status: "failed", error }).eq("id", msg.id);
       failed++;
     };
+
+    if (msg.client_id && msg.event_id && pausedEvents.has(msg.event_id)) {
+      await supabase
+        .from("sms_log")
+        .update({ status: "suppressed", error: "automated comms paused for this event" })
+        .eq("id", msg.id);
+      suppressed++;
+      continue;
+    }
 
     // TCPA opt-out gate — the single chokepoint every queued SMS drains through
     // (booking helpers, payment reminders, notifications, pay codes). Never text

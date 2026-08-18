@@ -47,6 +47,7 @@ import {
   deleteEvent,
   archiveEvent,
   unarchiveEvent,
+  setEventCommsPaused,
 } from "../actions";
 import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/actions";
 import InlineEditCard from "@/components/InlineEditCard";
@@ -313,6 +314,9 @@ export default async function EventDetailPage({
 
   const fileLinks = new Map<string, string>();
   for (const [fid, url] of signedUrlEntries) if (url) fileLinks.set(fid, url);
+
+  // comms_paused isn't on the hand-written XEvent type; the DB column exists (select *).
+  const commsPaused = (event as { comms_paused?: boolean }).comms_paused ?? false;
 
   // ---- Fireflies: lives inside the Notes tab; load its data only when that's open ----
   let ffMeetings: FFMeeting[] = [];
@@ -2088,6 +2092,27 @@ export default async function EventDetailPage({
             </div>
           )}
         </div>
+      </div>
+
+      <div
+        className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-2 text-sm ${
+          commsPaused
+            ? "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40"
+            : "border-zinc-200 bg-white/50 dark:border-white/10 dark:bg-white/[0.02]"
+        }`}
+      >
+        <span className={commsPaused ? "text-amber-800 dark:text-amber-300" : "text-zinc-500"}>
+          {commsPaused ? (
+            <>⏸ Automated client emails &amp; texts are <strong>paused</strong> for this event. Staff notifications still work.</>
+          ) : (
+            <>Automated client emails &amp; texts are active for this event.</>
+          )}
+        </span>
+        <form action={setEventCommsPaused.bind(null, id, !commsPaused)}>
+          <button className={`px-3 py-1.5 text-xs ${commsPaused ? "btn-primary" : "btn-ghost"}`}>
+            {commsPaused ? "Resume automated comms" : "Pause automated comms"}
+          </button>
+        </form>
       </div>
 
       <UrlTabs

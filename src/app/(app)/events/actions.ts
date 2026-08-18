@@ -580,6 +580,17 @@ export async function setEventStatus(id: string, statusId: string) {
   revalidatePath("/events");
 }
 
+/** Pause/resume automated CLIENT communications (email + SMS) for one event — used
+    when the event is being run in parallel with another system (e.g. DJEP). Staff
+    notifications are unaffected; the outbox drains enforce this per event. */
+export async function setEventCommsPaused(id: string, paused: boolean) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const { error } = await supabase.from("events").update({ comms_paused: paused }).eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${id}`);
+}
+
 export async function addPayment(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();

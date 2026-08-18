@@ -5,6 +5,7 @@ import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { docTypeClientLabel } from "@/lib/documentBlocks";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell, withComplianceFooter, type EmailFooter } from "@/lib/signing";
 import { isEmailOptedOut, unsubscribeToken } from "@/lib/emailOptOut";
+import { pausedEventIdSet } from "@/lib/commsPause";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
 import { isHighLevelConfigured, sendEmailViaHighLevel } from "@/lib/highlevel";
@@ -470,7 +471,20 @@ export async function processOutbox(
   let failed = 0;
   let suppressed = 0;
 
+  // Per-event comms pause: events run in parallel with another system (e.g. DJEP)
+  // don't send client-facing mail. Staff alerts (client_id null) still go out.
+  const pausedEvents = await pausedEventIdSet(supabase, (queued ?? []).map((m: { event_id?: string | null }) => m.event_id ?? null));
+
   for (const msg of queued ?? []) {
+    if (msg.client_id && msg.event_id && pausedEvents.has(msg.event_id)) {
+      await supabase
+        .from("email_log")
+        .update({ status: "cancelled", error: "Suppressed — automated comms paused for this event", sent_at: null })
+        .eq("id", msg.id);
+      suppressed++;
+      continue;
+    }
+
     const from = msg.from_address ? fmtSender(msg.from_name, msg.from_address) : fallbackFrom;
 
     // send-time enrichment: quote tags + attached documents (e-sign link / PDF)
