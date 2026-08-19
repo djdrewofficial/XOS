@@ -1,76 +1,51 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { chatComplete, isOpenAIConfigured } from "@/lib/openai";
 import { htmlToPdf } from "@/lib/pdf";
-import { appUrl } from "@/lib/signing";
-import { buildEventContext } from "@/lib/eventAI";
 import { sendBrandedEmail } from "@/lib/mailgun";
 
-/* Run-of-Show generator. Synthesizes the event's planner timeline + Fireflies call
-   transcript + notes into a booth-ready document (Drew's exact spec), renders a
-   branded PDF, saves it to the Docs tab (event-files, staff-only), and can email it
-   to the assigned staff. Server-only. NOTE: Vibo PDF text isn't parsed yet (no PDF
-   text lib) — for Vibo events the doc is built from the transcript/notes and the
-   Vibo export is attached to the event for reference. */
+/* Run-of-Show helpers. Generation is ASYNC (Netlify serverless caps sync requests at
+   ~26s, but OpenAI synthesis + PDF render is longer): the start route builds the event
+   context and triggers a background function that does the OpenAI call, then hands the
+   HTML to the finalize route which renders the branded PDF here (chromium works in
+   Next), saves it to Docs, and emails staff. Drew's exact spec is the SYSTEM prompt.
+   Vibo PDF text isn't parsed yet — for Vibo events the doc builds from transcript/notes
+   and flags to confirm music against the attached Vibo PDF. */
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// Drew's spec, verbatim, plus how to read the provided inputs + the HTML output format.
-const SYSTEM = `Generate a wedding run of show for Xpress Entertainment from three inputs: a Vibo export, a planner timeline, and a Fireflies call transcript. Treat Vibo as source of truth for music, names, and couple-written notes; the planner timeline as source of truth for clock times, sequence, and vendor responsibilities; and the transcript as source of truth for decisions made live on the call, overriding both documents when they conflict because it is the most recent input. Filter every beat down to what Xpress or the MC actually does, keeping other vendors only where they are a dependency. Build the timeline on the planner's clock, attach Vibo songs and notes to matching beats, then apply transcript decisions as amendments. Do not silently pick a winner when sources disagree: resolve only same-thing-different-name cases, and surface everything else as a numbered CRITICAL FLAGS block at the top of the document, covering same-field-different-value conflicts, direct contradictions, and stale-versus-updated fields, each stating exactly what to confirm and who to confirm it with. Promote every pre-event prep item out of the timeline into that flags block, including custom edits, mashups, short versions, cue points, and anything still marked TBD. Render as a flags block, then chronological phase sections with time/beat/music-cue rows, then reference appendices for playlists, MC name pronunciations, and music rules. Write for someone standing behind a booth mid-event: every cue must be executable without opening a second document.
+export const RUN_OF_SHOW_SYSTEM = `Generate a wedding run of show for Xpress Entertainment from three inputs: a Vibo export, a planner timeline, and a Fireflies call transcript. Treat Vibo as source of truth for music, names, and couple-written notes; the planner timeline as source of truth for clock times, sequence, and vendor responsibilities; and the transcript as source of truth for decisions made live on the call, overriding both documents when they conflict because it is the most recent input. Filter every beat down to what Xpress or the MC actually does, keeping other vendors only where they are a dependency. Build the timeline on the planner's clock, attach Vibo songs and notes to matching beats, then apply transcript decisions as amendments. Do not silently pick a winner when sources disagree: resolve only same-thing-different-name cases, and surface everything else as a numbered CRITICAL FLAGS block at the top of the document, covering same-field-different-value conflicts, direct contradictions, and stale-versus-updated fields, each stating exactly what to confirm and who to confirm it with. Promote every pre-event prep item out of the timeline into that flags block, including custom edits, mashups, short versions, cue points, and anything still marked TBD. Render as a flags block, then chronological phase sections with time/beat/music-cue rows, then reference appendices for playlists, MC name pronunciations, and music rules. Write for someone standing behind a booth mid-event: every cue must be executable without opening a second document.
 
 The three inputs are provided below as labeled sections of the EVENT DATA: the "PLANNER TIMELINE (XOS)" section is the planner timeline; the "CALL NOTES (Fireflies)" transcript is the call transcript; Vibo music/notes appear either inline in the planner songs or, for legacy events, are noted as living in Vibo/an attached PDF (if the Vibo export text isn't present, build from the planner + transcript and FLAG that the Vibo music list must be confirmed against the attached Vibo PDF). If a source is missing, work from what's available and flag the gap.
 
 OUTPUT FORMAT: return clean semantic HTML only — use <h2>, <h3>, <p>, <ol>, <ul>, <li>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <strong>, <em>. NO <html>/<head>/<body>/<style>/<script> tags, no markdown fences. Start with an <h2>CRITICAL FLAGS</h2> followed by a numbered <ol>. Then one <h2> per chronological phase, each with a <table> whose columns are Time | Beat | Music / Cue. End with <h2>Appendix</h2> sections for playlists, MC name pronunciations, and music rules.`;
 
-async function brandedShell(sb: SupabaseClient, title: string, subtitle: string, bodyHtml: string): Promise<string> {
+/** Render the AI's run-of-show HTML body into a branded PDF. Text-only header (no
+    remote logo) so the renderer never waits on a network image. */
+export async function renderRunOfShowPdf(
+  sb: SupabaseClient,
+  bodyHtml: string,
+  eventName: string,
+  eventDate: string | null,
+): Promise<Buffer> {
   const { data: cs } = await sb.from("company_settings").select("company_name").eq("id", true).maybeSingle();
   const company = (cs?.company_name as string) ?? "Xpress Entertainment";
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
+  let clean = bodyHtml.replace(/^```html?/i, "").replace(/```$/i, "").trim();
+  clean = clean.replace(/<img[^>]*>/gi, "").replace(/<script[\s\S]*?<\/script>/gi, "");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { margin: 0.5in; }
-    body { font-family: -apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:#111; font-size:11px; margin:0; line-height:1.35; }
-    header { display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #111; padding-bottom:8px; margin-bottom:14px; }
-    header img { height:32px; filter:grayscale(1); }
-    .title { font-size:18px; font-weight:800; margin:0; } .sub { color:#555; font-size:11px; }
+    body { font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:#111; font-size:11px; margin:0; line-height:1.35; }
+    header { border-bottom:2px solid #111; padding-bottom:8px; margin-bottom:14px; }
+    .co { font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#555; }
+    .title { font-size:18px; font-weight:800; margin:2px 0 0; } .sub { color:#555; font-size:11px; }
     h2 { font-size:13px; margin:16px 0 6px; border-bottom:1px solid #bbb; padding-bottom:2px; text-transform:uppercase; letter-spacing:0.03em; }
     h3 { font-size:12px; margin:10px 0 4px; }
     table { width:100%; border-collapse:collapse; margin:6px 0; } th,td { border:1px solid #ccc; padding:4px 6px; text-align:left; vertical-align:top; } th { background:#eee; font-size:10px; text-transform:uppercase; }
-    ol,ul { margin:6px 0 6px 18px; } li { margin:2px 0; }
-    ol li { margin:4px 0; }
+    ol,ul { margin:6px 0 6px 18px; } li { margin:3px 0; }
   </style></head><body>
-    <header>
-      <div><div class="title">${esc(title)}</div><div class="sub">${esc(subtitle)}</div></div>
-      <img src="${appUrl()}/logo-light.png" alt="${esc(company)}"/>
-    </header>
-    ${bodyHtml}
+    <header><div class="co">${esc(company)}</div><div class="title">${esc(eventName)} — Run of Show</div>${eventDate ? `<div class="sub">Event date: ${esc(eventDate)}</div>` : ""}</header>
+    ${clean}
   </body></html>`;
-}
-
-export async function generateRunOfShow(
-  sb: SupabaseClient,
-  eventId: string,
-): Promise<{ ok: boolean; pdf?: Buffer; filename?: string; eventName?: string; error?: string }> {
-  if (!isOpenAIConfigured()) return { ok: false, error: "OpenAI isn't configured (OPENAI_API_KEY missing)." };
-  try {
-    const ctx = await buildEventContext(sb, eventId, { transcriptChars: 15000 });
-    if (!ctx) return { ok: false, error: "Event not found." };
-    const { data: ev } = await sb.from("events").select("name, event_date").eq("id", eventId).maybeSingle();
-    const eventName = (ev?.name as string) || "Event";
-
-    let bodyHtml = await chatComplete([{ role: "system", content: SYSTEM }, { role: "user", content: `=== EVENT DATA ===\n${ctx}` }]);
-    bodyHtml = bodyHtml.replace(/^```html?/i, "").replace(/```$/i, "").trim();
-    // strip anything that could stall the PDF renderer (external images/scripts).
-    bodyHtml = bodyHtml.replace(/<img[^>]*>/gi, "").replace(/<script[\s\S]*?<\/script>/gi, "");
-
-    const title = `${eventName} — Run of Show`;
-    const subtitle = ev?.event_date ? `Event date: ${ev.event_date}` : "";
-    const html = await brandedShell(sb, title, subtitle, bodyHtml);
-    const pdf = await htmlToPdf(html);
-    const filename = `Run of Show — ${eventName.replace(/[^\w &'-]/g, "").slice(0, 60)}.pdf`;
-    return { ok: true, pdf, filename, eventName };
-  } catch (e) {
-    console.error("[runOfShow] generate failed", e);
-    return { ok: false, error: e instanceof Error ? e.message : "Generation failed." };
-  }
+  return htmlToPdf(html);
 }
 
 /** Save the PDF into the event's Docs (event-files, staff-only). Returns the file id. */
@@ -107,4 +82,8 @@ export async function emailRunOfShowToStaff(admin: SupabaseClient, eventId: stri
     if (res.ok) sent++;
   }
   return sent;
+}
+
+export function runOfShowFilename(eventName: string): string {
+  return `Run of Show — ${eventName.replace(/[^\w &'-]/g, "").slice(0, 60)}.pdf`;
 }
