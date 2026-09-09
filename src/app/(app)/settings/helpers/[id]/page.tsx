@@ -29,6 +29,7 @@ type HelperAction = {
   helper_id?: string;
   number?: string;
   journey_type_id?: string;
+  prompt?: boolean;
 };
 
 const DATE_FIELDS = [
@@ -388,11 +389,20 @@ export default async function EditHelperPage({
       <div className="rounded-lg bg-zinc-100 px-4 py-2.5 text-xs text-zinc-500 dark:bg-white/[0.04] dark:text-zinc-400">
         Texts are queued to the outbox and sent through HighLevel — the conversation (including replies) appears in
         your HighLevel inbox. Pick an SMS template (managed under Settings → Email &amp; SMS Templates); its merge tags
-        are filled in at send time. Every send is logged on the event.
+        are filled in at send time. Every send is logged on the event. Turn on <strong>Prompt To Send Text</strong> to
+        review the text each time someone clicks this helper — the confirm dialog shows the finished message, you can
+        edit the wording or untick it so nothing is sent. (Helpers fired automatically by a trigger or the scheduler
+        always send the template as-is.)
       </div>
       <Section title="Send Text Message To Related Contact">
         <Row label="Client" hint="Sent to the client's cell phone — skipped if none on file.">
           <SmsTemplateSelect name="action_sms_template_id" value={clientSms?.template_id} />
+        </Row>
+        <Row
+          label="Prompt To Send Text"
+          hint="Ask before sending: clicking the helper shows the text, lets you edit it, and lets you skip it (e.g. you already texted the client from your own cell)."
+        >
+          <CheckBoxField name="action_sms_prompt" label="Prompt me before sending" defaultChecked={clientSms?.prompt === true} />
         </Row>
       </Section>
       <Section title="Send Text Message To Specific Number">
@@ -408,6 +418,9 @@ export default async function EditHelperPage({
         <Row label="Send This Text">
           <SmsTemplateSelect name="sms_custom_template_id" value={customSms?.template_id} />
         </Row>
+        <Row label="Prompt To Send Text" hint="Confirm, edit or skip this text each time the helper is clicked.">
+          <CheckBoxField name="sms_custom_prompt" label="Prompt me before sending" defaultChecked={customSms?.prompt === true} />
+        </Row>
       </Section>
       <Section title="Send Text Message To Employees">
         <Row label="Send To">
@@ -421,6 +434,9 @@ export default async function EditHelperPage({
         </Row>
         <Row label="Send This Text" hint="Sent to each recipient's employee phone number — skipped if none on file.">
           <SmsTemplateSelect name="staff_sms_template_id" value={staffSms?.template_id} />
+        </Row>
+        <Row label="Prompt To Send Text" hint="Confirm, edit or skip this text each time the helper is clicked.">
+          <CheckBoxField name="staff_sms_prompt" label="Prompt me before sending" defaultChecked={staffSms?.prompt === true} />
         </Row>
       </Section>
     </div>

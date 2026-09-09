@@ -16,6 +16,8 @@ export type HelperAction = {
   body?: string;
   minutes?: string;
   helper_id?: string;
+  /** SMS actions only: confirm/edit/skip this text when a human clicks the helper. */
+  prompt?: boolean;
 };
 
 export type HelperLookups = {
@@ -54,10 +56,14 @@ export function summarizeHelperActions(actions: HelperAction[], lk: HelperLookup
         out.push(`Email to employees: ${tmpl(lk.emailTemplates, a.template_id)}`);
         break;
       case "send_sms":
-        out.push(`SMS ${a.to === "custom" ? "(custom number)" : "to client"}: ${a.template_id ? tmpl(lk.smsTemplates, a.template_id) : "text message"}`);
+        out.push(
+          `SMS ${a.to === "custom" ? "(custom number)" : "to client"}: ${a.template_id ? tmpl(lk.smsTemplates, a.template_id) : "text message"}${a.prompt ? " — you'll confirm it below" : ""}`
+        );
         break;
       case "send_sms_staff":
-        out.push(`SMS to employees: ${a.template_id ? tmpl(lk.smsTemplates, a.template_id) : "text message"}`);
+        out.push(
+          `SMS to employees: ${a.template_id ? tmpl(lk.smsTemplates, a.template_id) : "text message"}${a.prompt ? " — you'll confirm it below" : ""}`
+        );
         break;
       case "set_status":
         out.push(`Change status → ${(a.status_id && lk.statuses?.[a.status_id]) || "new status"}`);

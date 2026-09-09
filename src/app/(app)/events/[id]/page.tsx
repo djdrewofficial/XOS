@@ -482,8 +482,15 @@ export default async function EventDetailPage({
   const dateDefMap = Object.fromEntries((dateDefs ?? []).map((d) => [d.id, d.name]));
   const helpersWithSummary = (helpers ?? []).map((h) => ({
     ...h,
+    // any SMS action flagged "prompt to send" makes the confirm dialog load the
+    // rendered text so it can be edited or skipped before the helper runs
+    sms_prompt: (((h as { actions?: HelperAction[] }).actions ?? []) as HelperAction[]).some(
+      (a) => (a.type === "send_sms" || a.type === "send_sms_staff") && a.prompt === true
+    ),
     summary: summarizeHelperActions(((h as { actions?: HelperAction[] }).actions ?? []) as HelperAction[], {
       emailTemplates: emailTplMap,
+      // the templates query returns email + SMS rows, so one map names both
+      smsTemplates: emailTplMap,
       statuses: statusMap,
       employees: empMap,
       dateDefs: dateDefMap,

@@ -785,7 +785,59 @@ export async function updateBillingTerms(eventId: string, formData: FormData) {
   revalidatePath(`/events/${eventId}`);
 }
 
-export async function runBookingHelper(eventId: string, helperId: string) {
+/** One SMS action on a helper that is flagged "prompt to send", rendered exactly as
+    it would go out (merge tags filled, HTML reduced to text) so the office can read,
+    edit or skip it before the helper runs. */
+export type HelperSmsPrompt = {
+  index: number;
+  kind: "client" | "custom" | "staff";
+  label: string;
+  template: string | null;
+  recipients: { name: string | null; phone: string }[];
+  body: string;
+};
+
+export type HelperSmsOverride = { skip?: boolean; body?: string };
+
+/** ~10 SMS segments; anything longer is a template problem, not a text message. */
+const SMS_BODY_MAX = 1600;
+
+function cleanSmsOverrides(
+  overrides?: Record<string, HelperSmsOverride>
+): Record<string, HelperSmsOverride> | null {
+  if (!overrides) return null;
+  const out: Record<string, HelperSmsOverride> = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!/^\d+$/.test(key) || !value) continue; // keys are action indexes
+    if (value.skip) {
+      out[key] = { skip: true };
+      continue;
+    }
+    const body = (value.body ?? "").trim().slice(0, SMS_BODY_MAX);
+    if (body) out[key] = { body };
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** What the prompted texts on this helper would say for this event. */
+export async function getHelperSmsPrompts(eventId: string, helperId: string): Promise<HelperSmsPrompt[]> {
+  await requireModule("events", "edit", { mode: "throw" });
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("preview_helper_sms", {
+    p_helper_id: helperId,
+    p_event_id: eventId,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as HelperSmsPrompt[];
+}
+
+export async function runBookingHelper(
+  eventId: string,
+  helperId: string,
+  // per-action decisions for SMS actions flagged "prompt to send" — skip the text
+  // (already texted from a personal phone) or send an edited body
+  smsOverrides?: Record<string, HelperSmsOverride>
+) {
   await requireModule("events", "edit", { mode: "throw" });
   // SECURITY DEFINER — service-role client so a signed-in client/guest can't call
   // run_booking_helper directly (authenticated EXECUTE revoked, migration 00166).
@@ -794,6 +846,7 @@ export async function runBookingHelper(eventId: string, helperId: string) {
   const { error } = await admin.rpc("run_booking_helper", {
     p_helper_id: helperId,
     p_event_id: eventId,
+    p_sms_overrides: cleanSmsOverrides(smsOverrides),
   });
   if (error) throw new Error(error.message);
   // fire this helper's webhook too (so a manual click can test the Zap)

@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { runBookingHelper } from "@/app/(app)/events/actions";
+import {
+  runBookingHelper,
+  getHelperSmsPrompts,
+  type HelperSmsPrompt,
+  type HelperSmsOverride,
+} from "@/app/(app)/events/actions";
 
 type Helper = {
   id: string;
@@ -16,7 +21,12 @@ type Helper = {
   hide_if_already_ran: boolean;
   hide_if_helpers_ran: string[];
   summary: string[];
+  /** helper has at least one SMS action flagged "prompt to send" */
+  sms_prompt?: boolean;
 };
+
+/** The operator's decision for one prompted text: send it or not, and the final wording. */
+type SmsChoice = { send: boolean; body: string };
 
 export default function BookingHelperBar({
   eventId,
@@ -35,6 +45,9 @@ export default function BookingHelperBar({
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [prompts, setPrompts] = useState<HelperSmsPrompt[] | null>(null);
+  const [loadingPrompts, setLoadingPrompts] = useState(false);
+  const [choices, setChoices] = useState<Record<number, SmsChoice>>({});
 
   const visible = helpers.filter((h) => {
     if (h.visible_status_ids.length > 0 && (!statusId || !h.visible_status_ids.includes(statusId))) return false;
@@ -46,12 +59,44 @@ export default function BookingHelperBar({
 
   if (visible.length === 0) return null;
 
+  function close() {
+    setConfirm(null);
+    setPrompts(null);
+    setChoices({});
+    setLoadingPrompts(false);
+  }
+
+  /* Opening the dialog also loads the rendered text for any SMS action set to
+     "prompt to send", so the office reads the real message before it goes out. */
+  function open(h: Helper) {
+    setError(null);
+    setConfirm(h);
+    setPrompts(null);
+    setChoices({});
+    if (!h.sms_prompt) return;
+    setLoadingPrompts(true);
+    getHelperSmsPrompts(eventId, h.id)
+      .then((rows) => {
+        setPrompts(rows);
+        setChoices(Object.fromEntries(rows.map((r) => [r.index, { send: r.recipients.length > 0, body: r.body }])));
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load this helper's text message."))
+      .finally(() => setLoadingPrompts(false));
+  }
+
   function run(h: Helper) {
     setError(null);
+    // unticked → skip that text entirely; edited → send the operator's wording
+    const overrides: Record<string, HelperSmsOverride> = {};
+    for (const p of prompts ?? []) {
+      const choice = choices[p.index] ?? { send: true, body: p.body };
+      if (!choice.send || p.recipients.length === 0) overrides[p.index] = { skip: true };
+      else if (choice.body.trim() !== p.body.trim()) overrides[p.index] = { body: choice.body };
+    }
     startTransition(async () => {
       try {
-        await runBookingHelper(eventId, h.id);
-        setConfirm(null);
+        await runBookingHelper(eventId, h.id, Object.keys(overrides).length > 0 ? overrides : undefined);
+        close();
         setDone(h.title);
         setTimeout(() => setDone(null), 6000);
       } catch (e) {
@@ -70,7 +115,7 @@ export default function BookingHelperBar({
           <button
             key={h.id}
             type="button"
-            onClick={() => setConfirm(h)}
+            onClick={() => open(h)}
             className="rounded px-3 py-1.5 shadow-sm transition-transform hover:scale-105"
             style={{
               backgroundColor: h.button_bg,
@@ -92,9 +137,14 @@ export default function BookingHelperBar({
 
       {/* confirmation dialog */}
       {confirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !pending && setConfirm(null)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !pending && close()}
+        >
           <div
-            className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-zinc-900"
+            className={`max-h-[85vh] w-full overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-zinc-900 ${
+              confirm.sms_prompt ? "max-w-lg" : "max-w-md"
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-center text-lg font-extrabold text-zinc-900 dark:text-white">{confirm.title}</h3>
@@ -110,6 +160,58 @@ export default function BookingHelperBar({
               )}
             </ul>
 
+            {loadingPrompts && <div className="mt-4 text-center text-sm text-zinc-500">Loading the text message…</div>}
+
+            {/* prompted texts: edit the wording, or untick so nothing is sent */}
+            {(prompts ?? []).map((p) => {
+              const choice = choices[p.index] ?? { send: true, body: p.body };
+              const noRecipient = p.recipients.length === 0;
+              return (
+                <div
+                  key={p.index}
+                  className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                >
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                    <input
+                      type="checkbox"
+                      checked={choice.send && !noRecipient}
+                      disabled={noRecipient || pending}
+                      onChange={(ev) => setChoices((s) => ({ ...s, [p.index]: { ...choice, send: ev.target.checked } }))}
+                      className="size-4 accent-brand-light"
+                    />
+                    Send this text
+                  </label>
+                  <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    {p.label}
+                    {p.template ? ` · ${p.template}` : ""}
+                  </div>
+
+                  {noRecipient ? (
+                    <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                      No phone number on file — nothing will be texted.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+                        {p.recipients.map((r) => (r.name ? `${r.name} (${r.phone})` : r.phone)).join(", ")}
+                      </div>
+                      <textarea
+                        rows={5}
+                        value={choice.body}
+                        disabled={!choice.send || pending}
+                        onChange={(ev) => setChoices((s) => ({ ...s, [p.index]: { ...choice, body: ev.target.value } }))}
+                        className="input mt-2 w-full text-sm disabled:opacity-50"
+                      />
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-400 dark:text-zinc-500">
+                        <span>Edits apply to this send only — the template is untouched.</span>
+                        <span>{choice.body.trim().length} chars</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
             {error && (
               <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-center text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
                 {error}
@@ -120,14 +222,14 @@ export default function BookingHelperBar({
               <button
                 type="button"
                 disabled={pending}
-                onClick={() => setConfirm(null)}
+                onClick={close}
                 className="rounded-lg bg-red-500 px-6 py-2 text-sm font-bold text-white shadow transition-all hover:brightness-110 disabled:opacity-60"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || loadingPrompts}
                 onClick={() => run(confirm)}
                 className="rounded-lg bg-emerald-500 px-7 py-2 text-sm font-bold text-white shadow transition-all hover:brightness-110 disabled:opacity-60"
               >

@@ -10,7 +10,14 @@ function clean(v: FormDataEntryValue | null): string | null {
   return s === "" ? null : s;
 }
 
-type HelperAction = Record<string, string>;
+type HelperAction = Record<string, string | boolean>;
+
+/** "Prompt to send text" checkbox state for one of the three SMS actions. When on,
+    a human clicking the helper confirms (and can edit or skip) that text instead of
+    it going out automatically. Automated runs ignore the flag and send as configured. */
+function smsPrompt(formData: FormData, name: string): boolean {
+  return formData.get(name) === "on";
+}
 
 const DATE_FIELDS = [
   "initial_contact_date",
@@ -97,18 +104,36 @@ function buildHelperPayload(formData: FormData) {
 
   // texts (HighLevel SMS) — template-based, mirroring the email actions above
   const smsTemplateId = clean(formData.get("action_sms_template_id"));
-  if (smsTemplateId) actions.push({ type: "send_sms", to: "client", template_id: smsTemplateId });
+  if (smsTemplateId) {
+    actions.push({
+      type: "send_sms",
+      to: "client",
+      template_id: smsTemplateId,
+      prompt: smsPrompt(formData, "action_sms_prompt"),
+    });
+  }
 
   const smsCustomNumber = clean(formData.get("sms_custom_number"));
   const smsCustomTemplate = clean(formData.get("sms_custom_template_id"));
   if (smsCustomNumber && smsCustomTemplate) {
-    actions.push({ type: "send_sms", to: "custom", number: smsCustomNumber, template_id: smsCustomTemplate });
+    actions.push({
+      type: "send_sms",
+      to: "custom",
+      number: smsCustomNumber,
+      template_id: smsCustomTemplate,
+      prompt: smsPrompt(formData, "sms_custom_prompt"),
+    });
   }
 
   const staffSmsTemplate = clean(formData.get("staff_sms_template_id"));
   const staffSmsAudience = clean(formData.get("staff_sms_audience"));
   if (staffSmsTemplate && staffSmsAudience) {
-    actions.push({ type: "send_sms_staff", template_id: staffSmsTemplate, audience: staffSmsAudience });
+    actions.push({
+      type: "send_sms_staff",
+      template_id: staffSmsTemplate,
+      audience: staffSmsAudience,
+      prompt: smsPrompt(formData, "staff_sms_prompt"),
+    });
   }
 
   const note = clean(formData.get("action_note"));
