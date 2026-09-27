@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 
-type Result = { ok: boolean; error?: string };
+type Result = { ok: boolean; error?: string; message?: string };
 
 /** Login management card — works for any subject (employee, client) that has an
     id, an email, and invite/reset server actions taking that id. */
@@ -32,7 +32,7 @@ export default function LoginAccess({
     setMsg(null);
     startTransition(async () => {
       const r = await fn(subjectId);
-      setMsg(r.ok ? { ok: true, text: okText } : { ok: false, text: r.error ?? "Something went wrong." });
+      setMsg(r.ok ? { ok: true, text: r.message ?? okText } : { ok: false, text: r.error ?? "Something went wrong." });
     });
   }
 

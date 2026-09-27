@@ -42,7 +42,7 @@ export async function resetClientPassword(id: string): Promise<{ ok: boolean; er
   await requireModule("clients", "edit", { mode: "throw", supabase });
   const { data: c } = await supabase.from("clients").select("email").eq("id", id).maybeSingle();
   if (!c?.email) return { ok: false, error: "No email on file." };
-  return await sendPasswordReset(c.email);
+  return await sendPasswordReset(c.email, { type: "client", clientId: id });
 }
 
 /** Manually set a client's SMS opt-out state (STOP suppression). Use only when a

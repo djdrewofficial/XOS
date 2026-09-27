@@ -279,7 +279,7 @@ export default async function EmployeeProfilePage({
       reset={resetEmployeePassword}
       footer={
         <>
-          Invites and resets email a secure link to set a password. Screen access is controlled by
+          Invites email and text (to the phone on file) a secure link to set a password. Screen access is controlled by
           tier on the General tab and in{" "}
           <a href="/settings/permissions" className="font-semibold text-brand underline dark:text-brand-lighter">
             Settings → Permissions

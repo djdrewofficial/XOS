@@ -7,6 +7,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendBrandedEmail } from "@/lib/mailgun";
 import { appUrl } from "@/lib/signing";
+import { toE164 } from "@/lib/phone";
+import { processSmsOutbox } from "@/lib/highlevel";
 
 export type AccountType = "staff" | "client" | "event_guest";
 
@@ -50,6 +52,66 @@ async function ensureAuthUser(admin: Admin, email: string): Promise<string> {
   const existing = await findAuthUserByEmail(admin, email);
   if (existing) return existing;
   throw new Error(error?.message ?? "Could not create or locate the login.");
+}
+
+type Subject = { type: AccountType; employeeId?: string; clientId?: string; eventGuestId?: string };
+
+function subjectKey(s: Subject): { col: "employee_id" | "client_id" | "event_guest_id"; id: string | undefined } {
+  if (s.type === "staff") return { col: "employee_id", id: s.employeeId };
+  if (s.type === "client") return { col: "client_id", id: s.clientId };
+  return { col: "event_guest_id", id: s.eventGuestId };
+}
+
+/** Resolve the ONE login for this person at their CURRENT email. If they're
+    already linked to a login under an older email (the email was edited after
+    the first invite), move that login to the new email instead of minting a
+    second, unlinked login — an unlinked login signs in to "No access". If the
+    new email already belongs to a stray unlinked login, adopt that one. Any
+    stale accounts row for this person is removed so the upsert can't collide
+    on the one-login-per-person index. */
+async function resolveLogin(admin: Admin, s: Subject, email: string): Promise<string> {
+  const { col, id } = subjectKey(s);
+  let userId: string | null = null;
+
+  if (id) {
+    const { data: linked } = await admin.from("accounts").select("auth_user_id").eq(col, id).maybeSingle();
+    const linkedId = (linked?.auth_user_id as string | undefined) ?? null;
+    if (linkedId) {
+      const { data: u } = await admin.auth.admin.getUserById(linkedId);
+      if ((u?.user?.email ?? "").toLowerCase() === email) {
+        userId = linkedId;
+      } else if (u?.user) {
+        const { error } = await admin.auth.admin.updateUserById(linkedId, { email, email_confirm: true });
+        if (!error) userId = linkedId;
+      }
+    }
+  }
+
+  if (!userId) {
+    const taken = await findAuthUserByEmail(admin, email);
+    if (taken) {
+      const { data: other } = await admin.from("accounts").select(col).eq("auth_user_id", taken).maybeSingle();
+      const otherSubject = (other as Record<string, string | null> | null)?.[col] ?? null;
+      if (other && otherSubject !== id) throw new Error(`${email} is already used by another XOS login.`);
+      userId = taken;
+    } else {
+      userId = await ensureAuthUser(admin, email);
+    }
+  }
+
+  if (id) await admin.from("accounts").delete().eq(col, id).neq("auth_user_id", userId);
+  return userId;
+}
+
+/** Text a set-password link to staff. Queued through sms_log so the TCPA
+    opt-out gate and HighLevel delivery apply like every other text. */
+async function textLoginLink(admin: Admin, phone: string | null | undefined, body: string): Promise<boolean> {
+  const to = toE164(phone ?? "");
+  if (!to) return false;
+  const { error } = await admin.from("sms_log").insert({ to_number: to, body, status: "queued" });
+  if (error) return false;
+  await processSmsOutbox(admin);
+  return true;
 }
 
 /** A recovery link that lands on /auth/set-password (used for both invite and reset). */
@@ -122,13 +184,15 @@ export async function sendAccountInvite(args: {
   employeeId?: string;
   clientId?: string;
   eventGuestId?: string;
-}): Promise<{ ok: boolean; error?: string }> {
+  /** Staff only: also text the set-password link to this number. */
+  phone?: string | null;
+}): Promise<{ ok: boolean; error?: string; message?: string }> {
   const email = (args.email ?? "").trim().toLowerCase();
   if (!email) return { ok: false, error: "No email on file — add one first." };
 
   const admin = createAdminClient();
   try {
-    const userId = await ensureAuthUser(admin, email);
+    const userId = await resolveLogin(admin, args, email);
 
     const row: Record<string, unknown> = {
       auth_user_id: userId,
@@ -162,11 +226,27 @@ export async function sendAccountInvite(args: {
       if (js) appLinks = { ios: js.vibo_ios_url, android: js.vibo_android_url, web: js.vibo_web_url };
     }
 
-    return await sendBrandedEmail({
+    const mail = await sendBrandedEmail({
       to: email,
       subject: args.type === "staff" ? "Your XOS account is ready" : "Your Xpress account — set your password & download the app",
       contentHtml: inviteHtml(greeting, link, args.type, appLinks),
     });
+    if (args.type !== "staff") return mail;
+
+    // Same link as the email (a new recovery link would void the emailed one).
+    const texted = await textLoginLink(
+      admin,
+      args.phone,
+      `${args.name ? `Hi ${args.name}, your` : "Your"} Xpress Entertainment XOS account is ready. Set your password and sign in here: ${link}`,
+    );
+    if (!mail.ok && !texted) return mail;
+    const sentTo = [mail.ok ? email : null, texted ? "text" : null].filter(Boolean).join(" + ");
+    return {
+      ok: true,
+      message: `Invitation sent (${sentTo}).${mail.ok ? "" : ` Email failed: ${mail.error ?? "unknown error"}`}${
+        texted ? "" : " No valid mobile number on file, so no text was sent."
+      }`,
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -189,7 +269,7 @@ export async function inviteClientToXos(args: {
   if (!email) return { ok: false, error: "No email on file — add one first." };
   const admin = createAdminClient();
   try {
-    const userId = await ensureAuthUser(admin, email);
+    const userId = await resolveLogin(admin, { type: "client", clientId: args.clientId }, email);
     await admin.from("accounts").upsert(
       { auth_user_id: userId, account_type: "client", client_id: args.clientId, email, updated_at: new Date().toISOString() },
       { onConflict: "auth_user_id" },
@@ -225,13 +305,24 @@ export async function inviteClientToXos(args: {
 /** Email a password-reset link to an existing login. */
 export async function sendPasswordReset(
   email: string | null | undefined,
+  /** The person this reset is for — keeps their linked login on their current email. */
+  subject?: Subject,
 ): Promise<{ ok: boolean; error?: string }> {
   const addr = (email ?? "").trim().toLowerCase();
   if (!addr) return { ok: false, error: "No email on file." };
   const admin = createAdminClient();
   try {
-    const userId = await findAuthUserByEmail(admin, addr);
+    const userId = subject ? await resolveLogin(admin, subject, addr) : await findAuthUserByEmail(admin, addr);
     if (!userId) return { ok: false, error: "No XOS login exists for that email yet — send an invite first." };
+    if (subject) {
+      // resolveLogin may have moved them onto a different login; re-link it.
+      const { col, id } = subjectKey(subject);
+      await admin.from("accounts").upsert(
+        { auth_user_id: userId, account_type: subject.type, [col]: id, email: addr, updated_at: new Date().toISOString() },
+        { onConflict: "auth_user_id" },
+      );
+      if (subject.type === "staff" && id) await admin.from("employees").update({ auth_user_id: userId }).eq("id", id);
+    }
     const { data: acct } = await admin.from("accounts").select("account_type").eq("auth_user_id", userId).maybeSingle();
     const link = await recoveryActionLink(admin, addr, setPasswordUrlFor((acct?.account_type as AccountType) ?? "staff"));
     return await sendBrandedEmail({

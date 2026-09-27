@@ -11,13 +11,13 @@ function clean(v: FormDataEntryValue | null): string | null {
   return s === "" ? null : s;
 }
 
-/** Create/ensure this employee's XOS login and email them a set-password link. */
-export async function inviteEmployee(id: string): Promise<{ ok: boolean; error?: string }> {
+/** Create/ensure this employee's XOS login and email + text them a set-password link. */
+export async function inviteEmployee(id: string): Promise<{ ok: boolean; error?: string; message?: string }> {
   const supabase = await createClient();
   await requireModule("employees", "edit", { mode: "throw", supabase });
   const { data: e } = await supabase
     .from("employees")
-    .select("email, first_name")
+    .select("email, first_name, phone")
     .eq("id", id)
     .maybeSingle();
   if (!e?.email) return { ok: false, error: "Add an email to this employee first." };
@@ -26,9 +26,9 @@ export async function inviteEmployee(id: string): Promise<{ ok: boolean; error?:
     email: e.email,
     name: e.first_name,
     employeeId: id,
+    phone: e.phone,
   });
   if (res.ok) {
-  await requireModule("employees", "edit", { mode: "throw" });
     revalidatePath(`/employees/${id}`);
     revalidatePath("/employees");
   }
@@ -41,7 +41,9 @@ export async function resetEmployeePassword(id: string): Promise<{ ok: boolean; 
   await requireModule("employees", "edit", { mode: "throw", supabase });
   const { data: e } = await supabase.from("employees").select("email").eq("id", id).maybeSingle();
   if (!e?.email) return { ok: false, error: "No email on file." };
-  return await sendPasswordReset(e.email);
+  const res = await sendPasswordReset(e.email, { type: "staff", employeeId: id });
+  if (res.ok) revalidatePath(`/employees/${id}`);
+  return res;
 }
 
 export async function createEmployee(formData: FormData) {
