@@ -462,7 +462,8 @@ export default async function EventDetailPage({
   // warn-only signing-requirements checklist (Settings → Signing Requirements)
   const requiredFields = resolveRequiredFields(
     (event.event_type as { required_signing_fields?: string[] | null } | null)?.required_signing_fields,
-    (journeySettings as { required_signing_fields?: string[] | null } | null)?.required_signing_fields
+    (journeySettings as { required_signing_fields?: string[] | null } | null)?.required_signing_fields,
+    (event.event_type as { name?: string | null; proposal_layout?: string | null } | null) ?? { name: null }
   );
   const missingSigning = getMissingSigningFields(requiredFields, {
     event,

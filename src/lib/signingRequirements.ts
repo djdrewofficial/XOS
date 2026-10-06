@@ -41,15 +41,30 @@ export function sanitizeKeys(keys: readonly string[] | null | undefined): Signin
   return (keys ?? []).filter((k): k is SigningFieldKey => ALL_KEYS.has(k));
 }
 
+const PARTNER_B_KEYS = new Set<SigningFieldKey>(["partner_b_name", "partner_b_contact"]);
+
+type EventTypeLite = { name?: string | null; proposal_layout?: string | null } | null | undefined;
+
+/** Couple events (weddings) have a Partner B; corporate, quince, etc. have one
+ *  client. An explicit "Couple" proposal layout also counts as a couple type. */
+export function isCoupleEventType(t: EventTypeLite): boolean {
+  if (t?.proposal_layout === "couple") return true;
+  if (t?.proposal_layout === "business") return false;
+  return /wedding/i.test(t?.name ?? "");
+}
+
 /** Resolve which fields are required for an event: per-type override wins, then
- *  the global default, then the built-in default if neither is configured. */
+ *  the global default, then the built-in default if neither is configured.
+ *  Inherited lists drop the Partner B fields for non-couple event types — a
+ *  per-type override can still require them explicitly. */
 export function resolveRequiredFields(
   typeOverride: readonly string[] | null | undefined,
-  global: readonly string[] | null | undefined
+  global: readonly string[] | null | undefined,
+  eventType?: EventTypeLite
 ): SigningFieldKey[] {
   if (typeOverride != null) return sanitizeKeys(typeOverride);
-  if (global != null) return sanitizeKeys(global);
-  return [...DEFAULT_REQUIRED];
+  const inherited = global != null ? sanitizeKeys(global) : [...DEFAULT_REQUIRED];
+  return eventType && !isCoupleEventType(eventType) ? inherited.filter((k) => !PARTNER_B_KEYS.has(k)) : inherited;
 }
 
 type ClientLite = {

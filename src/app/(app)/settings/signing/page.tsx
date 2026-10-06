@@ -5,6 +5,7 @@ import {
   SIGNING_FIELDS,
   DEFAULT_REQUIRED,
   sanitizeKeys,
+  resolveRequiredFields,
   type SigningFieldKey,
 } from "@/lib/signingRequirements";
 import { saveSigningRequirements } from "./actions";
@@ -78,7 +79,7 @@ export default async function EventTypeWorkflowsPage() {
           )}
           {(types ?? []).map((t) => {
             const override = t.required_signing_fields != null;
-            const selected = override ? sanitizeKeys(t.required_signing_fields as string[]) : global;
+            const selected = override ? sanitizeKeys(t.required_signing_fields as string[]) : resolveRequiredFields(null, global, t);
             return (
               <Row key={t.id} label={t.name}>
                 <div className="space-y-3">
