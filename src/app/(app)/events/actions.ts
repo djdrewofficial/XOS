@@ -1389,6 +1389,41 @@ export async function addEventAddon(eventId: string, formData: FormData) {
   revalidatePath(`/events/${eventId}`);
 }
 
+/** This event's wording for its package (blank / unchanged = the catalog description). */
+export async function updateEventPackageDescription(eventId: string, baseDescription: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const text = (formData.get("description") ?? "").toString().replace(/\r\n/g, "\n").trim();
+  const override = text && text !== baseDescription.replace(/\r\n/g, "\n").trim() ? text : null;
+  const { error } = await supabase.from("events").update({ package_description_override: override }).eq("id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
+/** Edit an add-on already on the event: quantity, this event's price, and its wording. */
+export async function updateEventAddon(
+  eventId: string,
+  eventAddonId: string,
+  base: { price: number; description: string },
+  formData: FormData
+) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const update: Record<string, unknown> = {
+    quantity: Math.max(1, Math.round(num(formData.get("quantity")) || 1)),
+  };
+  // price: blank or the locked/catalog price → no override
+  const priceRaw = clean(formData.get("price"));
+  const price = priceRaw != null ? num(formData.get("price")) : null;
+  update.price_override = price != null && price !== base.price ? price : null;
+  // wording: blank or unchanged → back to the catalog description
+  const text = (formData.get("description") ?? "").toString().replace(/\r\n/g, "\n").trim();
+  update.description_override = text && text !== base.description.replace(/\r\n/g, "\n").trim() ? text : null;
+  const { error } = await supabase.from("event_addons").update(update).eq("id", eventAddonId).eq("event_id", eventId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+}
+
 export async function removeEventAddon(eventId: string, eventAddonId: string) {
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();

@@ -53,7 +53,7 @@ export type EventBundle = {
     package: { name: string; client_facing_name: string | null; default_price: number; description: string | null } | null;
     event_type: { name: string } | null;
   };
-  addons: { quantity: number; price_override: number | null; price_locked: number | null; addon: { name: string; client_facing_name?: string | null; description: string | null; default_price: number } | null }[];
+  addons: { quantity: number; price_override: number | null; price_locked: number | null; description_override?: string | null; addon: { name: string; client_facing_name?: string | null; description: string | null; default_price: number } | null }[];
   schedule: { seq: number; due_date: string | null; amount: number; label: string | null }[];
   pinnedDescription: string | null;
   contractNotes: string[];
@@ -71,7 +71,7 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
       .single(),
     supabase
       .from("event_addons")
-      .select("quantity, price_override, price_locked, addon:addons(name, client_facing_name, description, default_price)")
+      .select("quantity, price_override, price_locked, description_override, addon:addons(name, client_facing_name, description, default_price)")
       .eq("event_id", eventId),
     supabase.from("scheduled_payments").select("seq, due_date, amount, label").eq("event_id", eventId).order("seq"),
     supabase.from("event_notes").select("body").eq("event_id", eventId).eq("kind", "contract").order("created_at"),
@@ -94,6 +94,9 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
     const snapDesc = (ver?.snapshot as { description?: string | null } | undefined)?.description;
     if (snapDesc !== undefined) pinnedDescription = snapDesc ?? null;
   }
+  // this event's own wording (event Financials tab) wins
+  const pkgOverride = (event as { package_description_override?: string | null }).package_description_override;
+  if (pkgOverride) pinnedDescription = pkgOverride;
 
   const e = event as unknown as EventBundle["event"];
   const addonRows = (addons ?? []) as unknown as EventBundle["addons"];
@@ -129,7 +132,7 @@ export function feeSummary(b: EventBundle): {
     : null;
   const addonLines = b.addons.map((a) => ({
     name: `${(a.addon?.client_facing_name as string | null) || a.addon?.name || "Add-On"}${a.quantity > 1 ? ` × ${a.quantity}` : ""}`,
-    description: a.addon?.description ?? null,
+    description: a.description_override || a.addon?.description || null,
     amount: Number(a.price_override ?? a.price_locked ?? a.addon?.default_price ?? 0) * a.quantity,
   }));
   const feeLines: { name: string; amount: number }[] = [];
@@ -158,7 +161,9 @@ export function renderFeeTable(b: EventBundle): string {
     const unit = Number(a.price_override ?? a.price_locked ?? a.addon?.default_price ?? 0);
     rows.push(
       `<tr><td>${esc((a.addon?.client_facing_name as string | null) || a.addon?.name || "Add-On")}${a.quantity > 1 ? ` × ${a.quantity}` : ""}${
-        a.addon?.description ? `<div class="xdoc-desc">${esc(a.addon.description)}</div>` : ""
+        (a.description_override || a.addon?.description)
+          ? `<div class="xdoc-desc">${esc((a.description_override || a.addon?.description) as string)}</div>`
+          : ""
       }</td><td class="xdoc-amount">${money(unit * a.quantity)}</td></tr>`
     );
   }

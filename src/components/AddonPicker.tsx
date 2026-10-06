@@ -1,10 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
-import SaveButton from "@/components/SaveButton";
+import { useRef, useState, useTransition } from "react";
 
 type Addon = { id: string; name: string; default_price: number };
 
+/* Add-on picker for the event Financials tab. Manages its own pending state
+   (not SaveButton) so it's immediately ready for the next add — the shared
+   button's "✓ Added" pulse left people refreshing to add another. */
 export default function AddonPicker({
   catalog,
   action,
@@ -13,15 +15,30 @@ export default function AddonPicker({
   action: (formData: FormData) => Promise<void>;
 }) {
   const [price, setPrice] = useState<string>("");
+  const [pending, startTransition] = useTransition();
+  const [flash, setFlash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   return (
     <form
       ref={formRef}
-      action={async (fd) => {
-        await action(fd);
-        formRef.current?.reset();
-        setPrice("");
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        const name = catalog.find((a) => a.id === fd.get("addon_id"))?.name ?? "Add-on";
+        setError(null);
+        startTransition(async () => {
+          try {
+            await action(fd);
+            formRef.current?.reset();
+            setPrice("");
+            setFlash(`✓ ${name} added`);
+            setTimeout(() => setFlash(null), 2500);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Couldn't add that add-on.");
+          }
+        });
       }}
       className="flex flex-wrap items-end gap-2"
     >
@@ -54,7 +71,14 @@ export default function AddonPicker({
         className="input w-28"
         title="Price for this event — edit to override"
       />
-      <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Added">Add</SaveButton>
+      <button disabled={pending} className="btn-primary gap-2 px-4 py-2 text-xs disabled:cursor-wait">
+        {pending && (
+          <span className="inline-block size-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+        )}
+        {pending ? "Adding…" : "Add"}
+      </button>
+      {flash && <span className="w-full text-xs font-semibold text-green-600 dark:text-green-400">{flash}</span>}
+      {error && <span className="w-full text-xs text-red-600 dark:text-red-400">{error}</span>}
     </form>
   );
 }

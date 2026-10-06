@@ -57,7 +57,7 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   // Staff always see; hosts respect the per-event/type hide flag.
   const financialsVisible = role === "staff" || !hidden;
 
-  const { data: eAddons } = await admin.from("event_addons").select("addon_id, quantity, price_override, price_locked").eq("event_id", eventId);
+  const { data: eAddons } = await admin.from("event_addons").select("addon_id, quantity, price_override, price_locked, description_override").eq("event_id", eventId);
   const { data: pset } = financialsVisible ? await admin.from("payment_settings").select("*").eq("id", true).maybeSingle() : { data: null };
   const ps = (pset ?? {}) as Record<string, unknown>;
   const onlineOn = ps.online_pay_enabled !== false;
@@ -78,7 +78,7 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
     const { data: pkg } = await admin.from("packages").select("name, client_facing_name, description, included_hours, default_price").eq("id", ev.package_id).maybeSingle();
     if (pkg) {
       packageName = pkg.client_facing_name || pkg.name;
-      packageDescription = pkg.description ?? null;
+      packageDescription = (ev.package_description_override as string | null) || pkg.description || null;
       includedHours = pkg.included_hours ?? null;
       pkgDefault = num(pkg.default_price);
     }
@@ -100,7 +100,7 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
     // ?? (not ||) so a $0 comped/free add-on price is honored, matching feeSummary.
     const unit = num(a.price_override ?? a.price_locked ?? mm?.default_price ?? 0);
     const qty = a.quantity ?? 1;
-    return { name: mm?.name ?? "Add-on", detail: mm?.description ?? null, price: financialsVisible ? unit * qty : 0, qty };
+    return { name: mm?.name ?? "Add-on", detail: a.description_override || mm?.description || null, price: financialsVisible ? unit * qty : 0, qty };
   });
 
   const travelFee = financialsVisible ? num(ev.travel_fee) : 0;

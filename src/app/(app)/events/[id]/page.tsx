@@ -26,6 +26,8 @@ import {
   addCustomDateField,
   addEventAddon,
   removeEventAddon,
+  updateEventAddon,
+  updateEventPackageDescription,
   addExpense,
   deleteExpense,
   addTrip,
@@ -437,6 +439,7 @@ export default async function EventDetailPage({
     quantity: number;
     price_override: number | null;
     price_locked?: number | null;
+    description_override?: string | null;
     addon: { id: string; name: string; default_price: number; description: string | null } | null;
   };
   const addonRows = (eventAddons ?? []) as unknown as EventAddonRow[];
@@ -961,6 +964,10 @@ export default async function EventDetailPage({
     const snapDesc = (pinnedVersion?.snapshot as { description?: string | null } | undefined)?.description;
     if (snapDesc !== undefined) pkgDescription = snapDesc;
   }
+  // this event's own wording (Financials tab) wins over the catalog/snapshot
+  const pkgBaseDescription = pkgDescription ?? "";
+  const pkgDescOverride = (event as { package_description_override?: string | null }).package_description_override ?? null;
+  if (pkgDescOverride) pkgDescription = pkgDescOverride;
   const pkgRules = event.package as unknown as {
     allowed_splits?: number[] | null;
     payment_terms?: string | null;
@@ -987,8 +994,25 @@ export default async function EventDetailPage({
                 <span className="font-semibold text-zinc-900 dark:text-white">{event.package.name}</span>
                 <span className="font-semibold">{money(pkgPrice)}</span>
               </summary>
-              <div className="border-t border-zinc-200 dark:border-white/[0.06] px-3 py-2.5 text-xs whitespace-pre-line text-zinc-600 dark:text-zinc-400">
-                {pkgDescription || "No description on file — add one in Supabase (packages.description)."}
+              <div className="border-t border-zinc-200 dark:border-white/[0.06] px-3 py-2.5 text-xs">
+                <p className="whitespace-pre-line text-zinc-600 dark:text-zinc-400">
+                  {pkgDescription || "No description on file."}
+                </p>
+                {pkgDescOverride && (
+                  <p className="mt-1.5 text-[11px] font-semibold text-brand dark:text-brand-lighter">Custom wording for this event</p>
+                )}
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-semibold text-brand hover:underline dark:text-brand-lighter">
+                    Edit description for this event
+                  </summary>
+                  <form action={updateEventPackageDescription.bind(null, id, pkgBaseDescription)} className="mt-2 space-y-2">
+                    <textarea name="description" rows={6} defaultValue={pkgDescription ?? ""} className="input w-full text-xs" />
+                    <p className="text-[11px] text-zinc-400">
+                      Only changes this event (quote, proposal, contract). Clear it to go back to the package&apos;s standard description.
+                    </p>
+                    <SaveButton className="btn-primary px-4 py-1.5 text-xs">Save Description</SaveButton>
+                  </form>
+                </details>
               </div>
             </details>
           ) : (
@@ -1008,8 +1032,51 @@ export default async function EventDetailPage({
               </summary>
               <div className="border-t border-zinc-200 dark:border-white/[0.06] px-3 py-2.5 text-xs">
                 <p className="mb-2 whitespace-pre-line text-zinc-600 dark:text-zinc-400">
-                  {ea.addon?.description || "No description on file."}
+                  {ea.description_override || ea.addon?.description || "No description on file."}
                 </p>
+                {ea.description_override && (
+                  <p className="-mt-1 mb-2 text-[11px] font-semibold text-brand dark:text-brand-lighter">Custom wording for this event</p>
+                )}
+                <details className="mb-2">
+                  <summary className="cursor-pointer font-semibold text-brand hover:underline dark:text-brand-lighter">
+                    Edit this add-on
+                  </summary>
+                  <form
+                    action={updateEventAddon.bind(null, id, ea.id, {
+                      price: Number(ea.price_locked ?? ea.addon?.default_price ?? 0),
+                      description: ea.addon?.description ?? "",
+                    })}
+                    className="mt-2 space-y-2"
+                  >
+                    <div className="flex flex-wrap gap-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-medium text-zinc-500">Quantity</span>
+                        <input type="number" name="quantity" min={1} defaultValue={ea.quantity} className="input w-20 text-xs" />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-medium text-zinc-500">Price each ($)</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          name="price"
+                          defaultValue={ea.price_override ?? ea.price_locked ?? ea.addon?.default_price ?? 0}
+                          className="input w-28 text-xs"
+                        />
+                      </label>
+                    </div>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-medium text-zinc-500">Description for this event</span>
+                      <textarea
+                        name="description"
+                        rows={4}
+                        defaultValue={ea.description_override ?? ea.addon?.description ?? ""}
+                        className="input w-full text-xs"
+                      />
+                    </label>
+                    <p className="text-[11px] text-zinc-400">Only changes this event. Clear the description to use the add-on&apos;s standard wording.</p>
+                    <SaveButton className="btn-primary px-4 py-1.5 text-xs">Save Add-On</SaveButton>
+                  </form>
+                </details>
                 <form action={removeEventAddon.bind(null, id, ea.id)}>
                   <button className="font-semibold text-red-600 dark:text-red-400 hover:underline">Remove Add-On</button>
                 </form>
