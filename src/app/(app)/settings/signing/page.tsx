@@ -43,14 +43,24 @@ export default async function EventTypeWorkflowsPage() {
     (settings.required_signing_fields as string[] | null) ?? DEFAULT_REQUIRED
   );
 
-  const [{ data: types }, { data: docTemplates }] = await Promise.all([
+  const [{ data: types }, { data: docTemplates }, { data: helpers }] = await Promise.all([
     supabase
       .from("event_types")
       .select("id, name, required_signing_fields, proposal_doc_template_id, proposal_layout, payment_chooser, hide_financials")
       .eq("is_active", true)
       .order("name"),
     supabase.from("document_templates").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("booking_helpers").select("id, title, visible_event_type_ids").eq("is_active", true).order("position"),
   ]);
+  const helperOptions = (helpers ?? []).map((h) => ({ value: h.id as string, label: h.title as string }));
+  // a helper with no event-type list shows on every type
+  const helpersForType = (typeId: string) =>
+    (helpers ?? [])
+      .filter((h) => {
+        const ids = (h.visible_event_type_ids ?? []) as string[];
+        return ids.length === 0 || ids.includes(typeId);
+      })
+      .map((h) => h.id as string);
 
   return (
     <div className="max-w-3xl">
@@ -139,6 +149,14 @@ export default async function EventTypeWorkflowsPage() {
                       <CheckGroup name={`type_${t.id}`} options={OPTIONS} selected={selected} />
                     </div>
                   </div>
+                  {helperOptions.length > 0 && (
+                    <div>
+                      <span className="mb-1 block text-[11px] font-medium text-zinc-500">
+                        Booking helpers shown on {t.name} events
+                      </span>
+                      <CheckGroup name={`type_${t.id}_helpers`} options={helperOptions} selected={helpersForType(t.id)} />
+                    </div>
+                  )}
                 </div>
               </Row>
             );
@@ -149,6 +167,7 @@ export default async function EventTypeWorkflowsPage() {
           </Note>
         </Section>
 
+        <input type="hidden" name="helpers_present" value={helperOptions.length > 0 ? "1" : ""} />
         <div className="flex justify-end">
           <SaveButton>Save Settings</SaveButton>
         </div>

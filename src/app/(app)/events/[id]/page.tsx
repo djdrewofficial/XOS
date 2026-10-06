@@ -71,7 +71,8 @@ import EventAI from "@/components/EventAI";
 import RunOfShowButton from "@/components/RunOfShowButton";
 import { firefliesConfigured } from "@/lib/fireflies";
 import { isOpenAIConfigured } from "@/lib/openai";
-import { moduleAccess } from "@/lib/auth";
+import { moduleAccess, getMe } from "@/lib/auth";
+import { helperAllowed } from "@/lib/helperAccess";
 import type { ConvRow } from "@/components/InboxShell";
 import SigningChecklist from "@/components/SigningChecklist";
 import CopyProposalLink from "@/components/CopyProposalLink";
@@ -481,7 +482,9 @@ export default async function EventDetailPage({
   const statusMap = Object.fromEntries((statuses ?? []).map((s) => [s.id, s.name]));
   const empMap = Object.fromEntries((employees ?? []).map((e) => [e.id, `${e.first_name} ${e.last_name}`.trim()]));
   const dateDefMap = Object.fromEntries((dateDefs ?? []).map((d) => [d.id, d.name]));
-  const helpersWithSummary = (helpers ?? []).map((h) => ({
+  // only the helpers set up for this event type and the viewer's role
+  const viewer = await getMe(supabase);
+  const helpersWithSummary = (helpers ?? []).filter((h) => helperAllowed(h, event.event_type_id, viewer?.role)).map((h) => ({
     ...h,
     // any SMS action flagged "prompt to send" makes the confirm dialog load the
     // rendered text so it can be edited or skipped before the helper runs

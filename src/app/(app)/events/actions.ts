@@ -15,7 +15,8 @@ import { runAutomations, fireHelperWebhook } from "@/lib/automations";
 import { dispatchNotification } from "@/lib/notify";
 import { findOrCreateClient } from "@/lib/clients";
 import { reseedEventPlanning, assignAddonSections } from "@/lib/planning";
-import { requireModule } from "@/lib/auth";
+import { requireModule, getMe } from "@/lib/auth";
+import { helperAllowedForEventType, helperAllowedForRole } from "@/lib/helperAccess";
 import { inviteClientToXos } from "@/lib/accounts";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -843,6 +844,18 @@ export async function runBookingHelper(
   // run_booking_helper directly (authenticated EXECUTE revoked, migration 00166).
   // Staff access is already gated by requireModule above.
   const admin = createAdminClient();
+  // the button is hidden for the wrong event type / role — enforce it here too
+  const [me, { data: scope }, { data: ev }] = await Promise.all([
+    getMe(),
+    admin.from("booking_helpers").select("title, visible_event_type_ids, allowed_roles").eq("id", helperId).maybeSingle(),
+    admin.from("events").select("event_type_id").eq("id", eventId).maybeSingle(),
+  ]);
+  if (scope && !helperAllowedForEventType(scope, ev?.event_type_id as string | null)) {
+    throw new Error(`"${scope.title}" isn't set up for this event type.`);
+  }
+  if (scope && !helperAllowedForRole(scope, me?.role)) {
+    throw new Error(`Your role can't run "${scope.title}".`);
+  }
   const { error } = await admin.rpc("run_booking_helper", {
     p_helper_id: helperId,
     p_event_id: eventId,

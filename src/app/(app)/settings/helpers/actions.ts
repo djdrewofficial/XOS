@@ -159,6 +159,8 @@ function buildHelperPayload(formData: FormData) {
     hide_if_already_ran: formData.get("hide_if_already_ran") === "on",
     hide_if_helpers_ran: formData.getAll("hide_if_helpers_ran").map(String).filter(Boolean),
     visible_status_ids: formData.getAll("visible_status_ids").map(String).filter(Boolean),
+    visible_event_type_ids: formData.getAll("visible_event_type_ids").map(String).filter(Boolean),
+    allowed_roles: formData.getAll("allowed_roles").map(String).filter(Boolean),
     required_fields: formData.getAll("required_fields").map(String).filter(Boolean),
     auto_on_create: formData.get("auto_on_create") === "on",
     auto_status_ids: formData.getAll("auto_status_ids").map(String).filter(Boolean),

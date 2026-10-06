@@ -6,6 +6,7 @@ import { updateHelper } from "../actions";
 import Tabs from "@/components/Tabs";
 import SaveButton from "@/components/SaveButton";
 import { ButtonSettingsRows, RadioChecklist, EnabledToggle } from "@/components/HelperEditorControls";
+import { HELPER_ROLE_OPTIONS } from "@/lib/helperAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -244,6 +245,27 @@ export default async function EditHelperPage({
             selected={(helper.visible_status_ids ?? []) as string[]}
             allLabel="All Event Status Values"
             onlyLabel="Only These Event Status Values:"
+          />
+        </Row>
+        <Row
+          label="Show For Events With An Event Type Of"
+          hint="Keeps e.g. a wedding-only helper off corporate events. Also editable per type in Settings → Event Type Workflows."
+        >
+          <RadioChecklist
+            name="visible_event_type_ids"
+            items={(eventTypes ?? []).map((t) => ({ id: t.id, name: t.name }))}
+            selected={(helper.visible_event_type_ids ?? []) as string[]}
+            allLabel="All Event Types"
+            onlyLabel="Only These Event Types:"
+          />
+        </Row>
+        <Row label="Staff Roles That Can Use This Helper" hint="Master Admin can always use every helper.">
+          <RadioChecklist
+            name="allowed_roles"
+            items={HELPER_ROLE_OPTIONS}
+            selected={(helper.allowed_roles ?? []) as string[]}
+            allLabel="All Roles"
+            onlyLabel="Only These Roles:"
           />
         </Row>
         <Row label="If At Least One Payment Has Been Made">
