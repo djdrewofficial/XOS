@@ -250,7 +250,21 @@ async function enrichMessage(
     return { html: replaceTag(html, "document_sign_link", ""), attachments, branded, isMarketing };
   }
 
-  const attachTemplateId = tmpl.attach_template_id as string;
+  // A booking-agreement email attaches ONE fixed contract, but each event must get
+  // ITS event type's contract. So attaching any configured proposal contract (the
+  // global one or any event type's) means "this event's proposal contract" —
+  // otherwise a Corporate event emailed the Wedding contract straight to /sign.
+  let attachTemplateId = tmpl.attach_template_id as string;
+  if (proposalDocId && attachTemplateId !== proposalDocId) {
+    const { data: typeTpls } = await supabase
+      .from("event_types")
+      .select("proposal_doc_template_id")
+      .not("proposal_doc_template_id", "is", null);
+    const proposalContractIds = new Set<string>(
+      [js?.proposal_doc_template_id, ...(typeTpls ?? []).map((t) => t.proposal_doc_template_id)].filter(Boolean) as string[],
+    );
+    if (proposalContractIds.has(attachTemplateId)) attachTemplateId = proposalDocId;
+  }
   if ((tmpl.attach_mode ?? "esign_link") === "esign_link") {
     // new journey: defer generation — send the couple to /proposal to confirm
     // details + pick a plan; the contract is generated when they continue to sign.
