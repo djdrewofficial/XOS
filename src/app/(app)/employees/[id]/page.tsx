@@ -5,6 +5,9 @@ import { money } from "@/lib/types";
 import Tabs from "@/components/Tabs";
 import SaveButton from "@/components/SaveButton";
 import LoginAccess from "@/components/LoginAccess";
+import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
+import type { ConvRow } from "@/components/InboxShell";
+import { moduleAccess } from "@/lib/auth";
 import {
   updateEmployeeGeneral,
   updateEmployeeContact,
@@ -45,6 +48,33 @@ export default async function EmployeeProfilePage({
   ]);
 
   if (!emp) notFound();
+
+  // Comms tab: this staff member's HighLevel thread(s), matched by phone/email
+  // (same matching as the event Comms tab). Needs inbox access to show.
+  const canSeeComms = (await moduleAccess("inbox", supabase)) !== "none";
+  const empName = `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim() || "Staff member";
+  const commsThreads: EventThread[] = [];
+  const commsStartable: StartableClient[] = [];
+  if (canSeeComms) {
+    const digits = ((emp.phone as string | null) ?? "").replace(/D/g, "").slice(-10);
+    const email = ((emp.email as string | null) ?? "").trim().toLowerCase();
+    const filters = [
+      emp.hl_contact_id ? `hl_contact_id.eq.${emp.hl_contact_id}` : null,
+      digits.length === 10 ? `phone.like.%${digits}` : null,
+      email && !/[,()]/.test(email) ? `email.ilike.${email}` : null,
+    ].filter(Boolean) as string[];
+    if (filters.length) {
+      const { data: convs } = await supabase
+        .from("hl_conversations")
+        .select("*")
+        .or(filters.join(","))
+        .order("last_message_at", { ascending: false, nullsFirst: false });
+      for (const conv of (convs ?? []) as ConvRow[]) commsThreads.push({ conv, label: empName });
+    }
+    if (commsThreads.length === 0 && emp.phone) {
+      commsStartable.push({ clientId: "", label: empName, phone: emp.phone as string });
+    }
+  }
 
   type Assignment = {
     id: string;
@@ -527,6 +557,24 @@ export default async function EmployeeProfilePage({
           { id: "contact", label: "Contact", content: contactTab },
           { id: "wages", label: "Wages", badge: unpaidWages > 0 ? money(unpaidWages) : undefined, content: wagesTab },
           { id: "timeoff", label: "Time Off", badge: (timeOff ?? []).length, content: timeOffTab },
+          ...(canSeeComms
+            ? [
+                {
+                  id: "comms",
+                  label: "Comms",
+                  badge: commsThreads.length || undefined,
+                  content: (
+                    <EventComms
+                      eventId={id}
+                      origin={`employees/${id}`}
+                      threads={commsThreads}
+                      startable={commsStartable}
+                      emptyText="No HighLevel conversation for this staff member yet. Add a cell phone or email on the Contact tab and save — that creates their HighLevel contact, and you can text them from here."
+                    />
+                  ),
+                },
+              ]
+            : []),
         ]}
       />
     </div>

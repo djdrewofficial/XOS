@@ -245,6 +245,8 @@ export async function startConversation(formData: FormData) {
   revalidatePath("/inbox");
   if (origin === "inbox") {
     redirect(convId ? `/inbox/${convId}` : "/inbox");
+  } else if (origin.startsWith("employees/")) {
+    revalidatePath(`/${origin}`);
   } else {
     revalidatePath(`/events/${origin}`);
   }

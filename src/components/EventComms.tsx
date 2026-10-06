@@ -24,11 +24,16 @@ export default function EventComms({
   threads,
   startable,
   docs = [],
+  origin,
+  emptyText,
 }: {
   eventId: string;
   threads: EventThread[];
   startable: StartableClient[];
   docs?: ThreadDoc[];
+  /** where a first text returns to (default: this event); e.g. "employees/<id>" */
+  origin?: string;
+  emptyText?: string;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(threads[0]?.conv.id ?? null);
   const [messages, setMessages] = useState<MsgRow[]>([]);
@@ -137,8 +142,8 @@ export default function EventComms({
   if (threads.length === 0 && startable.length === 0) {
     return (
       <div className="card px-5 py-10 text-center text-sm text-zinc-400">
-        No HighLevel conversations found for this event&apos;s clients yet. Threads match by the client&apos;s cell
-        phone or email — add those to the client record and you can start texting from here.
+        {emptyText ??
+          "No HighLevel conversations found for this event’s clients yet. Threads match by the client’s cell phone or email — add those to the client record and you can start texting from here."}
       </div>
     );
   }
@@ -194,7 +199,7 @@ export default function EventComms({
             </div>
           </div>
           <form action={startConversation} className="p-4">
-            <input type="hidden" name="origin" value={eventId} />
+            <input type="hidden" name="origin" value={origin ?? eventId} />
             <input type="hidden" name="phone" value={selectedStart.phone} />
             <input type="hidden" name="client_id" value={selectedStart.clientId} />
             <input type="hidden" name="label" value={selectedStart.label.split(" · ")[0]} />

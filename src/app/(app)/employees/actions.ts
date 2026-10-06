@@ -5,6 +5,17 @@ import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/auth";
 import { sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
 import { dispatchNotification } from "@/lib/notify";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { syncStaffToHighLevel } from "@/lib/highlevel";
+
+/** Keep the staff member's HighLevel contact in step (best-effort, never blocks a save). */
+async function syncStaffContact(id: string) {
+  try {
+    await syncStaffToHighLevel(createAdminClient(), id);
+  } catch (e) {
+    console.error("syncStaffToHighLevel failed:", e);
+  }
+}
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -49,7 +60,7 @@ export async function resetEmployeePassword(id: string): Promise<{ ok: boolean; 
 export async function createEmployee(formData: FormData) {
   await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
-  const { error } = await supabase.from("employees").insert({
+  const { data: created, error } = await supabase.from("employees").insert({
     first_name: clean(formData.get("first_name")) ?? "",
     last_name: clean(formData.get("last_name")) ?? "",
     email: clean(formData.get("email")),
@@ -59,8 +70,9 @@ export async function createEmployee(formData: FormData) {
     hourly_rate: formData.get("hourly_rate")
       ? parseFloat(formData.get("hourly_rate")!.toString())
       : null,
-  });
+  }).select("id").single();
   if (error) throw new Error(error.message);
+  if (created?.id) await syncStaffContact(created.id as string);
   revalidatePath("/employees");
 }
 
@@ -108,6 +120,7 @@ export async function updateEmployeeContact(id: string, formData: FormData) {
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  await syncStaffContact(id);
   revalidatePath(`/employees/${id}`);
 }
 

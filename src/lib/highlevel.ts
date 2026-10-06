@@ -535,6 +535,39 @@ export async function syncHighLevelConversations(
   return { conversations, messages, skipped: null };
 }
 
+/** Find-or-create the HighLevel contact for a staff member (tagged "XOS Staff")
+    and remember it on employees.hl_contact_id, so staff have a GHL record and
+    their texts/emails thread into a conversation like clients do. */
+export async function syncStaffToHighLevel(
+  supabase: SupabaseClient,
+  employeeId: string
+): Promise<{ ok: true; contactId: string } | { ok: false; error: string }> {
+  if (!isHighLevelConfigured()) return { ok: false, error: "HighLevel not configured" };
+  const { data: e } = await supabase
+    .from("employees")
+    .select("first_name, last_name, email, phone")
+    .eq("id", employeeId)
+    .maybeSingle();
+  if (!e) return { ok: false, error: "employee not found" };
+  const email = (e.email as string | null)?.trim().toLowerCase() || null;
+  const phone = e.phone ? toE164(e.phone as string) : null;
+  if (!email && !phone) return { ok: false, error: "no email or phone on file" };
+  const { locationId } = highlevelConfig();
+  const result = await hlFetch("/contacts/upsert", "2021-07-28", {
+    locationId,
+    ...(email ? { email } : {}),
+    ...(phone ? { phone } : {}),
+    ...(e.first_name ? { firstName: e.first_name } : {}),
+    ...(e.last_name ? { lastName: e.last_name } : {}),
+    tags: ["XOS Staff"],
+  });
+  if (!result.ok) return result;
+  const contact = result.data.contact as { id?: string } | undefined;
+  if (!contact?.id) return { ok: false, error: "upsert returned no contact id" };
+  await supabase.from("employees").update({ hl_contact_id: contact.id }).eq("id", employeeId);
+  return { ok: true, contactId: contact.id };
+}
+
 /* ============ XOS-sent email → Comms + HighLevel ============
    Booking agreements and automated emails deliver through Mailgun, so they never
    pass through GHL and wouldn't show in the event Comms tab (which reads the
@@ -584,21 +617,36 @@ export async function recordXosEmailInComms(
         .maybeSingle();
       conv = data;
     }
-    // Only clients get a new GHL contact/conversation — staff/vendor mail with no
+    // Clients and staff get a GHL contact/conversation; vendor/other mail with no
     // existing thread is left alone.
-    if (!conv && !opts.clientId) return;
+    const { data: staff } = opts.clientId
+      ? { data: null }
+      : await supabase
+          .from("employees")
+          .select("id, first_name, last_name, phone, email")
+          .ilike("email", email)
+          .limit(1)
+          .maybeSingle();
+    if (!conv && !opts.clientId && !staff) return;
 
     let contactId = conv?.hl_contact_id ?? null;
     if (isHighLevelConfigured() && (!conv || !contactId)) {
-      const { data: c } = opts.clientId
+      const { data: client } = opts.clientId
         ? await supabase.from("clients").select("first_name, last_name, cell_phone").eq("id", opts.clientId).maybeSingle()
         : { data: null };
-      const up = await upsertContactByEmail({
-        email,
-        firstName: c?.first_name ?? null,
-        lastName: c?.last_name ?? null,
-        phone: c?.cell_phone ? toE164(c.cell_phone) : null,
-      });
+      const c = client
+        ? client
+        : staff
+          ? { first_name: staff.first_name, last_name: staff.last_name, cell_phone: staff.phone }
+          : null;
+      const up = staff
+        ? await syncStaffToHighLevel(supabase, staff.id as string)
+        : await upsertContactByEmail({
+            email,
+            firstName: c?.first_name ?? null,
+            lastName: c?.last_name ?? null,
+            phone: c?.cell_phone ? toE164(c.cell_phone) : null,
+          });
       if (up.ok) contactId = up.contactId;
       if (!conv && contactId) {
         let convId = await findConversationIdByContact(contactId);
