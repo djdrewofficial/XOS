@@ -535,6 +535,140 @@ export async function syncHighLevelConversations(
   return { conversations, messages, skipped: null };
 }
 
+/* ============ XOS-sent email → Comms + HighLevel ============
+   Booking agreements and automated emails deliver through Mailgun, so they never
+   pass through GHL and wouldn't show in the event Comms tab (which reads the
+   synced hl_messages) or on the GHL contact. After a Mailgun delivery this:
+   - mirrors the email into the client's conversation in hl_messages (id
+     "xos-email-<email_log id>"), creating the GHL conversation if they don't have
+     one yet, so it shows in Comms + Inbox;
+   - when the Marketplace-App threading isn't connected (so GHL has no copy),
+     adds a note to the GHL contact so the send is visible in HighLevel too.
+   Best-effort: never throws, never affects sending. */
+export async function recordXosEmailInComms(
+  supabase: SupabaseClient,
+  opts: {
+    emailLogId: string;
+    toEmail: string;
+    clientId: string | null;
+    subject: string;
+    html: string;
+    sentAt: string;
+    /** GHL already holds a real copy (OAuth threading succeeded) — sync brings it in. */
+    threadedInHl: boolean;
+  }
+): Promise<void> {
+  try {
+    const email = opts.toEmail.trim().toLowerCase();
+    if (!email) return;
+
+    // the client's existing conversation (by client link, else by email)
+    let conv: { id: string; hl_contact_id: string | null; last_message_at: string | null } | null = null;
+    if (opts.clientId) {
+      const { data } = await supabase
+        .from("hl_conversations")
+        .select("id, hl_contact_id, last_message_at")
+        .eq("client_id", opts.clientId)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      conv = data;
+    }
+    if (!conv) {
+      const { data } = await supabase
+        .from("hl_conversations")
+        .select("id, hl_contact_id, last_message_at")
+        .ilike("email", email)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      conv = data;
+    }
+    // Only clients get a new GHL contact/conversation — staff/vendor mail with no
+    // existing thread is left alone.
+    if (!conv && !opts.clientId) return;
+
+    let contactId = conv?.hl_contact_id ?? null;
+    if (isHighLevelConfigured() && (!conv || !contactId)) {
+      const { data: c } = opts.clientId
+        ? await supabase.from("clients").select("first_name, last_name, cell_phone").eq("id", opts.clientId).maybeSingle()
+        : { data: null };
+      const up = await upsertContactByEmail({
+        email,
+        firstName: c?.first_name ?? null,
+        lastName: c?.last_name ?? null,
+        phone: c?.cell_phone ? toE164(c.cell_phone) : null,
+      });
+      if (up.ok) contactId = up.contactId;
+      if (!conv && contactId) {
+        let convId = await findConversationIdByContact(contactId);
+        if (!convId) {
+          const { locationId } = highlevelConfig();
+          const created = await hlFetch("/conversations/", "2021-04-15", { locationId, contactId });
+          const cv = created.ok ? (created.data.conversation as { id?: string } | undefined) : undefined;
+          convId = cv?.id ?? ((created.ok ? created.data.id : null) as string | null) ?? null;
+        }
+        if (convId) {
+          const name = c ? `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() : null;
+          await supabase.from("hl_conversations").upsert(
+            {
+              id: convId,
+              hl_contact_id: contactId,
+              client_id: opts.clientId,
+              contact_name: name || email,
+              email,
+              unread_count: 0,
+              synced_at: new Date().toISOString(),
+            },
+            { onConflict: "id" }
+          );
+          conv = { id: convId, hl_contact_id: contactId, last_message_at: null };
+        }
+      }
+    }
+
+    const body = stripHtml(opts.html).slice(0, 20_000);
+    if (conv && !opts.threadedInHl) {
+      await supabase.from("hl_messages").upsert(
+        {
+          id: `xos-email-${opts.emailLogId}`,
+          conversation_id: conv.id,
+          direction: "outbound",
+          message_type: "TYPE_EMAIL",
+          status: "sent",
+          body,
+          to_number: email,
+          date_added: opts.sentAt,
+          meta: { subject: opts.subject, emailHtml: opts.html.slice(0, 100_000), source: "xos", emailLogId: opts.emailLogId },
+          synced_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+      if (!conv.last_message_at || conv.last_message_at < opts.sentAt) {
+        await supabase
+          .from("hl_conversations")
+          .update({
+            last_message_at: opts.sentAt,
+            last_message_type: "TYPE_EMAIL",
+            last_message_direction: "outbound",
+            last_message_body: `${opts.subject}`.slice(0, 500),
+          })
+          .eq("id", conv.id);
+      }
+    }
+
+    // GHL has no copy of a Mailgun send → leave a note on the contact
+    if (!opts.threadedInHl && contactId && isHighLevelConfigured()) {
+      const excerpt = body.length > 1500 ? `${body.slice(0, 1500)}…` : body;
+      await hlFetch(`/contacts/${contactId}/notes`, "2021-07-28", {
+        body: `📧 Email sent from XOS to ${email}\nSubject: ${opts.subject}\n\n${excerpt}`,
+      });
+    }
+  } catch (err) {
+    console.error("recordXosEmailInComms failed:", err);
+  }
+}
+
 /** Drains queued rows from sms_log through HighLevel.
     Pass a service-role client when running without a user session (cron, sign flow). */
 export async function processSmsOutbox(

@@ -8,7 +8,7 @@ import { isEmailOptedOut, unsubscribeToken } from "@/lib/emailOptOut";
 import { pausedEventIdSet } from "@/lib/commsPause";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
-import { isHighLevelConfigured, sendEmailViaHighLevel } from "@/lib/highlevel";
+import { isHighLevelConfigured, sendEmailViaHighLevel, recordXosEmailInComms } from "@/lib/highlevel";
 import { isThreadingConfigured, threadOutboundEmailViaOAuth } from "@/lib/highlevelOAuth";
 
 /* ============ Mailgun config ============
@@ -602,17 +602,32 @@ export async function processOutbox(
       // OAuth token + Conversation Provider), so outbound mail still shows in
       // Comms. Dormant until the app is connected. A GHL-fallback send already
       // threaded itself, so only the Mailgun path logs a copy.
+      // A GHL-fallback send is already in GHL (and syncs into Comms by itself).
+      let threadedInHl = !deliveredViaMailgun;
       if (deliveredViaMailgun && msg.to_address && isThreadingConfigured()) {
         const attachmentUrls = attachments.length
           ? await attachmentsToSignedUrls(admin, msg.id, attachments)
           : [];
-        await threadOutboundEmailViaOAuth(admin, {
+        const threaded = await threadOutboundEmailViaOAuth(admin, {
           toEmail: msg.to_address,
           fromName: msg.from_name,
           fromEmail: msg.from_address,
           subject: msg.subject,
           html,
           attachmentUrls,
+        });
+        threadedInHl = threaded.ok;
+      }
+      // Show the send in the event Comms tab + on the GHL contact.
+      if (msg.to_address) {
+        await recordXosEmailInComms(admin, {
+          emailLogId: msg.id,
+          toEmail: msg.to_address,
+          clientId: msg.client_id ?? null,
+          subject: msg.subject || "(no subject)",
+          html,
+          sentAt: new Date().toISOString(),
+          threadedInHl,
         });
       }
     } else {

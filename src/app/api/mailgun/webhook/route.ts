@@ -85,7 +85,12 @@ export async function POST(req: Request) {
   // Don't let a late "delivered" overwrite an "opened" (the immutable-chained builder
   // must be reassigned, otherwise the filter is silently dropped).
   if (data.event === "delivered") query = query.neq("status", "opened");
-  await query;
+  const { data: rows } = await query.select("id, status");
+
+  // keep the Comms-tab copy of this email (recordXosEmailInComms) in step
+  for (const r of rows ?? []) {
+    await supabase.from("hl_messages").update({ status: r.status }).eq("id", `xos-email-${r.id}`);
+  }
 
   return NextResponse.json({ ok: true });
 }
