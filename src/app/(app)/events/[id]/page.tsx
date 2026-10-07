@@ -7,6 +7,7 @@ import NoteItem from "@/components/NoteItem";
 import {
   addPayment,
   confirmPayment,
+  updatePayment,
   removePayment,
   restorePayment,
   addScheduledPayments,
@@ -63,6 +64,8 @@ import BookingInfoEditor from "@/components/BookingInfoEditor";
 import AddonPicker from "@/components/AddonPicker";
 import EventVenueEditor from "@/components/EventVenueEditor";
 import BookingHelperBar from "@/components/BookingHelperBar";
+import ScheduleRebalance from "@/components/ScheduleRebalance";
+import { splitSchedule, type SchedRow } from "@/lib/scheduleLock";
 import StaffSection from "@/components/StaffSection";
 import UrlTabs from "@/components/UrlTabs";
 import SaveButton from "@/components/SaveButton";
@@ -461,6 +464,25 @@ export default async function EventDetailPage({
   const paid = approvedPayments.reduce((s: number, p: Payment) => s + Number(p.amount), 0);
   const pendingTotal = pendingPayments.reduce((s: number, p: Payment) => s + Number(p.amount), 0);
   const balance = total - paid;
+
+  // total changed after a schedule was set (add-on / price / fee edit) → prompt to
+  // update the unpaid installments, unless the office chose to keep it as is
+  const schedRows = (schedule ?? []) as SchedRow[];
+  const scheduleSum = Math.round(schedRows.reduce((s, r) => s + Number(r.amount), 0) * 100) / 100;
+  const ackTotal = (event as { schedule_ack_total?: number | null }).schedule_ack_total;
+  const scheduleOff =
+    schedRows.length > 0 &&
+    Math.abs(total - scheduleSum) >= 0.01 &&
+    !(ackTotal != null && Math.abs(Number(ackTotal) - total) < 0.01);
+  const schedSplit = scheduleOff
+    ? splitSchedule(
+        schedRows,
+        approvedPayments.map((p: Payment) => ({
+          amount: Number(p.amount),
+          scheduled_payment_id: (p as { scheduled_payment_id?: string | null }).scheduled_payment_id ?? null,
+        })),
+      )
+    : null;
   const cf = (event.custom_fields ?? {}) as Record<string, string>;
 
   // warn-only signing-requirements checklist (Settings → Signing Requirements)
@@ -1360,6 +1382,51 @@ export default async function EventDetailPage({
                           {details.join(" · ")}
                         </div>
                       )}
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-[11px] font-semibold text-brand hover:underline dark:text-brand-lighter">
+                          Edit
+                        </summary>
+                        <form action={updatePayment.bind(null, p.id, id)} className="mt-2 flex flex-wrap items-end gap-2">
+                          <label className="block">
+                            <span className="label-xs">Amount</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              name="amount"
+                              defaultValue={Number(p.amount).toFixed(2)}
+                              disabled={!!p.paypal_capture_id}
+                              title={p.paypal_capture_id ? "Card/PayPal amount is what was captured — can't be changed" : undefined}
+                              className="input w-28 text-xs disabled:opacity-60"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="label-xs">Date</span>
+                            <input type="date" name="paid_at" defaultValue={(p.paid_at ?? "").slice(0, 10)} className="input w-36 text-xs" />
+                          </label>
+                          <label className="block">
+                            <span className="label-xs">Method</span>
+                            <select name="method" defaultValue={p.method} className="input w-32 text-xs">
+                              {[...new Set([p.method, ...methodOptions])].map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block">
+                            <span className="label-xs">Reason</span>
+                            <select name="reason" defaultValue={p.reason ?? ""} className="input w-36 text-xs">
+                              <option value="">— Reason —</option>
+                              {[...new Set([...(p.reason ? [p.reason] : []), ...reasonOptions])].map((r) => (
+                                <option key={r} value={r}>{r}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block w-full">
+                            <span className="label-xs">Note</span>
+                            <input name="notes" defaultValue={p.notes ?? ""} placeholder="e.g. check #1042, Zelle from Mom" className="input w-full text-xs" />
+                          </label>
+                          <SaveButton className="btn-primary px-3 py-1.5 text-xs">Save Payment</SaveButton>
+                        </form>
+                      </details>
                     </div>
                     <div className="shrink-0 text-right">
                       <div className={`font-semibold ${isPending ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
@@ -2232,6 +2299,17 @@ export default async function EventDetailPage({
       </div>
 
       <SigningChecklist missing={missingSigning} />
+
+      {schedSplit && (
+        <ScheduleRebalance
+          key={`${total}-${scheduleSum}`}
+          eventId={id}
+          total={total}
+          scheduleSum={scheduleSum}
+          locked={schedSplit.locked}
+          open={schedSplit.open}
+        />
+      )}
 
       <BookingHelperBar
         eventId={id}

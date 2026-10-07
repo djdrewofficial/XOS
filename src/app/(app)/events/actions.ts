@@ -17,6 +17,7 @@ import { findOrCreateClient } from "@/lib/clients";
 import { reseedEventPlanning, assignAddonSections } from "@/lib/planning";
 import { requireModule, getMe } from "@/lib/auth";
 import { helperAllowedForEventType, helperAllowedForRole } from "@/lib/helperAccess";
+import { splitSchedule, type SchedRow } from "@/lib/scheduleLock";
 import { inviteClientToXos } from "@/lib/accounts";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -613,6 +614,98 @@ export async function addPayment(eventId: string, formData: FormData) {
   await runAutomations(supabase, eventId, "payment_received");
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/payments");
+}
+
+/** Fix a recorded payment — wrong amount, date, method, reason or a missing note.
+    Card/PayPal amounts are what the processor captured, so those stay fixed. */
+export async function updatePayment(paymentId: string, eventId: string, formData: FormData) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("payments")
+    .select("id, paypal_capture_id")
+    .eq("id", paymentId)
+    .eq("event_id", eventId)
+    .maybeSingle();
+  if (!existing) throw new Error("Payment not found.");
+  const update: Record<string, unknown> = {
+    method: clean(formData.get("method")) ?? "other",
+    reason: clean(formData.get("reason")),
+    notes: clean(formData.get("notes")),
+  };
+  const paidAt = clean(formData.get("paid_at"));
+  if (paidAt) update.paid_at = paidAt;
+  if (!existing.paypal_capture_id) {
+    const amount = num(formData.get("amount"));
+    if (!(amount > 0)) throw new Error("Enter a payment amount greater than $0.");
+    update.amount = amount;
+  }
+  const { error } = await supabase.from("payments").update(update).eq("id", paymentId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/payments");
+}
+
+/** Rewrite the UNPAID part of the payment schedule after the event total changed.
+    Paid installments (see scheduleLock) can't be touched; the remaining ones must
+    add up to the new total minus what's already paid. */
+export async function saveRemainingSchedule(
+  eventId: string,
+  rows: { id: string | null; amount: number; due_date: string | null }[],
+) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const [bundle, { data: sched }, { data: approved }] = await Promise.all([
+    loadEventBundle(supabase, eventId),
+    supabase.from("scheduled_payments").select("id, seq, amount, due_date, label").eq("event_id", eventId).order("seq"),
+    supabase.from("payments").select("amount, scheduled_payment_id").eq("event_id", eventId).eq("status", "approved").is("deleted_at", null),
+  ]);
+  if (!bundle) throw new Error("Event not found.");
+  const { locked, open, lockedSum } = splitSchedule((sched ?? []) as SchedRow[], (approved ?? []) as { amount: number; scheduled_payment_id: string | null }[]);
+  const openIds = new Set(open.map((r) => r.id));
+  const lockedIds = new Set(locked.map((r) => r.id));
+
+  const keep = rows
+    .map((r) => ({ ...r, amount: Math.round(Number(r.amount) * 100) / 100 }))
+    .filter((r) => r.amount > 0);
+  if (keep.some((r) => r.id && lockedIds.has(r.id))) throw new Error("Paid installments can't be changed.");
+  if (keep.some((r) => r.id && !openIds.has(r.id))) throw new Error("The schedule changed — refresh and try again.");
+  const target = Math.round((bundle.total - lockedSum) * 100) / 100;
+  const sum = Math.round(keep.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+  if (Math.abs(sum - target) >= 0.01) {
+    throw new Error(`Remaining payments add up to $${sum.toFixed(2)} — they need to total $${target.toFixed(2)}.`);
+  }
+
+  // drop open installments that were removed (or zeroed), then update/insert the rest
+  const keptIds = new Set(keep.map((r) => r.id).filter(Boolean) as string[]);
+  const removed = open.filter((r) => !keptIds.has(r.id)).map((r) => r.id);
+  if (removed.length) {
+    const { error } = await supabase.from("scheduled_payments").delete().in("id", removed);
+    if (error) throw new Error(error.message);
+  }
+  let seq = locked.reduce((m, r) => Math.max(m, r.seq), 0);
+  const sorted = [...keep].sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
+  for (const [i, r] of sorted.entries()) {
+    seq++;
+    const label = i === sorted.length - 1 ? "Final Payment" : `Payment ${seq}`;
+    const row = { seq, amount: r.amount, due_date: r.due_date || null, label };
+    const { error } = r.id
+      ? await supabase.from("scheduled_payments").update(row).eq("id", r.id)
+      : await supabase.from("scheduled_payments").insert({ ...row, event_id: eventId });
+    if (error) throw new Error(error.message);
+  }
+  await supabase.from("events").update({ schedule_ack_total: bundle.total }).eq("id", eventId);
+  revalidatePath(`/events/${eventId}`);
+}
+
+/** "Keep schedule as is" — silence the update-payments prompt until the total changes again. */
+export async function acknowledgeScheduleTotal(eventId: string) {
+  await requireModule("events", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const bundle = await loadEventBundle(supabase, eventId);
+  if (!bundle) return;
+  await supabase.from("events").update({ schedule_ack_total: bundle.total }).eq("id", eventId);
+  revalidatePath(`/events/${eventId}`);
 }
 
 /* Confirm a pending payment (e.g. a client-reported Zelle claim) once the money
