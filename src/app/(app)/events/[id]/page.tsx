@@ -66,6 +66,7 @@ import EventVenueEditor from "@/components/EventVenueEditor";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import ScheduleRebalance from "@/components/ScheduleRebalance";
 import { splitSchedule, type SchedRow } from "@/lib/scheduleLock";
+import { eventWithinDays } from "@/lib/paymentSchedule";
 import StaffSection from "@/components/StaffSection";
 import UrlTabs from "@/components/UrlTabs";
 import SaveButton from "@/components/SaveButton";
@@ -1234,31 +1235,46 @@ export default async function EventDetailPage({
             <div className="hidden space-y-5 border-t border-zinc-200 px-3 py-3 group-open:block dark:border-white/10">
           <div>
           <h3 className="label-xs">Generate Schedule</h3>
-          <form action={addScheduleBound} className="flex flex-wrap items-end gap-2">
+          <form action={addScheduleBound} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
             <input type="hidden" name="total" value={total} />
             <input type="hidden" name="event_date" value={event.event_date ?? ""} />
             <div>
               <label className="label-xs">Deposit</label>
               <input type="number" step="0.01" name="deposit" defaultValue={event.deposit_value || event.package?.deposit_value || 0} className="input w-28" />
             </div>
-            <div>
-              <label className="label-xs">Split</label>
-              <select name="count" className="input w-44">
+            <div className="min-w-0 flex-1 sm:flex-none">
+              <label className="label-xs">Plan</label>
+              <select
+                name="plan"
+                defaultValue={
+                  eventWithinDays(event.event_date, 30)
+                    ? "full"
+                    : `split:${paymentRules.splits[0] ?? 1}`
+                }
+                className="input w-full sm:w-64"
+              >
+                <option value="full">Full payment due (entire investment)</option>
                 {paymentRules.splits.map((n) => (
-                  <option key={n} value={n}>
-                    {n === 1 ? "Pay in full (1 payment)" : `${n} monthly payments`}
+                  <option key={n} value={`split:${n}`}>
+                    {n === 1 ? "Deposit + final payment" : `Deposit + ${n} payments`}
                   </option>
                 ))}
               </select>
             </div>
             <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Done">Generate</SaveButton>
           </form>
+          {eventWithinDays(event.event_date, 30) && (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              Event is within ~30 days — full payment due is usually the right choice.
+            </p>
+          )}
           <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-600">
-            Splits of {paymentRules.splits.join(" / ")} ·{" "}
+            Full payment due = one scheduled payment for the whole investment (due today). Installment splits of{" "}
+            {paymentRules.splits.join(" / ")} ·{" "}
             {paymentRules.terms === "net_days_after"
               ? `Net ${paymentRules.days} (due ${paymentRules.days} days after the event)`
               : `balance due ${paymentRules.days} days before the event`}
-            . Gates the client&apos;s options in the booking agreement.
+            . Package splits also gate the client&apos;s options in the booking agreement.
           </p>
           </div>
 

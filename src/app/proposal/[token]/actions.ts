@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
-import { type SchedulePlan } from "@/lib/paymentSchedule";
+import { parseSchedulePlan, type SchedulePlan } from "@/lib/paymentSchedule";
 import { writeSchedulePreservingPaid } from "@/lib/scheduleWrite";
 import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConfig";
 import { loadEventJourney } from "@/lib/eventJourney";
@@ -201,10 +201,7 @@ export async function confirmProposal(token: string, formData: FormData) {
   if (journey.chooser === "office") {
     plan = officePlan(event.billing_terms as BillingTerms | null, event.billing_terms_count ?? 2);
   } else {
-    const planRaw = (formData.get("plan") ?? "full").toString();
-    plan = planRaw.startsWith("split:")
-      ? { kind: "split", count: Math.max(1, parseInt(planRaw.slice(6), 10) || 1) }
-      : { kind: "full" };
+    plan = parseSchedulePlan(formData.get("plan")) ?? { kind: "full" };
   }
 
   // Never disturb already-paid installments; only (re)build the unpaid portion.

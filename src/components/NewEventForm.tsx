@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import Tabs from "@/components/Tabs";
 import EntityPicker from "@/components/EntityPicker";
 import VenueAutocomplete from "@/components/VenueAutocomplete";
-import { buildScheduleRows } from "@/lib/paymentSchedule";
+import { buildScheduleRows, eventWithinDays } from "@/lib/paymentSchedule";
 import { buildEventName } from "@/lib/eventName";
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -178,7 +178,8 @@ export default function NewEventForm(props: NewEventFormProps) {
   const [travelFee, setTravelFee] = useState("");
   const [discounts, setDiscounts] = useState<{ label: string; amount: string }[]>([]);
   const [addonRows, setAddonRows] = useState<{ key: number; addon_id: string; quantity: number; price_override: string }[]>([]);
-  const [scheduleCount, setScheduleCount] = useState(0);
+  // "" = skip · "full" = one payment for the whole investment · "split:N" = deposit + N
+  const [schedulePlan, setSchedulePlan] = useState("");
 
   const pkgPrice = priceOverride !== "" ? Number(priceOverride) : pkg?.default_price ?? 0;
   const addonsTotal = addonRows.reduce((s, a) => {
@@ -190,21 +191,23 @@ export default function NewEventForm(props: NewEventFormProps) {
   const estTotal = Math.max(0, pkgPrice + addonsTotal + (Number(travelFee) || 0) - discountTotal);
   const depositVal = deposit !== "" ? Number(deposit) : pkg?.deposit_value ?? 0;
   const splitOptions = pkg?.allowed_splits?.length ? pkg.allowed_splits : [1, 2, 3];
-  const schedulePreview = useMemo(
-    () =>
-      scheduleCount > 0
-        ? buildScheduleRows({
-            total: estTotal,
-            deposit: depositVal,
-            eventDate: eventDate || null,
-            terms: "days_before",
-            termsDays: 30,
-            plan: { kind: "split", count: scheduleCount },
-            today: new Date().toISOString().slice(0, 10),
-          })
-        : [],
-    [scheduleCount, estTotal, depositVal, eventDate]
-  );
+  const nearEvent = eventWithinDays(eventDate || null, 30);
+  const schedulePreview = useMemo(() => {
+    if (!schedulePlan) return [];
+    const plan =
+      schedulePlan === "full"
+        ? ({ kind: "full" } as const)
+        : ({ kind: "split", count: Math.max(1, parseInt(schedulePlan.replace(/^split:/, ""), 10) || 1) } as const);
+    return buildScheduleRows({
+      total: estTotal,
+      deposit: depositVal,
+      eventDate: eventDate || null,
+      terms: "days_before",
+      termsDays: 30,
+      plan,
+      today: new Date().toISOString().slice(0, 10),
+    });
+  }, [schedulePlan, estTotal, depositVal, eventDate]);
 
   // ---- Venue ----
   const [venueMode, setVenueMode] = useState<"existing" | "new" | "client_address">("existing");
@@ -472,12 +475,22 @@ export default function NewEventForm(props: NewEventFormProps) {
 
       <div>
         <Label>Payment schedule (optional)</Label>
-        <select value={scheduleCount} onChange={(e) => setScheduleCount(Number(e.target.value))} className={`${inputCls} max-w-xs`}>
-          <option value={0}>Don&apos;t set up yet</option>
-          {splitOptions.map((n) => (<option key={n} value={n}>{n === 1 ? "Deposit + final payment" : `Deposit + ${n} payments`}</option>))}
+        <select value={schedulePlan} onChange={(e) => setSchedulePlan(e.target.value)} className={`${inputCls} max-w-xs`}>
+          <option value="">Don&apos;t set up yet</option>
+          <option value="full">Full payment due (entire investment)</option>
+          {splitOptions.map((n) => (
+            <option key={n} value={`split:${n}`}>
+              {n === 1 ? "Deposit + final payment" : `Deposit + ${n} payments`}
+            </option>
+          ))}
         </select>
+        {nearEvent && (
+          <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+            Event is within ~30 days — full payment due is usually the right choice.
+          </p>
+        )}
         {schedulePreview.length > 0 && (
-          <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 dark:border-white/10">
+          <div className="mt-2 overflow-x-auto overflow-hidden rounded-lg border border-zinc-200 dark:border-white/10">
             <table className="w-full text-sm">
               <tbody className="divide-y divide-zinc-100 dark:divide-white/[0.05]">
                 {schedulePreview.map((r) => (
@@ -607,7 +620,7 @@ export default function NewEventForm(props: NewEventFormProps) {
         fd.set("package_price_override", priceOverride);
         fd.set("deposit_value", deposit);
         fd.set("travel_fee", travelFee);
-        fd.set("schedule_count", String(scheduleCount));
+        fd.set("schedule_plan", schedulePlan);
         fd.set("use_client_address", venueMode === "client_address" ? "true" : "false");
         if (venueMode !== "existing") fd.delete("venue_id");
         fd.set("new_venue_json", venueMode === "new" ? JSON.stringify(readNewVenue()) : "null");

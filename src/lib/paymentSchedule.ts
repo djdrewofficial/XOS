@@ -22,6 +22,36 @@ function iso(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Parse a plan token from forms / selects.
+ * Accepts: "full", "split:N", bare "N" (legacy split count), "net:N".
+ * Empty / "0" / "none" → null (no schedule).
+ */
+export function parseSchedulePlan(raw: FormDataEntryValue | string | null | undefined): SchedulePlan | null {
+  const s = (raw ?? "").toString().trim().toLowerCase();
+  if (!s || s === "0" || s === "none" || s === "skip") return null;
+  if (s === "full" || s === "up_front" || s === "paid_in_full") return { kind: "full" };
+  if (s.startsWith("net:")) {
+    const days = Math.max(1, Math.round(Number(s.slice(4)) || 30));
+    return { kind: "net", days };
+  }
+  const countRaw = s.startsWith("split:") ? s.slice(6) : s;
+  const count = Math.max(1, Math.round(Number(countRaw) || 0));
+  if (!Number.isFinite(count) || count < 1) return null;
+  return { kind: "split", count };
+}
+
+/** True when the event is within `days` days (inclusive) of today — soft staff hint only. */
+export function eventWithinDays(eventDate: string | null | undefined, days: number, today?: string): boolean {
+  if (!eventDate) return false;
+  const t = today ?? new Date().toISOString().slice(0, 10);
+  const start = new Date(t + "T12:00:00");
+  const end = new Date(eventDate + "T12:00:00");
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+  const diff = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+  return diff >= 0 && diff <= days;
+}
+
 export function buildScheduleRows(opts: {
   total: number;
   deposit: number;
@@ -34,9 +64,9 @@ export function buildScheduleRows(opts: {
 }): ScheduleRow[] {
   const { total, deposit, eventDate, terms, termsDays, plan, today } = opts;
 
-  // Pay in full: a single payment of the whole investment, due now.
+  // Full payment due: a single payment of the whole investment, due now.
   if (plan.kind === "full") {
-    return [{ seq: 1, amount: round2(total), label: "Paid in Full", due_date: today }];
+    return [{ seq: 1, amount: round2(total), label: "Full Payment Due", due_date: today }];
   }
 
   // Net terms: a single invoice for the whole amount, due N days out.
