@@ -120,7 +120,7 @@ export default function ProposalForm(props: ProposalFormProps) {
   const isClient = props.mode === "client";
 
   const planOptions: { value: string; label: string; sub: string }[] = [
-    { value: "full", label: "Pay in full", sub: "One payment — settle the whole investment now" },
+    { value: "full", label: "Pay in full", sub: "One payment — the whole investment, due now" },
     ...props.allowedSplits.map((n) => ({
       value: `split:${n}`,
       label: n === 1 ? "Deposit + final payment" : `Deposit + ${n} payments`,

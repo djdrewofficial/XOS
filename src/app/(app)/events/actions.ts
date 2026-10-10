@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getOrCreateShortLink } from "@/lib/shortLinks";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
-import { buildScheduleRows } from "@/lib/paymentSchedule";
+import { buildScheduleRows, parseSchedulePlan } from "@/lib/paymentSchedule";
 import { writeSchedulePreservingPaid } from "@/lib/scheduleWrite";
 import { loadEventBundle } from "@/lib/documentRender";
 import { buildEventName, autoNameEvent, type NamingClient } from "@/lib/eventName";
@@ -502,9 +502,11 @@ export async function createEventOnboarding(formData: FormData) {
     await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" });
   }
 
-  // 11) payment schedule (deposit + split) — generated from current totals
-  const scheduleCount = formData.get("schedule_count") ? Math.max(1, Math.round(num(formData.get("schedule_count")))) : 0;
-  if (scheduleCount > 0) {
+  // 11) payment schedule — full payment due OR deposit + split (legacy schedule_count still accepted)
+  const schedulePlan =
+    parseSchedulePlan(formData.get("schedule_plan")) ??
+    (formData.get("schedule_count") ? parseSchedulePlan(formData.get("schedule_count")) : null);
+  if (schedulePlan) {
     const bundle = await loadEventBundle(supabase, eventId);
     const total = bundle?.total ?? 0;
     const { data: evDep } = await supabase.from("events").select("deposit_value, event_date").eq("id", eventId).single();
@@ -528,7 +530,7 @@ export async function createEventOnboarding(formData: FormData) {
       eventDate: evDep?.event_date ?? null,
       terms,
       termsDays,
-      plan: { kind: "split", count: scheduleCount },
+      plan: schedulePlan,
       today: new Date().toISOString().slice(0, 10),
     }).map((r) => ({ ...r, event_id: eventId }));
     await supabase.from("scheduled_payments").insert(rows);
@@ -821,8 +823,14 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
   // schedule generation governed by the package's payment rules:
-  // allowed splits + final-due terms (N days before event, or corporate Net-N after)
-  const count = Math.max(1, Math.round(num(formData.get("count"))));
+  // allowed splits + final-due terms (N days before event, or corporate Net-N after).
+  // "full" (entire investment due now) is always allowed — it isn't a package split.
+  const plan =
+    parseSchedulePlan(formData.get("plan")) ??
+    parseSchedulePlan(formData.get("count"));
+  if (!plan || plan.kind === "net") {
+    throw new Error("Pick Full payment due or a deposit + installment split.");
+  }
   const total = num(formData.get("total"));
   const deposit = num(formData.get("deposit"));
   const eventDate = clean(formData.get("event_date"));
@@ -847,8 +855,8 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
       allowedSplits = pkg.allowed_splits?.length ? pkg.allowed_splits : [1, 2, 3];
     }
   }
-  if (!allowedSplits.includes(count)) {
-    throw new Error(`This package allows ${allowedSplits.join(", ")} payment split(s) — ${count} is not permitted.`);
+  if (plan.kind === "split" && !allowedSplits.includes(plan.count)) {
+    throw new Error(`This package allows ${allowedSplits.join(", ")} payment split(s) — ${plan.count} is not permitted.`);
   }
 
   // Preserve already-paid installments (and their payment links); only the
@@ -859,7 +867,7 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
     eventDate: eventDate ?? null,
     terms,
     termsDays,
-    plan: { kind: "split", count },
+    plan,
   });
   revalidatePath(`/events/${eventId}`);
 }
