@@ -10,6 +10,10 @@ export { ROLES, type Role };
 
 export type Access = "none" | "view" | "edit";
 
+/** Roles that MUST use 2FA — they handle client PII, money, and contracts.
+    Regular "employee" stays opt-in. */
+export const TWO_FA_REQUIRED_ROLES: ReadonlySet<Role> = new Set<Role>(["master_admin", "admin", "salesperson"]);
+
 /** Ordered so "edit" implies "view" implies "none". */
 const ACCESS_RANK: Record<Access, number> = { none: 0, view: 1, edit: 2 };
 
@@ -43,6 +47,9 @@ export const MODULES: ModuleDef[] = [
   { key: "payroll", label: "Payroll", routes: ["/payroll"] },
   { key: "reports", label: "Reports", routes: ["/reports"] },
   { key: "settings", label: "Settings", routes: ["/settings"] },
+  // The photo gallery (photobooth.xpressdjs.com) is its own app; this row decides who
+  // XOS signs in there (/sso/gallery): Edit = gallery admin, View = gallery editor.
+  { key: "gallery", label: "Photo Gallery", routes: [] },
 ];
 
 export const MODULE_KEYS = MODULES.map((m) => m.key);
@@ -96,12 +103,14 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<
     tasks: "edit",
     venues: "view", vendors: "view", packages: "view", equipment: "view", employees: "view",
     payments: "view", commissions: "view", payroll: "none", reports: "view", settings: "none",
+    gallery: "none",
   },
   employee: {
     dashboard: "view", inbox: "view", events: "view", clients: "none", documents: "none",
     tasks: "view",
     venues: "view", vendors: "none", packages: "none", equipment: "view", employees: "none",
     payments: "none", commissions: "none", payroll: "none", reports: "none", settings: "none",
+    gallery: "none",
   },
 };
 

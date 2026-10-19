@@ -5,13 +5,17 @@ import {
   resolveAccessMap,
   accessAtLeast,
   isOwnerEmail,
+  TWO_FA_REQUIRED_ROLES,
   type Access,
   type Role,
 } from "@/lib/permissions";
 
-// Roles that MUST use 2FA — they handle client PII, money, and contracts.
-// Regular "employee" stays opt-in.
-const TWO_FA_REQUIRED_ROLES = new Set<Role>(["master_admin", "admin", "salesperson"]);
+/** Sign-in for another app (/sso/*): remember where to come back to after login/2FA. */
+function withNext(url: URL, request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+  url.search = pathname.startsWith("/sso/") ? `?next=${encodeURIComponent(pathname + search)}` : "";
+  return url;
+}
 
 export async function middleware(request: NextRequest) {
   // Origin lock: force all human/staff traffic through Cloudflare's WAF. A
@@ -98,7 +102,7 @@ export async function middleware(request: NextRequest) {
   if (!user && !isLoginPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(withNext(url, request));
   }
   if (user && isLoginPage) {
     const url = request.nextUrl.clone();
@@ -171,8 +175,7 @@ export async function middleware(request: NextRequest) {
           if (hasFactor && aal.currentLevel === "aal1" && !pathname.startsWith("/2fa")) {
             const url = request.nextUrl.clone();
             url.pathname = "/2fa";
-            url.search = "";
-            return NextResponse.redirect(url);
+            return NextResponse.redirect(withNext(url, request));
           }
           if (!hasFactor && TWO_FA_REQUIRED_ROLES.has(role) && !pathname.startsWith("/account/security")) {
             const url = request.nextUrl.clone();
