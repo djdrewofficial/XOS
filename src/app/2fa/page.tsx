@@ -52,6 +52,12 @@ export default function TwoFactorChallengePage() {
       setError(error.message);
       return;
     }
+    // Signing in for another app (/sso/*, e.g. the photo gallery): go back there.
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (next && next.startsWith("/sso/")) {
+      window.location.assign(next);
+      return;
+    }
     router.push("/");
     router.refresh();
   }

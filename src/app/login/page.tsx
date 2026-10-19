@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { requestPasswordReset } from "./actions";
 
+/** After signing in for another app (/sso/*, e.g. the photo gallery), go back there. */
+function ssoNext(): string | null {
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/sso/") ? next : null;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -36,8 +42,14 @@ export default function LoginPage() {
     }
     // If this account has 2FA enrolled, finish the second step before landing.
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    const next = ssoNext();
     if (aal && aal.currentLevel === "aal1" && aal.nextLevel === "aal2") {
-      router.push("/2fa");
+      router.push(next ? `/2fa?next=${encodeURIComponent(next)}` : "/2fa");
+      return;
+    }
+    if (next) {
+      // A full page load: /sso/* is a route handler that redirects off-site.
+      window.location.assign(next);
       return;
     }
     // Resolve landing: per-user override → per-role default → company fallback.
