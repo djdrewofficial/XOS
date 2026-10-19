@@ -22,7 +22,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const TIERS = ["master_admin", "admin", "salesperson", "employee"] as const;
+const TIERS = ["master_admin", "admin", "salesperson", "employee", "marketing"] as const;
 
 export default async function EmployeeProfilePage({
   params,

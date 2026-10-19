@@ -7,7 +7,7 @@ import SaveButton from "@/components/SaveButton";
 
 export const dynamic = "force-dynamic";
 
-const TIERS = ["master_admin", "admin", "salesperson", "employee"] as const;
+const TIERS = ["master_admin", "admin", "salesperson", "employee", "marketing"] as const;
 const STAFF_CATEGORIES = ["Administrators", "Salespeople", "Production", "Subcontractors", "Live Musicians"] as const;
 
 export default async function EmployeesPage() {

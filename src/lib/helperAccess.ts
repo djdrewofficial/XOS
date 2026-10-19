@@ -6,6 +6,7 @@ export const HELPER_ROLE_OPTIONS = [
   { id: "admin", name: "Admin" },
   { id: "salesperson", name: "Salesperson" },
   { id: "employee", name: "Employee" },
+  { id: "marketing", name: "Marketing" },
 ];
 
 /** Stored when a helper is unchecked from every event type (an empty list means "all"). */

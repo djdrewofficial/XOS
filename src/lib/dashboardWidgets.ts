@@ -65,6 +65,7 @@ export const ROLES = [
   ["admin", "Admin"],
   ["salesperson", "Salesperson"],
   ["employee", "Employee"],
+  ["marketing", "Marketing"],
 ] as const;
 
 export type Role = (typeof ROLES)[number][0];
@@ -93,6 +94,8 @@ export const DEFAULT_LAYOUTS: Record<Role, LayoutItem[]> = {
     { id: "my_upcoming_events", size: "full" },
     { id: "calendar", size: "full" },
   ],
+  // Marketing has no dashboard access by default (lands on /vendors); no money widgets
+  marketing: [{ id: "calendar", size: "full" }],
 };
 
 export function sanitizeLayout(value: unknown): LayoutItem[] {

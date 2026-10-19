@@ -32,6 +32,7 @@ const AUDIENCE_LABEL: Record<string, string> = {
   admin: "Admins",
   salesperson: "All salespeople",
   employee: "All employees",
+  marketing: "Marketing team",
   event_salesperson: "The event's salesperson",
   event_assigned_staff: "Staff assigned to the event",
   client: "The client",

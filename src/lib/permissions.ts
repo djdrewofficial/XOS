@@ -105,6 +105,15 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<
     payments: "view", commissions: "view", payroll: "none", reports: "view", settings: "none",
     gallery: "none",
   },
+  // Vendors directory only — no financial screens (money tables are also blocked
+  // for this tier in the database, migration 00197)
+  marketing: {
+    dashboard: "none", inbox: "none", events: "none", clients: "none", documents: "none",
+    tasks: "none",
+    venues: "none", vendors: "edit", packages: "none", equipment: "none", employees: "none",
+    payments: "none", commissions: "none", payroll: "none", reports: "none", settings: "none",
+    gallery: "none",
+  },
   employee: {
     dashboard: "view", inbox: "view", events: "view", clients: "none", documents: "none",
     tasks: "view",
@@ -119,6 +128,7 @@ export const DEFAULT_LANDING: Record<Role, string> = {
   admin: "/",
   salesperson: "/events",
   employee: "/",
+  marketing: "/vendors",
 };
 
 /** Default access for a role+module, before DB rows / user overrides. */

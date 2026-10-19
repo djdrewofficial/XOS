@@ -45,7 +45,7 @@ type EmployeeLite = { id: string; email: string | null; phone: string | null; pe
 
 type Channels = { in_app: boolean; push: boolean; email: boolean; sms: boolean };
 
-const STATIC_ROLES = new Set(["master_admin", "admin", "salesperson", "employee"]);
+const STATIC_ROLES = new Set(["master_admin", "admin", "salesperson", "employee", "marketing"]);
 
 /** Public entry point. Never throws — logs and swallows so callers stay simple. */
 export async function dispatchNotification(
