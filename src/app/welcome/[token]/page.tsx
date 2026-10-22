@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { loadPayInfo } from "@/lib/payInfo";
+import { loadPayInfo, payTokenFinancialsHidden } from "@/lib/payInfo";
 import { payVerifyRequired, isPayVerified, PAY_SESSION_COOKIE } from "@/lib/payVerify";
 import WelcomePayment from "@/components/WelcomePayment";
 import PayGate from "@/components/PayGate";
@@ -35,6 +35,25 @@ export default async function WelcomePage({ params }: { params: Promise<{ token:
   const { token } = await params;
   const supabase = createAdminClient();
   const info = await loadPayInfo(supabase, token);
+
+  if (!info && (await payTokenFinancialsHidden(supabase, token))) {
+    return (
+      <Shell>
+        <div className="text-center">
+          <h1 className="text-xl font-extrabold text-zinc-900 dark:text-white">You&apos;re booked! 🎉</h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Your entertainment is arranged through your venue — let&apos;s start planning your music.
+          </p>
+          <a
+            href={`/vibo/${token}`}
+            className="mt-4 inline-block rounded-xl bg-gradient-to-r from-brand to-brand-light px-6 py-2.5 text-sm font-bold text-white shadow-lg"
+          >
+            Start planning in Vibo →
+          </a>
+        </div>
+      </Shell>
+    );
+  }
 
   if (!info) {
     return (

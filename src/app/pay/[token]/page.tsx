@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { loadPayInfo } from "@/lib/payInfo";
+import { loadPayInfo, payTokenFinancialsHidden } from "@/lib/payInfo";
 import { payVerifyRequired, isPayVerified, PAY_SESSION_COOKIE } from "@/lib/payVerify";
 import PayPageClient from "@/components/PayPageClient";
 import PayGate from "@/components/PayGate";
@@ -35,6 +35,17 @@ export default async function PayPage({ params }: { params: Promise<{ token: str
   const { token } = await params;
   const supabase = createAdminClient();
   const info = await loadPayInfo(supabase, token);
+
+  if (!info && (await payTokenFinancialsHidden(supabase, token))) {
+    return (
+      <Shell>
+        <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
+          You&apos;re all set — payments for your event are handled directly through your venue. Reach out to us
+          with any questions about your entertainment.
+        </p>
+      </Shell>
+    );
+  }
 
   if (!info) {
     return (

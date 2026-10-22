@@ -172,19 +172,22 @@ export async function confirmProposal(token: string, formData: FormData) {
   const bundle = await loadEventBundle(supabase, eventId); // fresh totals after edits
   const total = bundle?.total ?? 0;
   const deposit = Number(event.deposit_value ?? 0);
+  // venue-paid event (Villa Toscana / Booked EV): the venue pays us, so no client
+  // schedule — and no client-visible payment plan/reminders
+  const takesPayment = journeyType.step_payment && bundle?.financialsHidden !== true;
 
   // Don't let a client book/sign before the quote is priced. A $0 total on a
   // payment journey means pricing isn't finished — proceeding would generate a
   // $0 agreement with an empty payment plan and tell them they owe nothing.
   // (No-payment / venue-partner journeys legitimately have no total and bill the
   // client elsewhere, so they're exempt.)
-  if (journeyType.step_payment && total <= 0) {
+  if (takesPayment && total <= 0) {
     redirect(`/proposal/${token}?error=unpriced`);
   }
 
   let terms: "days_before" | "net_days_after" = "days_before";
   let termsDays = 30;
-  if (journeyType.step_payment && event.package_id) {
+  if (takesPayment && event.package_id) {
     const { data: pkg } = await supabase
       .from("packages")
       .select("payment_terms, payment_terms_days")
@@ -206,7 +209,7 @@ export async function confirmProposal(token: string, formData: FormData) {
 
   // Never disturb already-paid installments; only (re)build the unpaid portion.
   // Skipped for no-payment journeys — the venue bills the client, not us.
-  if (journeyType.step_payment) {
+  if (takesPayment) {
     await writeSchedulePreservingPaid(supabase, eventId, { total, deposit, eventDate: newDate, terms, termsDays, plan });
   }
 

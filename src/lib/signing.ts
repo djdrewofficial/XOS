@@ -77,11 +77,11 @@ const SECTION_LABEL =
 const LINE_ROW =
   "display:block;border-bottom:1px solid #f0edf8;padding:10px 0;";
 
-function lineHtml(name: string, amount: number, description?: string | null, color?: string): string {
+function lineHtml(name: string, amount: number | null, description?: string | null, color?: string): string {
   return `<div style="${LINE_ROW}">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="font-size:14px;font-weight:700;color:${color ?? "#1d1d22"};">${esc(name)}</td>
-      <td align="right" style="font-size:14px;font-weight:700;color:${color ?? "#1d1d22"};white-space:nowrap;">${money(amount)}</td>
+      ${amount == null ? "" : `<td align="right" style="font-size:14px;font-weight:700;color:${color ?? "#1d1d22"};white-space:nowrap;">${money(amount)}</td>`}
     </tr></table>
     ${description ? `<div style="font-size:12.5px;color:#6b6b76;margin-top:3px;white-space:pre-line;">${esc(description)}</div>` : ""}
   </div>`;
@@ -93,6 +93,7 @@ function lineHtml(name: string, amount: number, description?: string | null, col
 export function quoteSummaryHtml(bundle: EventBundle): string {
   const e = bundle.event;
   const fees = feeSummary(bundle);
+  const hide = bundle.financialsHidden; // venue-paid: services only, never amounts
   const clientName = e.client ? `${e.client.first_name} ${e.client.last_name}`.trim() : "";
   const times = [fmtTime(e.start_time), fmtTime(e.end_time)].filter(Boolean).join(" – ");
 
@@ -106,15 +107,15 @@ export function quoteSummaryHtml(bundle: EventBundle): string {
         <div style="font-size:13px;color:#55555e;">${fmtDate(e.event_date)}${times ? ` · ${times}` : ""}</div>
         ${e.venue?.name ? `<div style="font-size:13px;color:#55555e;">${esc(e.venue.name)}</div>` : ""}
       </td>
-      <td align="right" style="padding:16px 18px;vertical-align:top;white-space:nowrap;">
+      ${hide ? "" : `<td align="right" style="padding:16px 18px;vertical-align:top;white-space:nowrap;">
         <div style="font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#8b6fd6;font-weight:800;">Investment Total</div>
         <div style="font-size:24px;font-weight:900;color:#4b328e;margin-top:2px;">${money(fees.total)}</div>
-      </td>
+      </td>`}
     </tr>
   </table>`;
 
   const packageSection = fees.packageLine
-    ? `<div style="${SECTION_LABEL}">Your Package</div>${lineHtml(fees.packageLine.name, fees.packageLine.amount, fees.packageLine.description)}`
+    ? `<div style="${SECTION_LABEL}">Your Package</div>${lineHtml(fees.packageLine.name, hide ? null : fees.packageLine.amount, fees.packageLine.description)}`
     : "";
   // Contract Notes — staff-authored notes shown to the client, directly under
   // the package so they read as part of what's included.
@@ -128,7 +129,7 @@ export function quoteSummaryHtml(bundle: EventBundle): string {
         .join("")
     : "";
   const addonSection = fees.addonLines.length
-    ? `<div style="${SECTION_LABEL}">Add-Ons</div>${fees.addonLines.map((a) => lineHtml(a.name, a.amount, a.description)).join("")}`
+    ? `<div style="${SECTION_LABEL}">Add-Ons</div>${fees.addonLines.map((a) => lineHtml(a.name, hide ? null : a.amount, a.description)).join("")}`
     : "";
   const feeSection = fees.feeLines.length ? fees.feeLines.map((f) => lineHtml(f.name, f.amount)).join("") : "";
   const discountSection = fees.discountLines.length
@@ -142,12 +143,13 @@ export function quoteSummaryHtml(bundle: EventBundle): string {
     </tr>
   </table>`;
 
+  if (hide) return `${summaryCard}${packageSection}${contractSection}${addonSection}`;
   return `${summaryCard}${packageSection}${contractSection}${addonSection}${feeSection}${discountSection}${totalRow}`;
 }
 
 /** Payment plan block — also the <payment_plan> merge tag in email templates. */
 export function paymentPlanHtml(bundle: EventBundle): string {
-  if (!bundle.schedule.length) return "";
+  if (bundle.financialsHidden || !bundle.schedule.length) return "";
   return `<div style="${SECTION_LABEL}">Payment Plan</div>
     ${bundle.schedule
       .map(

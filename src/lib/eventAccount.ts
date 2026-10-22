@@ -48,13 +48,10 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   const { data: ev } = await admin.from("events").select("*").eq("id", eventId).maybeSingle();
   if (!ev) return null;
 
-  let typeHide = false;
-  if (ev.event_type_id) {
-    const { data: et } = await admin.from("event_types").select("hide_financials").eq("id", ev.event_type_id).maybeSingle();
-    typeHide = !!et?.hide_financials;
-  }
-  const hidden = ev.hide_financials ?? typeHide;
-  // Staff always see; hosts respect the per-event/type hide flag.
+  // one rule everywhere: per-event flag → venue-paid package / Booked EV status / type
+  const { data: hiddenFlag } = await admin.rpc("event_financials_hidden", { p_event_id: eventId });
+  const hidden = hiddenFlag === true;
+  // Staff always see; hosts never see money on a venue-paid event.
   const financialsVisible = role === "staff" || !hidden;
 
   const { data: eAddons } = await admin.from("event_addons").select("addon_id, quantity, price_override, price_locked, description_override").eq("event_id", eventId);
@@ -133,7 +130,7 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   const schedule: AccountSchedule[] = (sched ?? []).map((s) => ({ id: s.id, label: s.label, dueDate: s.due_date, amount: num(s.amount), seq: s.seq ?? 0, paid: takenSched.has(s.id) }));
 
   return {
-    financialsVisible, payToken: (ev.pay_token as string) ?? null, feePct, paypalEnabled, zelle,
+    financialsVisible, payToken: financialsVisible ? ((ev.pay_token as string) ?? null) : null, feePct, paypalEnabled, zelle,
     packageName, packageDescription, includedHours, packagePrice, addons, travelFee, overtimeFee,
     discounts, total, paid, balance, billingTerms: financialsVisible ? ev.billing_terms ?? null : null, payments, schedule,
   };

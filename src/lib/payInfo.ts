@@ -50,6 +50,17 @@ export function withFee(base: number, feePct: number): number {
   return round2(base * (1 + feePct / 100));
 }
 
+/** Venue-paid event (Villa Toscana / Booked EV) behind this pay token — the client
+    pays the venue, never us, and must never see our numbers. */
+export async function payTokenFinancialsHidden(supabase: SupabaseClient, token: string): Promise<boolean> {
+  const { data: event } = await supabase.from("events").select("id").eq("pay_token", token).maybeSingle();
+  if (!event) return false;
+  const { data } = await supabase.rpc("event_financials_hidden", { p_event_id: event.id });
+  return data === true;
+}
+
+/** Null for an unknown token AND for a venue-paid event — so the pay/welcome pages
+    and every pay API (PayPal create/capture, Zelle claim) refuse those events. */
 export async function loadPayInfo(supabase: SupabaseClient, token: string): Promise<PayInfo | null> {
   const { data: event } = await supabase
     .from("events")
@@ -59,6 +70,8 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
     .eq("pay_token", token)
     .maybeSingle();
   if (!event) return null;
+  const { data: hidden } = await supabase.rpc("event_financials_hidden", { p_event_id: event.id });
+  if (hidden === true) return null;
 
   const [{ data: addons }, { data: payments }, { data: scheduled }, { data: pset }, { data: jset }] =
     await Promise.all([

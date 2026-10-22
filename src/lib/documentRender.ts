@@ -56,6 +56,8 @@ export type EventBundle = {
   addons: { quantity: number; price_override: number | null; price_locked: number | null; description_override?: string | null; addon: { name: string; client_facing_name?: string | null; description: string | null; default_price: number } | null }[];
   schedule: { seq: number; due_date: string | null; amount: number; label: string | null }[];
   pinnedDescription: string | null;
+  /** venue-paid event (Villa Toscana / Booked EV): client-facing output shows no money */
+  financialsHidden: boolean;
   contractNotes: string[];
   total: number;
 };
@@ -114,7 +116,10 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
     Number(e.discount1_amount) -
     Number(e.discount2_amount);
 
-  return { event: e, addons: addonRows, schedule: schedule ?? [], pinnedDescription, contractNotes, total };
+  const { data: hidden } = await supabase.rpc("event_financials_hidden", { p_event_id: eventId });
+  const financialsHidden = hidden === true;
+
+  return { event: e, addons: addonRows, schedule: schedule ?? [], pinnedDescription, contractNotes, total, financialsHidden };
 }
 
 /** Structured fee lines — shared by the document fee table and the quote-style emails. */
@@ -147,6 +152,21 @@ export function feeSummary(b: EventBundle): {
 
 export function renderFeeTable(b: EventBundle): string {
   const e = b.event;
+  // venue-paid: list the services, never what the venue pays us
+  if (b.financialsHidden) {
+    const items: string[] = [];
+    if (e.package)
+      items.push(`<tr><td><strong>${esc(e.package.client_facing_name || e.package.name)}</strong>${
+        b.pinnedDescription ? `<div class="xdoc-desc">${esc(b.pinnedDescription)}</div>` : ""
+      }</td></tr>`);
+    for (const a of b.addons)
+      items.push(`<tr><td>${esc((a.addon?.client_facing_name as string | null) || a.addon?.name || "Add-On")}${a.quantity > 1 ? ` × ${a.quantity}` : ""}${
+        (a.description_override || a.addon?.description)
+          ? `<div class="xdoc-desc">${esc((a.description_override || a.addon?.description) as string)}</div>`
+          : ""
+      }</td></tr>`);
+    return `<table class="xdoc-table"><thead><tr><th>Services</th></tr></thead><tbody>${items.join("")}</tbody></table>`;
+  }
   const pkgPrice = Number(e.package_price_override ?? e.package_price_locked ?? e.package?.default_price ?? 0);
   const rows: string[] = [];
 
@@ -179,6 +199,7 @@ export function renderFeeTable(b: EventBundle): string {
 }
 
 export function renderPaymentSchedule(b: EventBundle): string {
+  if (b.financialsHidden) return "";
   if (b.schedule.length === 0) {
     return `<p class="xdoc-muted">Payment schedule to be determined.</p>`;
   }

@@ -133,13 +133,16 @@ export default async function ProposalPage({
 
   // resolve this event type's workflow (template + layout + who picks the plan)
   const journey = resolveJourney(typeRes.data, jsRes.data);
-  const total = bundle?.total ?? 0;
-  const deposit = Number(event.deposit_value ?? 0);
+  // venue-paid event (Villa Toscana / Booked EV): no amounts ever reach the browser
+  const moneyHidden = bundle?.financialsHidden === true;
+  const total = moneyHidden ? 0 : bundle?.total ?? 0;
+  const deposit = moneyHidden ? 0 : Number(event.deposit_value ?? 0);
+  const showPayment = journeyType.step_payment && !moneyHidden;
 
   // Quote not finalized (payment journey, $0 total) — don't show the confirm/sign
   // form. Otherwise the client would sign a $0 agreement and be told they owe
   // nothing. confirmProposal enforces the same guard server-side.
-  if (journeyType.step_payment && total <= 0) {
+  if (showPayment && total <= 0) {
     return (
       <Shell>
         <div className="text-center">
@@ -157,7 +160,7 @@ export default async function ProposalPage({
   // office-set payment terms → a fixed, read-only schedule the client just sees
   const today = new Date().toISOString().slice(0, 10);
   const officeRows =
-    journey.chooser === "office"
+    journey.chooser === "office" && !moneyHidden
       ? buildScheduleRows({
           total,
           deposit,
@@ -189,7 +192,7 @@ export default async function ProposalPage({
           You&apos;re almost there, {firstName}! 🎉
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          {journeyType.step_payment
+          {showPayment
             ? "Take a moment to confirm your details and choose the payment plan that works best for you. Then we'll have you sign and you're officially booked."
             : "Take a moment to confirm your details. Then we'll have you sign and get you set up on our app."}
         </p>
@@ -227,7 +230,7 @@ export default async function ProposalPage({
         termsDays={termsDays}
         officeRows={officeRows}
         officeLabel={officeLabel}
-        hidePayment={!journeyType.step_payment}
+        hidePayment={!showPayment}
       />
     </Shell>
   );
