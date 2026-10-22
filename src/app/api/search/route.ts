@@ -69,6 +69,12 @@ export async function GET(request: Request) {
     return branches.join(",");
   };
 
+  // "#500044" / "500044" → that XOS event number; also the old DJEP event # (464389)
+  const num = q.replace(/^#/, "").trim();
+  const eventOr = /^\d{1,12}$/.test(num)
+    ? `event_number.eq.${num},legacy_djep_id.eq.${num},name.ilike.%${esc(q)}%`
+    : `name.ilike.%${esc(q)}%`;
+
   const pageHits: SearchResult[] = PAGES.filter(
     (p) => p.label.toLowerCase().includes(lower) || p.keywords.includes(lower)
   )
@@ -95,9 +101,9 @@ export async function GET(request: Request) {
     gated(canView("events"), () =>
       supabase
         .from("events")
-        .select("id, name, event_date, status:event_statuses(name)")
+        .select("id, name, event_date, event_number, status:event_statuses(name)")
         .is("archived_at", null)
-        .ilike("name", like)
+        .or(eventOr)
         .order("event_date", { ascending: false })
         .limit(5)),
     gated(canView("venues"), () =>
@@ -125,7 +131,7 @@ export async function GET(request: Request) {
     ...(events.data ?? []).map((e) => ({
       type: "Event",
       label: e.name || "(unnamed event)",
-      sublabel: [e.event_date, (e.status as unknown as { name: string } | null)?.name]
+      sublabel: [e.event_number ? `#${e.event_number}` : null, e.event_date, (e.status as unknown as { name: string } | null)?.name]
         .filter(Boolean)
         .join(" · "),
       href: `/events/${e.id}`,
