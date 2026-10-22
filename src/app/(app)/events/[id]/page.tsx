@@ -1370,8 +1370,13 @@ export default async function EventDetailPage({
                 p.paypal_capture_id ? `PayPal #${p.paypal_capture_id}` : null,
                 p.bank_deposit_ref ? `Deposit: ${p.bank_deposit_ref}` : null,
                 p.processing_fee ? `+${money(p.processing_fee)} fee` : null,
-                p.notes,
               ].filter(Boolean) as string[];
+              // keep the note's own line breaks; drop the "-----" divider lines DJEP adds
+              const noteText = (p.notes ?? "")
+                .split(/\r?\n|\r/)
+                .map((l) => l.trim())
+                .filter((l) => l && !/^-{3,}$/.test(l))
+                .join("\n");
               return (
                 <li key={p.id} className={`py-2.5 ${isPending ? "rounded-lg bg-amber-50/60 px-2 dark:bg-amber-500/[0.06]" : ""}`}>
                   <div className="flex items-start justify-between gap-3">
@@ -1396,6 +1401,11 @@ export default async function EventDetailPage({
                       {details.length > 0 && (
                         <div className="mt-0.5 break-words text-xs text-zinc-500 dark:text-zinc-400">
                           {details.join(" · ")}
+                        </div>
+                      )}
+                      {noteText && (
+                        <div className="mt-1 whitespace-pre-line break-words rounded-md bg-black/[0.03] px-2 py-1.5 text-xs leading-relaxed text-zinc-600 dark:bg-white/[0.04] dark:text-zinc-400">
+                          {noteText}
                         </div>
                       )}
                       <details className="mt-1">
@@ -1438,7 +1448,7 @@ export default async function EventDetailPage({
                           </label>
                           <label className="block w-full">
                             <span className="label-xs">Note</span>
-                            <input name="notes" defaultValue={p.notes ?? ""} placeholder="e.g. check #1042, Zelle from Mom" className="input w-full text-xs" />
+                            <textarea name="notes" rows={3} defaultValue={p.notes ?? ""} placeholder="e.g. check #1042, Zelle from Mom" className="input w-full text-xs" />
                           </label>
                           <SaveButton className="btn-primary px-3 py-1.5 text-xs">Save Payment</SaveButton>
                         </form>
