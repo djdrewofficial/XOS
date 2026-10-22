@@ -28,13 +28,26 @@ export async function StatCards() {
     new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   )}`;
 
-  const [{ data: statuses }, { data: createdThisMonth }] = await Promise.all([
+  // Count by the real business dates (same as Reports → Leads), not when the row
+  // was created in XOS — imported history would otherwise all land "this month".
+  // Inquiry = initial contact date (fallback: created); booking = contract signed
+  // date (fallback: booked date).
+  const [{ data: statuses }, { data: createdThisMonth }, { data: bookedThisMonth }] = await Promise.all([
     supabase.from("event_statuses").select("id, is_leads_group, is_lost_sale_group, is_booked_group"),
     supabase
       .from("events")
       .select("id, status_id")
-      .gte("created_at", `${monthStart}T00:00:00`)
-      .lte("created_at", `${monthEnd}T23:59:59`),
+      .or(
+        `and(initial_contact_date.gte.${monthStart},initial_contact_date.lte.${monthEnd}),` +
+          `and(initial_contact_date.is.null,created_at.gte.${monthStart}T00:00:00,created_at.lte.${monthEnd}T23:59:59)`
+      ),
+    supabase
+      .from("events")
+      .select("id, status_id")
+      .or(
+        `and(contract_signed_date.gte.${monthStart},contract_signed_date.lte.${monthEnd}),` +
+          `and(contract_signed_date.is.null,booked_date.gte.${monthStart},booked_date.lte.${monthEnd})`
+      ),
   ]);
 
   const leadIds = new Set((statuses ?? []).filter((s) => s.is_leads_group).map((s) => s.id));
@@ -43,7 +56,7 @@ export async function StatCards() {
 
   const leads = (createdThisMonth ?? []).filter((e) => e.status_id && leadIds.has(e.status_id)).length;
   const lost = (createdThisMonth ?? []).filter((e) => e.status_id && lostIds.has(e.status_id)).length;
-  const booked = (createdThisMonth ?? []).filter((e) => e.status_id && bookedIds.has(e.status_id)).length;
+  const booked = (bookedThisMonth ?? []).filter((e) => e.status_id && bookedIds.has(e.status_id)).length;
 
   const cards = [
     { label: "Leads This Month", value: leads, glow: "from-blue-500/25", accent: "text-blue-700 dark:text-blue-300" },
