@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
@@ -232,5 +233,9 @@ export async function confirmProposal(token: string, formData: FormData) {
   const doc = await generateDocumentRow(supabase, templateId, eventId, "sent");
   if (!doc) redirect(`/proposal/${token}?error=gen`);
 
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+  revalidatePath("/");
+  revalidatePath("/documents");
   redirect(`/sign/${doc.access_token}`);
 }

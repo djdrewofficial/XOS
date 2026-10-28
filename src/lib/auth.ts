@@ -2,6 +2,7 @@
    Supabase user into { role, effective access per module, landing page }, and
    the guard helpers pages/actions use. Server-only (imports the server client). */
 
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -42,14 +43,14 @@ const NO_ACCESS: Record<string, Access> = {};
     (routed to /no-access) — the only exception is an OWNER_EMAILS break-glass
     match, which bootstraps master_admin so the owner can never be locked out.
     Returns null if not signed in. */
-export async function getMe(supabase?: Client): Promise<Me | null> {
+export const getMe = cache(async function getMe(supabase?: Client): Promise<Me | null> {
   const sb = supabase ?? (await createClient());
   const {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) return null;
   return resolveMe(sb, user);
-}
+});
 
 /** getMe for a mobile (Bearer-token) request. The anon client carries the JWT in
     its Authorization header — so its RLS reads are user-scoped like a web session

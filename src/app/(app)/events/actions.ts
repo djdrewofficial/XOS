@@ -29,6 +29,19 @@ function num(v: FormDataEntryValue | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Money screens besides the event page. revalidatePath("/payments") does not
+    cover /payments/scheduled and the other subpages. */
+function revalidateMoney(eventId: string) {
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+  revalidatePath("/");
+  revalidatePath("/payments");
+  revalidatePath("/payments/scheduled");
+  revalidatePath("/payments/outstanding");
+  revalidatePath("/payments/summary");
+  revalidatePath("/payments/monthly");
+}
+
 async function actorName(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
   const {
     data: { user },
@@ -582,6 +595,7 @@ export async function setEventStatus(id: string, statusId: string) {
   await runAutomations(supabase, id, "status_changed", { statusId });
   revalidatePath(`/events/${id}`);
   revalidatePath("/events");
+  revalidatePath("/");
 }
 
 /** Pause/resume automated CLIENT communications (email + SMS) for one event — used
@@ -614,8 +628,7 @@ export async function addPayment(eventId: string, formData: FormData) {
   });
   if (error) throw new Error(error.message);
   await runAutomations(supabase, eventId, "payment_received");
-  revalidatePath(`/events/${eventId}`);
-  revalidatePath("/payments");
+  revalidateMoney(eventId);
 }
 
 /** Fix a recorded payment — wrong amount, date, method, reason or a missing note.
@@ -644,8 +657,7 @@ export async function updatePayment(paymentId: string, eventId: string, formData
   }
   const { error } = await supabase.from("payments").update(update).eq("id", paymentId);
   if (error) throw new Error(error.message);
-  revalidatePath(`/events/${eventId}`);
-  revalidatePath("/payments");
+  revalidateMoney(eventId);
 }
 
 /** Rewrite the UNPAID part of the payment schedule after the event total changed.
@@ -697,7 +709,7 @@ export async function saveRemainingSchedule(
     if (error) throw new Error(error.message);
   }
   await supabase.from("events").update({ schedule_ack_total: bundle.total }).eq("id", eventId);
-  revalidatePath(`/events/${eventId}`);
+  revalidateMoney(eventId);
 }
 
 /** "Keep schedule as is" — silence the update-payments prompt until the total changes again. */
@@ -752,8 +764,7 @@ export async function confirmPayment(paymentId: string, eventId: string, formDat
   if (error) throw new Error(error.message);
 
   await runAutomations(supabase, eventId, "payment_received");
-  revalidatePath(`/events/${eventId}`);
-  revalidatePath("/payments");
+  revalidateMoney(eventId);
 }
 
 /* Remove a payment row — used to reject a false/duplicate Zelle claim, or undo
@@ -780,8 +791,7 @@ export async function removePayment(paymentId: string, eventId: string) {
     .eq("event_id", eventId)
     .is("deleted_at", null);
   if (error) throw new Error(error.message);
-  revalidatePath(`/events/${eventId}`);
-  revalidatePath("/payments");
+  revalidateMoney(eventId);
 }
 
 /* Restore a soft-deleted payment from the "Recently removed" list. */
@@ -794,8 +804,7 @@ export async function restorePayment(paymentId: string, eventId: string) {
     .eq("id", paymentId)
     .eq("event_id", eventId);
   if (error) throw new Error(error.message);
-  revalidatePath(`/events/${eventId}`);
-  revalidatePath("/payments");
+  revalidateMoney(eventId);
 }
 
 /* Mint (or reuse) a short link for this event's proposal — a tidy
@@ -869,7 +878,7 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
     termsDays,
     plan,
   });
-  revalidatePath(`/events/${eventId}`);
+  revalidateMoney(eventId);
 }
 
 /** Office-set billing terms for event types where the office (not the client)
@@ -987,6 +996,7 @@ export async function assignStaff(eventId: string, formData: FormData) {
   if (error) throw new Error(error.message);
   await dispatchNotification(supabase, "staff_assigned", { eventId, employeeIds: [employeeId] });
   revalidatePath(`/events/${eventId}`);
+  revalidatePath("/");
 }
 
 export async function removeStaff(eventId: string, staffId: string) {
@@ -995,6 +1005,7 @@ export async function removeStaff(eventId: string, staffId: string) {
   const { error } = await supabase.from("event_staff").delete().eq("id", staffId);
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
+  revalidatePath("/");
 }
 
 export async function markStaff(
@@ -1023,11 +1034,16 @@ export async function selfCheckInOut(eventStaffId: string, field: "checked_in_at
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not signed in.");
   const { data: emp } = await supabase.from("employees").select("id").eq("auth_user_id", user.id).maybeSingle();
-  const { data: row } = await supabase.from("event_staff").select("id, employee_id").eq("id", eventStaffId).maybeSingle();
+  const { data: row } = await supabase
+    .from("event_staff")
+    .select("id, employee_id, event_id")
+    .eq("id", eventStaffId)
+    .maybeSingle();
   if (!emp || !row || row.employee_id !== emp.id) throw new Error("Not authorized.");
   const { error } = await supabase.from("event_staff").update({ [field]: new Date().toISOString() }).eq("id", eventStaffId);
   if (error) throw new Error(error.message);
   revalidatePath("/");
+  if (row.event_id) revalidatePath(`/events/${row.event_id}`);
 }
 
 /* Staff request a correction to their recorded times — admins approve on /payroll. */
@@ -1052,6 +1068,7 @@ export async function requestTimesheetChange(eventStaffId: string, formData: For
   if (error) throw new Error(error.message);
   await dispatchNotification(supabase, "timesheet_submitted", {});
   revalidatePath("/");
+  revalidatePath("/payroll");
 }
 
 export async function addEventEquipment(eventId: string, formData: FormData) {
@@ -1675,6 +1692,7 @@ export async function updateEventDetails(eventId: string, formData: FormData) {
   if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
+  revalidatePath("/");
 }
 
 export async function updateEventVenue(eventId: string, formData: FormData) {
@@ -1822,8 +1840,7 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
   if (newPackageId && newPackageId !== before?.package_id) {
     await applyPackageSelection(supabase, eventId, newPackageId, before?.event_date ?? null, overrideSubmitted);
   }
-  revalidatePath(`/events/${eventId}`);
-  revalidatePath("/events");
+  revalidateMoney(eventId);
 }
 
 export async function updateBookingInfo(eventId: string, formData: FormData) {
@@ -1846,6 +1863,7 @@ export async function updateBookingInfo(eventId: string, formData: FormData) {
   }
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
+  revalidatePath("/");
 }
 
 export async function updateBookingDates(eventId: string, formData: FormData) {
@@ -1862,27 +1880,35 @@ export async function updateBookingDates(eventId: string, formData: FormData) {
     .eq("id", eventId);
   if (error) throw new Error(error.message);
 
-  // custom date fields arrive as custom_<definitionId>
+  // custom date fields arrive as custom_<definitionId>. One delete and one
+  // upsert, not a round trip per field.
+  const clearIds: string[] = [];
+  const upserts: { event_id: string; definition_id: string; value: string }[] = [];
   for (const [key, raw] of formData.entries()) {
     if (!key.startsWith("custom_")) continue;
     const definitionId = key.slice(7);
+    if (!definitionId) continue;
     const value = (raw ?? "").toString().trim();
-    if (value === "") {
-      await supabase
-        .from("event_custom_dates")
-        .delete()
-        .eq("event_id", eventId)
-        .eq("definition_id", definitionId);
-    } else {
-      await supabase
-        .from("event_custom_dates")
-        .upsert(
-          { event_id: eventId, definition_id: definitionId, value },
-          { onConflict: "event_id,definition_id" }
-        );
-    }
+    if (value === "") clearIds.push(definitionId);
+    else upserts.push({ event_id: eventId, definition_id: definitionId, value });
+  }
+  if (clearIds.length) {
+    const { error: delErr } = await supabase
+      .from("event_custom_dates")
+      .delete()
+      .eq("event_id", eventId)
+      .in("definition_id", clearIds);
+    if (delErr) throw new Error(delErr.message);
+  }
+  if (upserts.length) {
+    const { error: upErr } = await supabase
+      .from("event_custom_dates")
+      .upsert(upserts, { onConflict: "event_id,definition_id" });
+    if (upErr) throw new Error(upErr.message);
   }
   revalidatePath(`/events/${eventId}`);
+  revalidatePath("/events");
+  revalidatePath("/");
 }
 
 export async function addCustomDateField(eventId: string, formData: FormData) {
