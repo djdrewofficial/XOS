@@ -1,9 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import AuthShell from "@/components/AuthShell";
+import PasswordChecklist from "@/components/PasswordChecklist";
 import { createClient } from "@/lib/supabase/client";
-import { PASSWORD_RULES, passwordMeetsPolicy } from "@/lib/passwordPolicy";
+import { passwordMeetsPolicy } from "@/lib/passwordPolicy";
+
+/* Lands the person from a password email and lets them choose a new one.
+
+   Three link shapes, all public (middleware exempts /auth/*):
+   - Supabase reset email, token-hash template: ?token_hash=&type=recovery
+     → verifyOtp. Works on any device. This is the flow to configure.
+   - Supabase reset email, default template: ?code= (PKCE). The code verifier
+     cookie was stored when this browser requested the email, so
+     exchangeCodeForSession only succeeds in that same browser.
+   - Staff invite / admin reset (Mailgun generateLink): #access_token= or ?code=
+     → setSession / exchangeCodeForSession. Left in place so those emails
+     keep working. */
+
+const RECOVERY_KEY = "xos-pwreset";
+
+function cleanUrl() {
+  window.history.replaceState(null, "", "/auth/set-password");
+}
+
+function markRecovery() {
+  try {
+    sessionStorage.setItem(RECOVERY_KEY, "1");
+  } catch {
+    /* private mode — the in-memory session still lets them finish this visit */
+  }
+}
+
+function clearRecovery() {
+  try {
+    sessionStorage.removeItem(RECOVERY_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function hasRecovery() {
+  try {
+    return sessionStorage.getItem(RECOVERY_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function hashParams(): URLSearchParams {
+  return new URLSearchParams(window.location.hash.replace(/^#/, ""));
+}
 
 export default function SetPasswordPage() {
   const router = useRouter();
@@ -13,48 +62,111 @@ export default function SetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  const failed = useRef(false);
+  const settled = useRef(false);
 
   useEffect(() => {
     const supabase = createClient();
     let active = true;
 
-    // Establish the session from the recovery/invite link (hash or PKCE code).
-    async function init() {
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get("code");
-      if (code) {
-        try {
-          await supabase.auth.exchangeCodeForSession(code);
-        } catch {
-          /* fall through to session check */
-        }
-      } else if (window.location.hash.includes("access_token")) {
-        // Implicit recovery link: tokens arrive in the URL hash. The PKCE client
-        // won't auto-consume them, so establish the session explicitly.
-        const hp = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-        const access_token = hp.get("access_token");
-        const refresh_token = hp.get("refresh_token");
-        if (access_token && refresh_token) {
-          try {
-            await supabase.auth.setSession({ access_token, refresh_token });
-          } catch {
-            /* fall through to session check */
-          }
-        }
-      }
-      // Validity is resolved by the actual auth outcome, not a timer: we've
-      // awaited the code exchange / setSession above, so a session here means the
-      // link was good, and its absence means it's invalid/expired. A slow network
-      // just makes those awaits take longer — it can no longer be misread as
-      // "expired". onAuthStateChange below is a backup that can only upgrade
-      // invalid → ready if a session materializes asynchronously.
-      const { data } = await supabase.auth.getSession();
-      if (active) setStatus(data.session ? "ready" : "invalid");
-    }
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (active && session) setStatus("ready");
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") markRecovery();
+      // Backup for a session that arrives after init. A normal signed-in
+      // visit (no recovery grant) must not open the form, and a link we
+      // already rejected must stay rejected.
+      if (active && settled.current && !failed.current && session && hasRecovery()) setStatus("ready");
     });
+
+    async function init() {
+      try {
+        const url = new URL(window.location.href);
+        const tokenHash = url.searchParams.get("token_hash");
+        const type = url.searchParams.get("type");
+        const code = url.searchParams.get("code");
+        const hash = hashParams();
+        const accessToken = hash.get("access_token");
+        const refreshToken = hash.get("refresh_token");
+
+        if (tokenHash) {
+          // This page only finishes password recovery. Don't accept other
+          // OTP types (signup, magic link, email change) through it.
+          if (type && type !== "recovery") {
+            failed.current = true;
+            clearRecovery();
+            if (active) setStatus("invalid");
+            return;
+          }
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: "recovery",
+          });
+          if (error || !data.session) {
+            failed.current = true;
+            clearRecovery();
+            if (active) setStatus("invalid");
+            return;
+          }
+          markRecovery();
+          cleanUrl();
+          if (active) setStatus("ready");
+          return;
+        }
+
+        if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error || !data.session) {
+            failed.current = true;
+            clearRecovery();
+            if (active) setStatus("invalid");
+            return;
+          }
+          markRecovery();
+          cleanUrl();
+          if (active) setStatus("ready");
+          return;
+        }
+
+        if (accessToken && refreshToken) {
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (error || !data.session) {
+            failed.current = true;
+            clearRecovery();
+            if (active) setStatus("invalid");
+            return;
+          }
+          markRecovery();
+          cleanUrl();
+          if (active) setStatus("ready");
+          return;
+        }
+
+        const linkError =
+          url.searchParams.get("error") ||
+          url.searchParams.get("error_code") ||
+          hash.get("error") ||
+          hash.get("error_code");
+        if (linkError) {
+          failed.current = true;
+          clearRecovery();
+          if (active) setStatus("invalid");
+          return;
+        }
+
+        // No token on this load. A refresh during an in-progress reset still
+        // has the recovery grant; a normal signed-in visit does not.
+        const { data } = await supabase.auth.getSession();
+        if (active) setStatus(data.session && hasRecovery() ? "ready" : "invalid");
+      } catch {
+        failed.current = true;
+        clearRecovery();
+        if (active) setStatus("invalid");
+      } finally {
+        settled.current = true;
+      }
+    }
 
     init();
 
@@ -83,6 +195,9 @@ export default function SetPasswordPage() {
       setSaving(false);
       return;
     }
+    // Drop every other device. The recovery session we just used stays.
+    await supabase.auth.signOut({ scope: "others" });
+    clearRecovery();
     setDone(true);
     // middleware routes staff to the app and external users to /portal
     setTimeout(() => {
@@ -94,93 +209,60 @@ export default function SetPasswordPage() {
   const canSubmit = passwordMeetsPolicy(pw) && pw === pw2;
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="card w-full max-w-sm p-8">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-light.png" alt="Xpress Entertainment" className="mb-2 block w-56 dark:hidden" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-dark.png" alt="Xpress Entertainment" className="mb-2 hidden w-56 dark:block" />
-        <p className="mb-8 text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 dark:text-zinc-600">
-          XOS · Set Your Password
-        </p>
+    <AuthShell subtitle="XOS · Set Your Password">
+      {status === "loading" && <p className="text-sm text-zinc-500">Verifying your link…</p>}
 
-        {status === "loading" && (
-          <p className="text-sm text-zinc-500">Verifying your link…</p>
-        )}
+      {status === "invalid" && (
+        <div className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="mb-4">This link is invalid or has expired. Request a new reset email and try again.</p>
+          <Link href="/auth/forgot-password" className="btn-primary mb-3 w-full">
+            Request a new email
+          </Link>
+          <Link href="/login" className="block w-full text-center text-xs text-zinc-500 hover:underline">
+            Back to sign in
+          </Link>
+        </div>
+      )}
 
-        {status === "invalid" && (
-          <div className="text-sm text-zinc-600 dark:text-zinc-400">
-            <p className="mb-3">This link is invalid or has expired.</p>
-            <a href="/login" className="font-semibold text-brand underline dark:text-brand-lighter">
-              Go to sign in
-            </a>
-          </div>
-        )}
-
-        {status === "ready" && !done && (
-          <form onSubmit={handleSubmit}>
-            <label className="label-xs">New password</label>
-            <input
-              type="password"
-              required
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              className="input mb-3 w-full"
-              autoComplete="new-password"
-            />
-
-            {/* Live requirement checklist — mirrors the Supabase Auth policy. */}
-            <ul className="mb-4 space-y-1">
-              {PASSWORD_RULES.map((rule) => {
-                const met = rule.test(pw);
-                return (
-                  <li
-                    key={rule.key}
-                    className={`flex items-center gap-2 text-xs ${
-                      met
-                        ? "text-green-600 dark:text-green-400"
-                        : "text-zinc-500 dark:text-zinc-400"
-                    }`}
-                  >
-                    <span aria-hidden className="w-3 text-center">{met ? "✓" : "○"}</span>
-                    {rule.label}
-                  </li>
-                );
-              })}
-            </ul>
-
-            <label className="label-xs">Confirm password</label>
-            <input
-              type="password"
-              required
-              value={pw2}
-              onChange={(e) => setPw2(e.target.value)}
-              className="input mb-2 w-full"
-              autoComplete="new-password"
-            />
-            {pw2.length > 0 && pw !== pw2 && (
-              <p className="mb-3 text-xs text-red-600 dark:text-red-400">Passwords don&apos;t match.</p>
-            )}
-            <p className="mb-4 mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
-              For your security, passwords found in known data breaches can&apos;t be used.
-            </p>
-            {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
-            <button
-              type="submit"
-              disabled={saving || !canSubmit}
-              className="btn-primary w-full disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Set Password & Sign In"}
-            </button>
-          </form>
-        )}
-
-        {done && (
-          <p className="text-sm font-semibold text-green-600 dark:text-green-400">
-            Password set! Taking you in…
+      {status === "ready" && !done && (
+        <form onSubmit={handleSubmit}>
+          <label className="label-xs">New password</label>
+          <input
+            type="password"
+            required
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            className="input mb-3 w-full"
+            autoComplete="new-password"
+          />
+          <PasswordChecklist password={pw} />
+          <label className="label-xs">Confirm password</label>
+          <input
+            type="password"
+            required
+            value={pw2}
+            onChange={(e) => setPw2(e.target.value)}
+            className="input mb-2 w-full"
+            autoComplete="new-password"
+          />
+          {pw2.length > 0 && pw !== pw2 && (
+            <p className="mb-3 text-xs text-red-600 dark:text-red-400">Passwords don&apos;t match.</p>
+          )}
+          <p className="mb-4 mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
+            For your security, passwords found in known data breaches can&apos;t be used.
           </p>
-        )}
-      </div>
-    </div>
+          {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+          <button type="submit" disabled={saving || !canSubmit} className="btn-primary w-full disabled:opacity-50">
+            {saving ? "Saving…" : "Set Password & Sign In"}
+          </button>
+        </form>
+      )}
+
+      {done && (
+        <p className="text-sm font-semibold text-green-600 dark:text-green-400">
+          Password updated. Signing you in…
+        </p>
+      )}
+    </AuthShell>
   );
 }

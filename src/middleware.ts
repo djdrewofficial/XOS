@@ -70,7 +70,11 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // PUBLIC routes: client signing links + machine endpoints (webhook/cron do
   // their own auth — Mailgun HMAC and the CRON_SECRET bearer token; /api/mobile
-  // verifies the XOS Mobile app's Supabase JWT itself)
+  // verifies the XOS Mobile app's Supabase JWT itself).
+  // /auth/* stays public so password reset works with no session:
+  //   /auth/forgot-password  request a Supabase reset email
+  //   /auth/set-password     land from that email and choose a new password
+  // (also the staff invite / admin reset landing). /login is public below.
   const isPublic =
     pathname.startsWith("/app-privacy") ||
     pathname.startsWith("/privacy") ||
