@@ -133,26 +133,37 @@ export async function resolvePlannerTracksForExport(
 
   const admin = createAdminClient();
 
-  // Load sections (in the requested order) + their songs.
+  // One read for the chosen sections and one for their songs, then group in
+  // the order the staffer picked. The old loop queried each section twice.
+  const [{ data: secRows }, { data: songRows }] = await Promise.all([
+    admin.from("planning_sections").select("id, title").in("id", sectionIds).eq("event_id", eventId),
+    admin
+      .from("planning_songs")
+      .select("id, section_id, provider, provider_id, isrc, title, artist, album, artwork_url")
+      .in("section_id", sectionIds)
+      .eq("event_id", eventId)
+      .order("sort_order", { ascending: true }),
+  ]);
+  const titleById = new Map((secRows ?? []).map((s) => [s.id as string, (s.title as string) ?? "Section"]));
+  const songsBySection = new Map<string, SongRow[]>();
+  for (const song of (songRows ?? []) as (SongRow & { section_id: string })[]) {
+    const list = songsBySection.get(song.section_id) ?? [];
+    list.push(song);
+    songsBySection.set(song.section_id, list);
+  }
+
   const loaded: { sectionId: string; title: string; songs: SongRow[] }[] = [];
   let count = 0;
   let truncated = false;
   for (const sid of sectionIds) {
-    const { data: sec } = await admin.from("planning_sections").select("title").eq("id", sid).eq("event_id", eventId).maybeSingle();
-    if (!sec) continue;
-    const { data: songs } = await admin
-      .from("planning_songs")
-      .select("id, provider, provider_id, isrc, title, artist, album, artwork_url")
-      .eq("section_id", sid)
-      .eq("event_id", eventId)
-      .order("sort_order", { ascending: true });
-    let rows = (songs ?? []) as SongRow[];
+    if (!titleById.has(sid)) continue;
+    let rows = songsBySection.get(sid) ?? [];
     if (count + rows.length > MAX_SONGS) {
       rows = rows.slice(0, Math.max(0, MAX_SONGS - count));
       truncated = true;
     }
     count += rows.length;
-    loaded.push({ sectionId: sid, title: (sec.title as string) ?? "Section", songs: rows });
+    loaded.push({ sectionId: sid, title: titleById.get(sid) ?? "Section", songs: rows });
     if (count >= MAX_SONGS) break;
   }
 

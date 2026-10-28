@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getMe } from "@/lib/auth";
 import {
   DEFAULT_LAYOUTS,
   sanitizeLayout,
@@ -26,12 +27,11 @@ export default async function Dashboard({
   const { m } = await searchParams;
   const supabase = await createClient();
 
-  // role of the signed-in user drives which layout renders
-  const { data: auth } = await supabase.auth.getUser();
-  const { data: me } = auth?.user
-    ? await supabase.from("employees").select("permission_tier").eq("auth_user_id", auth.user.id).maybeSingle()
-    : { data: null };
-  const role = ((me?.permission_tier as Role | undefined) ?? "master_admin") as Role;
+  // Same identity the layout already resolved (React cache). Fall back to the
+  // owner layout only when there is no staff row at all, matching the previous
+  // page behavior so a lookup miss doesn't swap Drew onto the employee widgets.
+  const me = await getMe(supabase);
+  const role = (me?.role ?? "master_admin") as Role;
 
   const { data: layoutRow } = await supabase
     .from("dashboard_layouts")

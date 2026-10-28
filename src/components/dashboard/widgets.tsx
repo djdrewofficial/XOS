@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AddEventModal from "@/components/AddEventModal";
 import { createClient } from "@/lib/supabase/server";
+import { getMe } from "@/lib/auth";
 import { money, type XEvent } from "@/lib/types";
 import { holidaysForYear } from "@/lib/holidays";
 import MonthCalendarClient, { type CalDetailedEvent } from "@/components/dashboard/MonthCalendarClient";
@@ -357,12 +358,9 @@ export function QuickActions() {
 /* ---------------- My Upcoming Events (assigned to signed-in employee) ---------------- */
 export async function MyUpcomingEvents() {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  const { data: me } = auth?.user
-    ? await supabase.from("employees").select("id").eq("auth_user_id", auth.user.id).maybeSingle()
-    : { data: null };
+  const me = await getMe(supabase);
 
-  if (!me) {
+  if (!me?.employeeId) {
     return (
       <div>
         <h2 className="card-title">My Upcoming Events</h2>
@@ -376,7 +374,7 @@ export async function MyUpcomingEvents() {
   const { data: assignments } = await supabase
     .from("event_staff")
     .select("id, role, checked_in_at, checked_out_at, event:events(id, name, event_date, start_time, archived_at, status:event_statuses(name, color, text_color), venue:venues(name))")
-    .eq("employee_id", me.id);
+    .eq("employee_id", me.employeeId);
 
   const today = todayStr();
   const upcoming = (assignments ?? [])
