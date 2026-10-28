@@ -73,6 +73,7 @@ function ZellePanel({
 }: WelcomePaymentProps & { onBack?: () => void }) {
   const [claimed, setClaimed] = useState(false);
   const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (claimed) {
     return (
@@ -96,14 +97,31 @@ function ZellePanel({
         {balance > suggested + 0.005 && <div className="mt-0.5 text-right text-xs text-zinc-400">or your full balance {fmt(balance)}</div>}
         <div className="mt-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{zelleMemo}</div>
       </div>
+      {error && (
+        <div className="rounded-lg bg-red-50 px-3 py-2 text-center text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
+          {error}
+        </div>
+      )}
       <button
         type="button"
         disabled={working}
         onClick={async () => {
           setWorking(true);
+          setError(null);
           try {
-            await fetch("/api/pay/zelle-pending", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, amount: suggested }) });
+            const res = await fetch("/api/pay/zelle-pending", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token, amount: suggested }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              setError(typeof data.error === "string" ? data.error : "We couldn't record that yet. Please try again.");
+              return;
+            }
             setClaimed(true);
+          } catch {
+            setError("We couldn't record that yet. Please try again.");
           } finally {
             setWorking(false);
           }

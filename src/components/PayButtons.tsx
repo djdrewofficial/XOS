@@ -27,6 +27,7 @@ export default function PayButtons({
   const [done, setDone] = useState<{ base: number; fee: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const showChoice = balance > suggested + 0.005;
   const charged = withFee(amount, feePct);
@@ -92,18 +93,23 @@ export default function PayButtons({
       >
         <PayPalButtons
           style={{ layout: "vertical", shape: "rect", label: "pay" }}
-          disabled={working}
-          forceReRender={[amount, feePct]}
+          disabled={working || creating}
+          forceReRender={[amount, feePct, creating]}
           createOrder={async () => {
             setError(null);
-            const res = await fetch("/api/paypal/create-order", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token, amount }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error ?? "Could not start the payment.");
-            return data.id as string;
+            setCreating(true);
+            try {
+              const res = await fetch("/api/paypal/create-order", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token, amount }),
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error ?? "Could not start the payment.");
+              return data.id as string;
+            } finally {
+              setCreating(false);
+            }
           }}
           onApprove={async (data) => {
             setWorking(true);

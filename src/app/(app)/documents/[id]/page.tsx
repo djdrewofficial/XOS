@@ -12,6 +12,7 @@ import {
   sendForSignature,
 } from "../actions";
 import SaveButton from "@/components/SaveButton";
+import PendingSubmit from "@/components/PendingSubmit";
 import { appUrl } from "@/lib/signing";
 
 export const dynamic = "force-dynamic";
@@ -84,17 +85,19 @@ export default async function DocumentDetailPage({
                 {editing ? "Preview" : "Edit One-Off"}
               </Link>
               <form action={regenerateDocument.bind(null, id)}>
-                <button className="btn-ghost px-4 py-2 text-xs" title="Re-render from the template and current event data">
+                <PendingSubmit pendingLabel="Re-generating…" className="btn-ghost px-4 py-2 text-xs disabled:opacity-60" title="Re-render from the template and current event data">
                   ↻ Re-Generate
-                </button>
+                </PendingSubmit>
               </form>
               <form action={setDocumentStatus.bind(null, id, doc.status === "final" ? "draft" : "final")}>
-                <button className="btn-ghost px-4 py-2 text-xs">
+                <PendingSubmit pendingLabel="Saving…" className="btn-ghost px-4 py-2 text-xs disabled:opacity-60">
                   {doc.status === "final" ? "Back To Draft" : "Mark Final"}
-                </button>
+                </PendingSubmit>
               </form>
               <form action={deleteDocument.bind(null, id)}>
-                <button className="btn-danger px-4 py-2 text-xs">Delete</button>
+                <PendingSubmit pendingLabel="Deleting…" className="btn-danger px-4 py-2 text-xs disabled:opacity-60">
+                  Delete
+                </PendingSubmit>
               </form>
             </>
           )}

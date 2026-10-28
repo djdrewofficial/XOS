@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faUserPlus,
@@ -136,20 +137,26 @@ function InviteForm({ eventId }: { eventId: string }) {
   const [relationship, setRelationship] = useState("");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const router = useRouter();
 
   function submit() {
     setMsg(null);
     start(async () => {
-      const res = await inviteGuest(eventId, { firstName, lastName, email, relationship });
-      if (res?.ok) {
-        setMsg({ ok: true, text: "Invitation sent!" });
-        setFirstName("");
-        setLastName("");
-        setEmail("");
-        setRelationship("");
-        setOpen(false);
-      } else {
-        setMsg({ ok: false, text: res?.error || "Could not send invite" });
+      try {
+        const res = await inviteGuest(eventId, { firstName, lastName, email, relationship });
+        if (res?.ok) {
+          setMsg({ ok: true, text: "Invitation sent!" });
+          setFirstName("");
+          setLastName("");
+          setEmail("");
+          setRelationship("");
+          setOpen(false);
+          router.refresh();
+        } else {
+          setMsg({ ok: false, text: res?.error || "Could not send invite" });
+        }
+      } catch (e) {
+        setMsg({ ok: false, text: e instanceof Error ? e.message : "Could not send invite" });
       }
     });
   }

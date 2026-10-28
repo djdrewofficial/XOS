@@ -72,6 +72,8 @@ export default function InboxShell({
   const [composePhone, setComposePhone] = useState("");
   const [channelView, setChannelView] = useState("all");
   const [loadingThread, setLoadingThread] = useState(false);
+  const [threadError, setThreadError] = useState<string | null>(null);
+  const [clientsError, setClientsError] = useState<string | null>(null);
   const [moreLoading, setMoreLoading] = useState(false);
   const [exhausted, setExhausted] = useState(initialConversations.length < 200);
 
@@ -106,16 +108,24 @@ export default function InboxShell({
       window.history.pushState({ inboxId: id }, "", `/inbox/${id}`);
     }
 
+    setThreadError(null);
     loadThread(id)
       .then((t) => {
         if (activeIdRef.current !== id) return; // user moved on
         setLoadingThread(false);
-        if (!t) return;
+        if (!t) {
+          setThreadError("Couldn't open this conversation.");
+          return;
+        }
         cacheRef.current.set(id, t);
         setActive(t);
         setMessages(t.messages);
       })
-      .catch(() => { if (activeIdRef.current === id) setLoadingThread(false); });
+      .catch(() => {
+        if (activeIdRef.current !== id) return;
+        setLoadingThread(false);
+        setThreadError("Couldn't load messages. Try again.");
+      });
   }, [conversations]);
 
   const goToList = useCallback(() => {
@@ -143,7 +153,14 @@ export default function InboxShell({
 
   // Load the client picker only when the composer is first opened.
   useEffect(() => {
-    if (composing && clients.length === 0) listInboxClients().then(setClients).catch(() => {});
+    if (composing && clients.length === 0) {
+      listInboxClients()
+        .then((rows) => {
+          setClients(rows);
+          setClientsError(null);
+        })
+        .catch(() => setClientsError("Couldn't load clients. Refresh and try again."));
+    }
   }, [composing, clients.length]);
 
   /* ===== realtime: DB changes stream straight into the UI ===== */
@@ -215,6 +232,10 @@ export default function InboxShell({
     const el = threadRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, activeId]);
+
+  const onFailed = useCallback(() => {
+    setMessages((prev) => prev.filter((m) => !String(m.id).startsWith("temp-")));
+  }, []);
 
   const onOptimistic = useCallback((body: string, ch: string) => {
     const id = activeIdRef.current;
@@ -353,6 +374,7 @@ export default function InboxShell({
               <input type="hidden" name="label" value={(() => { const c = clients.find((x) => x.id === composeClient); return c ? `${c.first_name} ${c.last_name}`.trim() : ""; })()} />
               <div>
                 <label className="label-xs">Client</label>
+                {clientsError && <p className="mb-1 text-xs text-red-600 dark:text-red-400">{clientsError}</p>}
                 <select name="client_id" value={composeClient} onChange={(e) => { setComposeClient(e.target.value); const c = clients.find((x) => x.id === e.target.value); if (c?.cell_phone) setComposePhone(c.cell_phone); }} className="input w-full max-w-sm">
                   <option value="">— custom number —</option>
                   {clients.map((c) => (
@@ -396,11 +418,19 @@ export default function InboxShell({
               <ChannelTabs conversation={active.conv} messages={messages} value={channelView} onChange={setChannelView} />
             </div>
             <div ref={threadRef} className="flex-1 space-y-3 overflow-y-auto p-5">
+              {threadError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                  {threadError}{" "}
+                  <button type="button" className="font-semibold underline" onClick={() => active && openThread(active.conv.id)}>
+                    Retry
+                  </button>
+                </div>
+              )}
               {(channelView === "all" ? messages : messages.filter((m) => m.message_type === CHANNEL_TO_TYPE[channelView])).map((m) => (
                 <MessageBubble key={m.id} m={m} />
               ))}
             </div>
-            <ReplyForm conversation={active.conv} messages={messages} title={title ?? "client"} docs={active.docs} forcedChannel={channelView === "all" ? null : channelView} onOptimistic={onOptimistic} />
+            <ReplyForm conversation={active.conv} messages={messages} title={title ?? "client"} docs={active.docs} forcedChannel={channelView === "all" ? null : channelView} onOptimistic={onOptimistic} onFailed={onFailed} />
           </>
         )}
       </div>

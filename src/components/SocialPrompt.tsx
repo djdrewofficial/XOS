@@ -21,16 +21,23 @@ export default function SocialPrompt({ state }: { state: SocialState | null }) {
   const [ig, setIg] = useState(state?.instagram ?? "");
   const [tt, setTt] = useState(state?.tiktok ?? "");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!show || !state) return null;
   const hasFollow = !!(state.company_instagram || state.company_tiktok);
 
   const resolve = async (skip: boolean) => {
     setBusy(true);
-    await saveSocialHandles(skip ? null : clean(ig) || null, skip ? null : clean(tt) || null);
-    setBusy(false);
-    if (hasFollow) setStep(2);
-    else setShow(false);
+    setError(null);
+    try {
+      await saveSocialHandles(skip ? null : clean(ig) || null, skip ? null : clean(tt) || null);
+      if (hasFollow) setStep(2);
+      else setShow(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save that. Please try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -47,6 +54,7 @@ export default function SocialPrompt({ state }: { state: SocialState | null }) {
               <Field label="TikTok" icon={faTiktok} value={tt} onChange={setTt} />
             </div>
 
+            {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
             <button onClick={() => resolve(false)} disabled={busy} className="btn-primary mt-5 w-full disabled:opacity-60">
               {busy ? "Saving…" : "Save"}
             </button>
