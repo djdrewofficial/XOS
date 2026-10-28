@@ -258,10 +258,16 @@ function RuleBuilder({
 
   async function save() {
     setSaving(true);
-    const res = await saveRule(draft as RuleInput);
-    setSaving(false);
-    if (res.ok) onSaved();
-    else setAiError(res.error || "Save failed.");
+    setAiError(null);
+    try {
+      const res = await saveRule(draft as RuleInput);
+      if (res.ok) onSaved();
+      else setAiError(res.error || "Save failed.");
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const isNone = draft.trigger_anchor === "none";

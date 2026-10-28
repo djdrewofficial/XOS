@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 /* "Delete my data" control on the client detail page. Erases the client's PII and
    removes their portal login (server action anonymizeClient); events and payment
@@ -16,6 +17,7 @@ export default function AnonymizeClient({
 }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  const router = useRouter();
 
   if (anonymizedAt) {
     return (
@@ -36,8 +38,13 @@ export default function AnonymizeClient({
     if (!ok) return;
     start(async () => {
       setMsg(null);
-      const res = await action(clientId);
-      setMsg(res.ok ? "Personal data erased." : res.error ?? "Could not erase data.");
+      try {
+        const res = await action(clientId);
+        setMsg(res.ok ? "Personal data erased." : res.error ?? "Could not erase data.");
+        if (res.ok) router.refresh();
+      } catch (e) {
+        setMsg(e instanceof Error ? e.message : "Could not erase data.");
+      }
     });
   };
 

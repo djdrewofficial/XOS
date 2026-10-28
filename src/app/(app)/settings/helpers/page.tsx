@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import SaveButton from "@/components/SaveButton";
+import PendingSubmit from "@/components/PendingSubmit";
 import { createBlankHelper, toggleHelper, deleteHelper, moveHelper, duplicateHelper } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -134,22 +135,24 @@ export default async function HelpersPage() {
                   </td>
                   <td className="px-3 py-3 text-center whitespace-nowrap">
                     <form action={moveHelper.bind(null, h.id, "up")} className="inline">
-                      <button
+                      <PendingSubmit
                         disabled={idx === 0}
+                        pendingLabel="…"
                         className="rounded bg-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-300 disabled:opacity-30 dark:bg-white/10 dark:text-zinc-300 dark:hover:bg-white/20"
                         title="Move up"
                       >
                         ▲
-                      </button>
+                      </PendingSubmit>
                     </form>
                     <form action={moveHelper.bind(null, h.id, "down")} className="ml-1 inline">
-                      <button
+                      <PendingSubmit
                         disabled={idx === list.length - 1}
+                        pendingLabel="…"
                         className="rounded bg-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-300 disabled:opacity-30 dark:bg-white/10 dark:text-zinc-300 dark:hover:bg-white/20"
                         title="Move down"
                       >
                         ▼
-                      </button>
+                      </PendingSubmit>
                     </form>
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -160,28 +163,31 @@ export default async function HelpersPage() {
                       EDIT
                     </Link>
                     <form action={duplicateHelper.bind(null, h.id)} className="ml-1.5 inline">
-                      <button
-                        className="inline-flex size-7 items-center justify-center rounded bg-zinc-500 text-white hover:brightness-110 dark:bg-zinc-600"
+                      <PendingSubmit
+                        pendingLabel="…"
+                        className="inline-flex size-7 items-center justify-center rounded bg-zinc-500 text-white hover:brightness-110 disabled:opacity-60 dark:bg-zinc-600"
                         title="Duplicate"
                       >
                         <CopyIcon />
-                      </button>
+                      </PendingSubmit>
                     </form>
                     <form action={toggleHelper.bind(null, h.id, !h.is_active)} className="ml-1.5 inline">
-                      <button
-                        className="inline-flex h-7 items-center justify-center rounded bg-zinc-500 px-2 text-[10px] font-bold text-white hover:brightness-110 dark:bg-zinc-600"
+                      <PendingSubmit
+                        pendingLabel="…"
+                        className="inline-flex h-7 items-center justify-center rounded bg-zinc-500 px-2 text-[10px] font-bold text-white hover:brightness-110 disabled:opacity-60 dark:bg-zinc-600"
                         title={h.is_active ? "Disable" : "Enable"}
                       >
                         {h.is_active ? "OFF" : "ON"}
-                      </button>
+                      </PendingSubmit>
                     </form>
                     <form action={deleteHelper.bind(null, h.id)} className="ml-1.5 inline">
-                      <button
-                        className="inline-flex size-7 items-center justify-center rounded bg-red-700 text-white hover:brightness-110"
+                      <PendingSubmit
+                        pendingLabel="…"
+                        className="inline-flex size-7 items-center justify-center rounded bg-red-700 text-white hover:brightness-110 disabled:opacity-60"
                         title="Delete"
                       >
                         <TrashIcon />
-                      </button>
+                      </PendingSubmit>
                     </form>
                   </td>
                 </tr>

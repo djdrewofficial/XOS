@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PendingSubmit from "@/components/PendingSubmit";
 import { selfCheckInOut, requestTimesheetChange } from "@/app/(app)/events/actions";
 
 const fmt = (t: string | null) => (t ? new Date(t).toLocaleString("en-US", { hour: "numeric", minute: "2-digit" }) : null);
@@ -22,13 +23,17 @@ export default function StaffCheckIn({
       <div className="flex flex-wrap items-center gap-1.5">
         {!checkedInAt ? (
           <form action={selfCheckInOut.bind(null, eventStaffId, "checked_in_at")}>
-            <button className="rounded-md bg-emerald-600 px-2 py-1 font-semibold text-white hover:bg-emerald-700">Check In</button>
+            <PendingSubmit pendingLabel="…" className="rounded-md bg-emerald-600 px-2 py-1 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+              Check In
+            </PendingSubmit>
           </form>
         ) : !checkedOutAt ? (
           <>
             <span className="text-zinc-500">In {fmt(checkedInAt)}</span>
             <form action={selfCheckInOut.bind(null, eventStaffId, "checked_out_at")}>
-              <button className="rounded-md bg-zinc-700 px-2 py-1 font-semibold text-white hover:bg-zinc-800">Check Out</button>
+              <PendingSubmit pendingLabel="…" className="rounded-md bg-zinc-700 px-2 py-1 font-semibold text-white hover:bg-zinc-800 disabled:opacity-60">
+                Check Out
+              </PendingSubmit>
             </form>
           </>
         ) : (
@@ -52,7 +57,9 @@ export default function StaffCheckIn({
           <input name="reason" placeholder="Reason (optional)" className="input w-full py-1 text-xs" />
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setFixing(false)} className="px-2 py-1 text-zinc-500">Cancel</button>
-            <button type="submit" className="rounded-md bg-brand px-2 py-1 font-semibold text-white">Request</button>
+            <PendingSubmit pendingLabel="Sending…" className="rounded-md bg-brand px-2 py-1 font-semibold text-white disabled:opacity-60">
+              Request
+            </PendingSubmit>
           </div>
         </form>
       )}

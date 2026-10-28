@@ -52,7 +52,7 @@ export default function EventFireflies({
   configured: boolean;
 }) {
   const router = useRouter();
-  const [, start] = useTransition();
+  const [acting, start] = useTransition();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -60,10 +60,15 @@ export default function EventFireflies({
     setBusy(true);
     setMsg(null);
     start(async () => {
-      const res = await syncFireflies(eventId);
-      setMsg(res.error ? res.error : `Imported ${res.imported} recent meeting${res.imported === 1 ? "" : "s"}.`);
-      setBusy(false);
-      router.refresh();
+      try {
+        const res = await syncFireflies(eventId);
+        setMsg(res.error ? res.error : `Imported ${res.imported} recent meeting${res.imported === 1 ? "" : "s"}.`);
+        router.refresh();
+      } catch (e) {
+        setMsg(e instanceof Error ? e.message : "Sync failed.");
+      } finally {
+        setBusy(false);
+      }
     });
   }
 
@@ -97,7 +102,7 @@ export default function EventFireflies({
       )}
 
       {meetings.map((m) => (
-        <MeetingCard key={m.id} eventId={eventId} meeting={m} canEdit={canEdit} onAct={start} onRefresh={() => router.refresh()} />
+        <MeetingCard key={m.id} eventId={eventId} meeting={m} canEdit={canEdit} busy={acting || busy} onAct={start} onRefresh={() => router.refresh()} />
       ))}
 
       {unlinked.length > 0 && (
@@ -114,8 +119,9 @@ export default function EventFireflies({
                 </div>
                 {canEdit && (
                   <button
+                    disabled={acting || busy}
                     onClick={() => start(async () => { await attachMeetingToEvent(eventId, m.id); router.refresh(); })}
-                    className="btn-ghost shrink-0 px-3 py-1 text-xs"
+                    className="btn-ghost shrink-0 px-3 py-1 text-xs disabled:opacity-50"
                   >
                     Attach
                   </button>
@@ -133,12 +139,14 @@ function MeetingCard({
   eventId,
   meeting: m,
   canEdit,
+  busy,
   onAct,
   onRefresh,
 }: {
   eventId: string;
   meeting: FFMeeting;
   canEdit: boolean;
+  busy: boolean;
   onAct: (cb: () => void) => void;
   onRefresh: () => void;
 }) {
@@ -161,7 +169,7 @@ function MeetingCard({
           {m.meeting_link && <a href={m.meeting_link} target="_blank" rel="noreferrer" className="text-brand hover:underline">Meeting</a>}
           {m.audio_url && <a href={m.audio_url} target="_blank" rel="noreferrer" className="text-brand hover:underline">Audio</a>}
           {canEdit && (
-            <button onClick={() => onAct(() => { void unlinkMeeting(eventId, m.id).then(onRefresh); })} className="text-zinc-400 hover:text-red-500">
+            <button disabled={busy} onClick={() => onAct(() => { void unlinkMeeting(eventId, m.id).then(onRefresh); })} className="text-zinc-400 hover:text-red-500 disabled:opacity-50">
               Unlink
             </button>
           )}
@@ -205,14 +213,16 @@ function MeetingCard({
                   {canEdit && (
                     <div className="flex shrink-0 gap-1.5">
                       <button
+                        disabled={busy}
                         onClick={() => onAct(() => { void approveSuggestion(eventId, s.id).then(onRefresh); })}
-                        className="btn-primary px-2.5 py-1 text-xs"
+                        className="btn-primary px-2.5 py-1 text-xs disabled:opacity-50"
                       >
                         Approve
                       </button>
                       <button
+                        disabled={busy}
                         onClick={() => onAct(() => { void dismissSuggestion(eventId, s.id).then(onRefresh); })}
-                        className="btn-ghost px-2.5 py-1 text-xs"
+                        className="btn-ghost px-2.5 py-1 text-xs disabled:opacity-50"
                       >
                         Dismiss
                       </button>

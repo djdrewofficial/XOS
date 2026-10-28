@@ -640,13 +640,16 @@ function MentionComposer({
     const t = text.trim();
     if (!t) return;
     setSending(true);
-    // only keep mentions whose name still appears in the text
-    const kept = mentions.filter((m) => text.includes(`@${m.name}`)).map((m) => m.id);
-    await onSend(t, kept);
-    setText("");
-    setMentions([]);
-    setMenu(null);
-    setSending(false);
+    try {
+      // only keep mentions whose name still appears in the text
+      const kept = mentions.filter((m) => text.includes(`@${m.name}`)).map((m) => m.id);
+      await onSend(t, kept);
+      setText("");
+      setMentions([]);
+      setMenu(null);
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -689,6 +692,7 @@ function NewTaskForm({
   onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-24" onClick={onClose}>
@@ -698,11 +702,17 @@ function NewTaskForm({
           onSubmit={async (e) => {
             e.preventDefault();
             setSaving(true);
+            setError(null);
             const fd = new FormData(e.currentTarget);
             if (eventId) fd.set("event_id", eventId);
-            await createTask(fd);
-            setSaving(false);
-            onSaved();
+            try {
+              await createTask(fd);
+              onSaved();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Couldn't save the task.");
+            } finally {
+              setSaving(false);
+            }
           }}
           className="space-y-3"
         >
@@ -741,6 +751,7 @@ function NewTaskForm({
               </select>
             </div>
           </div>
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="btn-ghost px-3 py-1.5 text-sm">
               Cancel

@@ -1,9 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPaperclip, faFile } from "@fortawesome/free-solid-svg-icons";
-import SaveButton from "@/components/SaveButton";
 import { channelIcon, channelLabel, channelColor, fmtFull } from "@/app/(app)/inbox/ui";
 import { sendInboxReply } from "@/app/(app)/inbox/actions";
 
@@ -211,6 +210,7 @@ export function ReplyForm({
   docs = [],
   forcedChannel = null,
   onOptimistic,
+  onFailed,
 }: {
   conversation: { id: string; phone: string | null; email: string | null };
   messages: MsgRow[];
@@ -218,8 +218,11 @@ export function ReplyForm({
   docs?: ThreadDoc[];
   forcedChannel?: string | null;
   onOptimistic?: (body: string, channel: string) => void;
+  onFailed?: () => void;
 }) {
   const [fileNames, setFileNames] = useState<string[]>([]);
+  const [pending, startTransition] = useTransition();
+  const [sendError, setSendError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const channels = availableChannels(conversation, messages);
@@ -236,14 +239,27 @@ export function ReplyForm({
 
   return (
     <form
-      action={sendInboxReply.bind(null, conversation.id)}
       onSubmit={(e) => {
+        e.preventDefault();
+        if (pending) return;
         const form = e.currentTarget;
+        const fd = new FormData(form);
         const ta = form.elements.namedItem("body") as HTMLTextAreaElement | null;
         const body = ta?.value?.trim() ?? "";
-        // optimistic bubble (text-only sends; file sends fall back to realtime)
-        if (body && fileNames.length === 0) onOptimistic?.(body, channel);
-        setTimeout(() => { setFileNames([]); if (ta) ta.value = ""; }, 0);
+        const optimistic = Boolean(body && fileNames.length === 0);
+        if (optimistic) onOptimistic?.(body, channel);
+        setSendError(null);
+        startTransition(async () => {
+          try {
+            await sendInboxReply(conversation.id, fd);
+            setFileNames([]);
+            if (fileRef.current) fileRef.current.value = "";
+            if (ta) ta.value = "";
+          } catch (err) {
+            if (optimistic) onFailed?.();
+            setSendError(err instanceof Error ? err.message : "Couldn't send. Try again.");
+          }
+        });
       }}
       className="border-t border-zinc-100 p-4 dark:border-white/[0.05]"
     >
@@ -329,10 +345,11 @@ export function ReplyForm({
             }
           }}
         />
-        <SaveButton className="btn-primary px-5" savedLabel="Sent">
-          Send
-        </SaveButton>
+        <button type="submit" disabled={pending} className="btn-primary px-5 disabled:opacity-60">
+          {pending ? "Sending…" : "Send"}
+        </button>
       </div>
+      {sendError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{sendError}</p>}
     </form>
   );
 }
