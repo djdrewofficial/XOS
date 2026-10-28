@@ -120,6 +120,7 @@ export async function generateDocument(formData: FormData) {
   const doc = await generateDocumentRow(supabase, templateId, eventId);
   if (!doc) throw new Error("Could not render document for this event");
   revalidatePath("/documents");
+  revalidatePath(`/events/${eventId}`);
   redirect(`/documents/${doc.id}`);
 }
 

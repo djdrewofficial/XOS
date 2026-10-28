@@ -1,10 +1,11 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
+import UrlTabLink from "@/components/UrlTabLink";
 
 /* URL-driven tabs for the event page: the active tab lives in ?tab=, so the
    server only builds/ships the open panel's content (and only fetches that
-   tab's heavy data). Tab clicks are soft navigations — Next prefetches the
-   links and caches the RSC payload, so re-opening a tab is instant.
+   tab's heavy data). Tab links do NOT full-prefetch. prefetch={true} was
+   rebuilding every tab (each one a full event-page render) in the background,
+   which filled the browser's connections and made Save look dead until refresh.
 
    NOTE: this is deliberately separate from <Tabs> (the instant client toggle),
    which the helper editor needs because it lives inside a form — navigating
@@ -29,11 +30,9 @@ export default function UrlTabs({
         {tabs.map((t) => {
           const isActive = t.id === current?.id;
           return (
-            <Link
+            <UrlTabLink
               key={t.id}
               href={`${basePath}?tab=${t.id}`}
-              scroll={false}
-              prefetch
               className={`shrink-0 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
                 isActive
                   ? "bg-gradient-to-r from-brand to-brand-light text-white shadow-lg shadow-brand/50"
@@ -50,7 +49,7 @@ export default function UrlTabs({
                   {t.badge}
                 </span>
               )}
-            </Link>
+            </UrlTabLink>
           );
         })}
       </div>

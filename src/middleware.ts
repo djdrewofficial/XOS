@@ -6,15 +6,58 @@ import {
   accessAtLeast,
   isOwnerEmail,
   TWO_FA_REQUIRED_ROLES,
+  ROLES,
   type Access,
   type Role,
 } from "@/lib/permissions";
+import {
+  PERM_COOKIE,
+  PERM_TTL_SEC,
+  permCacheSecret,
+  readPermSnap,
+  signPermSnap,
+  type PermSnap,
+} from "@/lib/permSnapshot";
 
 /** Sign-in for another app (/sso/*): remember where to come back to after login/2FA. */
 function withNext(url: URL, request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   url.search = pathname.startsWith("/sso/") ? `?next=${encodeURIComponent(pathname + search)}` : "";
   return url;
+}
+
+type PendingCookie = { name: string; value: string; options?: Parameters<NextResponse["cookies"]["set"]>[2] };
+
+type Gate =
+  | { kind: "external"; accountType: "client" | "event_guest" }
+  | { kind: "nostaff" }
+  | { kind: "staff"; role: Role; empId: string | null; can: Record<string, Access> | null };
+
+function isRole(value: string): value is Role {
+  return ROLES.some(([id]) => id === value);
+}
+
+function isAccess(value: string): value is Access {
+  return value === "none" || value === "view" || value === "edit";
+}
+
+/** A signed snapshot is trusted only when its shape matches what the gate stores. */
+function gateFromSnap(snap: PermSnap | null): Gate | null {
+  if (!snap || !isRole(snap.role)) return null;
+  if (snap.accountType !== "staff") {
+    return { kind: "external", accountType: snap.accountType };
+  }
+  if (snap.role === "master_admin") {
+    return { kind: "staff", role: "master_admin", empId: snap.empId, can: null };
+  }
+  if (!snap.empId) return { kind: "nostaff" };
+  if (!snap.can) return null;
+  const can: Record<string, Access> = {};
+  for (const [key, value] of Object.entries(snap.can)) {
+    if (!isAccess(value)) return null;
+    can[key] = value;
+  }
+  return { kind: "staff", role: snap.role, empId: snap.empId, can };
 }
 
 export async function middleware(request: NextRequest) {
@@ -41,6 +84,25 @@ export async function middleware(request: NextRequest) {
   }
 
   let response = NextResponse.next({ request });
+  // Session refreshes write cookies onto whichever response we actually return.
+  // Redirects used to drop them, which invalidated the rotated refresh token and
+  // left the next click hanging or logged out until a full reload.
+  let pendingAuthCookies: PendingCookie[] = [];
+  let permSet: { value: string; maxAge: number } | null = null;
+
+  const finish = (res: NextResponse) => {
+    for (const c of pendingAuthCookies) res.cookies.set(c.name, c.value, c.options);
+    if (permSet) {
+      res.cookies.set(PERM_COOKIE, permSet.value, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: permSet.maxAge,
+      });
+    }
+    return res;
+  };
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,13 +113,9 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
+          pendingAuthCookies = cookiesToSet;
         },
       },
     }
@@ -100,18 +158,19 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/cron/") ||
     pathname.startsWith("/api/unsubscribe/") ||
     pathname.startsWith("/api/comms-delivery");
-  if (isPublic) return response;
+  if (isPublic) return finish(response);
 
   const isLoginPage = pathname.startsWith("/login");
   if (!user && !isLoginPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(withNext(url, request));
+    permSet = { value: "", maxAge: 0 };
+    return finish(NextResponse.redirect(withNext(url, request)));
   }
   if (user && isLoginPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
-    return NextResponse.redirect(url);
+    return finish(NextResponse.redirect(url));
   }
 
   // Permission gate: block screens the signed-in user lacks "view" access to.
@@ -122,49 +181,126 @@ export async function middleware(request: NextRequest) {
   // (sensitive money/reports pages re-check server-side anyway).
   if (user) {
     try {
-      // External users (client / event guest) live in the planning portal only.
-      const { data: acct } = await supabase
-        .from("accounts")
-        .select("account_type")
-        .eq("auth_user_id", user.id)
-        .maybeSingle();
-      if (acct && acct.account_type !== "staff") {
+      // Assurance level is read from the session JWT (no extra network hop) and
+      // overlaps the permission lookup on a cache miss.
+      const aalPromise = supabase.auth.mfa
+        .getAuthenticatorAssuranceLevel()
+        .then((r) => r.data)
+        .catch(() => null);
+
+      const secret = permCacheSecret();
+      const cached = gateFromSnap(
+        await readPermSnap(request.cookies.get(PERM_COOKIE)?.value, secret, user.id),
+      );
+
+      let gate: Gate;
+      if (cached) {
+        gate = cached;
+      } else {
+        const [{ data: acct }, { data: emp }] = await Promise.all([
+          supabase.from("accounts").select("account_type").eq("auth_user_id", user.id).maybeSingle(),
+          supabase.from("employees").select("id, permission_tier").eq("auth_user_id", user.id).maybeSingle(),
+        ]);
+
+        if (acct && acct.account_type !== "staff") {
+          const accountType = acct.account_type === "event_guest" ? "event_guest" : "client";
+          gate = { kind: "external", accountType };
+          if (secret) {
+            permSet = {
+              value: await signPermSnap(
+                { uid: user.id, exp: Math.floor(Date.now() / 1000) + PERM_TTL_SEC, accountType, role: "employee", empId: null },
+                secret,
+              ),
+              maxAge: PERM_TTL_SEC,
+            };
+          }
+        } else if (emp && isRole(emp.permission_tier)) {
+          const role = emp.permission_tier;
+          const empId = emp.id as string;
+          let can: Record<string, Access> | null = null;
+          if (role !== "master_admin") {
+            const [{ data: roleRows }, { data: userRows }] = await Promise.all([
+              supabase.from("role_permissions").select("module, access").eq("role", role),
+              supabase.from("employee_permissions").select("module, access").eq("employee_id", empId),
+            ]);
+            can = resolveAccessMap(
+              role,
+              (roleRows ?? []) as { module: string; access: Access }[],
+              (userRows ?? []) as { module: string; access: Access }[],
+            );
+          }
+          gate = { kind: "staff", role, empId, can };
+          if (secret) {
+            permSet = {
+              value: await signPermSnap(
+                {
+                  uid: user.id,
+                  exp: Math.floor(Date.now() / 1000) + PERM_TTL_SEC,
+                  accountType: "staff",
+                  role,
+                  empId,
+                  ...(can ? { can } : {}),
+                },
+                secret,
+              ),
+              maxAge: PERM_TTL_SEC,
+            };
+          }
+        } else if (isOwnerEmail(user.email)) {
+          gate = { kind: "staff", role: "master_admin", empId: null, can: null };
+          if (secret) {
+            permSet = {
+              value: await signPermSnap(
+                {
+                  uid: user.id,
+                  exp: Math.floor(Date.now() / 1000) + PERM_TTL_SEC,
+                  accountType: "staff",
+                  role: "master_admin",
+                  empId: null,
+                },
+                secret,
+              ),
+              maxAge: PERM_TTL_SEC,
+            };
+          }
+        } else {
+          gate = { kind: "nostaff" };
+          if (secret) {
+            permSet = {
+              value: await signPermSnap(
+                {
+                  uid: user.id,
+                  exp: Math.floor(Date.now() / 1000) + PERM_TTL_SEC,
+                  accountType: "staff",
+                  role: "employee",
+                  empId: null,
+                },
+                secret,
+              ),
+              maxAge: PERM_TTL_SEC,
+            };
+          }
+        }
+      }
+
+      if (gate.kind === "external") {
         if (!pathname.startsWith("/portal")) {
           const url = request.nextUrl.clone();
           url.pathname = "/portal";
           url.search = "";
-          return NextResponse.redirect(url);
+          return finish(NextResponse.redirect(url));
         }
-        return response; // external user inside the portal — allowed
+        return finish(response);
       }
 
-      // This staff member's role drives both 2FA enforcement and the perm gate.
-      const { data: emp } = await supabase
-        .from("employees")
-        .select("id, permission_tier")
-        .eq("auth_user_id", user.id)
-        .maybeSingle();
-
-      let role: Role;
-      let empId: string | null;
-      if (emp) {
-        role = emp.permission_tier as Role;
-        empId = emp.id as string;
-      } else if (isOwnerEmail(user.email)) {
-        // Break-glass: configured owner with no employee row → bootstrap owner.
-        role = "master_admin";
-        empId = null;
-      } else {
-        // Deny-by-default: a signed-in user with no staff identity (and not the
-        // configured owner) gets no screens. Route them to /no-access, which
-        // maps to no module so it can never loop.
+      if (gate.kind === "nostaff") {
         if (!pathname.startsWith("/no-access")) {
           const url = request.nextUrl.clone();
           url.pathname = "/no-access";
           url.search = "";
-          return NextResponse.redirect(url);
+          return finish(NextResponse.redirect(url));
         }
-        return response;
+        return finish(response);
       }
 
       // 2FA gate. Anyone with an enrolled factor must complete the TOTP challenge
@@ -172,46 +308,30 @@ export async function middleware(request: NextRequest) {
       // they haven't set it up, force them to the setup page first. Regular
       // employees may opt in. Fails open on a lookup error so an MFA hiccup can
       // never lock staff out.
-      try {
-        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        if (aal) {
-          const hasFactor = aal.nextLevel === "aal2";
-          if (hasFactor && aal.currentLevel === "aal1" && !pathname.startsWith("/2fa")) {
-            const url = request.nextUrl.clone();
-            url.pathname = "/2fa";
-            return NextResponse.redirect(withNext(url, request));
-          }
-          if (!hasFactor && TWO_FA_REQUIRED_ROLES.has(role) && !pathname.startsWith("/account/security")) {
-            const url = request.nextUrl.clone();
-            url.pathname = "/account/security";
-            url.search = "";
-            return NextResponse.redirect(url);
-          }
+      const aal = await aalPromise;
+      if (aal) {
+        const hasFactor = aal.nextLevel === "aal2";
+        if (hasFactor && aal.currentLevel === "aal1" && !pathname.startsWith("/2fa")) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/2fa";
+          return finish(NextResponse.redirect(withNext(url, request)));
         }
-      } catch {
-        /* never block on an MFA lookup failure */
+        if (!hasFactor && TWO_FA_REQUIRED_ROLES.has(gate.role) && !pathname.startsWith("/account/security")) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/account/security";
+          url.search = "";
+          return finish(NextResponse.redirect(url));
+        }
       }
 
       const moduleKey = moduleForPath(pathname);
-      if (moduleKey) {
-        if (role !== "master_admin") {
-          const [{ data: roleRows }, { data: userRows }] = await Promise.all([
-            supabase.from("role_permissions").select("module, access").eq("role", role),
-            empId
-              ? supabase.from("employee_permissions").select("module, access").eq("employee_id", empId)
-              : Promise.resolve({ data: [] as { module: string; access: Access }[] }),
-          ]);
-          const can = resolveAccessMap(
-            role,
-            (roleRows ?? []) as { module: string; access: Access }[],
-            (userRows ?? []) as { module: string; access: Access }[],
-          );
-          if (!accessAtLeast(can[moduleKey] ?? "none", "view")) {
-            const url = request.nextUrl.clone();
-            url.pathname = "/no-access";
-            url.search = "";
-            return NextResponse.redirect(url);
-          }
+      if (moduleKey && gate.role !== "master_admin") {
+        const can = gate.can ?? {};
+        if (!accessAtLeast(can[moduleKey] ?? "none", "view")) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/no-access";
+          url.search = "";
+          return finish(NextResponse.redirect(url));
         }
       }
     } catch (err) {
@@ -219,7 +339,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return response;
+  return finish(response);
 }
 
 export const config = {
