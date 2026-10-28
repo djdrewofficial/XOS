@@ -102,14 +102,15 @@ export default async function EventDetailPage({
   const activeTab = (EVENT_TABS as readonly string[]).includes(tab ?? "") ? (tab as string) : "client";
   const supabase = await createClient();
 
-  // current user's tier gates the destructive footer actions (delete vs archive)
-  const { data: authUser } = await supabase.auth.getUser();
-  const { data: meEmp } = authUser?.user
-    ? await supabase.from("employees").select("permission_tier").eq("auth_user_id", authUser.user.id).maybeSingle()
-    : { data: null };
-  const tier = (meEmp?.permission_tier as "master_admin" | "admin" | "salesperson" | "employee" | undefined) ?? "master_admin";
+  // Same cached getMe() the layout already loaded. Delete is master_admin only;
+  // a failed lookup no longer falls open to master_admin. Owners with no employee
+  // row still resolve as master_admin inside getMe.
+  const viewer = await getMe(supabase);
+  const tier = viewer?.role;
   const canDelete = tier === "master_admin";
   const canArchive = tier === "master_admin" || tier === "admin" || tier === "salesperson";
+  const want = (tab: string) => activeTab === tab;
+  const skip = Promise.resolve({ data: null });
 
   // PERF: every query that depends only on the event id runs in ONE parallel
   // batch instead of 5 sequential groups — collapses ~30 round-trips into one
@@ -142,7 +143,6 @@ export default async function EventDetailPage({
     { data: trips },
     { data: vehicles },
     { data: eventTypes },
-    { data: venuesList },
     { data: packagesList },
     { data: eventVendors },
     { data: eventEquipment },
@@ -172,28 +172,41 @@ export default async function EventDetailPage({
       .eq("event_id", id)
       .order("is_primary", { ascending: false })
       .order("created_at"),
-    supabase.from("inquiry_sources").select("id, name").eq("is_active", true).order("name"),
+    want("booking")
+      ? supabase.from("inquiry_sources").select("id, name").eq("is_active", true).order("name")
+      : skip,
     supabase.from("custom_date_definitions").select("*").eq("is_active", true).order("sort_order"),
-    supabase.from("event_custom_dates").select("*").eq("event_id", id),
-    supabase.from("event_logs").select("*").eq("event_id", id).order("created_at", { ascending: false }).limit(100),
-    supabase.from("payment_settings").select("*").eq("id", true).maybeSingle(),
-    supabase.from("expense_settings").select("payees").eq("id", true).maybeSingle(),
+    want("booking") ? supabase.from("event_custom_dates").select("*").eq("event_id", id) : skip,
+    want("details")
+      ? supabase.from("event_logs").select("*").eq("event_id", id).order("created_at", { ascending: false }).limit(100)
+      : skip,
+    want("financials") ? supabase.from("payment_settings").select("*").eq("id", true).maybeSingle() : skip,
+    want("financials") ? supabase.from("expense_settings").select("payees").eq("id", true).maybeSingle() : skip,
     supabase.from("documents").select("*").eq("event_id", id).order("created_at", { ascending: false }),
-    supabase.from("document_templates").select("id, name, doc_type").eq("is_active", true).order("name"),
-    supabase.from("event_files").select("*").eq("event_id", id).order("created_at", { ascending: false }),
+    want("documents")
+      ? supabase.from("document_templates").select("id, name, doc_type").eq("is_active", true).order("name")
+      : skip,
+    want("documents") || want("notes")
+      ? supabase.from("event_files").select("*").eq("event_id", id).order("created_at", { ascending: false })
+      : skip,
     supabase.from("event_addons").select("*, addon:addons(*)").eq("event_id", id),
-    supabase.from("addons").select("*").eq("is_active", true).order("display_order"),
-    supabase
-      .from("expenses")
-      .select("*, category:expense_categories(name)")
-      .eq("event_id", id)
-      .order("expense_date", { ascending: false }),
-    supabase.from("expense_categories").select("*").eq("is_active", true).order("name"),
-    supabase.from("event_trips").select("*, vehicle:vehicles(name)").eq("event_id", id).order("trip_date", { ascending: false }),
-    supabase.from("vehicles").select("*").eq("is_active", true).order("name"),
-    supabase.from("event_types").select("id, name").eq("is_active", true).order("name"),
-    supabase.from("venues").select("id, name").order("name"),
-    supabase.from("packages").select("id, name, default_price").eq("is_active", true).order("display_order"),
+    want("booking") ? supabase.from("addons").select("*").eq("is_active", true).order("display_order") : skip,
+    want("financials")
+      ? supabase
+          .from("expenses")
+          .select("*, category:expense_categories(name)")
+          .eq("event_id", id)
+          .order("expense_date", { ascending: false })
+      : skip,
+    want("financials") ? supabase.from("expense_categories").select("*").eq("is_active", true).order("name") : skip,
+    want("logistics")
+      ? supabase.from("event_trips").select("*, vehicle:vehicles(name)").eq("event_id", id).order("trip_date", { ascending: false })
+      : skip,
+    want("logistics") ? supabase.from("vehicles").select("*").eq("is_active", true).order("name") : skip,
+    want("details") ? supabase.from("event_types").select("id, name").eq("is_active", true).order("name") : skip,
+    want("booking")
+      ? supabase.from("packages").select("id, name, default_price").eq("is_active", true).order("display_order")
+      : skip,
     supabase
       .from("event_vendors")
       .select("*, vendor:vendors(id, company_name, category)")
@@ -204,52 +217,106 @@ export default async function EventDetailPage({
       .select("*, item:equipment_items(id, name, category, qr_code), system:equipment_systems(id, name, description, qr_code)")
       .eq("event_id", id)
       .order("created_at"),
-    supabase.from("equipment_items").select("id, name, category").eq("is_active", true).order("name"),
-    supabase.from("equipment_systems").select("id, name").eq("is_active", true).order("name"),
+    want("logistics")
+      ? supabase.from("equipment_items").select("id, name, category").eq("is_active", true).order("name")
+      : skip,
+    want("logistics") ? supabase.from("equipment_systems").select("id, name").eq("is_active", true).order("name") : skip,
     supabase.from("journey_settings").select("required_signing_fields").eq("id", true).maybeSingle(),
     supabase.from("email_templates").select("id, name").eq("is_active", true),
   ]);
 
   if (!event) notFound();
 
-  const { data: planningTemplates } = await supabase
-    .from("planning_templates")
-    .select("id, name")
-    .eq("is_library", false)
-    .order("name");
+  const docIds = (eventDocs ?? []).map((d) => d.id);
+  const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
+  const convOr: string[] = [];
+  if (linkedClientIds.length) convOr.push(`client_id.in.(${linkedClientIds.join(",")})`);
+  for (const ec of eventClients ?? []) {
+    const c = ec.client as { cell_phone: string | null; email: string | null } | null;
+    const digits = (c?.cell_phone ?? "").replace(/\D/g, "");
+    if (digits.length >= 10) convOr.push(`phone.like.*${digits.slice(-10)}`);
+    if (c?.email) convOr.push(`email.ilike.${c.email}`);
+  }
 
-  // Soft-deleted payments for this event → the "Recently removed" restore list.
-  const { data: deletedPayments } = await supabase
-    .from("payments")
-    .select("id, amount, method, reason, paid_at, deleted_at, deleted_by")
-    .eq("event_id", id)
-    .not("deleted_at", "is", null)
-    .order("deleted_at", { ascending: false });
+  // Everything that used to run one-after-another (and the second batch) now
+  // shares one wait. Tab-only work is skipped when that tab is closed; badge
+  // data (conversations, the photo-booth row) still loads.
+  const [
+    { data: planningTemplates },
+    { data: deletedPayments },
+    spotifyConn,
+    { data: plannerSections },
+    { data: boothSel },
+    { data: acctRows },
+    { data: allConvs },
+    { data: docViews },
+    { data: clientNotes },
+    { data: fileLabels },
+    signedUrlEntries,
+  ] = await Promise.all([
+    want("notes")
+      ? supabase.from("planning_templates").select("id, name").eq("is_library", false).order("name")
+      : skip,
+    want("financials")
+      ? supabase
+          .from("payments")
+          .select("id, amount, method, reason, paid_at, deleted_at, deleted_by")
+          .eq("event_id", id)
+          .not("deleted_at", "is", null)
+          .order("deleted_at", { ascending: false })
+      : skip,
+    want("notes") && viewer?.userId
+      ? getSpotifyConnection(viewer.userId)
+      : Promise.resolve({ connected: false, canWrite: false, displayName: null as string | null }),
+    want("notes")
+      ? supabase
+          .from("planning_sections")
+          .select("id, title, planning_songs(count)")
+          .eq("event_id", id)
+          .eq("section_type", "timeline")
+          .order("sort_order")
+      : skip,
+    supabase
+      .from("event_photobooth_selection")
+      .select("backdrop_id, design, updated_by, updated_at")
+      .eq("event_id", id)
+      .maybeSingle(),
+    want("client") && linkedClientIds.length
+      ? supabase.from("accounts").select("client_id").eq("account_type", "client").in("client_id", linkedClientIds)
+      : skip,
+    convOr.length
+      ? supabase.from("hl_conversations").select("*").or(convOr.join(",")).order("last_message_at", { ascending: false })
+      : Promise.resolve({ data: [] as ConvRow[] }),
+    want("documents") && docIds.length
+      ? supabase.from("document_views").select("document_id, ip, user_agent, viewed_at").in("document_id", docIds)
+      : Promise.resolve({ data: [] as { document_id: string; ip: string | null; user_agent: string | null; viewed_at: string }[] }),
+    want("client") && linkedClientIds.length
+      ? supabase.from("client_notes").select("*").in("client_id", linkedClientIds).order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as { id: string; client_id: string; body: string; created_at: string }[] }),
+    want("documents")
+      ? supabase.from("file_label_definitions").select("id, name").eq("is_active", true).order("sort_order")
+      : skip,
+    (want("documents") || want("notes")) && (eventFiles ?? []).length
+      ? Promise.all(
+          (eventFiles ?? []).map(async (f) => {
+            const { data: signed } = await supabase.storage.from("event-files").createSignedUrl(f.path, 3600);
+            return [f.id, signed?.signedUrl] as const;
+          }),
+        )
+      : Promise.resolve([] as (readonly [string, string | undefined])[]),
+  ]);
 
-  // Spotify export (staff-only): the signed-in staffer's connection + this
-  // event's timeline sections with song counts, for the "Export to Spotify" tool.
-  const spotifyConn = authUser?.user
-    ? await getSpotifyConnection(authUser.user.id)
-    : { connected: false, canWrite: false, displayName: null };
-  const { data: plannerSections } = await supabase
-    .from("planning_sections")
-    .select("id, title, planning_songs(count)")
-    .eq("event_id", id)
-    .eq("section_type", "timeline")
-    .order("sort_order");
   const spotifySections = (plannerSections ?? []).map((s) => ({
     id: s.id as string,
     title: (s.title as string) ?? "Section",
     songCount: (s.planning_songs as { count: number }[] | null)?.[0]?.count ?? 0,
   }));
 
-  // Photo Booth: the couple's saved selection (shown in its own tab when the
-  // event has a photo-booth). Resolve the backdrop image + who last picked.
-  const { data: boothSel } = await supabase
-    .from("event_photobooth_selection")
-    .select("backdrop_id, design, updated_by, updated_at")
-    .eq("event_id", id)
-    .maybeSingle();
+  const clientIdsWithLogin = new Set<string>();
+  for (const a of acctRows ?? []) if (a.client_id) clientIdsWithLogin.add(a.client_id as string);
+
+  // Photo Booth tab visibility uses the selection row (loaded above). The
+  // backdrop image and "picked by" name are only needed on that tab.
   type BoothDesign = {
     src?: string;
     post_url?: string | null;
@@ -260,7 +327,7 @@ export default async function EventDetailPage({
   const boothDesign = (boothSel?.design ?? null) as BoothDesign | null;
   let boothBackdrop: { name: string; image_url: string } | null = null;
   let boothPickedBy: string | null = null;
-  if (boothSel?.backdrop_id) {
+  if (want("photobooth") && boothSel?.backdrop_id) {
     const { data: bd } = await supabase
       .from("photobooth_backdrops")
       .select("name, image_url")
@@ -268,60 +335,10 @@ export default async function EventDetailPage({
       .maybeSingle();
     boothBackdrop = bd ?? null;
   }
-  if (boothSel?.updated_by) {
+  if (want("photobooth") && boothSel?.updated_by) {
     const names = await resolveUserNames(supabase, [boothSel.updated_by]);
     boothPickedBy = names.get(boothSel.updated_by) ?? null;
   }
-
-  // PERF: second tier — queries/work that need the first batch's results, all
-  // run together. The comms threads used to fire one query PER event client
-  // (N+1); now it's a single batched query grouped in JS. Signed file URLs used
-  // to be a sequential loop; now generated in parallel.
-  const docIds = (eventDocs ?? []).map((d) => d.id);
-  const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
-
-  // Which of this event's clients already have a portal login (drives the
-  // "Invite to XOS" vs "Resend / Reset" button on each client card).
-  const clientIdsWithLogin = new Set<string>();
-  if (linkedClientIds.length) {
-    const { data: acctRows } = await supabase
-      .from("accounts")
-      .select("client_id")
-      .eq("account_type", "client")
-      .in("client_id", linkedClientIds);
-    for (const a of acctRows ?? []) if (a.client_id) clientIdsWithLogin.add(a.client_id as string);
-  }
-
-  const convOr: string[] = [];
-  if (linkedClientIds.length) convOr.push(`client_id.in.(${linkedClientIds.join(",")})`);
-  for (const ec of eventClients ?? []) {
-    const c = ec.client as { cell_phone: string | null; email: string | null } | null;
-    const digits = (c?.cell_phone ?? "").replace(/\D/g, "");
-    if (digits.length >= 10) convOr.push(`phone.like.*${digits.slice(-10)}`);
-    if (c?.email) convOr.push(`email.ilike.${c.email}`);
-  }
-
-  const [{ data: allConvs }, { data: docViews }, { data: clientNotes }, signedUrlEntries] = await Promise.all([
-    convOr.length
-      ? supabase.from("hl_conversations").select("*").or(convOr.join(",")).order("last_message_at", { ascending: false })
-      : Promise.resolve({ data: [] as ConvRow[] }),
-    docIds.length
-      ? supabase.from("document_views").select("document_id, ip, user_agent, viewed_at").in("document_id", docIds)
-      : Promise.resolve({ data: [] as { document_id: string; ip: string | null; user_agent: string | null; viewed_at: string }[] }),
-    linkedClientIds.length
-      ? supabase.from("client_notes").select("*").in("client_id", linkedClientIds).order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] as { id: string; client_id: string; body: string; created_at: string }[] }),
-    // signed URLs hit Storage once per file — only generate them when the
-    // Documents tab is actually open (URL-driven lazy load)
-    activeTab === "documents" || activeTab === "notes"
-      ? Promise.all(
-          (eventFiles ?? []).map(async (f) => {
-            const { data: signed } = await supabase.storage.from("event-files").createSignedUrl(f.path, 3600);
-            return [f.id, signed?.signedUrl] as const;
-          })
-        )
-      : Promise.resolve([] as (readonly [string, string | undefined])[]),
-  ]);
 
   const fileLinks = new Map<string, string>();
   for (const [fid, url] of signedUrlEntries) if (url) fileLinks.set(fid, url);
@@ -398,12 +415,6 @@ export default async function EventDetailPage({
     ffMeetings = ((linkedM ?? []) as Record<string, unknown>[]).map((m) => mapMeeting(m, true));
     ffUnlinked = ((unlinkedM ?? []) as Record<string, unknown>[]).map((m) => mapMeeting(m, false));
   }
-
-  const { data: fileLabels } = await supabase
-    .from("file_label_definitions")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("sort_order");
 
   // comms tab: each event client (bride, groom, planner…) gets their thread,
   // matched in JS against the single batched conversation pull above
@@ -509,7 +520,6 @@ export default async function EventDetailPage({
   const empMap = Object.fromEntries((employees ?? []).map((e) => [e.id, `${e.first_name} ${e.last_name}`.trim()]));
   const dateDefMap = Object.fromEntries((dateDefs ?? []).map((d) => [d.id, d.name]));
   // only the helpers set up for this event type and the viewer's role
-  const viewer = await getMe(supabase);
   const helpersWithSummary = (helpers ?? []).filter((h) => helperAllowed(h, event.event_type_id, viewer?.role)).map((h) => ({
     ...h,
     // any SMS action flagged "prompt to send" makes the confirm dialog load the
