@@ -39,8 +39,7 @@ export async function recordRateHit(
 }
 
 /** Best-effort real client IP behind Cloudflare / Netlify (null if unknown). */
-export function clientIp(req: Request): string | null {
-  const h = req.headers;
+export function clientIpFromHeaders(h: Headers): string | null {
   const cf = h.get("cf-connecting-ip");
   if (cf) return cf.trim();
   const nf = h.get("x-nf-client-connection-ip");
@@ -48,4 +47,8 @@ export function clientIp(req: Request): string | null {
   const xff = h.get("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
   return h.get("x-real-ip")?.trim() || null;
+}
+
+export function clientIp(req: Request): string | null {
+  return clientIpFromHeaders(req.headers);
 }
