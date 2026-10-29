@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireApiModule } from "@/lib/apiAuth";
 import { emailShell, signButtonHtml, appUrl } from "@/lib/signing";
+import { decodeMergeTagDelimiters, sanitizeHrefAttributes } from "@/lib/mergeHref";
 
 // Sample values so the preview reads like a real send. Every key here is a tag the
 // real renderer actually resolves (see supported_merge_tags() / render_merge_tags) —
@@ -25,6 +26,9 @@ const SAMPLE: Record<string, string> = {
   event_date_long: "Saturday, August 15, 2026", event_date_short: "08/15/2026",
   event_date_countdown: "50", venue_name: "The Grand Ballroom",
   venue_address: "456 Ocean Dr, Miami, FL",
+  photobooth_gallery: "https://gallery.example.com/jordan-and-taylor",
+  // Legacy DJEP number still stored on the photo-booth template. Same value.
+  custom_field9: "https://gallery.example.com/jordan-and-taylor",
   event_location_manager: "Maria Gonzalez", event_location_cell_phone: "(305) 555-0199",
   event_location_comments: "Load-in via rear dock. Sound curfew 11 PM.",
   booking_comments: "Client prefers no line dancing. Grand entrance at 7:15 PM.",
@@ -66,7 +70,7 @@ function applySample(
   extra: Record<string, string> = {},
   signature = "",
 ): string {
-  let out = (text || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  let out = decodeMergeTagDelimiters(text || "");
   // Signature keys go before company_name so a <company_name> *inside* the
   // signature still resolves on the same pass. `extra` carries custom static merge
   // tags' real values (from the merge_tags table) so the preview shows what a real
@@ -215,10 +219,10 @@ export async function POST(req: NextRequest) {
   // applySample fills field tags (+ custom static tags' real values); applyCtaTags
   // renders the interactive buttons/links; flagUnknownTags marks any tag the renderer
   // would drop in red (body only — never inject button/flag HTML into a subject line).
-  const body = flagUnknownTags(
-    applyCtaTags(applySample(body_html, companyName, supported, customStatic, signature), sms),
-    supported,
-  );
+  const filled = applyCtaTags(applySample(body_html, companyName, supported, customStatic, signature), sms);
+  // Drop empty / javascript: / relative hrefs the same way a real send does.
+  // Tags still sitting in an href were not filled, so do not keep them as links.
+  const body = flagUnknownTags(sanitizeHrefAttributes(filled, { preserveMergeTags: false }), supported);
   let html: string;
   if (sms) {
     html = `<div style="background:#f4f2fa;padding:24px;font-family:ui-sans-serif,system-ui,Arial,sans-serif;">
