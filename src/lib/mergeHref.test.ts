@@ -133,6 +133,127 @@ describe("sanitizeHrefAttributes", () => {
   });
 });
 
+const VIBO = "https://vibo.example/jordan-and-taylor";
+const VIBO_QUERY = "https://vibodj.app.link/sample?x=1&y=2";
+const VIBO_QUERY_ATTR = "https://vibodj.app.link/sample?x=1&amp;y=2";
+
+/** Same order as render_merge_tags: decode stored delimiters, HTML-escape the
+    field (xos_html_escape), then keep only a safe absolute href. */
+function htmlEscape(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function fillUrlTag(html: string, tag: string, value: string): string {
+  const decoded = decodeMergeTagDelimiters(html);
+  return sanitizeHrefAttributes(decoded.replaceAll(`<${tag}>`, htmlEscape(value)));
+}
+
+describe("vibo link", () => {
+  it("resolves plain, entity-encoded, and percent-encoded hrefs", () => {
+    const forms = [
+      ["<vibo_link>", "vibo_link"],
+      ["&lt;vibo_link&gt;", "vibo_link"],
+      ["%3Cvibo_link%3E", "vibo_link"],
+      ["%3cvibo_link%3e", "vibo_link"],
+      ["<custom_field7>", "custom_field7"],
+      ["&lt;custom_field7&gt;", "custom_field7"],
+      ["%3Ccustom_field7%3E", "custom_field7"],
+    ] as const;
+    for (const [href, tag] of forms) {
+      assert.equal(
+        fillUrlTag(`<a target="_blank" rel="noopener noreferrer nofollow" href="${href}"><s>TAP HERE</s></a>`, tag, VIBO),
+        `<a target="_blank" rel="noopener noreferrer nofollow" href="${VIBO}"><s>TAP HERE</s></a>`,
+      );
+    }
+  });
+
+  it("escapes an ampersand in the href", () => {
+    assert.equal(
+      fillUrlTag('<a href="&lt;custom_field7&gt;">TAP HERE</a>', "custom_field7", VIBO_QUERY),
+      `<a href="${VIBO_QUERY_ATTR}">TAP HERE</a>`,
+    );
+  });
+
+  it("fills the tag in body text, including the entity-encoded form", () => {
+    assert.equal(
+      fillUrlTag("Event Vibo Link:&nbsp;<custom_field7>", "custom_field7", VIBO),
+      `Event Vibo Link:&nbsp;${VIBO}`,
+    );
+    assert.equal(
+      fillUrlTag("<strong>Access your event here:</strong> &lt;custom_field7&gt;", "custom_field7", VIBO),
+      `<strong>Access your event here:</strong> ${VIBO}`,
+    );
+    assert.equal(
+      fillUrlTag("<p>Named: <vibo_link></p>", "vibo_link", VIBO_QUERY),
+      `<p>Named: ${VIBO_QUERY_ATTR}</p>`,
+    );
+  });
+
+  it("fills both the href and the visible link text when the template uses the tag for both", () => {
+    const stored = '<a href="&lt;custom_field7&gt;"><s>&lt;custom_field7&gt;</s></a>';
+    assert.equal(
+      fillUrlTag(stored, "custom_field7", VIBO),
+      `<a href="${VIBO}"><s>${VIBO}</s></a>`,
+    );
+  });
+
+  it("drops an empty or whitespace href and leaves the link text, and leaves body text blank", () => {
+    assert.equal(
+      fillUrlTag('<a target="_blank" href="&lt;vibo_link&gt;"><s>TAP HERE</s></a>', "vibo_link", ""),
+      '<a target="_blank" ><s>TAP HERE</s></a>',
+    );
+    assert.equal(
+      fillUrlTag('<a href="%3Ccustom_field7%3E">TAP HERE</a>', "custom_field7", "   "),
+      "<a >TAP HERE</a>",
+    );
+    assert.equal(
+      fillUrlTag("Event Vibo Link: <custom_field7>", "custom_field7", ""),
+      "Event Vibo Link: ",
+    );
+  });
+
+  it("drops unsafe and non-URL hrefs and does not turn body text into a link", () => {
+    for (const value of [
+      "javascript:alert(1)",
+      "JAVASCRIPT:alert(1)",
+      " javascript:alert(1)",
+      "java\tscript:alert(1)",
+      "data:text/html,hi",
+      "vbscript:msgbox(1)",
+      "Erick",
+      "/join/abc",
+      "//evil.example/phish",
+      'https://ok.example/" onclick="alert(1)',
+    ]) {
+      const out = fillUrlTag('<a href="<vibo_link>"><s>TAP HERE</s></a>', "vibo_link", value);
+      assert.equal(out.includes("href="), false, value);
+      assert.match(out, /TAP HERE/);
+      assert.doesNotMatch(out, /<vibo_link>|custom_field7/i);
+    }
+    const asText = fillUrlTag("Event Vibo Link: <custom_field7>", "custom_field7", "javascript:alert(1)");
+    assert.equal(asText, "Event Vibo Link: javascript:alert(1)");
+    assert.equal(asText.includes("href="), false);
+    assert.equal(
+      fillUrlTag("<p><vibo_link></p>", "vibo_link", "https://ok.example/<script>"),
+      "<p>https://ok.example/&lt;script&gt;</p>",
+    );
+  });
+
+  it("is an allowed editor href in each stored form", () => {
+    assert.equal(mergeTagName("<vibo_link>"), "vibo_link");
+    assert.equal(mergeTagName("<custom_field7>"), "custom_field7");
+    assert.equal(isAllowedEditorHref("<vibo_link>"), true);
+    assert.equal(isAllowedEditorHref("&lt;vibo_link&gt;"), true);
+    assert.equal(isAllowedEditorHref("%3Ccustom_field7%3E"), true);
+    assert.equal(isAllowedEditorHref("https://vibo.example/jordan-and-taylor"), true);
+  });
+});
+
 describe("isAllowedEditorHref", () => {
   it("allows a merge tag in each stored form and a real URL", () => {
     assert.equal(mergeTagName("<custom_field9>"), "custom_field9");

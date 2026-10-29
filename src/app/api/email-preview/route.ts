@@ -29,6 +29,9 @@ const SAMPLE: Record<string, string> = {
   photobooth_gallery: "https://gallery.example.com/jordan-and-taylor",
   // Legacy DJEP number still stored on the photo-booth template. Same value.
   custom_field9: "https://gallery.example.com/jordan-and-taylor",
+  vibo_link: "https://vibo.example/jordan-and-taylor",
+  // Legacy DJEP number still stored on the Vibo emails. Same value.
+  custom_field7: "https://vibo.example/jordan-and-taylor",
   event_location_manager: "Maria Gonzalez", event_location_cell_phone: "(305) 555-0199",
   event_location_comments: "Load-in via rear dock. Sound curfew 11 PM.",
   booking_comments: "Client prefers no line dancing. Grand entrance at 7:15 PM.",
