@@ -2,7 +2,9 @@
    The rich-text editor stores <tag> inside an attribute as &lt;tag&gt;, and a
    pasted URL can also be percent-encoded as %3Ctag%3E. render_merge_tags (SQL)
    decodes both, fills the tag, then keeps only safe absolute hrefs.
-   Keep xos_safe_href / xos_sanitize_href_attrs in migration 00202 in sync. */
+   Keep xos_safe_href / xos_sanitize_href_attrs in migration 00202 in sync.
+   <vibo_link> and legacy <custom_field7> are filled from events.custom_fields.vibo_link
+   in migration 00203, then these same href rules apply. */
 
 const MERGE_TAG_BODY = "([A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]*)";
 const MERGE_TAG_FORMS = [
