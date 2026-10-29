@@ -10,6 +10,7 @@ import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
 import { isHighLevelConfigured, sendEmailViaHighLevel, recordXosEmailInComms } from "@/lib/highlevel";
 import { isThreadingConfigured, threadOutboundEmailViaOAuth } from "@/lib/highlevelOAuth";
+import { sanitizeHrefAttributes } from "@/lib/mergeHref";
 
 /* ============ Mailgun config ============
    Set in .env.local:
@@ -510,7 +511,7 @@ export async function processOutbox(
     try {
       const enriched = await enrichMessage(supabase, msg);
       isMarketing = enriched.isMarketing;
-      enrichedHtml = enriched.html;
+      enrichedHtml = sanitizeHrefAttributes(enriched.html);
       branded = enriched.branded;
       attachments = enriched.attachments;
     } catch (err) {
@@ -681,7 +682,7 @@ export async function sendBrandedEmail(opts: {
   const fromEmail = cs?.from_email ?? `events@${domain}`;
   const companyName = cs?.company_name ?? "Xpress Entertainment";
   // Transactional (invites/resets): include the postal address, no unsubscribe.
-  const html = emailShell(companyName, `<div style="padding:30px;">${opts.contentHtml}</div>`, {
+  const html = emailShell(companyName, `<div style="padding:30px;">${sanitizeHrefAttributes(opts.contentHtml)}</div>`, {
     postalAddress: (cs?.postal_address as string | null) ?? null,
   });
 

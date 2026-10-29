@@ -9,12 +9,13 @@ import { Placeholder } from "@tiptap/extension-placeholder";
 import { useState, useRef, useEffect } from "react";
 import { EmailButton } from "@/components/editor/EmailButton";
 import { SocialIcons } from "@/components/editor/SocialIcons";
+import { isAllowedEditorHref } from "@/lib/mergeHref";
 
 export type SocialLinks = { facebook?: string; instagram?: string; tiktok?: string; youtube?: string };
 
 export const MERGE_TAGS: { group: string; tags: string[] }[] = [
   { group: "Client", tags: ["<first_name>", "<last_name>", "<client_name>", "<client_organization>", "<client_email>", "<client_cell>", "<client_address>", "<authorized_rep_name>", "<authorized_rep_title>", "<authorized_rep_email>", "<authorized_rep_phone>"] },
-  { group: "Event", tags: ["<event_name>", "<event_type>", "<event_date_long>", "<event_date_short>", "<event_date_countdown>", "<venue_name>", "<venue_address>", "<package_name>", "<setup_time>", "<start_time>", "<end_time>", "<guest_count>", "<billing_terms>", "<decision_maker_name>", "<decision_maker_phone>", "<decision_maker_email>"] },
+  { group: "Event", tags: ["<event_name>", "<event_type>", "<event_date_long>", "<event_date_short>", "<event_date_countdown>", "<venue_name>", "<venue_address>", "<package_name>", "<setup_time>", "<start_time>", "<end_time>", "<guest_count>", "<billing_terms>", "<decision_maker_name>", "<decision_maker_phone>", "<decision_maker_email>", "<photobooth_gallery>"] },
   { group: "Money", tags: ["<total_fee>", "<addon_total_price>", "<balance_due>", "<payments_received>", "<deposit_value>", "<retainer_amount>", "<retainer_due_date>", "<overtime_rate>"] },
   { group: "Company", tags: ["<company_name>", "<company_email_signature>", "<legal_venue>", "<current_date>"] },
   { group: "Documents", tags: ["<quote_summary>", "<payment_plan>", "<document_sign_link>", "<review_sign_link>", "<review_sign_button>"] },
@@ -52,7 +53,15 @@ export default function RichTextEditor({
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ link: { openOnClick: false, autolink: true } }),
+      StarterKit.configure({
+        link: {
+          openOnClick: false,
+          autolink: true,
+          // A merge tag (<photobooth_gallery>, &lt;tag&gt;, %3Ctag%3E) is a valid href.
+          // javascript: and other non-URL schemes are rejected.
+          isAllowedUri: (url: string) => isAllowedEditorHref(url),
+        },
+      }),
       TextStyle,
       Color,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
@@ -78,19 +87,29 @@ export default function RichTextEditor({
   const setLink = () => {
     if (!editor) return;
     const prev = editor.getAttributes("link").href as string | undefined;
-    const url = window.prompt("Link URL", prev ?? "https://");
-    if (url === null) return;
+    const entered = window.prompt(
+      "Link URL — a full http(s) link, or a merge tag like <photobooth_gallery>",
+      prev ?? "https://",
+    );
+    if (entered === null) return;
+    const url = entered.trim();
     if (url === "") editor.chain().focus().extendMarkRange("link").unsetLink().run();
-    else editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+    else if (!isAllowedEditorHref(url)) {
+      window.alert("Use a full http(s), mailto, or tel link, or a merge tag like <photobooth_gallery>.");
+    } else editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
   };
 
   const insertButton = () => {
     if (!editor) return;
     const text = window.prompt("Button text", "Book Now");
     if (text === null) return;
-    const href = window.prompt("Button link (URL)", "https://");
+    const href = window.prompt("Button link — a full http(s) link, or a merge tag like <photobooth_gallery>", "https://");
     if (!href) return;
-    editor.chain().focus().setEmailButton({ text: text || "Button", href, bg: "#4b328e" }).run();
+    if (!isAllowedEditorHref(href.trim())) {
+      window.alert("Use a full http(s), mailto, or tel link, or a merge tag like <photobooth_gallery>.");
+      return;
+    }
+    editor.chain().focus().setEmailButton({ text: text || "Button", href: href.trim(), bg: "#4b328e" }).run();
   };
 
   const insertSocial = () => {
