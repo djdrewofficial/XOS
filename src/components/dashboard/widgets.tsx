@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getMe } from "@/lib/auth";
 import { money, type XEvent } from "@/lib/types";
 import { holidaysForYear } from "@/lib/holidays";
-import MonthCalendarClient, { type CalDetailedEvent } from "@/components/dashboard/MonthCalendarClient";
+import MonthCalendarClient from "@/components/dashboard/MonthCalendarClient";
+import { loadEventsByDate } from "@/lib/calendarEvents";
 import StaffCheckIn from "@/components/StaffCheckIn";
 
 /* Dashboard widgets — each is a self-contained async server component that
@@ -110,65 +111,15 @@ export async function MonthCalendar({ m }: { m?: string }) {
   const gridStartStr = cells[0].date;
   const gridEndStr = cells[41].date;
 
-  const [{ data: monthEvents }, { data: timeOff }] = await Promise.all([
-    supabase
-      .from("events")
-      .select(
-        "id, name, event_date, start_time, end_time, client:clients(first_name, last_name, cell_phone), venue:venues(name, city, state), package:packages(name), event_type:event_types(name), status:event_statuses(name, color, text_color)"
-      )
-      .is("archived_at", null)
-      .gte("event_date", gridStartStr)
-      .lte("event_date", gridEndStr)
-      .order("event_date"),
+  const [{ data: timeOff }, eventsByDate] = await Promise.all([
     supabase
       .from("employee_time_off")
       .select("*, employee:employees(first_name, last_name)")
       .eq("status", "approved")
       .lte("start_date", gridEndStr)
       .gte("end_date", gridStartStr),
+    loadEventsByDate(supabase, gridStartStr, gridEndStr),
   ]);
-
-  // add-ons + staff for the month's events, grouped by event_id (for the day panel)
-  const ids = (monthEvents ?? []).map((e) => e.id);
-  const [{ data: addonRows }, { data: staffRows }] = ids.length
-    ? await Promise.all([
-        supabase.from("event_addons").select("event_id, quantity, addon:addons(name)").in("event_id", ids),
-        supabase.from("event_staff").select("event_id, role, employee:employees(first_name, last_name)").in("event_id", ids),
-      ])
-    : [{ data: [] as { event_id: string; quantity: number; addon: unknown }[] }, { data: [] as { event_id: string; role: string | null; employee: unknown }[] }];
-
-  const addonsByEvent = new Map<string, { name: string; quantity: number }[]>();
-  (addonRows ?? []).forEach((a) => {
-    const name = (a.addon as unknown as { name?: string } | null)?.name;
-    if (!name) return;
-    (addonsByEvent.get(a.event_id) ?? addonsByEvent.set(a.event_id, []).get(a.event_id)!).push({ name, quantity: Number(a.quantity) || 1 });
-  });
-  const staffByEvent = new Map<string, { name: string; role: string | null }[]>();
-  (staffRows ?? []).forEach((s) => {
-    const emp = s.employee as unknown as { first_name?: string; last_name?: string } | null;
-    const name = `${emp?.first_name ?? ""} ${emp?.last_name ?? ""}`.trim();
-    if (!name) return;
-    (staffByEvent.get(s.event_id) ?? staffByEvent.set(s.event_id, []).get(s.event_id)!).push({ name, role: s.role ?? null });
-  });
-
-  const eventsByDate: Record<string, CalDetailedEvent[]> = {};
-  (monthEvents ?? []).forEach((e) => {
-    if (!e.event_date) return;
-    const det: CalDetailedEvent = {
-      id: e.id,
-      name: e.name ?? null,
-      start_time: (e as { start_time?: string | null }).start_time ?? null,
-      end_time: (e as { end_time?: string | null }).end_time ?? null,
-      status: e.status as unknown as CalDetailedEvent["status"],
-      client: e.client as unknown as CalDetailedEvent["client"],
-      venue: e.venue as unknown as CalDetailedEvent["venue"],
-      package_name: (e.package as unknown as { name?: string } | null)?.name ?? null,
-      event_type_name: (e.event_type as unknown as { name?: string } | null)?.name ?? null,
-      addons: addonsByEvent.get(e.id) ?? [],
-      staff: staffByEvent.get(e.id) ?? [],
-    };
-    (eventsByDate[e.event_date] ??= []).push(det);
-  });
 
   const holidays = new Map<string, string>([
     ...holidaysForYear(year - 1),
@@ -192,7 +143,9 @@ export async function MonthCalendar({ m }: { m?: string }) {
   const monthLabel = new Date(year, month, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
   const prev = month === 0 ? `${year - 1}-12` : `${year}-${pad(month)}`;
   const next = month === 11 ? `${year + 1}-01` : `${year}-${pad(month + 2)}`;
-  const eventsThisMonth = (monthEvents ?? []).filter((e) => e.event_date && e.event_date >= monthStart && e.event_date <= monthEnd).length;
+  const eventsThisMonth = Object.entries(eventsByDate)
+    .filter(([date]) => date >= monthStart && date <= monthEnd)
+    .reduce((n, [, evs]) => n + evs.length, 0);
 
   return (
     <MonthCalendarClient
