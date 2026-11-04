@@ -145,7 +145,7 @@ export default function BriefingsClient({ rows, global, company }: { rows: Staff
           </div>
         </div>
         <p className="text-xs text-zinc-400">
-          Each enabled staffer gets their own email with their open tasks and upcoming events. When the whole feature is
+          Each enabled staffer gets their own email with their upcoming events. When the whole feature is
           off, no briefings send regardless of individual settings.
         </p>
       </div>

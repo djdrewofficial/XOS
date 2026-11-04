@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   approveSuggestion,
@@ -18,7 +17,6 @@ export type FFSuggestion = {
   suggested_employee_name: string | null;
   timestamp_label: string | null;
   status: "suggested" | "approved" | "dismissed";
-  task_id: string | null;
 };
 export type FFMeeting = {
   id: string;
@@ -76,7 +74,7 @@ export default function EventFireflies({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-zinc-500">
-          Call notes &amp; transcripts from Fireflies, matched to this event. Approve action items to turn them into tasks.
+          Call notes &amp; transcripts from Fireflies, matched to this event. Approve the action items that matter and dismiss the rest.
         </p>
         {canEdit && (
           <div className="flex items-center gap-2">
@@ -194,11 +192,10 @@ function MeetingCard({
           </div>
         )}
 
-        {/* Suggested tasks */}
         {(pending.length > 0 || decided.length > 0) && (
           <div>
             <div className="mb-2 text-xs font-bold uppercase tracking-wide text-zinc-400">
-              Suggested tasks {pending.length > 0 && <span className="text-brand">({pending.length} to review)</span>}
+              Action items {pending.length > 0 && <span className="text-brand">({pending.length} to review)</span>}
             </div>
             <div className="space-y-2">
               {pending.map((s) => (
@@ -236,11 +233,6 @@ function MeetingCard({
                     {s.status === "approved" ? "✓ " : "✕ "}
                     <span className={s.status === "dismissed" ? "line-through" : ""}>{s.text}</span>
                   </span>
-                  {s.status === "approved" && s.task_id && (
-                    <Link href={`/tasks?task=${s.task_id}`} className="shrink-0 text-brand hover:underline">
-                      View task
-                    </Link>
-                  )}
                 </div>
               ))}
             </div>

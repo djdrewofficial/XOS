@@ -4,16 +4,15 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getMe, requireModule } from "@/lib/auth";
-import { notifyAssignment } from "@/lib/taskNotify";
 import { syncRecent, firefliesConfigured } from "@/lib/fireflies";
 
-/* Fireflies actions for the event page: approve/dismiss a suggested task (approve →
-   a real task in the Tasks Manager), attach/unlink a call to this event, and sync
-   recent meetings from Fireflies. All guarded by the events module. */
+/* Fireflies actions for the event page: approve/dismiss a suggested action item,
+   attach/unlink a call to this event, and sync recent meetings from Fireflies.
+   All guarded by the events module. */
 
 const nowIso = () => new Date().toISOString();
 
-/** Approve a suggested task → create a real task linked to this event + notify assignee. */
+/** Mark a suggested action item as approved. It stays on the call; nothing else is created. */
 export async function approveSuggestion(eventId: string, suggestionId: string) {
   await requireModule("events", "edit", { mode: "throw" });
   const supabase = await createClient();
@@ -21,42 +20,16 @@ export async function approveSuggestion(eventId: string, suggestionId: string) {
 
   const { data: s } = await supabase
     .from("fireflies_suggested_tasks")
-    .select("id,text,status,suggested_employee_id,meeting:fireflies_meetings(title,client_id)")
+    .select("id,status")
     .eq("id", suggestionId)
     .maybeSingle();
   if (!s || s.status !== "suggested") return;
-  const meeting = s.meeting as unknown as { title: string | null; client_id: string | null } | null;
-
-  const assignee = (s.suggested_employee_id as string) ?? null;
-  let department: string | null = null;
-  if (assignee) {
-    const { data } = await supabase.from("employees").select("staff_category").eq("id", assignee).maybeSingle();
-    department = (data?.staff_category as string) ?? null;
-  }
-
-  const { data: task } = await supabase
-    .from("tasks")
-    .insert({
-      title: s.text,
-      body: meeting?.title ? `From Fireflies call: ${meeting.title}` : "From a Fireflies call",
-      assigned_employee_id: assignee,
-      department,
-      event_id: eventId,
-      client_id: meeting?.client_id ?? null,
-      created_by: me?.employeeId ?? null,
-      priority: "normal",
-    })
-    .select("id")
-    .maybeSingle();
 
   await supabase
     .from("fireflies_suggested_tasks")
-    .update({ status: "approved", task_id: task?.id ?? null, decided_by: me?.employeeId ?? null, decided_at: nowIso() })
+    .update({ status: "approved", decided_by: me?.employeeId ?? null, decided_at: nowIso() })
     .eq("id", suggestionId);
 
-  if (assignee && assignee !== me?.employeeId && task?.id) {
-    await notifyAssignment(assignee, task.id as string, s.text as string);
-  }
   revalidatePath(`/events/${eventId}`);
 }
 

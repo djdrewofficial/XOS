@@ -387,7 +387,6 @@ export default async function EventDetailPage({
       suggested_employee_name: empName(s.employee),
       timestamp_label: (s.timestamp_label as string) ?? null,
       status: s.status as FFSuggestion["status"],
-      task_id: (s.task_id as string) ?? null,
     });
     const mapMeeting = (m: Record<string, unknown>, withSug: boolean): FFMeeting => ({
       id: m.id as string,
@@ -407,7 +406,7 @@ export default async function EventDetailPage({
       supabase
         .from("fireflies_meetings")
         .select(
-          "id,title,meeting_date,duration_min,summary_overview,keywords,meeting_link,audio_url,transcript_text,matched_by,summary_status, suggestions:fireflies_suggested_tasks(id,text,assignee_name,timestamp_label,status,task_id, employee:employees!fireflies_suggested_tasks_suggested_employee_id_fkey(first_name,last_name,stage_name))",
+          "id,title,meeting_date,duration_min,summary_overview,keywords,meeting_link,audio_url,transcript_text,matched_by,summary_status, suggestions:fireflies_suggested_tasks(id,text,assignee_name,timestamp_label,status, employee:employees!fireflies_suggested_tasks_suggested_employee_id_fkey(first_name,last_name,stage_name))",
         )
         .eq("event_id", id)
         .order("meeting_date", { ascending: false }),

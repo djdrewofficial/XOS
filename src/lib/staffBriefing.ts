@@ -2,10 +2,10 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendBrandedEmail } from "@/lib/mailgun";
 
-/* Personalized daily briefing, one email per staff member: their open tasks and
-   their upcoming events. Who gets it and how often is set in Settings → Daily
-   Briefing (staff_briefing_prefs). Runs from /api/cron/ai-tasks at the configured
-   hour in the company timezone; per-staff last_sent_on prevents same-day repeats. */
+/* Personalized daily briefing, one email per staff member: their upcoming events.
+   Who gets it and how often is set in Settings → Daily Briefing (staff_briefing_prefs).
+   Runs from /api/cron/ai-tasks at the configured hour in the company timezone;
+   per-staff last_sent_on prevents same-day repeats. */
 
 const TZ = "America/New_York";
 const DAY = 86400000;
@@ -58,29 +58,13 @@ export async function sendStaffBriefings(admin: SupabaseClient): Promise<{ sent:
   if (due.length === 0) return { sent: 0 };
   const dueIds = due.map((p) => p.employee_id);
 
-  // Each recipient's open tasks + their upcoming event assignments.
-  const [{ data: tasks }, { data: staffEvents }] = await Promise.all([
-    admin
-      .from("tasks")
-      .select("assigned_employee_id,title,due_date,priority,event:events(name,event_number)")
-      .in("assigned_employee_id", dueIds)
-      .in("status", ["not_started", "in_progress"])
-      .order("due_date", { ascending: true, nullsFirst: false }),
-    admin
-      .from("event_staff")
-      .select("employee_id,role,event:events(name,event_date,start_time,archived_at,venue:venues(name))")
-      .in("employee_id", dueIds),
-  ]);
+  const { data: staffEvents } = await admin
+    .from("event_staff")
+    .select("employee_id,role,event:events(name,event_date,start_time,archived_at,venue:venues(name))")
+    .in("employee_id", dueIds);
 
-  type TaskRow = { assigned_employee_id: string; title: string; due_date: string | null; priority: string; event: { name?: string; event_number?: number } | null };
   type EvRow = { employee_id: string; role: string | null; event: { name?: string; event_date?: string; start_time?: string; archived_at?: string | null; venue?: { name?: string } | null } | null };
 
-  const tasksByEmp = new Map<string, TaskRow[]>();
-  for (const t of (tasks ?? []) as unknown as TaskRow[]) {
-    const arr = tasksByEmp.get(t.assigned_employee_id) ?? [];
-    arr.push(t);
-    tasksByEmp.set(t.assigned_employee_id, arr);
-  }
   const eventsByEmp = new Map<string, EvRow[]>();
   for (const e of (staffEvents ?? []) as unknown as EvRow[]) {
     const ev = e.event;
@@ -95,19 +79,7 @@ export async function sendStaffBriefings(admin: SupabaseClient): Promise<{ sent:
   for (const p of due) {
     const emp = empById.get(p.employee_id)!;
     const firstName = emp.first_name || emp.stage_name || "there";
-    const myTasks = tasksByEmp.get(p.employee_id) ?? [];
     const myEvents = (eventsByEmp.get(p.employee_id) ?? []).sort((a, b) => (a.event!.event_date! < b.event!.event_date! ? -1 : 1));
-
-    const tasksHtml = myTasks.length
-      ? `<ul>${myTasks
-          .map((t) => {
-            const due = t.due_date ? ` — <strong>due ${usDate(t.due_date)}</strong>` : "";
-            const ev = t.event?.name ? ` <span style="color:#888">(${esc(t.event.name)})</span>` : "";
-            const pri = t.priority === "high" ? " 🔴" : "";
-            return `<li>${esc(t.title)}${ev}${due}${pri}</li>`;
-          })
-          .join("")}</ul>`
-      : "<p>No open tasks assigned to you. 🎉</p>";
 
     const eventsHtml = myEvents.length
       ? `<ul>${myEvents
@@ -122,8 +94,6 @@ export async function sendStaffBriefings(admin: SupabaseClient): Promise<{ sent:
 
     const contentHtml = [
       `<p>Good morning, ${esc(firstName)}! Here's your day.</p>`,
-      `<h3>✅ Your open tasks (${myTasks.length})</h3>`,
-      tasksHtml,
       `<h3>📅 Your upcoming events</h3>`,
       eventsHtml,
       `<p style="color:#888;font-size:12px">Manage your briefing preferences with your manager (Settings → Daily Briefing).</p>`,

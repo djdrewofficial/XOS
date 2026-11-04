@@ -36,7 +36,6 @@ export const MODULES: ModuleDef[] = [
   { key: "events", label: "Events", routes: ["/events"] },
   { key: "clients", label: "Clients", routes: ["/clients"] },
   { key: "documents", label: "Documents", routes: ["/documents"] },
-  { key: "tasks", label: "Tasks Manager", routes: ["/tasks"] },
   { key: "venues", label: "Venues", routes: ["/venues"] },
   { key: "vendors", label: "Vendors", routes: ["/vendors"] },
   { key: "packages", label: "Packages", routes: ["/packages"] },
@@ -85,7 +84,6 @@ export const LANDING_PAGES: ReadonlyArray<readonly [string, string]> = [
   ["/events/new", "Add Event"],
   ["/clients", "Clients"],
   ["/documents", "Documents"],
-  ["/tasks", "Tasks Manager"],
   ["/payments", "Payments"],
   ["/payroll", "Payroll"],
 ] as const;
@@ -100,7 +98,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<
   admin: Object.fromEntries(MODULE_KEYS.map((k) => [k, "edit"])) as Record<string, Access>,
   salesperson: {
     dashboard: "edit", inbox: "edit", events: "edit", clients: "edit", documents: "edit",
-    tasks: "edit",
     venues: "view", vendors: "view", packages: "view", equipment: "view", employees: "view",
     payments: "view", commissions: "view", payroll: "none", reports: "view", settings: "none",
     gallery: "none",
@@ -109,14 +106,12 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<
   // for this tier in the database, migration 00197)
   marketing: {
     dashboard: "none", inbox: "none", events: "none", clients: "none", documents: "none",
-    tasks: "none",
     venues: "none", vendors: "edit", packages: "none", equipment: "none", employees: "none",
     payments: "none", commissions: "none", payroll: "none", reports: "none", settings: "none",
     gallery: "none",
   },
   employee: {
     dashboard: "view", inbox: "view", events: "view", clients: "none", documents: "none",
-    tasks: "view",
     venues: "view", vendors: "none", packages: "none", equipment: "view", employees: "none",
     payments: "none", commissions: "none", payroll: "none", reports: "none", settings: "none",
     gallery: "none",
