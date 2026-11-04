@@ -600,9 +600,8 @@ export default async function EventDetailPage({
   const canRemove = (eventClients ?? []).length > 1;
 
   const clientTab = (
-    <div className="space-y-5">
-      <div className="grid gap-5 lg:grid-cols-2">
-        {(eventClients ?? []).map((ec) => {
+    <div className="grid gap-5 lg:grid-cols-2">
+      {(eventClients ?? []).map((ec) => {
           const c = ec.client as {
             id: string;
             first_name: string;
@@ -692,24 +691,24 @@ export default async function EventDetailPage({
             </div>
           );
         })}
-        {(eventClients ?? []).length === 0 && (
-          <div className="card p-5">
-            <p className="text-sm text-zinc-500">No clients on this event yet — add one below.</p>
-          </div>
-        )}
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div className="card max-w-xl p-5">
-          <h2 className="card-title">Add Client To Event</h2>
-          <ClientPicker
-            attachExisting={addEventClient.bind(null, id)}
-            createAndAttach={createClientAndAttach.bind(null, id)}
-          />
-          <p className="mt-3 text-xs text-zinc-500">
-            The Primary client is the contract holder — there must always be at least one client on the event.
-          </p>
+      {(eventClients ?? []).length === 0 && (
+        <div className="card p-5">
+          <p className="text-sm text-zinc-500">No clients on this event yet — add one below.</p>
         </div>
+      )}
+
+      {/* Same grid track as the cards above, always in column 1, so this box
+          shares both edges with a client card — including when several cards
+          wrap onto extra rows, and on a single column below lg. */}
+      <div className="card p-5 lg:col-start-1">
+        <h2 className="card-title">Add Client To Event</h2>
+        <ClientPicker
+          attachExisting={addEventClient.bind(null, id)}
+          createAndAttach={createClientAndAttach.bind(null, id)}
+        />
+        <p className="mt-3 text-xs text-zinc-500">
+          The Primary client is the contract holder — there must always be at least one client on the event.
+        </p>
       </div>
     </div>
   );

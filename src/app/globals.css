@@ -25,21 +25,14 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* the gradient lives on the ROOT element: html's background paints the whole
-   scrollable canvas, body's only paints its own box — which left gray seams
-   whenever content overflowed the viewport */
+/* Flat color on the root element. html's background paints the whole scrollable
+   canvas; a background on body only covers body's box and left a gray seam once
+   content grew past the viewport. Decorative radial gradients did the same thing
+   in a different shape: they fade out (and `transparent` blends toward black), so
+   a short panel — one client card with an empty column beside it — showed a hard
+   rectangle of a different shade. One solid color in both themes. */
 html {
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.07), transparent 100%),
-    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.05), transparent 100%),
-    var(--background);
-}
-
-html.dark {
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(75, 50, 142, 0.28), transparent 100%),
-    radial-gradient(900px 500px at -10% 110%, rgba(139, 111, 214, 0.1), transparent 100%),
-    var(--background);
+  background-color: var(--background);
 }
 
 body {
