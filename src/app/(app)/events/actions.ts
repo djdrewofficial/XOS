@@ -966,6 +966,9 @@ export async function runBookingHelper(
   if (scope && !helperAllowedForRole(scope, me?.role)) {
     throw new Error(`Your role can't run "${scope.title}".`);
   }
+  // The 3-arg form (this call, including p_sms_overrides) is the staff-click
+  // entry point. Its SQL wrapper sets p_manual = true, so the email and SMS it
+  // queues bypass events.comms_paused. Automations use the 2-arg form and stay paused.
   const { error } = await admin.rpc("run_booking_helper", {
     p_helper_id: helperId,
     p_event_id: eventId,

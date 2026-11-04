@@ -139,6 +139,8 @@ export async function signDocument(
       }
     }
     if (t?.after_sign_helper_id && ev?.id) {
+      // 2-arg form: signing is automatic, so a paused event still suppresses
+      // the helper's client email and SMS.
       const { error: helperError } = await supabase.rpc("run_booking_helper", {
         p_helper_id: t.after_sign_helper_id,
         p_event_id: ev.id,

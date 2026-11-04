@@ -107,8 +107,9 @@ export async function runAutomations(
   const admin = createAdminClient();
   for (const h of matched) {
     try {
-      // run_booking_helper enforces its own visibility + one-shot guards (raises
-      // if it shouldn't run) — skip those quietly
+      // 2-arg form: this is an automation, so queued mail stays subject to
+      // events.comms_paused. run_booking_helper enforces its own visibility +
+      // one-shot guards (raises if it shouldn't run) — skip those quietly.
       await admin.rpc("run_booking_helper", { p_helper_id: h.id, p_event_id: eventId });
     } catch {
       continue;
