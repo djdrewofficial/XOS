@@ -9,6 +9,8 @@ export type EventStatus = {
   is_lost_sale_group: boolean;
   is_leads_group: boolean;
   sort_order: number;
+  /** Venue-paid status (Booked EV). Part of event_financials_hidden. */
+  hide_financials?: boolean | null;
 };
 
 export type Client = {
@@ -61,6 +63,8 @@ export type Package = {
   deposit_value: number;
   is_active: boolean;
   display_order: number;
+  /** Venue-paid package (Toscana). Part of event_financials_hidden. */
+  hide_financials?: boolean | null;
 };
 
 export type Addon = {
@@ -124,7 +128,7 @@ export type XEvent = {
   status?: EventStatus | null;
   venue?: Venue | null;
   package?: Package | null;
-  event_type?: { id: string; name: string } | null;
+  event_type?: { id: string; name: string; hide_financials?: boolean | null } | null;
   salesperson?: Employee | null;
 };
 

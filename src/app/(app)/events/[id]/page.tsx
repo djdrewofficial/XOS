@@ -82,7 +82,7 @@ import { helperAllowed } from "@/lib/helperAccess";
 import type { ConvRow } from "@/components/InboxShell";
 import SigningChecklist from "@/components/SigningChecklist";
 import CopyProposalLink from "@/components/CopyProposalLink";
-import { resolveRequiredFields, getMissingSigningFields } from "@/lib/signingRequirements";
+import { resolveRequiredFields, getMissingSigningFields, eventFinancialsHidden } from "@/lib/signingRequirements";
 import { loadEventsByDate } from "@/lib/calendarEvents";
 import EventDateBadge from "@/components/EventDateBadge";
 import { summarizeHelperActions, type HelperAction } from "@/lib/helperSummary";
@@ -511,6 +511,14 @@ export default async function EventDetailPage({
     (journeySettings as { required_signing_fields?: string[] | null } | null)?.required_signing_fields,
     (event.event_type as { name?: string | null; proposal_layout?: string | null } | null) ?? { name: null }
   );
+  // Venue-paid (Booked EV status, a Toscana package, or an explicit flag). Same
+  // rule as event_financials_hidden — an explicit per-event false still shows money.
+  const financialsHidden = eventFinancialsHidden({
+    hide_financials: event.hide_financials,
+    package: event.package,
+    status: event.status,
+    event_type: event.event_type,
+  });
   const missingSigning = getMissingSigningFields(requiredFields, {
     event,
     venue: event.venue as { name?: string | null; address?: string | null } | null,
@@ -520,6 +528,7 @@ export default async function EventDetailPage({
       client: ec.client as { first_name?: string | null; last_name?: string | null; email?: string | null; cell_phone?: string | null } | null,
     })),
     scheduleCount: (schedule ?? []).length,
+    financialsHidden,
   });
 
   // booking-helper action summaries (shown in the confirm dialog before running)
@@ -1242,7 +1251,13 @@ export default async function EventDetailPage({
                 <span className="font-semibold">{money(sp.amount)}</span>
               </li>
             ))}
-            {(schedule ?? []).length === 0 && <li className="text-zinc-400 dark:text-zinc-600">No payment schedule yet — generate one under “Edit schedule &amp; billing terms”.</li>}
+            {(schedule ?? []).length === 0 && (
+              <li className="text-zinc-400 dark:text-zinc-600">
+                {financialsHidden
+                  ? "Venue-paid event — Xpress does not collect a client payment schedule."
+                  : "No payment schedule yet — generate one under “Edit schedule & billing terms”."}
+              </li>
+            )}
           </ul>
 
           <details className="group rounded-lg border border-zinc-200 dark:border-white/10">

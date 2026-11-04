@@ -5,6 +5,10 @@
 // Config lives in two places (see migration 00049):
 //   journey_settings.required_signing_fields  — the global default list
 //   event_types.required_signing_fields       — per-type override (null = inherit)
+//
+// Payment Schedule does not apply to venue-paid events (Booked EV / Villa
+// Toscana). Those are the events public.event_financials_hidden() returns true
+// for: the venue pays Xpress, so there is no client payment schedule to collect.
 
 export type SigningFieldKey =
   | "contract_holder"
@@ -28,7 +32,7 @@ export const SIGNING_FIELDS: { key: SigningFieldKey; label: string; hint: string
   { key: "venue_name", label: "Venue Name", hint: "A venue is attached to the event" },
   { key: "venue_address", label: "Venue Address", hint: "The attached venue has a street address" },
   { key: "package", label: "Package", hint: "A package is selected" },
-  { key: "payment_schedule", label: "Payment Schedule", hint: "At least one scheduled payment exists" },
+  { key: "payment_schedule", label: "Payment Schedule", hint: "At least one scheduled payment exists. Does not apply to venue-paid events (Booked EV / hide financials)." },
   { key: "event_date", label: "Event Date", hint: "The event date is set" },
   { key: "estimated_times", label: "Estimated Times", hint: "Start & end times are set (estimates are fine)" },
 ];
@@ -85,7 +89,22 @@ export type SigningBundle = {
   venue: { name?: string | null; address?: string | null } | null;
   eventClients: { is_primary: boolean; is_contract_holder?: boolean; client: ClientLite }[];
   scheduleCount: number;
+  /** Venue-paid event: Payment Schedule is not a requirement. Mirrors event_financials_hidden. */
+  financialsHidden?: boolean;
 };
+
+/** Same answer as public.event_financials_hidden: an explicit per-event
+ *  true/false wins; otherwise the package, status (Booked EV), or event type
+ *  hide-financials flag marks the event venue-paid. */
+export function eventFinancialsHidden(e: {
+  hide_financials?: boolean | null;
+  package?: { hide_financials?: boolean | null } | null;
+  status?: { hide_financials?: boolean | null } | null;
+  event_type?: { hide_financials?: boolean | null } | null;
+}): boolean {
+  if (typeof e.hide_financials === "boolean") return e.hide_financials;
+  return Boolean(e.package?.hide_financials || e.status?.hide_financials || e.event_type?.hide_financials);
+}
 
 const has = (v: unknown) => typeof v === "string" && v.trim() !== "";
 const hasContact = (c: ClientLite) => has(c?.email) || has(c?.cell_phone);
@@ -114,13 +133,23 @@ const CHECKS: Record<SigningFieldKey, (b: SigningBundle) => boolean> = {
   estimated_times: (b) => has(b.event.start_time) && has(b.event.end_time),
 };
 
+/** Requirements that actually apply to this event. Venue-paid events never owe
+ *  the couple a payment schedule, so that field is dropped even when the global
+ *  list still requires it for client-paid events. */
+export function applicableSigningFields(
+  required: readonly SigningFieldKey[],
+  b: Pick<SigningBundle, "financialsHidden">,
+): SigningFieldKey[] {
+  return b.financialsHidden ? required.filter((k) => k !== "payment_schedule") : [...required];
+}
+
 /** Returns the required fields still missing for this event (label + key). */
 export function getMissingSigningFields(
   required: readonly SigningFieldKey[],
   b: SigningBundle
 ): { key: SigningFieldKey; label: string }[] {
   const labels = new Map(SIGNING_FIELDS.map((f) => [f.key, f.label]));
-  return required
+  return applicableSigningFields(required, b)
     .filter((k) => !CHECKS[k](b))
     .map((k) => ({ key: k, label: labels.get(k) ?? k }));
 }
