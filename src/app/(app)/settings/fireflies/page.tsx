@@ -25,7 +25,7 @@ export default async function FirefliesSettingsPage() {
         <h1 className="page-title">Fireflies</h1>
         <p className="text-sm text-zinc-500">
           Import call notes, transcripts, and action items from Fireflies.ai. Calls are matched to a client/event by
-          participant email; action items become suggested tasks you approve on each event&apos;s Fireflies tab.
+          participant email; action items show up on each event&apos;s Fireflies tab, where you approve or dismiss them.
         </p>
       </div>
 

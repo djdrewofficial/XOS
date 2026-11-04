@@ -3,8 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 /* Fireflies.ai integration. Talks to the Fireflies GraphQL API with FIREFLIES_API_KEY,
    imports call notes/transcripts into fireflies_meetings, matches each to a client/event
-   by participant email, and parses the action-items blob into SUGGESTED tasks (a person
-   approves them later). Server-only — never import into client code. */
+   by participant email, and parses the action-items blob into suggestions a person
+   approves or dismisses later. Server-only — never import into client code. */
 
 const ENDPOINT = "https://api.fireflies.ai/graphql";
 const COMPANY_DOMAIN = "xpressdjs.com";
@@ -127,7 +127,7 @@ export async function matchMeeting(
   return { client_id: null, event_id: null, matched_by: null };
 }
 
-/** Fetch one transcript and upsert it (+ suggested tasks). Preserves a manual event/client
+/** Fetch one transcript and upsert it (+ action-item suggestions). Preserves a manual event/client
     link and existing approve/dismiss decisions on re-import. Returns the meeting row id. */
 export async function importTranscript(admin: SupabaseClient, firefliesId: string): Promise<string | null> {
   const t = await fetchTranscript(firefliesId);

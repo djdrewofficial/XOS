@@ -56,8 +56,7 @@ export default async function BriefingsSettingsPage() {
       <div>
         <h1 className="page-title">Daily Briefing</h1>
         <p className="text-sm text-zinc-500">
-          A personalized morning email with each staffer&apos;s open tasks and upcoming events. Choose who gets it and how
-          often. Tasks are generated at 5:30am so they&apos;re included in the briefing.
+          A personalized morning email with each staffer&apos;s upcoming events. Choose who gets it and how often.
         </p>
       </div>
       <BriefingsClient rows={rows} global={global} company={company} />
