@@ -5,7 +5,16 @@ import { createClient as createSupabaseJsClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getMe } from "@/lib/auth";
-import { passwordMeetsPolicy } from "@/lib/passwordPolicy";
+import { elevateSessionWithTotp, passwordChangeNeedsTotp } from "@/lib/mfaStepUp";
+import {
+  PASSWORD_CHANGE_MFA_PROMPT,
+  PASSWORD_CHANGE_NONCE_PROMPT,
+  classifyCurrentPasswordError,
+  currentPasswordErrorMessage,
+  nextPasswordChangeStep,
+} from "@/lib/passwordChange";
+import { validatePasswordChange } from "@/lib/passwordPolicy";
+import { deliverPasswordReset } from "@/lib/sendPasswordReset";
 
 /* Self-service profile edits. Every write is scoped to the CALLER'S OWN employee
    row (resolved from the session, never client-supplied) and limited to a safe
@@ -63,25 +72,27 @@ export async function uploadMyPhoto(formData: FormData) {
   revalidatePath("/account");
 }
 
+export type PasswordChangeResult =
+  | { ok: true }
+  | { ok: false; error: string; needsNonce?: boolean; needsMfa?: boolean };
+
 /* Change the signed-in user's own password. The current password is checked
-   with a throwaway client so a wrong guess can't replace the session cookie.
-   If the project has "Secure password change" on and this session is older
-   than a day, we sign in once on the real session (password already verified)
-   and retry — that satisfies the reauthentication requirement without a
-   dashboard change. */
+   with a throwaway client so a wrong guess can't replace this browser's
+   session cookie. That extra session is revoked immediately.
+
+   Secure password change (session older than a day) is finished with
+   reauthenticate() and the emailed nonce. Signing in again on the real
+   session does not satisfy that check, and for an account with 2FA it would
+   replace the aal2 cookie with an aal1 session and lock the password update. */
 export async function changeMyPassword(input: {
   current: string;
   next: string;
   confirm: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const current = input.current ?? "";
-  const next = input.next ?? "";
-  const confirm = input.confirm ?? "";
-  if (!current) return { ok: false, error: "Enter your current password." };
-  if (current.length > 256 || next.length > 256) return { ok: false, error: "That password is too long." };
-  if (!passwordMeetsPolicy(next)) return { ok: false, error: "Your password doesn't meet all the requirements." };
-  if (next !== confirm) return { ok: false, error: "Passwords don't match." };
-  if (next === current) return { ok: false, error: "Choose a password that's different from your current one." };
+  nonce?: string;
+  totp?: string;
+}): Promise<PasswordChangeResult> {
+  const validated = validatePasswordChange(input);
+  if (!validated.ok) return validated;
 
   const supabase = await createClient();
   const {
@@ -97,31 +108,71 @@ export async function changeMyPassword(input: {
   const verifier = createSupabaseJsClient(url, anon, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
-  const { error: pwErr } = await verifier.auth.signInWithPassword({ email, password: current });
-  if (pwErr) {
-    const code = pwErr.code;
-    if (code === "over_request_rate_limit" || code === "over_email_send_rate_limit") {
-      return { ok: false, error: "Too many attempts. Wait a few minutes and try again." };
-    }
-    return { ok: false, error: "Current password is incorrect." };
+  const { data: verified, error: pwErr } = await verifier.auth.signInWithPassword({
+    email,
+    password: input.current,
+  });
+  const check = classifyCurrentPasswordError(pwErr);
+  if (check !== "match") return { ok: false, error: currentPasswordErrorMessage(check, pwErr) };
+  if (verified.session) {
+    // Drop only the throwaway session. scope "local" uses its own token.
+    await verifier.auth.signOut({ scope: "local" }).catch(() => {});
   }
 
-  let { error: updateError } = await supabase.auth.updateUser({ password: next });
-  if (updateError && updateError.code === "reauthentication_needed") {
-    const { error: refreshErr } = await supabase.auth.signInWithPassword({ email, password: current });
-    if (refreshErr) return { ok: false, error: "Current password is incorrect." };
-    updateError = (await supabase.auth.updateUser({ password: next })).error;
+  if (await passwordChangeNeedsTotp(supabase)) {
+    const totp = input.totp ?? "";
+    if (!totp.trim()) return { ok: false, needsMfa: true, error: PASSWORD_CHANGE_MFA_PROMPT };
+    const mfaError = await elevateSessionWithTotp(supabase, totp);
+    if (mfaError) return { ok: false, needsMfa: true, error: mfaError };
   }
+
+  const nonce = input.nonce?.trim() || undefined;
+  const { error: updateError } = await supabase.auth.updateUser({
+    password: input.next,
+    current_password: input.current,
+    ...(nonce ? { nonce } : {}),
+  });
   if (updateError) {
-    if (updateError.code === "same_password") {
-      return { ok: false, error: "Choose a password that's different from your current one." };
+    const step = nextPasswordChangeStep({ error: updateError, hasNonce: Boolean(nonce) });
+    if (step.action === "send-nonce") {
+      const { error: reauthError } = await supabase.auth.reauthenticate();
+      if (reauthError) {
+        return { ok: false, error: reauthError.message || "Couldn't send a confirmation code. Try again." };
+      }
+      return { ok: false, needsNonce: true, error: PASSWORD_CHANGE_NONCE_PROMPT };
     }
-    if (updateError.code === "weak_password") {
-      return { ok: false, error: updateError.message || "That password isn't strong enough." };
+    if (step.action === "step-up-mfa") {
+      return { ok: false, needsMfa: true, error: PASSWORD_CHANGE_MFA_PROMPT };
     }
-    return { ok: false, error: updateError.message };
+    return { ok: false, error: step.error };
   }
 
   await supabase.auth.signOut({ scope: "others" });
+  return { ok: true };
+}
+
+/** Email a fresh secure-password-change code without trying the password update again. */
+export async function sendPasswordChangeCode(): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "You need to be signed in again." };
+  const { error } = await supabase.auth.reauthenticate();
+  if (error) return { ok: false, error: error.message || "Couldn't send a confirmation code. Try again." };
+  return { ok: true };
+}
+
+/** Reset link to the signed-in account's own email. Reuses the forgot-password sender. */
+export async function emailMyPasswordReset(): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const email = user?.email;
+  if (!email) return { ok: false, error: "You need to be signed in again." };
+  const result = await deliverPasswordReset(email);
+  if (result === "limited") return { ok: false, error: "Too many reset emails. Wait a while and try again." };
+  if (result !== "sent") return { ok: false, error: "We couldn't send the reset email. Try again in a few minutes." };
   return { ok: true };
 }

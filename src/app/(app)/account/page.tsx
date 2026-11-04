@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getMe } from "@/lib/auth";
 import SaveButton from "@/components/SaveButton";
+import ChangePasswordSection from "@/components/ChangePasswordSection";
 import AccountNav from "./AccountNav";
 import { updateMyProfile, uploadMyPhoto } from "./actions";
 
@@ -24,8 +26,8 @@ export default async function AccountPage() {
 
       {!emp ? (
         <div className="card p-8 text-center text-sm text-zinc-500">
-          Your login isn&apos;t linked to a staff profile yet, so there&apos;s nothing to edit here. Ask an administrator to
-          link your account.
+          Your login isn&apos;t linked to a staff profile yet, so there&apos;s nothing to edit here. You can still change
+          your password below, or ask an administrator to link your account.
         </div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-3">
@@ -120,10 +122,16 @@ export default async function AccountPage() {
                   placeholder="A short bio used on Meet Your DJ emails…"
                 />
               </div>
-              <div className="col-span-2 flex items-center justify-between">
+              <div className="col-span-2 flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs text-zinc-500">
                   Email: <span className="text-zinc-700 dark:text-zinc-300">{emp.email ?? "—"}</span>
                   <span className="ml-1 text-zinc-400">(managed by an admin)</span>
+                  <Link
+                    href="#change-password"
+                    className="ml-3 font-semibold text-brand hover:underline dark:text-brand-lighter"
+                  >
+                    Change password
+                  </Link>
                 </p>
                 <SaveButton>Save changes</SaveButton>
               </div>
@@ -131,6 +139,10 @@ export default async function AccountPage() {
           </div>
         </div>
       )}
+
+      <div className="mt-5 max-w-2xl">
+        <ChangePasswordSection />
+      </div>
     </div>
   );
 }
