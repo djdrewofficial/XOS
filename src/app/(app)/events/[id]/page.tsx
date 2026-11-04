@@ -72,6 +72,21 @@ import UrlTabs from "@/components/UrlTabs";
 import SaveButton from "@/components/SaveButton";
 import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
+import ScheduledComms from "@/components/ScheduledComms";
+import {
+  SCHEDULE_RUN_COLUMNS,
+  SCHEDULE_TEMPLATE_COLUMNS,
+  buildScheduledComms,
+  mapRun,
+  mapTemplate,
+  type DirectoryPerson,
+  type DirectoryStaff,
+  type DirectoryVendor,
+  type RunRow,
+  type ScheduleEventFacts,
+  type ScheduleTemplate,
+  type TemplateRow,
+} from "@/lib/scheduledComms";
 import EventFireflies, { type FFMeeting, type FFSuggestion } from "@/components/EventFireflies";
 import EventAI from "@/components/EventAI";
 import RunOfShowButton from "@/components/RunOfShowButton";
@@ -211,7 +226,7 @@ export default async function EventDetailPage({
       : skip,
     supabase
       .from("event_vendors")
-      .select("*, vendor:vendors(id, company_name, category)")
+      .select("*, vendor:vendors(id, company_name, category, category_id)")
       .eq("event_id", id)
       .order("created_at"),
     supabase
@@ -256,6 +271,12 @@ export default async function EventDetailPage({
     { data: fileLabels },
     signedUrlEntries,
     sameDayByDate,
+    { data: schedTemplates },
+    { data: schedRuns },
+    { data: schedSettings },
+    { data: schedMergeTags },
+    { data: schedVendorContacts },
+    { data: schedPaymentAmounts },
   ] = await Promise.all([
     want("notes")
       ? supabase.from("planning_templates").select("id, name").eq("is_library", false).order("name")
@@ -310,6 +331,43 @@ export default async function EventDetailPage({
     event.event_date
       ? loadEventsByDate(supabase, event.event_date, event.event_date)
       : Promise.resolve({} as Awaited<ReturnType<typeof loadEventsByDate>>),
+    want("comms")
+      ? supabase
+          .from("email_templates")
+          .select(SCHEDULE_TEMPLATE_COLUMNS)
+          .eq("is_active", true)
+          .eq("schedule_enabled", true)
+          .not("schedule_days", "is", null)
+      : skip,
+    want("comms")
+      ? supabase.from("scheduled_email_runs").select(SCHEDULE_RUN_COLUMNS).eq("event_id", id)
+      : skip,
+    want("comms")
+      ? supabase
+          .from("company_settings")
+          .select("timezone, from_email, facebook_url, instagram_url, tiktok_url, youtube_url")
+          .eq("id", true)
+          .maybeSingle()
+      : skip,
+    want("comms")
+      ? supabase
+          .from("merge_tags")
+          .select("tag_key, group_name")
+          .eq("is_active", true)
+          .order("group_name")
+          .order("sort_order")
+          .order("tag_key")
+      : skip,
+    want("comms") && (eventVendors ?? []).some((v) => v.vendor_id)
+      ? supabase
+          .from("vendor_contacts")
+          .select("vendor_id, phone, email")
+          .in(
+            "vendor_id",
+            (eventVendors ?? []).map((v) => v.vendor_id).filter((vendorId): vendorId is string => !!vendorId),
+          )
+      : skip,
+    want("comms") ? supabase.from("payments").select("amount").eq("event_id", id) : skip,
   ]);
 
   const sameDayEvents = event.event_date ? (sameDayByDate[event.event_date] ?? []) : [];
@@ -483,6 +541,175 @@ export default async function EventDetailPage({
   const paid = approvedPayments.reduce((s: number, p: Payment) => s + Number(p.amount), 0);
   const pendingTotal = pendingPayments.reduce((s: number, p: Payment) => s + Number(p.amount), 0);
   const balance = total - paid;
+
+  // Scheduled emails/texts for the Comms tab. Payment math matches
+  // run_scheduled_emails (not the Investment figure above): package override or
+  // live catalog price, addon override or catalog price, and every payment row.
+  let scheduledItems: ReturnType<typeof buildScheduledComms> = [];
+  let commsTagGroups: { group: string; tags: string[] }[] = [];
+  let commsSocial = { facebook: "", instagram: "", tiktok: "", youtube: "" };
+  let canEditComms = false;
+  if (want("comms")) {
+    canEditComms = (await moduleAccess("events", supabase)) === "edit";
+    const activeTemplates = ((schedTemplates ?? []) as TemplateRow[])
+      .map(mapTemplate)
+      .filter((row): row is ScheduleTemplate => row != null);
+    const runs = ((schedRuns ?? []) as RunRow[]).map(mapRun);
+    const known = new Set(activeTemplates.map((row) => row.id));
+    const missingIds = [...new Set(runs.map((run) => run.templateId))].filter((templateId) => !known.has(templateId));
+    let historyTemplates: ScheduleTemplate[] = [];
+    if (missingIds.length) {
+      const { data: extra } = await supabase.from("email_templates").select(SCHEDULE_TEMPLATE_COLUMNS).in("id", missingIds);
+      historyTemplates = ((extra ?? []) as TemplateRow[]).map(mapTemplate).filter((row): row is ScheduleTemplate => row != null);
+    }
+
+    const named = (
+      row: { first_name?: string | null; last_name?: string | null; email?: string | null; cell_phone?: string | null; phone?: string | null } | null,
+      phoneKey: "cell_phone" | "phone",
+    ): DirectoryPerson | null => {
+      if (!row) return null;
+      return {
+        name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
+        email: row.email ?? null,
+        phone: row[phoneKey] ?? null,
+      };
+    };
+
+    const ev = event as XEvent & {
+      booked_date?: string | null;
+      quote_sent_date?: string | null;
+      client?: { first_name: string; last_name: string; email: string | null; cell_phone: string | null } | null;
+      salesperson?: { first_name: string; last_name: string; email: string | null; phone?: string | null } | null;
+      venue?: { name: string; email: string | null; phone: string | null } | null;
+    };
+
+    const additional: DirectoryPerson[] = [];
+    for (const ec of eventClients ?? []) {
+      if (ec.is_primary) continue;
+      const contact = named(
+        ec.client as { first_name?: string; last_name?: string; email?: string | null; cell_phone?: string | null } | null,
+        "cell_phone",
+      );
+      if (contact) additional.push(contact);
+    }
+
+    const staffRows = (staff ?? []) as {
+      id: string;
+      role: string | null;
+      employee_id: string | null;
+      declined_at: string | null;
+      confirmed_at: string | null;
+      employee: { first_name: string; last_name: string; email: string | null; phone: string | null } | null;
+    }[];
+    const staffDir: DirectoryStaff[] = staffRows.map((row) => ({
+      staffId: row.id,
+      name: `${row.employee?.first_name ?? ""} ${row.employee?.last_name ?? ""}`.trim(),
+      email: row.employee?.email ?? null,
+      phone: row.employee?.phone ?? null,
+      role: row.role,
+      declinedAt: row.declined_at,
+      confirmedAt: row.confirmed_at,
+    }));
+
+    const vendorContacts = (schedVendorContacts ?? []) as { vendor_id: string; phone: string | null; email: string | null }[];
+    const vendorDir: DirectoryVendor[] = (
+      (eventVendors ?? []) as { vendor_id: string; vendor: { company_name: string | null; category_id: string | null } | null }[]
+    ).map((row) => {
+      const mine = vendorContacts.filter((contact) => contact.vendor_id === row.vendor_id);
+      return {
+        name: row.vendor?.company_name || "Vendor",
+        categoryId: row.vendor?.category_id ?? null,
+        emails: mine.map((contact) => contact.email).filter((email): email is string => !!email),
+        phones: mine.map((contact) => contact.phone).filter((phone): phone is string => !!phone),
+      };
+    });
+
+    const masters = (
+      (employees ?? []) as { first_name: string; last_name: string; email: string | null; phone?: string | null; permission_tier?: string }[]
+    )
+      .filter((emp) => emp.permission_tier === "master_admin")
+      .map((emp) => ({
+        name: `${emp.first_name} ${emp.last_name}`.trim(),
+        email: emp.email,
+        phone: emp.phone ?? null,
+      }));
+
+    const settings = schedSettings as {
+      timezone?: string | null;
+      from_email?: string | null;
+      facebook_url?: string | null;
+      instagram_url?: string | null;
+      tiktok_url?: string | null;
+      youtube_url?: string | null;
+    } | null;
+
+    const schedulerAddonTotal = addonRows.reduce(
+      (sum, ea) => sum + Number(ea.quantity) * Number(ea.price_override ?? ea.addon?.default_price ?? 0),
+      0,
+    );
+    const facts: ScheduleEventFacts = {
+      eventDate: ev.event_date,
+      bookedDate: ev.booked_date ?? null,
+      initialContactDate: ev.initial_contact_date,
+      contractSentDate: ev.contract_sent_date,
+      contractDueDate: ev.contract_due_date,
+      contractSignedDate: ev.contract_signed_date,
+      quoteSentDate: ev.quote_sent_date ?? null,
+      statusId: ev.status_id,
+      eventTypeId: ev.event_type_id,
+      packageId: ev.package_id,
+      salespersonId: ev.salesperson_id,
+      addonIds: addonRows.map((ea) => ea.addon?.id).filter((addonId): addonId is string => !!addonId),
+      schedulerTotal:
+        Number(ev.package_price_override ?? ev.package?.default_price ?? 0) +
+        schedulerAddonTotal +
+        Number(ev.overtime_fee) +
+        Number(ev.travel_fee) -
+        Number(ev.discount1_amount) -
+        Number(ev.discount2_amount),
+      paymentsSum: ((schedPaymentAmounts ?? []) as { amount: number | string }[]).reduce((sum, row) => sum + Number(row.amount), 0),
+      staffEmployeeIds: staffRows.map((row) => row.employee_id).filter((employeeId): employeeId is string => !!employeeId),
+    };
+
+    scheduledItems = buildScheduledComms({
+      templates: activeTemplates,
+      historyTemplates,
+      event: facts,
+      runs,
+      directory: {
+        primary: named(ev.client ?? null, "cell_phone"),
+        additional,
+        venue: ev.venue ? { name: ev.venue.name, email: ev.venue.email, phone: ev.venue.phone } : null,
+        vendors: vendorDir,
+        salesperson: ev.salesperson
+          ? {
+              name: `${ev.salesperson.first_name} ${ev.salesperson.last_name}`.trim(),
+              email: ev.salesperson.email,
+              phone: ev.salesperson.phone ?? null,
+            }
+          : null,
+        staff: staffDir,
+        masterAdminEmail: settings?.from_email ?? null,
+        masterAdmins: masters,
+      },
+      commsPaused,
+      timeZone: settings?.timezone || "America/New_York",
+    });
+
+    const tagGroupMap = new Map<string, string[]>();
+    for (const tag of (schedMergeTags ?? []) as { tag_key: string; group_name: string }[]) {
+      const arr = tagGroupMap.get(tag.group_name) ?? [];
+      arr.push(`<${tag.tag_key}>`);
+      tagGroupMap.set(tag.group_name, arr);
+    }
+    commsTagGroups = [...tagGroupMap.entries()].map(([group, tags]) => ({ group, tags }));
+    commsSocial = {
+      facebook: settings?.facebook_url ?? "",
+      instagram: settings?.instagram_url ?? "",
+      tiktok: settings?.tiktok_url ?? "",
+      youtube: settings?.youtube_url ?? "",
+    };
+  }
 
   // total changed after a schedule was set (add-on / price / fee edit) → prompt to
   // update the unpaid installments, unless the office chose to keep it as is
@@ -2440,7 +2667,29 @@ export default async function EventDetailPage({
             ? [{ id: "photobooth", label: "Photo Booth", badge: boothDesign?.src ? "✓" : undefined, content: photoboothTab }]
             : []),
           { id: "documents", label: "Documents", badge: (eventDocs ?? []).length || undefined, content: documentsTab },
-          { id: "comms", label: "Comms", badge: commsThreads.length || undefined, content: <EventComms eventId={id} threads={commsThreads} startable={commsStartable} docs={(eventDocs ?? []).filter((d) => d.status !== "void").map((d) => ({ id: d.id, title: d.title }))} /> },
+          {
+            id: "comms",
+            label: "Comms",
+            badge: commsThreads.length || undefined,
+            content: (
+              <div className="space-y-4">
+                <ScheduledComms
+                  eventId={id}
+                  items={scheduledItems}
+                  canEdit={canEditComms}
+                  commsPaused={commsPaused}
+                  tagGroups={commsTagGroups}
+                  socialLinks={commsSocial}
+                />
+                <EventComms
+                  eventId={id}
+                  threads={commsThreads}
+                  startable={commsStartable}
+                  docs={(eventDocs ?? []).filter((d) => d.status !== "void").map((d) => ({ id: d.id, title: d.title }))}
+                />
+              </div>
+            ),
+          },
           { id: "notes", label: "Planning / Notes", badge: internalNotes.length, content: notesTab },
         ]}
       />
