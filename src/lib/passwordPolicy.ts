@@ -36,3 +36,28 @@ export function failedPasswordRules(pw: string): PasswordRule[] {
 export function passwordMeetsPolicy(pw: string): boolean {
   return failedPasswordRules(pw).length === 0;
 }
+
+const MAX_PASSWORD_LENGTH = 256;
+
+/** The checks both the account form and the server action share before calling Supabase. */
+export function validatePasswordChange(input: {
+  current: string;
+  next: string;
+  confirm: string;
+}): { ok: true } | { ok: false; error: string } {
+  const current = input.current ?? "";
+  const next = input.next ?? "";
+  const confirm = input.confirm ?? "";
+  if (!current) return { ok: false, error: "Enter your current password." };
+  if (current.length > MAX_PASSWORD_LENGTH || next.length > MAX_PASSWORD_LENGTH) {
+    return { ok: false, error: "That password is too long." };
+  }
+  if (!passwordMeetsPolicy(next)) {
+    return { ok: false, error: "Your password doesn't meet all the requirements." };
+  }
+  if (next !== confirm) return { ok: false, error: "Passwords don't match." };
+  if (next === current) {
+    return { ok: false, error: "Choose a password that's different from your current one." };
+  }
+  return { ok: true };
+}

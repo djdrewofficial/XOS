@@ -4,8 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AuthShell from "@/components/AuthShell";
+import AuthenticatorCodeField from "@/components/AuthenticatorCodeField";
 import PasswordChecklist from "@/components/PasswordChecklist";
 import { createClient } from "@/lib/supabase/client";
+import { elevateSessionWithTotp, passwordChangeNeedsTotp } from "@/lib/mfaStepUp";
+import {
+  PASSWORD_CHANGE_MFA_PROMPT,
+  PASSWORD_CHANGE_NONCE_PROMPT,
+  nextPasswordChangeStep,
+  totpCodeError,
+} from "@/lib/passwordChange";
 import { passwordMeetsPolicy } from "@/lib/passwordPolicy";
 
 /* Lands the person from a password email and lets them choose a new one.
@@ -59,6 +67,11 @@ export default function SetPasswordPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "invalid">("loading");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
+  const [totp, setTotp] = useState("");
+  const [nonce, setNonce] = useState("");
+  const [needsMfa, setNeedsMfa] = useState(false);
+  const [needsNonce, setNeedsNonce] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
@@ -176,6 +189,18 @@ export default function SetPasswordPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (status !== "ready") return;
+    let active = true;
+    const supabase = createClient();
+    passwordChangeNeedsTotp(supabase).then((needed) => {
+      if (active) setNeedsMfa(needed);
+    });
+    return () => {
+      active = false;
+    };
+  }, [status]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!passwordMeetsPolicy(pw)) {
@@ -188,10 +213,48 @@ export default function SetPasswordPage() {
     }
     setSaving(true);
     setError(null);
+    setNotice(null);
     const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password: pw });
+    // A reset link only proves the inbox, so the session is aal1. Auth refuses
+    // a password change on an account with an authenticator until this session
+    // is raised the same way /2fa does. No authenticator: update directly.
+    if (await passwordChangeNeedsTotp(supabase)) {
+      setNeedsMfa(true);
+      const format = totpCodeError(totp);
+      if (format) {
+        setError(format);
+        setSaving(false);
+        return;
+      }
+      const mfaError = await elevateSessionWithTotp(supabase, totp);
+      if (mfaError) {
+        setError(mfaError);
+        setSaving(false);
+        return;
+      }
+      setNeedsMfa(false);
+      setTotp("");
+    }
+    const nonceValue = nonce.trim();
+    const { error } = await supabase.auth.updateUser({
+      password: pw,
+      ...(nonceValue ? { nonce: nonceValue } : {}),
+    });
     if (error) {
-      setError(error.message);
+      const step = nextPasswordChangeStep({ error, hasNonce: Boolean(nonceValue) });
+      if (step.action === "send-nonce") {
+        const { error: reauthError } = await supabase.auth.reauthenticate();
+        if (reauthError) setError(reauthError.message);
+        else {
+          setNeedsNonce(true);
+          setNotice(PASSWORD_CHANGE_NONCE_PROMPT);
+        }
+      } else if (step.action === "step-up-mfa") {
+        setNeedsMfa(true);
+        setError(PASSWORD_CHANGE_MFA_PROMPT);
+      } else {
+        setError(step.error);
+      }
       setSaving(false);
       return;
     }
@@ -206,7 +269,11 @@ export default function SetPasswordPage() {
     }, 900);
   }
 
-  const canSubmit = passwordMeetsPolicy(pw) && pw === pw2;
+  const canSubmit =
+    passwordMeetsPolicy(pw) &&
+    pw === pw2 &&
+    (!needsMfa || totpCodeError(totp) === null) &&
+    (!needsNonce || nonce.trim().length > 0);
 
   return (
     <AuthShell subtitle="XOS · Set Your Password">
@@ -251,6 +318,32 @@ export default function SetPasswordPage() {
           <p className="mb-4 mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
             For your security, passwords found in known data breaches can&apos;t be used.
           </p>
+          {needsMfa && (
+            <AuthenticatorCodeField
+              value={totp}
+              onChange={setTotp}
+              hint="This account uses an authenticator app. Enter the current 6-digit code. We check it, then save the new password."
+            />
+          )}
+          {needsNonce && (
+            <div className="mb-4">
+              <label className="label-xs">Confirmation code</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={nonce}
+                onChange={(e) => setNonce(e.target.value.trim())}
+                className="input w-full"
+                placeholder="Code from your email"
+              />
+            </div>
+          )}
+          {notice && (
+            <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              {notice}
+            </p>
+          )}
           {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
           <button type="submit" disabled={saving || !canSubmit} className="btn-primary w-full disabled:opacity-50">
             {saving ? "Saving…" : "Set Password & Sign In"}
