@@ -5,7 +5,7 @@ import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { docTypeClientLabel } from "@/lib/documentBlocks";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell, withComplianceFooter, type EmailFooter } from "@/lib/signing";
 import { isEmailOptedOut, unsubscribeToken } from "@/lib/emailOptOut";
-import { pausedEventIdSet } from "@/lib/commsPause";
+import { isSuppressedByCommsPause, pausedEventIdSet } from "@/lib/commsPause";
 import { buildDocumentHtml } from "@/lib/documentHtml";
 import { htmlToPdf } from "@/lib/pdf";
 import { isHighLevelConfigured, sendEmailViaHighLevel, recordXosEmailInComms } from "@/lib/highlevel";
@@ -487,11 +487,12 @@ export async function processOutbox(
   let suppressed = 0;
 
   // Per-event comms pause: events run in parallel with another system (e.g. DJEP)
-  // don't send client-facing mail. Staff alerts (client_id null) still go out.
+  // don't send automated client-facing mail. A booking helper a person clicked
+  // stamps bypass_comms_pause, and staff alerts (client_id null) still go out.
   const pausedEvents = await pausedEventIdSet(supabase, (queued ?? []).map((m: { event_id?: string | null }) => m.event_id ?? null));
 
   for (const msg of queued ?? []) {
-    if (msg.client_id && msg.event_id && pausedEvents.has(msg.event_id)) {
+    if (isSuppressedByCommsPause(msg, pausedEvents)) {
       await supabase
         .from("email_log")
         .update({ status: "cancelled", error: "Suppressed — automated comms paused for this event", sent_at: null })

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { pausedEventIdSet } from "@/lib/commsPause";
+import { isSuppressedByCommsPause, pausedEventIdSet } from "@/lib/commsPause";
 import { createClient } from "@/lib/supabase/server";
 // toE164 lives in lib/phone (neutral module) so lib/smsOptOut can use it without a
 // circular import back to this file. Re-exported below for existing importers.
@@ -765,6 +765,7 @@ export async function processSmsOutbox(
     reply_to_message_id: string | null;
     hl_target_contact_id: string | null;
     is_marketing: boolean | null;
+    bypass_comms_pause?: boolean | null;
   }>;
   const clientIds = [...new Set(queued.map((m) => m.client_id).filter(Boolean) as string[])];
   const clientById = new Map<string, { first_name?: string; last_name?: string; email?: string; sms_opt_in?: boolean }>();
@@ -781,7 +782,8 @@ export async function processSmsOutbox(
   let suppressed = 0;
 
   // Per-event comms pause: events run in parallel with another system (e.g. DJEP)
-  // don't send client-facing SMS. Staff alerts (client_id null) still go out.
+  // don't send automated client-facing SMS. A booking helper a person clicked
+  // stamps bypass_comms_pause, and staff alerts (client_id null) still go out.
   const pausedEvents = await pausedEventIdSet(supabase, (queued ?? []).map((m) => m.event_id as string | null));
 
   for (const msg of queued ?? []) {
@@ -790,7 +792,7 @@ export async function processSmsOutbox(
       failed++;
     };
 
-    if (msg.client_id && msg.event_id && pausedEvents.has(msg.event_id)) {
+    if (isSuppressedByCommsPause(msg, pausedEvents)) {
       await supabase
         .from("sms_log")
         .update({ status: "suppressed", error: "automated comms paused for this event" })
