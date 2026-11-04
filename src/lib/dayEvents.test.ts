@@ -161,6 +161,8 @@ describe("shared day-cards component", () => {
     assert.match(calendar, /selectionAfterEventClick/);
     assert.match(calendar, /stopPropagation/);
     assert.match(badge, /Escape/);
+    // The event header is backdrop-blur, which would trap a fixed popover.
+    assert.match(badge, /createPortal/);
   });
 
   it("loads day cards with the calendar's archived-event filter", () => {

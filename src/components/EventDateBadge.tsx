@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import DayEventCards from "@/components/dashboard/DayEventCards";
 import { formatDayHeading, otherEventsOnDay, type CalDetailedEvent } from "@/lib/dayEvents";
 
@@ -114,7 +115,7 @@ export default function EventDateBadge({
       >
         {face}
       </button>
-      {open && box && (
+      {open && box && createPortal(
         <div
           ref={panelRef}
           role="dialog"
@@ -140,7 +141,8 @@ export default function EventDateBadge({
             <p className="mb-3 text-sm text-zinc-500">No other events on this day.</p>
           )}
           {events.length > 0 && <DayEventCards events={events} currentEventId={currentEventId} />}
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
