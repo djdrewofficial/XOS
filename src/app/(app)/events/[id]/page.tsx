@@ -102,6 +102,7 @@ import { loadEventsByDate } from "@/lib/calendarEvents";
 import EventDateBadge from "@/components/EventDateBadge";
 import { summarizeHelperActions, type HelperAction } from "@/lib/helperSummary";
 import { resolveUserNames } from "@/lib/planning";
+import { loadsOnTab } from "@/lib/eventTabData";
 
 export const dynamic = "force-dynamic";
 
@@ -133,6 +134,8 @@ export default async function EventDetailPage({
   // batch instead of 5 sequential groups — collapses ~30 round-trips into one
   // wall-clock wait. The few queries that need these results (comms, doc views,
   // signed file URLs, client notes) run in a single dependent batch below.
+  // loadsOnTab is the tab that renders the control (see eventTabData). A few
+  // catalogs are easy to attach to the neighboring tab and then render empty.
   const [
     { data: event },
     { data: schedule },
@@ -194,7 +197,7 @@ export default async function EventDetailPage({
       : skip,
     supabase.from("custom_date_definitions").select("*").eq("is_active", true).order("sort_order"),
     want("booking") ? supabase.from("event_custom_dates").select("*").eq("event_id", id) : skip,
-    want("details")
+    loadsOnTab(activeTab, "eventLog")
       ? supabase.from("event_logs").select("*").eq("event_id", id).order("created_at", { ascending: false }).limit(100)
       : skip,
     want("financials") ? supabase.from("payment_settings").select("*").eq("id", true).maybeSingle() : skip,
@@ -207,7 +210,9 @@ export default async function EventDetailPage({
       ? supabase.from("event_files").select("*").eq("event_id", id).order("created_at", { ascending: false })
       : skip,
     supabase.from("event_addons").select("*, addon:addons(*)").eq("event_id", id),
-    want("booking") ? supabase.from("addons").select("*").eq("is_active", true).order("display_order") : skip,
+    loadsOnTab(activeTab, "addonCatalog")
+      ? supabase.from("addons").select("*").eq("is_active", true).order("display_order")
+      : skip,
     want("financials")
       ? supabase
           .from("expenses")
@@ -216,12 +221,12 @@ export default async function EventDetailPage({
           .order("expense_date", { ascending: false })
       : skip,
     want("financials") ? supabase.from("expense_categories").select("*").eq("is_active", true).order("name") : skip,
-    want("logistics")
+    loadsOnTab(activeTab, "trips")
       ? supabase.from("event_trips").select("*, vehicle:vehicles(name)").eq("event_id", id).order("trip_date", { ascending: false })
       : skip,
-    want("logistics") ? supabase.from("vehicles").select("*").eq("is_active", true).order("name") : skip,
+    loadsOnTab(activeTab, "vehicles") ? supabase.from("vehicles").select("*").eq("is_active", true).order("name") : skip,
     want("details") ? supabase.from("event_types").select("id, name").eq("is_active", true).order("name") : skip,
-    want("booking")
+    loadsOnTab(activeTab, "packages")
       ? supabase.from("packages").select("id, name, default_price").eq("is_active", true).order("display_order")
       : skip,
     supabase
@@ -278,7 +283,7 @@ export default async function EventDetailPage({
     { data: schedVendorContacts },
     { data: schedPaymentAmounts },
   ] = await Promise.all([
-    want("notes")
+    loadsOnTab(activeTab, "planningTemplates")
       ? supabase.from("planning_templates").select("id, name").eq("is_library", false).order("name")
       : skip,
     want("financials")
@@ -289,10 +294,10 @@ export default async function EventDetailPage({
           .not("deleted_at", "is", null)
           .order("deleted_at", { ascending: false })
       : skip,
-    want("notes") && viewer?.userId
+    loadsOnTab(activeTab, "spotify") && viewer?.userId
       ? getSpotifyConnection(viewer.userId)
       : Promise.resolve({ connected: false, canWrite: false, displayName: null as string | null }),
-    want("notes")
+    loadsOnTab(activeTab, "plannerTimeline")
       ? supabase
           .from("planning_sections")
           .select("id, title, planning_songs(count)")
