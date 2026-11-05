@@ -5,7 +5,10 @@ import {
   PHONE_SYNC_FAILED_NOTICE,
   PHONE_TAKEN_NOTICE,
   authPhoneUpdate,
+  sameAuthPhone,
   syncLoginPhone,
+  writeAuthPhone,
+  type AuthPhoneWriter,
   type PhoneOwner,
   type SyncLoginPhoneDeps,
 } from "./loginPhone.ts";
@@ -22,11 +25,11 @@ function harness(users: User[]) {
   const deps: SyncLoginPhoneDeps = {
     normalize: toE164,
     log: (message) => logs.push(message),
-    findByPhone: async (e164) => users.find((user) => user.phone === e164) ?? null,
+    findByPhone: async (e164) => users.find((user) => sameAuthPhone(user.phone, e164)) ?? null,
     setPhone: async (id, phone) => {
       calls.push({ id, phone });
       if (phone) {
-        const other = users.find((user) => user.phone === phone && user.id !== id);
+        const other = users.find((user) => user.id !== id && sameAuthPhone(user.phone, phone));
         if (other) return { error: "Phone number already registered by another user" };
       }
       const user = users.find((row) => row.id === id);
@@ -38,9 +41,89 @@ function harness(users: User[]) {
 }
 
 describe("auth phone payload", () => {
-  it("confirms an E.164 number and sends a blank phone to clear", () => {
+  it("confirms an E.164 number for updateUserById", () => {
     assert.deepEqual(authPhoneUpdate("+13055550199"), { phone: "+13055550199", phone_confirm: true });
-    assert.deepEqual(authPhoneUpdate(null), { phone: "" });
+  });
+
+  it("treats auth.users digits (no +) as the same number as E.164", () => {
+    assert.equal(sameAuthPhone("13055550199", "+13055550199"), true);
+    assert.equal(sameAuthPhone("+13055550199", "+13055550199"), true);
+    assert.equal(sameAuthPhone("573001234567", "+573001234567"), true);
+    assert.equal(sameAuthPhone("13055550100", "+13055550199"), false);
+    assert.equal(sameAuthPhone(null, "+13055550199"), false);
+    assert.equal(sameAuthPhone("", "+13055550199"), false);
+  });
+});
+
+function fakeAuthWriter() {
+  const updates: { id: string; phone: string; phone_confirm: true }[] = [];
+  const clears: { p_user_id: string }[] = [];
+  let clearResponse: { data: boolean | null; error: { message: string } | null } = {
+    data: true,
+    error: null,
+  };
+  const admin: AuthPhoneWriter = {
+    auth: {
+      admin: {
+        updateUserById: async (id, attributes) => {
+          updates.push({ id, phone: attributes.phone, phone_confirm: attributes.phone_confirm });
+          return { error: null };
+        },
+      },
+    },
+    rpc: async (fn, args) => {
+      assert.equal(fn, "xos_clear_auth_phone");
+      clears.push(args);
+      return clearResponse;
+    },
+  };
+  return {
+    admin,
+    updates,
+    clears,
+    setClear(response: { data: boolean | null; error: { message: string } | null }) {
+      clearResponse = response;
+    },
+  };
+}
+
+describe("writeAuthPhone", () => {
+  it("sets a number with updateUserById and does not call the clear function", async () => {
+    const fake = fakeAuthWriter();
+    const result = await writeAuthPhone(fake.admin, STAFF, "+13055550199");
+    assert.deepEqual(result, { error: null });
+    assert.deepEqual(fake.updates, [{ id: STAFF, phone: "+13055550199", phone_confirm: true }]);
+    assert.equal(fake.clears.length, 0);
+  });
+
+  it("clears by calling xos_clear_auth_phone and does not update the user", async () => {
+    const fake = fakeAuthWriter();
+    const result = await writeAuthPhone(fake.admin, STAFF, null);
+    assert.deepEqual(result, { error: null });
+    assert.deepEqual(fake.clears, [{ p_user_id: STAFF }]);
+    assert.equal(fake.updates.length, 0);
+  });
+
+  it("treats a false clear (no row changed) as success", async () => {
+    const fake = fakeAuthWriter();
+    fake.setClear({ data: false, error: null });
+    const result = await writeAuthPhone(fake.admin, STAFF, null);
+    assert.deepEqual(result, { error: null });
+    assert.deepEqual(fake.clears, [{ p_user_id: STAFF }]);
+  });
+
+  it("returns the rpc error and does not throw", async () => {
+    const fake = fakeAuthWriter();
+    fake.setClear({ data: null, error: { message: "function xos_clear_auth_phone does not exist" } });
+    const result = await writeAuthPhone(fake.admin, STAFF, null);
+    assert.deepEqual(result, { error: "function xos_clear_auth_phone does not exist" });
+  });
+
+  it("returns an updateUserById error and does not throw", async () => {
+    const fake = fakeAuthWriter();
+    fake.admin.auth.admin.updateUserById = async () => ({ error: { message: "boom" } });
+    const result = await writeAuthPhone(fake.admin, STAFF, "+13055550199");
+    assert.deepEqual(result, { error: "boom" });
   });
 });
 
@@ -148,6 +231,61 @@ describe("syncLoginPhone", () => {
     assert.equal(h.calls.length, 0);
     assert.ok(h.logs.some((line) => line.includes("another login")));
     assert.equal(h.users[1]?.phone, "+13055550199");
+  });
+
+  it("lets a staff record take a client number stored as digits without +", async () => {
+    const h = harness([
+      { id: STAFF, phone: null, accountType: "staff" },
+      { id: CLIENT, phone: "13055550199", accountType: "client" },
+    ]);
+    const result = await syncLoginPhone(
+      { userId: STAFF, phone: "305-555-0199", source: "staff" },
+      h.deps,
+    );
+    assert.equal(result.status, "updated");
+    assert.deepEqual(h.calls, [
+      { id: CLIENT, phone: null },
+      { id: STAFF, phone: "+13055550199" },
+    ]);
+    assert.equal(h.users.find((user) => user.id === CLIENT)?.phone, null);
+    assert.equal(h.users.find((user) => user.id === STAFF)?.phone, "+13055550199");
+  });
+
+  it("clears through xos_clear_auth_phone when a real number is removed", async () => {
+    const fake = fakeAuthWriter();
+    const result = await syncLoginPhone(
+      { userId: STAFF, phone: "", previousPhone: "305-555-0100", source: "staff" },
+      {
+        normalize: toE164,
+        findByPhone: async () => null,
+        setPhone: (userId, phone) => writeAuthPhone(fake.admin, userId, phone),
+      },
+    );
+    assert.equal(result.status, "cleared");
+    assert.equal(result.phone, null);
+    assert.deepEqual(fake.clears, [{ p_user_id: STAFF }]);
+    assert.equal(fake.updates.length, 0);
+  });
+
+  it("moves a client number with the clear function, then sets the staff login", async () => {
+    const fake = fakeAuthWriter();
+    const owners: PhoneOwner[] = [{ id: CLIENT, accountType: "client" }];
+    const result = await syncLoginPhone(
+      { userId: STAFF, phone: "305-555-0199", source: "staff" },
+      {
+        normalize: toE164,
+        findByPhone: async () => owners[0] ?? null,
+        setPhone: async (userId, phone) => {
+          const written = await writeAuthPhone(fake.admin, userId, phone);
+          if (!written.error && phone) owners.length = 0;
+          return written;
+        },
+      },
+    );
+    assert.equal(result.status, "updated");
+    assert.equal(result.phone, "+13055550199");
+    assert.deepEqual(fake.clears, [{ p_user_id: CLIENT }]);
+    assert.deepEqual(fake.updates, [{ id: STAFF, phone: "+13055550199", phone_confirm: true }]);
   });
 
   it("lets a staff record take the number from a client login", async () => {

@@ -1,12 +1,13 @@
 /* Server adapter for syncLoginPhone. Uses the service-role admin client.
    Never import this into a client component. */
 
-import { createClient, type SupabaseClient, type User, type UserIdentity } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { toE164 } from "@/lib/phone";
 import {
-  authPhoneUpdate,
+  sameAuthPhone,
   syncLoginPhone,
+  writeAuthPhone,
   type LoginAccountType,
   type SyncLoginPhoneResult,
 } from "@/lib/loginPhone";
@@ -27,70 +28,20 @@ async function findByPhone(admin: Admin, e164: string) {
   for (let page = 1; page <= 20; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
     if (error || !data?.users?.length) return null;
-    const match = data.users.find((user) => {
-      const phone = user.phone ?? "";
-      return phone === e164 || toE164(phone) === e164;
-    });
+    /* auth.users.phone is digits with no leading "+". sameAuthPhone matches
+       that form and an E.164 value from the person record. */
+    const match = data.users.find((user) => sameAuthPhone(user.phone, e164));
     if (match) return { id: match.id, accountType: await accountTypeOf(admin, match.id) };
     if (data.users.length < 200) return null;
   }
   return null;
 }
 
-/* GoTrue's admin update ignores a blank phone, so updateUserById({ phone: "" })
-   often leaves the old number in place. Deleting the phone identity is what
-   sets auth.users.phone back to empty. That route needs the user's own
-   session; generateLink does not send an email. The session is revoked
-   immediately and is created on a throwaway client so it never replaces the
-   service-role client. If manual linking is off, this fails softly. */
-async function unlinkPhoneIdentity(admin: Admin, user: User): Promise<{ error: string | null }> {
-  const identities = user.identities ?? [];
-  const phoneIdentity = identities.find((identity) => identity.provider === "phone");
-  if (!phoneIdentity || identities.length < 2 || !user.email) {
-    return { error: "Sign-in number could not be cleared." };
-  }
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anon) return { error: "Sign-in number could not be cleared." };
-
-  const link = await admin.auth.admin.generateLink({ type: "magiclink", email: user.email });
-  const tokenHash = link.data?.properties?.hashed_token;
-  if (link.error || !tokenHash) return { error: link.error?.message ?? "Sign-in number could not be cleared." };
-
-  const userClient = createClient(url, anon, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-  const verified = await userClient.auth.verifyOtp({ token_hash: tokenHash, type: "magiclink" });
-  if (verified.error || !verified.data.session) {
-    return { error: verified.error?.message ?? "Sign-in number could not be cleared." };
-  }
-  const unlinked = await userClient.auth.unlinkIdentity(phoneIdentity as UserIdentity);
-  await admin.auth.admin.signOut(verified.data.session.access_token, "local").catch(() => {});
-  if (unlinked.error) return { error: unlinked.error.message };
-  return { error: null };
-}
-
+/* Setting uses updateUserById. Clearing calls xos_clear_auth_phone on the
+   service-role client. GoTrue ignores a blank phone, so there is no
+   temporary session and no identity unlink. */
 async function applyAuthPhone(admin: Admin, userId: string, phone: string | null): Promise<{ error: string | null }> {
-  if (phone) {
-    try {
-      const { error } = await admin.auth.admin.updateUserById(userId, authPhoneUpdate(phone));
-      return { error: error?.message ?? null };
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : String(e) };
-    }
-  }
-
-  try {
-    await admin.auth.admin.updateUserById(userId, authPhoneUpdate(null));
-  } catch {
-    /* blank phone is ignored or rejected; the identity unlink below is the real clear */
-  }
-
-  const { data, error } = await admin.auth.admin.getUserById(userId);
-  if (!error && data.user && !data.user.phone) return { error: null };
-  if (!data.user) return { error: error?.message ?? "Login not found." };
-  return unlinkPhoneIdentity(admin, data.user);
+  return writeAuthPhone(admin, userId, phone);
 }
 
 export async function syncPersonLoginPhone(

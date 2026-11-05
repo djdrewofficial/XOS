@@ -5,9 +5,9 @@
    number to empty. Saving an unchanged empty phone must not wipe a number
    that was put on the login some other way.
 
-   auth.users.phone is unique. A collision never throws and never blocks the
-   CRM save. A staff record may take the number off a client login; every
-   other collision is skipped. */
+   auth.users.phone is unique and is stored as digits with no leading "+".
+   A collision never throws and never blocks the CRM save. A staff record
+   may take the number off a client login; every other collision is skipped. */
 
 export const PHONE_TAKEN_NOTICE =
   "That mobile number is already on another login, so text sign-in was left unchanged.";
@@ -63,10 +63,65 @@ export function loginPhoneE164(raw: string | null | undefined, normalize: Normal
   return normalized;
 }
 
-/** Attributes for auth.admin.updateUserById. A number is stored confirmed. */
-export function authPhoneUpdate(phone: string | null): { phone: string; phone_confirm?: true } {
-  if (phone) return { phone, phone_confirm: true };
-  return { phone: "" };
+/** Attributes for auth.admin.updateUserById. The admin API takes E.164.
+    GoTrue stores auth.users.phone as digits with no leading "+". A number
+    is stored confirmed. Clearing does not use this payload. */
+export function authPhoneUpdate(phone: string): { phone: string; phone_confirm: true } {
+  return { phone, phone_confirm: true };
+}
+
+/** Digits only, so "13055550199" and "+1 305-555-0199" name the same login. */
+export function authPhoneDigits(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const digits = String(raw).replace(/\D/g, "");
+  return digits || null;
+}
+
+/** True when a stored auth.users.phone (digits, no "+") is the same number
+    as an E.164 value. */
+export function sameAuthPhone(stored: string | null | undefined, e164: string): boolean {
+  const left = authPhoneDigits(stored);
+  const right = authPhoneDigits(e164);
+  return left != null && left === right;
+}
+
+type RpcError = { message: string } | null;
+
+/** Enough of the service-role client to set or clear one login phone. */
+export type AuthPhoneWriter = {
+  auth: {
+    admin: {
+      updateUserById(
+        userId: string,
+        attributes: { phone: string; phone_confirm: true },
+      ): Promise<{ error: RpcError }>;
+    };
+  };
+  rpc(
+    fn: "xos_clear_auth_phone",
+    args: { p_user_id: string },
+  ): PromiseLike<{ data: boolean | null; error: RpcError }>;
+};
+
+/** Set via updateUserById. Clear via public.xos_clear_auth_phone (migration
+    00208), which the service-role client calls as rpc. A false return means
+    no row changed (the login is already without a phone, or it is gone) and
+    is not an error. An rpc error is. */
+export async function writeAuthPhone(
+  admin: AuthPhoneWriter,
+  userId: string,
+  phone: string | null,
+): Promise<{ error: string | null }> {
+  try {
+    if (phone) {
+      const { error } = await admin.auth.admin.updateUserById(userId, authPhoneUpdate(phone));
+      return { error: error?.message ?? null };
+    }
+    const { error } = await admin.rpc("xos_clear_auth_phone", { p_user_id: userId });
+    return { error: error?.message ?? null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 function blank(raw: string | null | undefined): boolean {
