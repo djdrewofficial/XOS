@@ -717,6 +717,26 @@ export async function recordXosEmailInComms(
   }
 }
 
+/** Immediate one-off SMS through the same HighLevel path as the outbox:
+    find-or-create the contact by phone, then POST /conversations/messages.
+    There is no from-number argument — GHL sends from the SMS number already
+    attached to HIGHLEVEL_LOCATION_ID. Used by the Supabase Auth Send SMS hook
+    so a login code is not queued, not written to sms_log, and not copied into
+    the Comms thread (the code would sit in the staff-visible conversation). */
+export async function sendDirectSms(opts: {
+  phone: string;
+  body: string;
+}): Promise<{ ok: true; messageId: string | null; contactId: string } | { ok: false; error: string }> {
+  if (!isHighLevelConfigured()) return { ok: false, error: "HighLevel not configured" };
+  const phone = toE164(opts.phone);
+  if (!phone) return { ok: false, error: "invalid phone number" };
+  const contact = await upsertContact({ phone });
+  if (!contact.ok) return { ok: false, error: `contact upsert: ${contact.error}` };
+  const sent = await sendConversationMessage(contact.contactId, { channel: "SMS", body: opts.body });
+  if (!sent.ok) return sent;
+  return { ok: true, messageId: sent.messageId, contactId: contact.contactId };
+}
+
 /** Drains queued rows from sms_log through HighLevel.
     Pass a service-role client when running without a user session (cron, sign flow). */
 export async function processSmsOutbox(
