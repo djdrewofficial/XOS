@@ -5,6 +5,7 @@ import SaveButton from "@/components/SaveButton";
 import ChangePasswordSection from "@/components/ChangePasswordSection";
 import AccountNav from "./AccountNav";
 import { updateMyProfile, uploadMyPhoto } from "./actions";
+import PhoneSyncNote from "@/components/PhoneSyncNote";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export default async function AccountPage() {
   return (
     <div className="max-w-[1000px]">
       <AccountNav active="profile" />
+      <PhoneSyncNote />
 
       {!emp ? (
         <div className="card p-8 text-center text-sm text-zinc-500">

@@ -15,6 +15,8 @@ import {
 } from "@/lib/passwordChange";
 import { validatePasswordChange } from "@/lib/passwordPolicy";
 import { deliverPasswordReset } from "@/lib/sendPasswordReset";
+import { syncEmployeeLoginPhone } from "@/lib/loginPhoneAdmin";
+import { flashPhoneNotice } from "@/lib/phoneNotice";
 
 /* Self-service profile edits. Every write is scoped to the CALLER'S OWN employee
    row (resolved from the session, never client-supplied) and limited to a safe
@@ -36,6 +38,8 @@ async function myEmployeeId(): Promise<string> {
 export async function updateMyProfile(formData: FormData) {
   const id = await myEmployeeId();
   const admin = createAdminClient();
+  const { data: before } = await admin.from("employees").select("phone").eq("id", id).maybeSingle();
+  const phone = clean(formData.get("phone"));
   const { error } = await admin
     .from("employees")
     .update({
@@ -44,7 +48,7 @@ export async function updateMyProfile(formData: FormData) {
       middle_name: clean(formData.get("middle_name")),
       stage_name: clean(formData.get("stage_name")),
       bio: clean(formData.get("bio")),
-      phone: clean(formData.get("phone")),
+      phone,
       website: clean(formData.get("website")),
       planning_meeting_url: clean(formData.get("planning_meeting_url")),
       address: clean(formData.get("address")),
@@ -53,6 +57,8 @@ export async function updateMyProfile(formData: FormData) {
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  const sync = await syncEmployeeLoginPhone(id, phone, before?.phone ?? null);
+  if (sync.notice) await flashPhoneNotice(sync.notice);
   revalidatePath("/account");
 }
 

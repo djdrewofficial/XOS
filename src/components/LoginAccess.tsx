@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 
-type Result = { ok: boolean; error?: string; message?: string };
+type Result = { ok: boolean; error?: string; message?: string; notice?: string };
 
 /** Login management card — works for any subject (employee, client) that has an
     id, an email, and invite/reset server actions taking that id. */
@@ -26,13 +26,17 @@ export default function LoginAccess({
   footer?: ReactNode;
 }) {
   const [pending, startTransition] = useTransition();
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; notice?: string } | null>(null);
 
   function run(fn: (id: string) => Promise<Result>, okText: string) {
     setMsg(null);
     startTransition(async () => {
       const r = await fn(subjectId);
-      setMsg(r.ok ? { ok: true, text: r.message ?? okText } : { ok: false, text: r.error ?? "Something went wrong." });
+      setMsg(
+        r.ok
+          ? { ok: true, text: r.message ?? okText, notice: r.notice }
+          : { ok: false, text: r.error ?? "Something went wrong." },
+      );
     });
   }
 
@@ -74,9 +78,12 @@ export default function LoginAccess({
       </div>
 
       {msg && (
-        <p className={`mt-3 text-sm ${msg.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-          {msg.text}
-        </p>
+        <div className="mt-3 space-y-1">
+          <p className={`text-sm ${msg.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+            {msg.text}
+          </p>
+          {msg.notice && <p className="text-sm text-amber-700 dark:text-amber-300">{msg.notice}</p>}
+        </div>
       )}
 
       {footer && <div className="mt-3 text-xs text-zinc-400">{footer}</div>}

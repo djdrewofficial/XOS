@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-type Result = { ok: boolean; error?: string };
+type Result = { ok: boolean; error?: string; notice?: string };
 
 /** "Invite to XOS" action button for an event's client card. One button that
     onboards (create password) or re-invites/reset — the server figures out which;
@@ -19,7 +19,7 @@ export default function InviteToXosButton({
   action: (eventId: string, clientId: string) => Promise<Result>;
 }) {
   const [pending, startTransition] = useTransition();
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; notice?: string } | null>(null);
 
   function run() {
     setMsg(null);
@@ -27,7 +27,7 @@ export default function InviteToXosButton({
       const r = await action(eventId, clientId);
       setMsg(
         r.ok
-          ? { ok: true, text: hasLogin ? "Reset link sent" : "Invite sent" }
+          ? { ok: true, text: hasLogin ? "Reset link sent" : "Invite sent", notice: r.notice }
           : { ok: false, text: r.error ?? "Failed" },
       );
     });
@@ -45,8 +45,11 @@ export default function InviteToXosButton({
         {pending ? "Sending…" : hasLogin ? "Resend / Reset" : "Invite to XOS"}
       </button>
       {msg && (
-        <span className={`text-[11px] ${msg.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-          {msg.text}
+        <span className="inline-flex flex-col">
+          <span className={`text-[11px] ${msg.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+            {msg.text}
+          </span>
+          {msg.notice && <span className="max-w-48 text-[11px] text-amber-700 dark:text-amber-300">{msg.notice}</span>}
         </span>
       )}
     </span>

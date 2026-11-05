@@ -8,6 +8,7 @@ import LoginAccess from "@/components/LoginAccess";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
 import type { ConvRow } from "@/components/InboxShell";
 import { moduleAccess } from "@/lib/auth";
+import PhoneSyncNote from "@/components/PhoneSyncNote";
 import {
   updateEmployeeGeneral,
   updateEmployeeContact,
@@ -501,6 +502,7 @@ export default async function EmployeeProfilePage({
 
   return (
     <div className="max-w-[1700px]">
+      <PhoneSyncNote />
       {/* header */}
       <div className="mb-5">
         <Link href="/employees" className="text-xs font-semibold text-zinc-500 hover:underline">← All Employees</Link>

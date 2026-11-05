@@ -7,6 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/auth";
 import { sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
 import { formatPhone, toE164 } from "@/lib/phone";
+import { syncClientLoginPhone } from "@/lib/loginPhoneAdmin";
+import { flashPhoneNotice } from "@/lib/phoneNotice";
 import { recordSmsOptSignal } from "@/lib/smsOptOut";
 import { findOrCreateClient } from "@/lib/clients";
 
@@ -95,6 +97,7 @@ export async function anonymizeClient(id: string): Promise<{ ok: boolean; error?
   const supabase = await createClient();
   await requireModule("clients", "edit", { mode: "throw", supabase });
   const admin = createAdminClient();
+  const { data: before } = await admin.from("clients").select("cell_phone").eq("id", id).maybeSingle();
 
   const { error: upErr } = await admin
     .from("clients")
@@ -118,6 +121,10 @@ export async function anonymizeClient(id: string): Promise<{ ok: boolean; error?
     })
     .eq("id", id);
   if (upErr) return { ok: false, error: upErr.message };
+
+  // Drop the sign-in number before the login is removed. If delete fails, the
+  // number is still cleared when it actually changed from a real phone to empty.
+  await syncClientLoginPhone(id, null, before?.cell_phone ?? null);
 
   // Remove their portal login. Deleting the auth user cascades the accounts row
   // (accounts.auth_user_id references auth.users on delete cascade).
@@ -204,11 +211,12 @@ export async function createClientRecord(formData: FormData) {
 export async function updateClientRecord(id: string, formData: FormData) {
   await requireModule("clients", "edit", { mode: "throw" });
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("clients")
-    .update(await payload(supabase, formData))
-    .eq("id", id);
+  const { data: before } = await supabase.from("clients").select("cell_phone").eq("id", id).maybeSingle();
+  const body = await payload(supabase, formData);
+  const { error } = await supabase.from("clients").update(body).eq("id", id);
   if (error) throw new Error(error.message);
+  const sync = await syncClientLoginPhone(id, body.cell_phone, before?.cell_phone ?? null);
+  if (sync.notice) await flashPhoneNotice(sync.notice);
   revalidatePath(`/clients/${id}`);
   revalidatePath("/clients");
   redirect(`/clients/${id}`);
