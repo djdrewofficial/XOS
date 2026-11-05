@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getMe } from "@/lib/auth";
+import { getMe, moduleAccess } from "@/lib/auth";
 import { syncEventSections } from "@/lib/spotifySync";
 import { loadEventAccount, loadClientMessages } from "@/lib/eventAccount";
 import SocialPrompt, { type SocialState } from "@/components/SocialPrompt";
@@ -131,6 +131,7 @@ export default async function PlannerPage({
         account={account}
         messages={messages}
         paypalClientId={process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? null}
+        staffCanEdit={role !== "staff" || (await moduleAccess("events", supabase)) === "edit"}
       />
       <SocialPrompt state={socialState} />
       {spotifyExportEl}

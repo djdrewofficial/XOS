@@ -84,6 +84,10 @@ export interface PlanningSection {
   songs_enabled: boolean;
   questions_enabled: boolean;
   notes_enabled: boolean;
+  /** Couple-visible details for this moment. Null when unset. */
+  client_notes: string | null;
+  /** Staff-only note. Always null unless the caller is staff — never loaded otherwise. */
+  staff_notes: string | null;
   time_enabled: boolean;
   on_timeline: boolean | null; // null = auto (on when section_type==='timeline')
   on_music: boolean | null; // null = auto (vibe playlists: songs on + no single-song limit)
@@ -140,6 +144,8 @@ export interface EventPlanning {
   totalSongSlots: number; // sections with a song_limit
   filledSongSlots: number;
   auditLog: AuditEntry[]; // staff-only
+  /** Event-level "also avoid" text (artists, genres, styles). Null for guests. */
+  doNotPlayNotes: string | null;
 }
 
 /** Default roles for a section permission action (always grants dj). */
@@ -461,7 +467,7 @@ export async function loadEventPlanning(
   role: PlannerRole,
 ): Promise<EventPlanning> {
   const isStaff = role === "staff";
-  const [{ data: sections }, { data: questions }, { data: answers }, { data: songs }, { data: likes }, audit] =
+  const [{ data: sections }, { data: questions }, { data: answers }, { data: songs }, { data: likes }, audit, staffNoteRes, doNotPlayRes] =
     await Promise.all([
       supabase.from("planning_sections").select("*").eq("event_id", eventId).order("sort_order"),
       supabase.from("planning_questions").select("*").eq("event_id", eventId).order("sort_order"),
@@ -483,7 +489,22 @@ export async function loadEventPlanning(
             .order("created_at", { ascending: false })
             .limit(1000)
         : Promise.resolve({ data: [] as AuditEntry[] }),
+      // Staff notes are a separate table with staff-only RLS. Do not query them
+      // for hosts or guests — the payload must not carry the body.
+      isStaff
+        ? supabase.from("planning_section_staff_notes").select("section_id, body").eq("event_id", eventId)
+        : Promise.resolve({ data: [] as { section_id: string; body: string | null }[] }),
+      role === "guest"
+        ? Promise.resolve({ data: null as { body: string | null } | null })
+        : supabase.from("planning_do_not_play_notes").select("body").eq("event_id", eventId).maybeSingle(),
     ]);
+
+  const staffNoteBySection = new Map<string, string | null>();
+  if (isStaff) {
+    for (const row of staffNoteRes.data ?? []) {
+      staffNoteBySection.set(row.section_id, row.body ?? null);
+    }
+  }
 
   const answerByQ = new Map<string, string>();
   for (const a of answers ?? []) if (a.answer != null) answerByQ.set(a.question_id, a.answer);
@@ -561,6 +582,8 @@ export async function loadEventPlanning(
       songs_enabled: sec.songs_enabled ?? true,
       questions_enabled: sec.questions_enabled ?? true,
       notes_enabled: sec.notes_enabled ?? true,
+      client_notes: (sec.client_notes as string | null) ?? null,
+      staff_notes: isStaff ? staffNoteBySection.get(sec.id) ?? null : null,
       time_enabled: sec.time_enabled ?? false,
       on_timeline: sec.on_timeline ?? null,
       on_music: sec.on_music ?? null,
@@ -603,6 +626,7 @@ export async function loadEventPlanning(
     totalSongSlots,
     filledSongSlots,
     auditLog: (audit.data ?? []) as AuditEntry[],
+    doNotPlayNotes: role === "guest" ? null : ((doNotPlayRes.data?.body as string | null) ?? null),
   };
 }
 
