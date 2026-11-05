@@ -57,6 +57,8 @@ import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/a
 import InlineEditCard from "@/components/InlineEditCard";
 import EventFilesSection from "@/components/EventFilesSection";
 import SpotifyExport from "@/components/SpotifyExport";
+import { DoNotPlayPanel, EventSectionNotes } from "@/components/planner/SectionMomentNotes";
+import { isDoNotPlaySectionTitle } from "@/lib/planningNotes";
 import { getSpotifyConnection } from "@/lib/spotifyAuth";
 import ConfirmCodeButton from "@/components/ConfirmCodeButton";
 import ClientPicker from "@/components/ClientPicker";
@@ -423,13 +425,69 @@ export default async function EventDetailPage({
   const plannerMode: "xos" | "vibo" | "none" = planningSeeded ? "xos" : viboLink ? "vibo" : "none";
   let plannerSectionCount = 0;
   let plannerSongCount = 0;
-  if (activeTab === "notes" && planningSeeded) {
-    const { data: secs } = await supabase.from("planning_sections").select("id, planning_songs(count)").eq("event_id", id);
-    plannerSectionCount = (secs ?? []).length;
-    plannerSongCount = (secs ?? []).reduce(
-      (n, s) => n + (((s.planning_songs as unknown as { count: number }[] | null)?.[0]?.count) ?? 0),
-      0,
+  let plannerNoteSections: { id: string; title: string; notes: string | null; staffNotes: string | null }[] = [];
+  let doNotPlayText: string | null = null;
+  let doNotPlaySongs: { id: string; title: string; artist: string | null }[] = [];
+  if (activeTab === "notes") {
+    const [{ data: avoid }, { data: songRows }, { data: secTitles }] = await Promise.all([
+      supabase.from("planning_do_not_play_notes").select("body").eq("event_id", id).maybeSingle(),
+      supabase.from("planning_songs").select("id, title, artist, do_not_play, section_id").eq("event_id", id).order("sort_order"),
+      supabase.from("planning_sections").select("id, title").eq("event_id", id),
+    ]);
+    doNotPlayText = (avoid?.body as string | null) ?? null;
+    const avoidSections = new Set(
+      (secTitles ?? [])
+        .filter((s) => isDoNotPlaySectionTitle(String(s.title ?? "")))
+        .map((s) => s.id as string),
     );
+    const seen = new Set<string>();
+    for (const song of songRows ?? []) {
+      const songId = song.id as string;
+      const onList = Boolean(song.do_not_play) || avoidSections.has(song.section_id as string);
+      if (!onList || seen.has(songId)) continue;
+      seen.add(songId);
+      doNotPlaySongs.push({
+        id: songId,
+        title: (song.title as string) || "Untitled",
+        artist: (song.artist as string | null) ?? null,
+      });
+    }
+  }
+  if (activeTab === "notes" && planningSeeded) {
+    const songCount = (rows: { planning_songs?: unknown }[] | null) =>
+      (rows ?? []).reduce(
+        (n, s) => n + (((s.planning_songs as { count: number }[] | null)?.[0]?.count) ?? 0),
+        0,
+      );
+    const { data: secs, error: secErr } = await supabase
+      .from("planning_sections")
+      .select("id, title, section_type, client_notes, planning_songs(count)")
+      .eq("event_id", id)
+      .order("sort_order");
+    if (secErr) {
+      // client_notes is added in 00207. Until that migration is applied, keep the counts.
+      const { data: fallback } = await supabase.from("planning_sections").select("id, planning_songs(count)").eq("event_id", id);
+      plannerSectionCount = (fallback ?? []).length;
+      plannerSongCount = songCount(fallback);
+    } else {
+      plannerSectionCount = (secs ?? []).length;
+      plannerSongCount = songCount(secs);
+      const { data: staffRows } = await supabase
+        .from("planning_section_staff_notes")
+        .select("section_id, body")
+        .eq("event_id", id);
+      const staffById = new Map(
+        (staffRows ?? []).map((row) => [row.section_id as string, (row.body as string | null) ?? null]),
+      );
+      plannerNoteSections = (secs ?? [])
+        .filter((s) => s.section_type !== "headline")
+        .map((s) => ({
+          id: s.id as string,
+          title: (s.title as string) || "Section",
+          notes: (s.client_notes as string | null) ?? null,
+          staffNotes: staffById.get(s.id as string) ?? null,
+        }));
+    }
   }
 
   // ---- Fireflies: lives inside the Notes tab; load its data only when that's open ----
@@ -2170,9 +2228,12 @@ export default async function EventDetailPage({
           {plannerMode === "none" && <span className="chip bg-zinc-500/15 text-zinc-600 dark:text-zinc-300">Not started</span>}
         </div>
         {plannerMode === "xos" && (
-          <p className="mt-1 text-sm text-zinc-500">
-            {plannerSectionCount} section{plannerSectionCount === 1 ? "" : "s"} · {plannerSongCount} song{plannerSongCount === 1 ? "" : "s"} in the in-house planner.
-          </p>
+          <>
+            <p className="mt-1 text-sm text-zinc-500">
+              {plannerSectionCount} section{plannerSectionCount === 1 ? "" : "s"} · {plannerSongCount} song{plannerSongCount === 1 ? "" : "s"} in the in-house planner.
+            </p>
+            <EventSectionNotes eventId={id} sections={plannerNoteSections} canEdit={ffCanEdit} />
+          </>
         )}
         {plannerMode === "vibo" && (
           <div className="mt-2 space-y-3">
@@ -2211,6 +2272,10 @@ export default async function EventDetailPage({
           </div>
         )}
       </div>
+
+      {(plannerMode === "xos" || doNotPlaySongs.length > 0 || doNotPlayText) && (
+        <DoNotPlayPanel eventId={id} text={doNotPlayText} songs={doNotPlaySongs} canEdit={ffCanEdit} />
+      )}
 
       {/* On-site snapshot */}
       <div className="card p-5">

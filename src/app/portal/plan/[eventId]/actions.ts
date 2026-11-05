@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getMe } from "@/lib/auth";
+import { getMe, requireModule } from "@/lib/auth";
 import { resolveEventRole, resolveUserNames, addLibrarySectionToEvent } from "@/lib/planning";
+import { parsePlanningNote } from "@/lib/planningNotes";
 import { sendAccountInvite } from "@/lib/accounts";
 import {
   getSpotifyConnection,
@@ -1343,4 +1344,85 @@ export async function uploadSectionCover(eventId: string, sectionId: string, for
   await admin.from("planning_sections").update({ section_cover_url: url }).eq("id", sectionId);
   revalidate();
   return { ok: true };
+}
+
+/** Couple-visible notes on a planning moment. Hosts and staff. RLS plus the
+    column guard keep this to client_notes on the caller's own event. */
+export async function saveSectionClientNotes(eventId: string, sectionId: string, notes: string) {
+  const { supabase, me, revalidate } = await requireHost(eventId);
+  if (me.accountType === "staff") await requireModule("events", "edit", { mode: "throw", supabase });
+  const parsed = parsePlanningNote(notes);
+  if (!parsed.ok) return { ok: false as const, error: parsed.error };
+
+  const { data: before } = await supabase
+    .from("planning_sections")
+    .select("title, client_notes")
+    .eq("id", sectionId)
+    .eq("event_id", eventId)
+    .maybeSingle();
+  if (!before) return { ok: false as const, error: "Section not found" };
+
+  const { data, error } = await supabase
+    .from("planning_sections")
+    .update({ client_notes: parsed.value })
+    .eq("id", sectionId)
+    .eq("event_id", eventId)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false as const, error: error.message };
+  if (!data) return { ok: false as const, error: "Section not found" };
+
+  if ((before.client_notes ?? null) !== parsed.value) {
+    await logAction(supabase, eventId, me, parsed.value ? "Updated section notes" : "Cleared section notes", before.title ?? undefined, {
+      sectionId,
+      targetType: "section",
+      targetLabel: before.title ?? null,
+      oldValue: before.client_notes ?? null,
+      newValue: parsed.value,
+    });
+  }
+  revalidate();
+  return { ok: true as const };
+}
+
+/** Internal note. Staff only — stored in planning_section_staff_notes, which
+    clients and guests cannot read. The body is not copied into the audit log. */
+export async function saveSectionStaffNotes(eventId: string, sectionId: string, notes: string) {
+  const { supabase, revalidate } = await requireStaff(eventId);
+  await requireModule("events", "edit", { mode: "throw", supabase });
+  const parsed = parsePlanningNote(notes);
+  if (!parsed.ok) return { ok: false as const, error: parsed.error };
+
+  const { data: section } = await supabase
+    .from("planning_sections")
+    .select("id")
+    .eq("id", sectionId)
+    .eq("event_id", eventId)
+    .maybeSingle();
+  if (!section) return { ok: false as const, error: "Section not found" };
+
+  const { error } = await supabase.from("planning_section_staff_notes").upsert(
+    { section_id: sectionId, event_id: eventId, body: parsed.value },
+    { onConflict: "section_id" },
+  );
+  if (error) return { ok: false as const, error: error.message };
+  revalidate();
+  return { ok: true as const };
+}
+
+/** Event-level "also avoid" text (artists, genres, styles). Hosts and staff.
+    Guests are rejected. Stored in planning_do_not_play_notes, not on a section. */
+export async function saveDoNotPlayNotes(eventId: string, text: string) {
+  const { supabase, me, revalidate } = await requireHost(eventId);
+  if (me.accountType === "staff") await requireModule("events", "edit", { mode: "throw", supabase });
+  const parsed = parsePlanningNote(text);
+  if (!parsed.ok) return { ok: false as const, error: parsed.error };
+  const { error } = await supabase.from("planning_do_not_play_notes").upsert(
+    { event_id: eventId, body: parsed.value },
+    { onConflict: "event_id" },
+  );
+  if (error) return { ok: false as const, error: error.message };
+  revalidate();
+  revalidatePath(`/events/${eventId}`);
+  return { ok: true as const };
 }

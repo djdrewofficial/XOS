@@ -91,6 +91,8 @@ import {
 } from "@/app/portal/plan/[eventId]/actions";
 import { faPlus } from "@fortawesome/free-solid-svg-icons";
 import FieldHistory, { FieldHistoryProvider } from "@/components/planner/FieldHistory";
+import SectionMomentNotes, { DoNotPlayText } from "@/components/planner/SectionMomentNotes";
+import { isDoNotPlaySectionTitle } from "@/lib/planningNotes";
 
 // Client-safe permission check (mirrors planning.permAllows; can't import the
 // server-only module's value exports into a client component).
@@ -126,6 +128,7 @@ export default function Planner({
   account,
   messages,
   paypalClientId,
+  staffCanEdit = true,
 }: {
   eventId: string;
   eventName: string;
@@ -138,6 +141,8 @@ export default function Planner({
   account: EventAccount | null;
   messages: { emails: SentEmail[]; texts: SentText[] };
   paypalClientId: string | null;
+  /** Staff with events=view can read notes but not change them. Hosts ignore this. */
+  staffCanEdit?: boolean;
 }) {
   const isGuest = role === "guest";
   const isStaff = role === "staff";
@@ -281,11 +286,11 @@ export default function Planner({
             {isGuest ? "Nothing to fill out just yet — check back soon!" : isStaff ? "No planning sections yet." : "Your DJ is still setting things up — check back soon!"}
           </div>
         ) : mode === "guided" ? (
-          <GuidedFlow eventId={eventId} steps={guidedSteps} role={role} vendors={vendors} onSeeAll={() => setMode("all")} />
+          <GuidedFlow eventId={eventId} steps={guidedSteps} role={role} vendors={vendors} staffCanEdit={staffCanEdit} doNotPlayNotes={planning.doNotPlayNotes} onSeeAll={() => setMode("all")} />
         ) : isGuest ? (
           <div className="space-y-5">
             {sections.map((s) => (
-              <SectionDetail key={s.id} eventId={eventId} section={s} role={role} vendors={vendors} />
+              <SectionDetail key={s.id} eventId={eventId} section={s} role={role} vendors={vendors} staffCanEdit={staffCanEdit} doNotPlayNotes={planning.doNotPlayNotes} />
             ))}
           </div>
         ) : (
@@ -319,7 +324,7 @@ export default function Planner({
                 <HostDeletedSections eventId={eventId} sections={planning.hostDeletedSections} />
               )}
             </aside>
-            <main>{selected && <SectionDetail key={selected.id} eventId={eventId} section={selected} role={role} vendors={vendors} />}</main>
+            <main>{selected && <SectionDetail key={selected.id} eventId={eventId} section={selected} role={role} vendors={vendors} staffCanEdit={staffCanEdit} doNotPlayNotes={planning.doNotPlayNotes} />}</main>
           </div>
         )}
       </div>
@@ -844,7 +849,7 @@ function SectionTimeEditor({ eventId, sectionId, value, canEdit }: { eventId: st
 
 // ───────────────────────────── Section detail ─────────────────────────────
 
-function SectionDetail({ eventId, section, role, vendors }: { eventId: string; section: PlanningSection; role: PlannerRole; vendors: EventVendor[] }) {
+function SectionDetail({ eventId, section, role, vendors, staffCanEdit = true, doNotPlayNotes = null }: { eventId: string; section: PlanningSection; role: PlannerRole; vendors: EventVendor[]; staffCanEdit?: boolean; doNotPlayNotes?: string | null }) {
   const isStaff = role === "staff";
   const isGuest = role === "guest";
   // Live answer map drives conditional question visibility (re-inits per section
@@ -909,6 +914,16 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
         </div>
         {section.intro && <p className="mb-5 text-sm text-zinc-500 dark:text-zinc-400">{section.intro}</p>}
 
+        <SectionMomentNotes
+          eventId={eventId}
+          sectionId={section.id}
+          notes={section.client_notes}
+          staffNotes={isStaff ? section.staff_notes : null}
+          showNotes={isStaff || (section.notes_enabled && (allows(section.permissions, "edit_notes", role) || !!section.client_notes))}
+          canEditNotes={isStaff ? staffCanEdit : !isGuest && section.notes_enabled && allows(section.permissions, "edit_notes", role)}
+          showStaffNotes={isStaff}
+        />
+
         {isStaff && (
           <label className="mb-5 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 dark:border-white/10 dark:text-zinc-300">
             <GuestToggle eventId={eventId} sectionId={section.id} enabled={section.guest_enabled} />
@@ -957,6 +972,11 @@ function SectionDetail({ eventId, section, role, vendors }: { eventId: string; s
         )}
 
         {/* Songs — preview a few; prominent expander reveals the rest (scroll-capped). */}
+        {!isGuest && isDoNotPlaySectionTitle(section.title) && (
+          <div className="mb-4">
+            <DoNotPlayText eventId={eventId} text={doNotPlayNotes} canEdit={isStaff ? staffCanEdit : true} />
+          </div>
+        )}
         {showSongs && (
           <section>
             <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-brand dark:text-brand-lighter">
@@ -1368,12 +1388,16 @@ function GuidedFlow({
   steps,
   role,
   vendors,
+  staffCanEdit = true,
+  doNotPlayNotes = null,
   onSeeAll,
 }: {
   eventId: string;
   steps: (PlanningSection & { group: string | null })[];
   role: PlannerRole;
   vendors: EventVendor[];
+  staffCanEdit?: boolean;
+  doNotPlayNotes?: string | null;
   onSeeAll: () => void;
 }) {
   const [i, setI] = useState(0);
@@ -1429,7 +1453,7 @@ function GuidedFlow({
       </div>
 
       <div key={step.id} className="planner-step">
-        <SectionDetail eventId={eventId} section={step} role={role} vendors={vendors} />
+        <SectionDetail eventId={eventId} section={step} role={role} vendors={vendors} staffCanEdit={staffCanEdit} doNotPlayNotes={doNotPlayNotes} />
       </div>
 
       <div className="mt-5 flex items-center justify-between gap-3">
