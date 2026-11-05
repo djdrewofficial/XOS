@@ -19,6 +19,17 @@ import {
   type PermSnap,
 } from "@/lib/permSnapshot";
 
+/** Supabase Auth "Send SMS" hook. Supabase's servers POST the phone OTP here
+    with no staff session and no Cloudflare `x-origin-verify` header (the call
+    is not browser traffic, and a direct hit on the Netlify origin never gets
+    the header). Exempt this exact path from both the origin lock and the
+    login wall. Do not widen it to `/api/auth/*` — those pages stay session-gated.
+    The request is authenticated by the Standard Webhooks signature
+    (SEND_SMS_HOOK_SECRET) inside the route, not by the shared origin secret. */
+function isAuthSendSmsHook(pathname: string) {
+  return pathname === "/api/auth/hooks/send-sms";
+}
+
 /** Sign-in for another app (/sso/*): remember where to come back to after login/2FA. */
 function withNext(url: URL, request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -71,6 +82,7 @@ export async function middleware(request: NextRequest) {
   if (originSecret) {
     const p = request.nextUrl.pathname;
     const machineEndpoint =
+      isAuthSendSmsHook(p) ||
       p.startsWith("/api/vibo/") || p.startsWith("/api/spotify/") ||
       p.startsWith("/api/mailgun/") || p.startsWith("/api/highlevel/") ||
       p.startsWith("/api/paypal/") || p.startsWith("/api/pay/") ||
@@ -128,12 +140,14 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // PUBLIC routes: client signing links + machine endpoints (webhook/cron do
   // their own auth — Mailgun HMAC and the CRON_SECRET bearer token; /api/mobile
-  // verifies the XOS Mobile app's Supabase JWT itself).
+  // verifies the XOS Mobile app's Supabase JWT itself). /api/auth/hooks/send-sms
+  // is the one Auth path in this list: no session, signature checked in the route.
   // /auth/* stays public so password reset works with no session:
   //   /auth/forgot-password  request a Supabase reset email
   //   /auth/set-password     land from that email and choose a new password
   // (also the staff invite / admin reset landing). /login is public below.
   const isPublic =
+    isAuthSendSmsHook(pathname) ||
     pathname.startsWith("/app-privacy") ||
     pathname.startsWith("/privacy") ||
     pathname.startsWith("/terms") ||
