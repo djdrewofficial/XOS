@@ -8,6 +8,7 @@ import AnonymizeClient from "@/components/AnonymizeClient";
 import { updateClientRecord, inviteClient, resetClientPassword, setClientSmsOptOut, setClientSmsConsent, anonymizeClient } from "../actions";
 import { getSmsOptStatus } from "@/lib/smsOptOut";
 import { money, eventTotal, type Client, type XEvent } from "@/lib/types";
+import PhoneSyncNote from "@/components/PhoneSyncNote";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function ClientDetailPage({
 
   return (
     <div className="max-w-4xl space-y-6">
+      <PhoneSyncNote />
       <ClientProfileCard client={client as Client} action={updateClientRecord.bind(null, id)} />
 
       <div>

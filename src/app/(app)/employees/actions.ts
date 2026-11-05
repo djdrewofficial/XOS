@@ -7,6 +7,8 @@ import { sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
 import { dispatchNotification } from "@/lib/notify";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncStaffToHighLevel } from "@/lib/highlevel";
+import { syncEmployeeLoginPhone } from "@/lib/loginPhoneAdmin";
+import { flashPhoneNotice } from "@/lib/phoneNotice";
 
 /** Keep the staff member's HighLevel contact in step (best-effort, never blocks a save). */
 async function syncStaffContact(id: string) {
@@ -106,11 +108,13 @@ export async function updateEmployeeGeneral(id: string, formData: FormData) {
 export async function updateEmployeeContact(id: string, formData: FormData) {
   await requireModule("employees", "edit", { mode: "throw" });
   const supabase = await createClient();
+  const { data: before } = await supabase.from("employees").select("phone").eq("id", id).maybeSingle();
+  const phone = clean(formData.get("phone"));
   const { error } = await supabase
     .from("employees")
     .update({
       email: clean(formData.get("email")),
-      phone: clean(formData.get("phone")),
+      phone,
       website: clean(formData.get("website")),
       planning_meeting_url: clean(formData.get("planning_meeting_url")),
       address: clean(formData.get("address")),
@@ -120,6 +124,8 @@ export async function updateEmployeeContact(id: string, formData: FormData) {
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  const sync = await syncEmployeeLoginPhone(id, phone, before?.phone ?? null);
+  if (sync.notice) await flashPhoneNotice(sync.notice);
   await syncStaffContact(id);
   revalidatePath(`/employees/${id}`);
 }

@@ -9,6 +9,7 @@ import { sendBrandedEmail } from "@/lib/mailgun";
 import { appUrl } from "@/lib/signing";
 import { toE164 } from "@/lib/phone";
 import { processSmsOutbox } from "@/lib/highlevel";
+import { syncSubjectLoginPhone } from "@/lib/loginPhoneAdmin";
 
 export type AccountType = "staff" | "client" | "event_guest";
 
@@ -45,7 +46,8 @@ async function findAuthUserByEmail(admin: Admin, email: string): Promise<string 
 }
 
 /** Create the auth user if needed; return its id either way. New users are
-    created email-confirmed with no password — they set one via the recovery link. */
+    created email-confirmed with no password — they set one via the recovery link.
+    The phone is applied by resolveLogin once this id exists. */
 async function ensureAuthUser(admin: Admin, email: string): Promise<string> {
   const { data, error } = await admin.auth.admin.createUser({ email, email_confirm: true });
   if (data?.user) return data.user.id;
@@ -69,7 +71,11 @@ function subjectKey(s: Subject): { col: "employee_id" | "client_id" | "event_gue
     new email already belongs to a stray unlinked login, adopt that one. Any
     stale accounts row for this person is removed so the upsert can't collide
     on the one-login-per-person index. */
-async function resolveLogin(admin: Admin, s: Subject, email: string): Promise<string> {
+async function resolveLogin(
+  admin: Admin,
+  s: Subject,
+  email: string,
+): Promise<{ userId: string; phoneNotice?: string }> {
   const { col, id } = subjectKey(s);
   let userId: string | null = null;
 
@@ -100,7 +106,12 @@ async function resolveLogin(admin: Admin, s: Subject, email: string): Promise<st
   }
 
   if (id) await admin.from("accounts").delete().eq(col, id).neq("auth_user_id", userId);
-  return userId;
+
+  /* Copy the person record's phone onto the login. event_guests have no phone
+     column, so those logins stay email-only. An empty staff/client phone is
+     not cleared here — only an edit that removes a real number does that. */
+  const phoneNotice = s.type === "event_guest" ? undefined : await syncSubjectLoginPhone(admin, s, userId);
+  return { userId, phoneNotice };
 }
 
 /** Text a set-password link to staff. Queued through sms_log so the TCPA
@@ -186,13 +197,15 @@ export async function sendAccountInvite(args: {
   eventGuestId?: string;
   /** Staff only: also text the set-password link to this number. */
   phone?: string | null;
-}): Promise<{ ok: boolean; error?: string; message?: string }> {
+}): Promise<{ ok: boolean; error?: string; message?: string; notice?: string }> {
   const email = (args.email ?? "").trim().toLowerCase();
   if (!email) return { ok: false, error: "No email on file — add one first." };
 
   const admin = createAdminClient();
   try {
-    const userId = await resolveLogin(admin, args, email);
+    const { userId, phoneNotice } = await resolveLogin(admin, args, email);
+    const withNotice = <T extends { ok: boolean; notice?: string }>(result: T): T =>
+      result.ok && phoneNotice && !result.notice ? { ...result, notice: phoneNotice } : result;
 
     const row: Record<string, unknown> = {
       auth_user_id: userId,
@@ -231,7 +244,7 @@ export async function sendAccountInvite(args: {
       subject: args.type === "staff" ? "Your XOS account is ready" : "Your Xpress account — set your password & download the app",
       contentHtml: inviteHtml(greeting, link, args.type, appLinks),
     });
-    if (args.type !== "staff") return mail;
+    if (args.type !== "staff") return withNotice(mail);
 
     // Same link as the email (a new recovery link would void the emailed one).
     const texted = await textLoginLink(
@@ -241,12 +254,12 @@ export async function sendAccountInvite(args: {
     );
     if (!mail.ok && !texted) return mail;
     const sentTo = [mail.ok ? email : null, texted ? "text" : null].filter(Boolean).join(" + ");
-    return {
+    return withNotice({
       ok: true,
       message: `Invitation sent (${sentTo}).${mail.ok ? "" : ` Email failed: ${mail.error ?? "unknown error"}`}${
         texted ? "" : " No valid mobile number on file, so no text was sent."
       }`,
-    };
+    });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -264,12 +277,12 @@ export async function inviteClientToXos(args: {
   eventId: string;
   email: string | null | undefined;
   name?: string | null;
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<{ ok: boolean; error?: string; notice?: string }> {
   const email = (args.email ?? "").trim().toLowerCase();
   if (!email) return { ok: false, error: "No email on file — add one first." };
   const admin = createAdminClient();
   try {
-    const userId = await resolveLogin(admin, { type: "client", clientId: args.clientId }, email);
+    const { userId, phoneNotice } = await resolveLogin(admin, { type: "client", clientId: args.clientId }, email);
     await admin.from("accounts").upsert(
       { auth_user_id: userId, account_type: "client", client_id: args.clientId, email, updated_at: new Date().toISOString() },
       { onConflict: "auth_user_id" },
@@ -284,7 +297,10 @@ export async function inviteClientToXos(args: {
       : { data: null };
 
     // No template configured/active → fall back to the built-in invite email.
-    if (!tpl) return await sendAccountInvite({ type: "client", email, name: args.name, clientId: args.clientId });
+    if (!tpl) {
+      const sent = await sendAccountInvite({ type: "client", email, name: args.name, clientId: args.clientId });
+      return sent.ok && phoneNotice && !sent.notice ? { ...sent, notice: phoneNotice } : sent;
+    }
 
     const render = async (text: string): Promise<string> => {
       const { data } = await admin.rpc("render_merge_tags", { p_event_id: args.eventId, p_template: text });
@@ -296,7 +312,8 @@ export async function inviteClientToXos(args: {
     // (they need a freshly minted recovery link), so inject them here.
     body = body.split("<set_password_button>").join(button(link, "Set My Password")).split("<set_password_link>").join(link);
 
-    return await sendBrandedEmail({ to: email, subject, contentHtml: body });
+    const mailed = await sendBrandedEmail({ to: email, subject, contentHtml: body });
+    return mailed.ok && phoneNotice ? { ...mailed, notice: phoneNotice } : mailed;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -307,12 +324,21 @@ export async function sendPasswordReset(
   email: string | null | undefined,
   /** The person this reset is for — keeps their linked login on their current email. */
   subject?: Subject,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; notice?: string }> {
   const addr = (email ?? "").trim().toLowerCase();
   if (!addr) return { ok: false, error: "No email on file." };
   const admin = createAdminClient();
   try {
-    const userId = subject ? await resolveLogin(admin, subject, addr) : await findAuthUserByEmail(admin, addr);
+    let userId: string | null;
+    let phoneNotice: string | undefined;
+    if (subject) {
+      const resolved = await resolveLogin(admin, subject, addr);
+      userId = resolved.userId;
+      phoneNotice = resolved.phoneNotice;
+    } else {
+      userId = await findAuthUserByEmail(admin, addr);
+      phoneNotice = undefined;
+    }
     if (!userId) return { ok: false, error: "No XOS login exists for that email yet — send an invite first." };
     if (subject) {
       // resolveLogin may have moved them onto a different login; re-link it.
@@ -325,11 +351,12 @@ export async function sendPasswordReset(
     }
     const { data: acct } = await admin.from("accounts").select("account_type").eq("auth_user_id", userId).maybeSingle();
     const link = await recoveryActionLink(admin, addr, setPasswordUrlFor((acct?.account_type as AccountType) ?? "staff"));
-    return await sendBrandedEmail({
+    const mailed = await sendBrandedEmail({
       to: addr,
       subject: "Reset your XOS password",
       contentHtml: resetHtml(link),
     });
+    return mailed.ok && phoneNotice ? { ...mailed, notice: phoneNotice } : mailed;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
