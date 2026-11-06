@@ -22,8 +22,10 @@ export default function PrivacyPage() {
         This policy explains how Xpress Entertainment Corp (&ldquo;Xpress,&rdquo; &ldquo;we,&rdquo;
         &ldquo;us&rdquo;) collects, uses, and protects information when you request a quote, book our
         services, plan your event, or make a payment. It applies to our booking and planning services
-        and this website. Our mobile app has a separate policy at{" "}
-        <a className="text-violet-700 underline dark:text-violet-400" href="/app-privacy">/app-privacy</a>.
+        and this website. The mobile app has its own{" "}
+        <a className="text-violet-700 underline dark:text-violet-400" href="/app-privacy">privacy policy</a>,{" "}
+        <a className="text-violet-700 underline dark:text-violet-400" href="/app-terms">terms of use</a>, and{" "}
+        <a className="text-violet-700 underline dark:text-violet-400" href="/app-data-deletion">account-deletion explanation</a>.
       </p>
 
       <Section title="Information we collect">
