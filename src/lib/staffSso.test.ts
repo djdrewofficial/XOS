@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { appleTeamId, APPLE_TEAM_ID, CLIENT_IOS_BUNDLE_ID } from "./clientApp.ts";
+import { CLIENT_IOS_BUNDLE_ID } from "./clientApp.ts";
 import { decideAuthenticationOutcome } from "./passkey.ts";
 import { safeStaffNext, ssoNeedsStaffGate, staffCallbackUrl, staffIdentityAllowed } from "./staffSso.ts";
 
@@ -102,30 +102,32 @@ describe("sign-in files", () => {
     assert.match(staffPasskey, /stampPasskeyCookie/);
   });
 
-  it("serves webcredentials and the join-link applink for the confirmed team", () => {
-    assert.equal(APPLE_TEAM_ID, "VH9Z63JB8L");
-    assert.equal(appleTeamId(undefined), "VH9Z63JB8L");
-    assert.equal(appleTeamId(" ABCDE12345 "), "ABCDE12345");
-    assert.match(aasa, /webcredentials/);
+  it("keeps production join-link applinks and no client webcredentials", () => {
     assert.match(aasa, /applinks/);
     assert.match(aasa, /\/j\/\*/);
     assert.match(aasa, /CLIENT_IOS_BUNDLE_ID/);
+    assert.doesNotMatch(aasa, /webcredentials/);
     assert.equal(CLIENT_IOS_BUNDLE_ID, "com.xpressentertainment.client");
     assert.doesNotMatch(login, /auth\.passkey/);
+    assert.doesNotMatch(login, /\/api\/mobile\/passkey/);
+    assert.doesNotMatch(staffPasskey, /app_passkeys/);
   });
 
-  it("matches the installed Auth passkey HTTP routes, not a second XOS ceremony", () => {
-    const auth = readFileSync(join(root, "node_modules/@supabase/auth-js/src/GoTrueClient.ts"), "utf8");
-    for (const path of [
-      "/passkeys/authentication/options",
-      "/passkeys/authentication/verify",
-      "/passkeys/registration/options",
-      "/passkeys/registration/verify",
-      "/passkeys/${params.passkeyId}",
-    ]) {
-      assert.match(auth, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  it("removes the couple-app AI recommend endpoint and leaves catalog music", () => {
+    assert.equal(existsSync(join(root, "src/app/api/music/recommend/route.ts")), false);
+    for (const file of ["search/route.ts", "playlist/route.ts", "preview/route.ts"]) {
+      const src = readFileSync(join(root, "src/app/api/music", file), "utf8");
+      assert.doesNotMatch(src, /chatComplete|openai/);
     }
-    assert.match(auth, /experimental\.passkey/);
-    assert.doesNotMatch(login, /\/api\/mobile\/passkey/);
+    const notes = readFileSync(join(root, "src/app/api/mobile/planning/sections/[id]/notes/route.ts"), "utf8");
+    const avoid = readFileSync(join(root, "src/app/api/mobile/planning/do-not-play-notes/route.ts"), "utf8");
+    assert.doesNotMatch(notes, /chatComplete|openai/);
+    assert.doesNotMatch(avoid, /chatComplete|openai/);
+    const mobileAssistant = readFileSync(join(root, "src/app/api/mobile/assistant/route.ts"), "utf8");
+    const webAssistant = readFileSync(join(root, "src/app/api/assistant/chat/route.ts"), "utf8");
+    assert.match(mobileAssistant, /account_type !== "staff"/);
+    assert.match(mobileAssistant, /master_admin/);
+    assert.match(webAssistant, /requireApiMaster/);
+    assert.match(readFileSync(join(root, "src/lib/openai.ts"), "utf8"), /OPENAI_API_KEY/);
   });
 });
