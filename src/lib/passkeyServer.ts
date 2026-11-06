@@ -187,8 +187,10 @@ async function setPasskeyFlag(admin: SupabaseClient, userId: string, on: boolean
   return !updateErr;
 }
 
-function dbError(error: { message: string } | null, fallback: string): { ok: false; error: string } {
+function dbError(error: { message: string; code?: string } | null, fallback: string): { ok: false; error: string } {
   if (!error) return { ok: false, error: fallback };
+  // SQLSTATE and message only. details/hint can echo the row, including the public key.
+  console.error("passkey database error:", error.code ?? "", error.message);
   if (isMissingPasskeySchema(error.message)) return { ok: false, error: SETUP };
   if (isLastMethodError(error.message)) return { ok: false, error: LAST_METHOD_MESSAGE };
   return { ok: false, error: fallback };
