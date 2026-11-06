@@ -12,7 +12,9 @@ import {
   contentVisible,
   hasEventAccess,
   hideDeniedMessage,
+  labelsForModeration,
   memberRoleFromFacts,
+  moderationDisplayName,
   notesForViewer,
   parseHideBody,
   parseReportBody,
@@ -185,6 +187,108 @@ describe("blocked content", () => {
   });
 });
 
+describe("moderation display labels", () => {
+  const alexA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const alexB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const removed = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const staffId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+  it("keeps two blocked people and two likes selectable without using an id or an email", () => {
+    assert.equal(moderationDisplayName("alex@example.com", "Rivera"), "Rivera");
+    assert.equal(moderationDisplayName("305-555-1212", " "), null);
+    const blocked = labelsForModeration("host", [
+      { userId: alexB, role: "guest", guestFirstName: "Alex", guestLastName: "Rivera" },
+      { userId: alexA, role: "guest", guestFirstName: "Alex", guestLastName: "Rivera" },
+      {
+        userId: removed,
+        role: null,
+        clientFirstName: "Other",
+        clientLastName: "Wedding",
+        guestFirstName: "Also",
+        guestLastName: "Hidden",
+      },
+    ]);
+    assert.deepEqual(
+      blocked.map((person) => person.label),
+      ["Alex Rivera 2", "Alex Rivera 1", "Guest"],
+    );
+    assert.equal(blocked[2].displayName, null);
+    assert.equal(blocked[2].role, null);
+    assert.equal(blocked.every((person) => !person.label.includes("@") && person.label !== person.userId), true);
+
+    const likes = labelsForModeration("guest", [
+      { userId: alexA, role: "guest", guestFirstName: "Sam", guestLastName: "Patel" },
+      { userId: alexB, role: "host", clientFirstName: "Jordan", clientLastName: "Lee" },
+    ]);
+    assert.deepEqual(
+      likes.map((person) => ({ userId: person.userId, label: person.label })),
+      [
+        { userId: alexA, label: "Sam Patel" },
+        { userId: alexB, label: "Jordan Lee" },
+      ],
+    );
+  });
+
+  it("does not give a guest a staff personal name or a name from outside this event", () => {
+    const hidden = labelsForModeration("guest", [
+      {
+        userId: staffId,
+        role: "staff",
+        staffFirstName: "Drew",
+        staffLastName: "Private",
+        clientFirstName: "Drew",
+        clientLastName: "Private",
+      },
+    ]);
+    assert.equal(hidden[0].displayName, null);
+    assert.equal(hidden[0].label, "Xpress");
+    assert.equal(hidden[0].label.includes("Drew"), false);
+
+    const hostView = labelsForModeration("host", [
+      { userId: staffId, role: "staff", staffFirstName: "Drew", staffLastName: "Lee" },
+    ]);
+    assert.equal(hostView[0].displayName, "Drew Lee");
+
+    const offEvent = labelsForModeration("host", [
+      {
+        userId: removed,
+        role: null,
+        clientFirstName: "Jordan",
+        clientLastName: "Lee",
+        guestFirstName: "Pat",
+        guestLastName: "Guest",
+      },
+    ]);
+    assert.equal(offEvent[0].displayName, null);
+    assert.equal(offEvent[0].label, "Guest");
+
+    const guestNotHost = labelsForModeration("host", [
+      {
+        userId: alexA,
+        role: "guest",
+        clientFirstName: "Secret",
+        clientLastName: "Host",
+        guestFirstName: "Pat",
+        guestLastName: "Lee",
+      },
+    ]);
+    assert.equal(guestNotHost[0].displayName, "Pat Lee");
+  });
+
+  it("numbers only the people who would otherwise look the same, including removed members", () => {
+    const people = labelsForModeration("host", [
+      { userId: removed, role: null },
+      { userId: alexA, role: "guest" },
+      { userId: alexB, role: "host", clientFirstName: "Jordan", clientLastName: "Lee" },
+    ]);
+    const byId = new Map(people.map((person) => [person.userId, person.label]));
+    assert.equal(byId.get(alexB), "Jordan Lee");
+    assert.notEqual(byId.get(removed), byId.get(alexA));
+    assert.match(byId.get(removed) ?? "", /^Guest \d$/);
+    assert.match(byId.get(alexA) ?? "", /^Guest \d$/);
+  });
+});
+
 describe("report body", () => {
   it("accepts a reason and optional details", () => {
     assert.deepEqual(
@@ -262,6 +366,15 @@ describe("mobile routes", () => {
     assert.match(blockRoute, /export async function POST/);
     assert.match(hideRoute, /hideContent/);
     assert.match(contentRoute, /listEventContent/);
+    assert.match(contentRoute, /people:/);
+    assert.match(contentRoute, /likes\.displayName/);
+    assert.match(blockRoute, /blockedUserIds/);
+    assert.match(blockRoute, /displayName, label, role/);
+    assert.match(server, /labelsForModeration/);
+    assert.match(server, /select\("id, first_name, last_name"\)/);
+    assert.match(server, /viewerRole === "guest"/);
+    assert.match(server, /\.eq\("event_id", eventId\)/);
+    assert.doesNotMatch(server, /cell_phone|user_metadata|\.select\("[^"]*email/);
     assert.match(guestRoute, /export async function DELETE/);
     assert.match(notesRoute, /notesForViewer/);
     assert.match(actions, /hidden_at: new Date\(\)\.toISOString\(\)/);

@@ -21,6 +21,7 @@ import {
   hideDeniedMessage,
   isMissingModerationSchema,
   isUuid,
+  labelsForModeration,
   memberRoleFromFacts,
   notesForViewer,
   parseHideBody,
@@ -29,6 +30,7 @@ import {
   type AccessFacts,
   type ContentType,
   type MemberRole,
+  type ModerationPerson,
   type RoleFacts,
 } from "@/lib/ugcModeration";
 
@@ -97,6 +99,90 @@ async function roleFacts(admin: Admin, eventId: string, userId: string): Promise
   }
   const appRole = member?.role === "host" || member?.role === "guest" ? member.role : null;
   return { accountType, clientOnEvent, appRole, legacyGuest };
+}
+
+/** Names for user ids the caller already has on this event. Other events' clients are not read. */
+export async function moderationPeople(
+  admin: Admin,
+  eventId: string,
+  userIds: string[],
+  viewerRole: MemberRole,
+): Promise<ModerationPerson[]> {
+  const ids = [...new Set(userIds.filter((id) => isUuid(id)))];
+  if (!ids.length) return [];
+  const { data: accountRows } = await admin
+    .from("accounts")
+    .select("auth_user_id, account_type, client_id, event_guest_id, employee_id")
+    .in("auth_user_id", ids);
+  const accounts = (accountRows ?? []) as {
+    auth_user_id: string;
+    account_type: RoleFacts["accountType"];
+    client_id: string | null;
+    event_guest_id: string | null;
+    employee_id: string | null;
+  }[];
+  const guestIds = accounts.map((row) => row.event_guest_id).filter((id): id is string => Boolean(id));
+  const [{ data: event }, { data: links }, { data: guests }, { data: members }] = await Promise.all([
+    admin.from("events").select("client_id").eq("id", eventId).maybeSingle(),
+    admin.from("event_clients").select("client_id").eq("event_id", eventId),
+    guestIds.length
+      ? admin.from("event_guests").select("id, first_name, last_name").eq("event_id", eventId).in("id", guestIds)
+      : Promise.resolve({ data: [] as { id: string; first_name: string | null; last_name: string | null }[] }),
+    admin.from("event_app_members").select("auth_user_id, role").eq("event_id", eventId).in("auth_user_id", ids),
+  ]);
+  const eventClientIds = new Set<string>();
+  if (event?.client_id) eventClientIds.add(event.client_id as string);
+  for (const link of links ?? []) {
+    if (link.client_id) eventClientIds.add(link.client_id as string);
+  }
+  const clientIds = accounts
+    .map((row) => row.client_id)
+    .filter((id): id is string => Boolean(id && eventClientIds.has(id)));
+  const employeeIds =
+    viewerRole === "guest"
+      ? []
+      : accounts.map((row) => row.employee_id).filter((id): id is string => Boolean(id));
+  const [{ data: clients }, { data: employees }] = await Promise.all([
+    clientIds.length
+      ? admin.from("clients").select("id, first_name, last_name").in("id", clientIds)
+      : Promise.resolve({ data: [] as { id: string; first_name: string | null; last_name: string | null }[] }),
+    employeeIds.length
+      ? admin.from("employees").select("id, first_name, last_name").in("id", employeeIds)
+      : Promise.resolve({ data: [] as { id: string; first_name: string | null; last_name: string | null }[] }),
+  ]);
+  const guestById = new Map((guests ?? []).map((row) => [row.id as string, row]));
+  const clientById = new Map((clients ?? []).map((row) => [row.id as string, row]));
+  const employeeById = new Map((employees ?? []).map((row) => [row.id as string, row]));
+  const appRoleByUser = new Map(
+    (members ?? []).map((row) => [row.auth_user_id as string, row.role as "host" | "guest"]),
+  );
+  const accountByUser = new Map(accounts.map((row) => [row.auth_user_id, row]));
+  return labelsForModeration(
+    viewerRole,
+    ids.map((userId) => {
+      const account = accountByUser.get(userId);
+      const guest = account?.event_guest_id ? guestById.get(account.event_guest_id) : undefined;
+      const clientOnEvent = Boolean(account?.client_id && eventClientIds.has(account.client_id));
+      const role = memberRoleFromFacts({
+        accountType: account?.account_type ?? null,
+        clientOnEvent,
+        appRole: appRoleByUser.get(userId) ?? null,
+        legacyGuest: Boolean(guest),
+      });
+      const client = clientOnEvent && account?.client_id ? clientById.get(account.client_id) : undefined;
+      const employee = account?.employee_id ? employeeById.get(account.employee_id) : undefined;
+      return {
+        userId,
+        role,
+        clientFirstName: (client?.first_name as string | null) ?? null,
+        clientLastName: (client?.last_name as string | null) ?? null,
+        guestFirstName: (guest?.first_name as string | null) ?? null,
+        guestLastName: (guest?.last_name as string | null) ?? null,
+        staffFirstName: (employee?.first_name as string | null) ?? null,
+        staffLastName: (employee?.last_name as string | null) ?? null,
+      };
+    }),
+  );
 }
 
 function toAccess(facts: RoleFacts): AccessFacts {
@@ -349,7 +435,23 @@ export async function listBlocks(req: Request, eventId: string): Promise<NextRes
     .eq("blocker_id", who.caller.userId);
   if (isMissingModerationSchema(error)) return json({ error: UGC_ERRORS.unavailable }, 503);
   if (error) return json({ error: UGC_ERRORS.unavailable }, 500);
-  return json({ blockedUserIds: (data ?? []).map((row) => row.blocked_id as string) }, 200);
+  const blockedUserIds = (data ?? []).map((row) => row.blocked_id as string);
+  const blocked = blockedUserIds.length
+    ? await moderationPeople(createAdminClient(), eventId, blockedUserIds, who.role)
+    : [];
+  return json({ blockedUserIds, blocked }, 200);
+}
+
+async function blockPersonFields(who: { rls: SupabaseClient; caller: MobileCaller; role: MemberRole }, eventId: string, userId: string) {
+  const { data } = await who.rls
+    .from("event_member_blocks")
+    .select("blocked_id")
+    .eq("event_id", eventId)
+    .eq("blocker_id", who.caller.userId);
+  const ids = (data ?? []).map((row) => row.blocked_id as string);
+  if (!ids.includes(userId)) ids.push(userId);
+  const people = await moderationPeople(createAdminClient(), eventId, ids, who.role);
+  return people.find((person) => person.userId === userId) ?? { userId, displayName: null, label: "Guest", role: null };
 }
 
 export async function createBlock(req: Request, eventId: string): Promise<NextResponse> {
@@ -369,12 +471,15 @@ export async function createBlock(req: Request, eventId: string): Promise<NextRe
     blocked_id: userId,
   });
   if (isMissingModerationSchema(error)) return json({ error: UGC_ERRORS.unavailable }, 503);
-  if (error?.code === "23505") return json({ ok: true, userId, alreadyBlocked: true }, 200);
-  if (error) {
+  if (error && error.code !== "23505") {
     const status = error.code === "42501" ? 403 : 500;
     return json({ error: status === 403 ? UGC_ERRORS.noAccess : UGC_ERRORS.unavailable }, status);
   }
-  return json({ ok: true, userId, alreadyBlocked: false }, 201);
+  const person = await blockPersonFields(who, eventId, userId);
+  return json(
+    { ok: true, userId, alreadyBlocked: error?.code === "23505", displayName: person.displayName, label: person.label, role: person.role },
+    error?.code === "23505" ? 200 : 201,
+  );
 }
 
 export async function deleteBlock(req: Request, eventId: string, userId: string): Promise<NextResponse> {
@@ -639,8 +744,7 @@ export async function listEventContent(req: Request, eventId: string): Promise<N
       blockedAuthorIds: blocked,
     });
 
-  return json(
-    {
+  const body = {
       songs: songs.map((song) => ({
         ...song,
         likeCount: likeCount.get(song.id) ?? 0,
@@ -702,6 +806,46 @@ export async function listEventContent(req: Request, eventId: string): Promise<N
         file && fileVisible
           ? { id: file.id, name: file.name, uploadedBy: file.uploaded_by, hidden: Boolean(file.hidden_at) }
           : null,
+  };
+  const authorIds = [
+    ...body.songs.map((song) => song.requestedBy),
+    ...body.likes.map((like) => like.userId),
+    ...body.answers.map((answer) => answer.answeredBy),
+    ...body.sectionNotes.map((note) => note.updatedBy),
+    body.doNotPlayNotes?.updatedBy ?? null,
+    ...body.songIdeas.map((idea) => idea.addedBy),
+    body.coverPhoto?.updatedBy ?? null,
+    body.boothSelection?.updatedBy ?? null,
+    body.timelineFile?.uploadedBy ?? null,
+  ].filter((id): id is string => Boolean(id));
+  const people = authorIds.length ? await moderationPeople(admin, eventId, authorIds, who.role) : [];
+  const byId = new Map(people.map((person) => [person.userId, person]));
+  const authorLabel = (id: string | null | undefined) => (id ? byId.get(id)?.label ?? null : null);
+  return json(
+    {
+      ...body,
+      songs: body.songs.map((song) => ({ ...song, requestedByLabel: authorLabel(song.requestedBy) })),
+      likes: body.likes.map((like) => ({
+        ...like,
+        displayName: byId.get(like.userId)?.displayName ?? null,
+        label: byId.get(like.userId)?.label ?? "Guest",
+      })),
+      answers: body.answers.map((answer) => ({ ...answer, answeredByLabel: authorLabel(answer.answeredBy) })),
+      sectionNotes: body.sectionNotes.map((note) => ({ ...note, updatedByLabel: authorLabel(note.updatedBy) })),
+      doNotPlayNotes: body.doNotPlayNotes
+        ? { ...body.doNotPlayNotes, updatedByLabel: authorLabel(body.doNotPlayNotes.updatedBy) }
+        : null,
+      songIdeas: body.songIdeas.map((idea) => ({ ...idea, addedByLabel: authorLabel(idea.addedBy) })),
+      coverPhoto: body.coverPhoto
+        ? { ...body.coverPhoto, updatedByLabel: authorLabel(body.coverPhoto.updatedBy) }
+        : null,
+      boothSelection: body.boothSelection
+        ? { ...body.boothSelection, updatedByLabel: authorLabel(body.boothSelection.updatedBy) }
+        : null,
+      timelineFile: body.timelineFile
+        ? { ...body.timelineFile, uploadedByLabel: authorLabel(body.timelineFile.uploadedBy) }
+        : null,
+      people,
     },
     200,
   );

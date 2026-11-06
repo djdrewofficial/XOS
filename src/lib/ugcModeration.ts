@@ -178,6 +178,100 @@ export function notesForViewer(
   return { notes };
 }
 
+export type ModerationPerson = {
+  userId: string;
+  /** Name stored for this person on this event. Null when no name is on file, or when this viewer may not see it. */
+  displayName: string | null;
+  /** Unique within the returned list. This is what to show. userId stays the value sent back to block, unblock, report, or remove. */
+  label: string;
+  /** Null when this person is no longer a member of this event. */
+  role: MemberRole | null;
+};
+
+export type ModerationNameInput = {
+  userId: string;
+  /** Role on this event. Null when the account is not a member here. */
+  role: MemberRole | null;
+  /** Client name only when that client is linked to this event. */
+  clientFirstName?: string | null;
+  clientLastName?: string | null;
+  /** Guest name only when that guest row belongs to this event. */
+  guestFirstName?: string | null;
+  guestLastName?: string | null;
+  /** Employee name. Ignored for a guest viewer. */
+  staffFirstName?: string | null;
+  staffLastName?: string | null;
+};
+
+const NAME_EMAIL = /@/;
+const NAME_PHONE = /^\+?[\d\s().-]{7,}$/;
+
+function cleanNamePart(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  if (!trimmed || NAME_EMAIL.test(trimmed) || NAME_PHONE.test(trimmed)) return null;
+  return trimmed;
+}
+
+/** First and last name only. An email or phone stored in a name field is dropped. */
+export function moderationDisplayName(firstName: string | null | undefined, lastName: string | null | undefined): string | null {
+  const parts = [cleanNamePart(firstName), cleanNamePart(lastName)].filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join(" ") : null;
+}
+
+function nameFallback(role: MemberRole | null): string {
+  if (role === "host") return "Host";
+  if (role === "staff") return "Xpress";
+  return "Guest";
+}
+
+/**
+  Labels for people the caller is already allowed to act on.
+  Names come only from this event. A guest does not receive a staff personal name.
+  Someone who is not a member of this event does not contribute a name from any other event.
+  Colliding or missing names get a numeric suffix so two blocked people, or two likes, stay selectable.
+  The suffix is not a user id. userId remains the id to send to the API.
+*/
+export function labelsForModeration(viewerRole: MemberRole, people: ModerationNameInput[]): ModerationPerson[] {
+  const seenIds = new Set<string>();
+  const unique = people.filter((person) => {
+    if (!person.userId || seenIds.has(person.userId)) return false;
+    seenIds.add(person.userId);
+    return true;
+  });
+  const prepared = unique.map((person) => {
+    const exposeName = person.role != null && !(viewerRole === "guest" && person.role === "staff");
+    let displayName: string | null = null;
+    if (exposeName && person.role === "host") {
+      displayName = moderationDisplayName(person.clientFirstName, person.clientLastName);
+    } else if (exposeName && person.role === "guest") {
+      displayName = moderationDisplayName(person.guestFirstName, person.guestLastName);
+    } else if (exposeName && person.role === "staff") {
+      displayName = moderationDisplayName(person.staffFirstName, person.staffLastName);
+    }
+    return { userId: person.userId, role: person.role, displayName, base: displayName ?? nameFallback(person.role) };
+  });
+  const totals = new Map<string, number>();
+  for (const person of prepared) totals.set(person.base, (totals.get(person.base) ?? 0) + 1);
+  const used = new Map<string, number>();
+  const numberFor = new Map<string, number>();
+  for (const person of [...prepared].sort((a, b) => a.userId.localeCompare(b.userId))) {
+    const next = (used.get(person.base) ?? 0) + 1;
+    used.set(person.base, next);
+    numberFor.set(person.userId, next);
+  }
+  return prepared.map((person) => {
+    const total = totals.get(person.base) ?? 1;
+    const n = numberFor.get(person.userId) ?? 1;
+    return {
+      userId: person.userId,
+      displayName: person.displayName,
+      label: total === 1 ? person.base : `${person.base} ${n}`,
+      role: person.role,
+    };
+  });
+}
+
 export function textForViewer(
   text: string | null,
   authorId: string | null,
