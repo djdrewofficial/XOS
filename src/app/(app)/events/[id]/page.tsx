@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
 import InviteToXosButton from "@/components/InviteToXosButton";
+import EventAppAccess, { type AppInviteCard, type AppMemberCard } from "@/components/EventAppAccess";
 import NoteItem from "@/components/NoteItem";
 import {
   addPayment,
@@ -105,6 +106,8 @@ import EventDateBadge from "@/components/EventDateBadge";
 import { summarizeHelperActions, type HelperAction } from "@/lib/helperSummary";
 import { resolveUserNames } from "@/lib/planning";
 import { loadsOnTab } from "@/lib/eventTabData";
+import { visibleInviteStatus } from "@/lib/eventAccess";
+import { isMissingRelation } from "@/lib/eventAccessServer";
 
 export const dynamic = "force-dynamic";
 
@@ -284,6 +287,7 @@ export default async function EventDetailPage({
     { data: schedMergeTags },
     { data: schedVendorContacts },
     { data: schedPaymentAmounts },
+    appInvitesResult,
   ] = await Promise.all([
     loadsOnTab(activeTab, "planningTemplates")
       ? supabase.from("planning_templates").select("id, name").eq("is_library", false).order("name")
@@ -375,6 +379,14 @@ export default async function EventDetailPage({
           )
       : skip,
     want("comms") ? supabase.from("payments").select("amount").eq("event_id", id) : skip,
+    want("client")
+      ? supabase
+          .from("event_app_invites")
+          .select("id, email, phone, name, role, status, invited_by_name, expires_at")
+          .eq("event_id", id)
+          .eq("status", "pending")
+          .order("invited_at", { ascending: false })
+      : skip,
   ]);
 
   const sameDayEvents = event.event_date ? (sameDayByDate[event.event_date] ?? []) : [];
@@ -887,6 +899,45 @@ export default async function EventDetailPage({
 
   /* ---------- TAB: Client ---------- */
   const canRemove = (eventClients ?? []).length > 1;
+  const appInviteError = (appInvitesResult as { error?: { code?: string; message?: string } | null } | undefined)?.error ?? null;
+  const appNeedsSetup = isMissingRelation(appInviteError);
+  const appMembers: AppMemberCard[] = (eventClients ?? []).flatMap((ec) => {
+    const c = ec.client as {
+      id: string;
+      first_name: string | null;
+      last_name: string | null;
+      email: string | null;
+      cell_phone: string | null;
+    } | null;
+    if (!c || !clientIdsWithLogin.has(c.id)) return [];
+    const protectedMember = Boolean(ec.is_primary || (ec as { is_contract_holder?: boolean }).is_contract_holder || event.client_id === c.id);
+    return [{
+      clientId: c.id,
+      name: `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || "Partner",
+      email: c.email,
+      phone: c.cell_phone,
+      role: ec.role || "Partner",
+      canRemove: !protectedMember,
+    }];
+  });
+  const appInvites: AppInviteCard[] = appNeedsSetup
+    ? []
+    : (((appInvitesResult as { data?: { id: string; email: string | null; phone: string | null; name: string | null; role: string | null; status: string; invited_by_name: string | null; expires_at: string }[] | null }).data ?? [])
+        .map((row) => {
+          const status = visibleInviteStatus(row.status, Date.parse(row.expires_at), Date.now());
+          if (status !== "pending" && status !== "expired") return null;
+          return {
+            id: row.id,
+            name: row.name,
+            email: row.email,
+            phone: row.phone,
+            role: row.role || "Partner",
+            status,
+            expiresAt: row.expires_at,
+            invitedByName: row.invited_by_name,
+          };
+        })
+        .filter((row): row is AppInviteCard => row != null));
 
   const clientTab = (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -996,9 +1047,16 @@ export default async function EventDetailPage({
           createAndAttach={createClientAndAttach.bind(null, id)}
         />
         <p className="mt-3 text-xs text-zinc-500">
-          The Primary client is the contract holder — there must always be at least one client on the event.
+          The Primary client is the contract holder. There must always be at least one client on the event.
         </p>
       </div>
+      <EventAppAccess
+        eventId={id}
+        needsSetup={appNeedsSetup}
+        loadError={!appNeedsSetup && appInviteError ? "Couldn't load app invites." : null}
+        members={appMembers}
+        invites={appInvites}
+      />
     </div>
   );
 

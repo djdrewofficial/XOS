@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireApiModule } from "@/lib/apiAuth";
 import { emailShell, signButtonHtml, appUrl } from "@/lib/signing";
 import { decodeMergeTagDelimiters, sanitizeHrefAttributes } from "@/lib/mergeHref";
+import { joinCodeEmailSection } from "@/lib/eventAccess";
 
 // Sample values so the preview reads like a real send. Every key here is a tag the
 // real renderer actually resolves (see supported_merge_tags() / render_merge_tags) —
@@ -184,6 +185,17 @@ function applyCtaTags(html: string, sms: boolean): string {
   // quote_summary / payment_plan build a table/list from the event at send time.
   out = replaceAll(out, "quote_summary", '<em style="color:#8a8a94;">(quote summary appears here)</em>');
   out = replaceAll(out, "payment_plan", '<em style="color:#8a8a94;">(payment schedule appears here)</em>');
+  out = replaceAll(
+    out,
+    "app_join_code",
+    joinCodeEmailSection({
+      code: "K7NPM4QX",
+      eventName: "Your event",
+      expiresAt: Date.now() + 90 * 24 * 60 * 60 * 1000,
+      timeZone: "America/New_York",
+      url: null,
+    }).html,
+  );
   return out;
 }
 
