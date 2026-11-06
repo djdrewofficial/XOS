@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { docTypeClientLabel } from "@/lib/documentBlocks";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell, withComplianceFooter, type EmailFooter } from "@/lib/signing";
+import { htmlHasJoinLink, placeJoinLinkTags } from "@/lib/eventAccess";
 import { isEmailOptedOut, unsubscribeToken } from "@/lib/emailOptOut";
 import { isSuppressedByCommsPause, pausedEventIdSet } from "@/lib/commsPause";
 import { buildDocumentHtml } from "@/lib/documentHtml";
@@ -50,6 +51,8 @@ async function mailgunSend(opts: {
   attachments?: EmailAttachment[];
   /** Marketing mail: sets List-Unsubscribe + one-click List-Unsubscribe-Post. */
   listUnsubscribeUrl?: string | null;
+  /** False keeps hrefs as written. Join links must not be wrapped by click tracking. */
+  trackClicks?: boolean;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const { apiKey, domain, base } = mailgunConfig();
   if (!apiKey || !domain) return { ok: false, error: "Mailgun not configured" };
@@ -65,6 +68,7 @@ async function mailgunSend(opts: {
     form.append("h:List-Unsubscribe", `<${opts.listUnsubscribeUrl}>`);
     form.append("h:List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
   }
+  if (opts.trackClicks === false) form.append("o:tracking-clicks", "no");
   for (const tag of opts.tags ?? []) form.append("o:tag", tag);
   for (const att of opts.attachments ?? []) {
     form.append("attachment", new Blob([new Uint8Array(att.data)], { type: att.contentType }), att.filename);
@@ -96,6 +100,14 @@ async function mailgunSend(opts: {
    saved to the event's files. Runs identically for booking helpers, scheduled
    templates, and manual sends. */
 
+async function fillJoinLinks(eventId: string | null, html: string): Promise<string> {
+  if (!eventId || (!html.includes("app_host_link") && !html.includes("app_guest_link"))) return html;
+  const { joinLinkTagValues } = await import("@/lib/eventAccessServer");
+  const links = await joinLinkTagValues(eventId);
+  if (!links) return html;
+  return placeJoinLinkTags(html, links);
+}
+
 function tagPresent(html: string, tag: string): boolean {
   return html.includes(`<${tag}>`) || html.includes(`&lt;${tag}&gt;`);
 }
@@ -114,7 +126,7 @@ async function enrichMessage(
     attached_document_id: string | null;
   }
 ): Promise<{ html: string; attachments: EmailAttachment[]; branded: boolean; isMarketing: boolean }> {
-  let html = msg.body_html ?? "";
+  let html = await fillJoinLinks(msg.event_id, msg.body_html ?? "");
   const attachments: EmailAttachment[] = [];
 
   // template settings drive branding + attachments
@@ -555,6 +567,7 @@ export async function processOutbox(
         tags: ["xos", msg.event_id ? "event" : "manual", ...(isMarketing ? ["marketing"] : [])],
         attachments,
         listUnsubscribeUrl: unsubUrl,
+        trackClicks: htmlHasJoinLink(html) ? false : undefined,
       });
 
     // Deliver via Mailgun (verified, delivery-tracked). Only when Mailgun isn't
@@ -702,6 +715,7 @@ export async function sendBrandedEmail(opts: {
       replyTo: cs?.reply_to ?? fromEmail,
       tags: ["xos", "account"],
       attachments: opts.attachments,
+      trackClicks: htmlHasJoinLink(opts.contentHtml) ? false : undefined,
     });
   } else {
     const hl = await sendEmailViaHighLevel({

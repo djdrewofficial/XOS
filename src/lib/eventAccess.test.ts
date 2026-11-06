@@ -17,15 +17,27 @@ import {
   coupleManageDecision,
   decryptJoinCode,
   encryptJoinCode,
+  appJoinScheme,
+  decryptJoinToken,
+  encryptJoinToken,
+  evaluateLinkRedeem,
   evaluateRedeem,
   formatJoinCode,
   generateJoinCode,
+  generateJoinToken,
   hashJoinCode,
+  hashJoinToken,
+  htmlHasJoinLink,
   inviteExpiry,
   inviteMessage,
+  JOIN_LINK_TTL_MS,
   joinCodeEmailSection,
   joinCodeExpiry,
+  joinLinkExpiry,
+  joinLinkUrl,
   normalizeJoinCode,
+  normalizeJoinToken,
+  placeJoinLinkTags,
   parseInviteInput,
   phoneMatchKey,
   pickAppUrl,
@@ -407,5 +419,112 @@ describe("migration", () => {
     assert.match(migration, /app_join_code/);
     assert.match(migration, /status = 'pending'/);
     assert.match(migration, /expires_at > now\(\)/);
+  });
+});
+
+describe("join links", () => {
+  const linkMigration = readFileSync(join(root, "supabase/migrations/00213_event_join_links.sql"), "utf8");
+  const linkRedeem = readFileSync(join(root, "src/app/api/mobile/join-link/redeem/route.ts"), "utf8");
+  const mailer = readFileSync(join(root, "src/lib/mailgun.ts"), "utf8");
+
+  it("seals a path token and builds a path URL", () => {
+    const token = generateJoinToken();
+    assert.equal(token.length, 22);
+    assert.equal(normalizeJoinToken(token), token);
+    assert.equal(normalizeJoinToken(`${token}?x=1`), null);
+    assert.equal(normalizeJoinToken("short"), null);
+    assert.equal(hashJoinToken(token, KEY), hashJoinToken(token, KEY));
+    assert.notEqual(hashJoinToken(token, KEY), hashJoinToken(token, "other"));
+    const sealed = encryptJoinToken(token, KEY);
+    assert.equal(sealed.includes(token), false);
+    assert.equal(decryptJoinToken(sealed, KEY), token);
+    assert.equal(decryptJoinToken(sealed, "other"), null);
+    assert.equal(joinLinkUrl("https://xos.xpressdjs.com/", token), `https://xos.xpressdjs.com/j/${token}`);
+    assert.equal(appJoinScheme(token), `xpressclient://j/${token}`);
+    assert.equal(joinLinkExpiry(NOW), NOW + JOIN_LINK_TTL_MS);
+    assert.equal(htmlHasJoinLink(`<a href="https://xos.xpressdjs.com/j/${token}">open</a>`), true);
+    assert.equal(htmlHasJoinLink("<p>Hello</p>"), false);
+  });
+
+  it("redeems a link like a code and does not downgrade a host", () => {
+    const base = {
+      accountType: "client" as const,
+      rawToken: generateJoinToken(),
+      now: NOW,
+      userFailures: [] as number[],
+      ipFailures: [] as number[],
+      match: { eventId: "evt", role: "guest" as const, expiresAt: NOW + 1000 },
+      existingRole: null,
+    };
+    const joined = evaluateLinkRedeem(base);
+    assert.equal(joined.ok && joined.role, "guest");
+    assert.equal(joined.ok && joined.alreadyMember, false);
+
+    const stay = evaluateLinkRedeem({ ...base, existingRole: "host", match: { ...base.match, role: "guest" } });
+    assert.equal(stay.ok && stay.role, "host");
+    assert.equal(stay.ok && stay.alreadyMember, true);
+
+    const upgrade = evaluateLinkRedeem({ ...base, existingRole: "guest", match: { ...base.match, role: "host" } });
+    assert.equal(upgrade.ok && upgrade.upgrade, true);
+    assert.equal(upgrade.ok && upgrade.role, "host");
+
+    const again = evaluateLinkRedeem({ ...base, existingRole: "guest" });
+    assert.equal(again.ok && again.alreadyMember, true);
+
+    const staff = evaluateLinkRedeem({ ...base, accountType: "staff" });
+    assert.equal(staff.ok, false);
+    if (!staff.ok) assert.equal(staff.countFailure, false);
+
+    const bad = evaluateLinkRedeem({ ...base, rawToken: "nope" });
+    assert.equal(bad.ok, false);
+    if (!bad.ok) assert.equal(bad.countFailure, true);
+
+    const expired = evaluateLinkRedeem({ ...base, match: { ...base.match, expiresAt: NOW - 1 } });
+    assert.equal(expired.ok, false);
+    if (!expired.ok) assert.equal(expired.status, 404);
+
+    const limited = evaluateLinkRedeem({ ...base, userFailures: Array.from({ length: JOIN_ATTEMPT_LIMIT }, () => NOW - 1000) });
+    assert.equal(limited.ok, false);
+    if (!limited.ok) assert.equal(limited.status, 429);
+  });
+
+  it("puts raw link tags in the body and drops the one-time code wording", () => {
+    const token = generateJoinToken();
+    const url = joinLinkUrl("https://xos.xpressdjs.com", token);
+    assert.equal(placeJoinLinkTags("<a href=\"<app_host_link>\">Go</a>", { host: url, guest: null }), `<a href="${url}">Go</a>`);
+    assert.equal(placeJoinLinkTags("<p>&lt;app_guest_link&gt;</p>", { guest: url }), `<p>${url}</p>`);
+    const mail = inviteMessage({
+      inviter: "Alex",
+      eventName: "Alex & Jordan",
+      url: "https://apps.apple.com/app/id1",
+      joinUrl: url,
+      channel: "email",
+      lang: "en",
+    });
+    assert.match(mail.html, new RegExp(token));
+    assert.equal(mail.html.includes("one-time"), false);
+    assert.equal(mail.sms.includes("one-time"), false);
+    assert.equal(mail.html.includes("\u2014"), false);
+    assert.match(linkRedeem, /redeemJoinLink/);
+    assert.match(mailer, /o:tracking-clicks/);
+  });
+
+  it("stores link hashes, keeps guest money closed, and serves both links", () => {
+    assert.match(linkMigration, /token_hash/);
+    assert.match(linkMigration, /token_ciphertext/);
+    assert.equal(/\btoken text\b/.test(linkMigration), false);
+    assert.match(linkMigration, /revoke all on table public.event_join_links from public, anon, authenticated/);
+    assert.match(linkMigration, /event_app_members/);
+    assert.match(linkMigration, /role = 'host'/);
+    assert.match(linkMigration, /guest_enabled/);
+    assert.match(linkMigration, /xos_is_host\(event_id\)/);
+    assert.match(linkMigration, /event_guest_card/);
+    assert.match(linkMigration, /app_host_link/);
+    assert.match(linkMigration, /app_guest_link/);
+    assert.match(linkMigration, /event-files read scoped/);
+    assert.match(linkMigration, /xos_is_host\(\(\(storage.foldername\(name\)\)\[1\]\)::uuid\)/);
+    const scheme = readFileSync(join(root, "src/lib/clientApp.ts"), "utf8");
+    assert.match(scheme, /xpressclient/);
+    assert.match(scheme, /com\.xpressentertainment\.client/);
   });
 });

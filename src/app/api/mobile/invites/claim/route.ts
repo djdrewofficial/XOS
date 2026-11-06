@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { claimInvitesForUser } from "@/lib/eventAccessServer";
 import { accessResponse, requireMobileUser } from "@/lib/mobileCouple";
 
-/* Call after the one-time code sign-in. Links any open invite for this phone
-   or email. A database trigger does the same when a session is created, so a
-   missed call still joins them once migration 00212 is applied.
+/* Call after sign-in (email and password, Apple, or Google). Links any open
+   invite whose email or phone matches this login. A database trigger does the
+   same when a session is created, so a missed call still joins them once
+   migration 00212 is applied. Signing up by text is not required. A verified
+   phone on the login still claims a phone invite.
    POST {} → { ok, eventIds, reason } */
 
 export async function POST(req: Request) {

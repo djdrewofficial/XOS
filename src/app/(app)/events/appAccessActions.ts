@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/auth";
-import { AccessError, emailJoinCodeToHolder, removeCoupleMember, resendEventInvite, revokeEventInvite } from "@/lib/eventAccessServer";
+import { AccessError, emailJoinCodeToHolder, removeCoupleMember, resendEventInvite, resetJoinLink, revokeEventInvite } from "@/lib/eventAccessServer";
+import type { LinkRole } from "@/lib/eventAccess";
 
 async function staffUserId(): Promise<string> {
   const supabase = await createClient();
@@ -49,6 +50,20 @@ export async function removeAppMember(eventId: string, clientId: string): Promis
     await removeCoupleMember({ eventId, clientId, userId });
     revalidatePath(`/events/${eventId}`);
     return { ok: true };
+  } catch (err) {
+    return { ok: false, error: message(err) };
+  }
+}
+
+export async function resetAppJoinLink(
+  eventId: string,
+  role: LinkRole,
+): Promise<{ ok: boolean; error?: string; url?: string }> {
+  try {
+    const userId = await staffUserId();
+    const link = await resetJoinLink(eventId, role, userId);
+    revalidatePath(`/events/${eventId}`);
+    return { ok: true, url: link.url };
   } catch (err) {
     return { ok: false, error: message(err) };
   }

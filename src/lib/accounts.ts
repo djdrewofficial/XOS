@@ -10,8 +10,8 @@ import { appUrl } from "@/lib/signing";
 import { toE164 } from "@/lib/phone";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { syncSubjectLoginPhone } from "@/lib/loginPhoneAdmin";
-import { appJoinCodeEmailParts } from "@/lib/eventAccessServer";
-import { placeAppJoinCode } from "@/lib/eventAccess";
+import { appJoinCodeEmailParts, joinLinkTagValues } from "@/lib/eventAccessServer";
+import { placeAppJoinCode, placeJoinLinkTags } from "@/lib/eventAccess";
 
 export type AccountType = "staff" | "client" | "event_guest";
 
@@ -306,6 +306,10 @@ export async function inviteClientToXos(args: {
       : { data: null };
 
     const joinCode = await appJoinCodeEmailParts(args.eventId);
+    const links = await joinLinkTagValues(args.eventId);
+    const hostLine = links?.host
+      ? `<p>Open your event in the app: <a href="${links.host}">${links.host}</a></p>`
+      : "";
 
     // No template configured/active → fall back to the built-in invite email.
     if (!tpl) {
@@ -314,8 +318,8 @@ export async function inviteClientToXos(args: {
         email,
         name: args.name,
         clientId: args.clientId,
-        appendHtml: joinCode?.delivered,
-        loggedAppendHtml: joinCode?.logged,
+        appendHtml: `${joinCode?.delivered ?? ""}${hostLine}`,
+        loggedAppendHtml: `${joinCode?.logged ?? ""}${hostLine}`,
       });
       return sent.ok && phoneNotice && !sent.notice ? { ...sent, notice: phoneNotice } : sent;
     }
@@ -329,7 +333,8 @@ export async function inviteClientToXos(args: {
     // The set-password tags are per-recipient and can't come from render_merge_tags
     // (they need a freshly minted recovery link), so inject them here.
     body = body.split("<set_password_button>").join(button(link, "Set My Password")).split("<set_password_link>").join(link);
-    const loggedBody = joinCode ? placeAppJoinCode(body, joinCode.logged) : undefined;
+    if (links) body = placeJoinLinkTags(body, links);
+    const loggedBody = joinCode ? placeAppJoinCode(body, joinCode.logged) : links ? body : undefined;
     if (joinCode) body = placeAppJoinCode(body, joinCode.delivered);
 
     const mailed = await sendBrandedEmail({ to: email, subject, contentHtml: body, loggedBodyHtml: loggedBody, supabase: admin });

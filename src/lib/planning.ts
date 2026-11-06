@@ -563,6 +563,7 @@ export async function loadEventPlanning(
   const hostDeleted: PlanningSection[] = [];
 
   for (const sec of sections ?? []) {
+    if (role === "guest" && !sec.guest_enabled) continue;
     const qs = questionsBySection.get(sec.id) ?? [];
     const ss = songsBySection.get(sec.id) ?? [];
     const answered = qs.filter((q) => q.answer && q.answer.trim() !== "").length;
@@ -714,7 +715,16 @@ export async function resolveEventRole(
     .select("client_id, event_guest_id")
     .eq("auth_user_id", userId)
     .maybeSingle();
-  if (!account) return null;
+  if (!account) {
+    const { data: member, error: memberErr } = await supabase
+      .from("event_app_members")
+      .select("role")
+      .eq("event_id", eventId)
+      .eq("auth_user_id", userId)
+      .maybeSingle();
+    if (!memberErr && (member?.role === "host" || member?.role === "guest")) return member.role;
+    return null;
+  }
 
   if (accountType === "client" && account.client_id) {
     const [{ data: primary }, { data: linked }] = await Promise.all([
@@ -726,8 +736,17 @@ export async function resolveEventRole(
         .eq("client_id", account.client_id)
         .maybeSingle(),
     ]);
-    return primary || linked ? "host" : null;
+    if (primary || linked) return "host";
   }
+
+  const { data: member, error: memberErr } = await supabase
+    .from("event_app_members")
+    .select("role")
+    .eq("event_id", eventId)
+    .eq("auth_user_id", userId)
+    .maybeSingle();
+  if (!memberErr && (member?.role === "host" || member?.role === "guest")) return member.role;
+
   if (accountType === "event_guest" && account.event_guest_id) {
     const { data: guest } = await supabase
       .from("event_guests")

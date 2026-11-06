@@ -185,6 +185,8 @@ function applyCtaTags(html: string, sms: boolean): string {
   // quote_summary / payment_plan build a table/list from the event at send time.
   out = replaceAll(out, "quote_summary", '<em style="color:#8a8a94;">(quote summary appears here)</em>');
   out = replaceAll(out, "payment_plan", '<em style="color:#8a8a94;">(payment schedule appears here)</em>');
+  out = replaceAll(out, "app_host_link", `${base}/j/sampleHostToken000000`);
+  out = replaceAll(out, "app_guest_link", `${base}/j/sampleGuestToken00000`);
   out = replaceAll(
     out,
     "app_join_code",

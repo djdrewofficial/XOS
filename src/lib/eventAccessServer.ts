@@ -5,18 +5,27 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendBrandedEmail } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
+import { appUrl as siteOrigin } from "@/lib/signing";
 import {
   canRemoveCoupleMember,
   canResendInvite,
   cleanRole,
   clientCellPhone,
   decryptJoinCode,
+  appJoinScheme,
+  decryptJoinToken,
   deliveryChannel,
   encryptJoinCode,
+  encryptJoinToken,
+  evaluateLinkRedeem,
   evaluateRedeem,
   escapeHtml,
   generateJoinCode,
+  generateJoinToken,
   hashJoinCode,
+  hashJoinToken,
+  joinLinkExpiry,
+  joinLinkUrl,
   holderRank,
   inviteExpiry,
   inviteMessage,
@@ -24,6 +33,7 @@ import {
   joinCodeExpiry,
   normalizeEmail,
   normalizeJoinCode,
+  normalizeJoinToken,
   phoneMatchKey,
   pickAppUrl,
   placeAppJoinCode,
@@ -32,9 +42,9 @@ import {
   samePhone,
   scrubText,
   splitPersonName,
-  strictEmail,
   visibleInviteStatus,
   type InviteLang,
+  type LinkRole,
   type OpenInvite,
   type ParsedInvite,
 } from "@/lib/eventAccess";
@@ -55,7 +65,14 @@ export function isMissingRelation(error: { code?: string; message?: string } | n
   if (!error) return false;
   if (error.code === "42P01" || error.code === "PGRST205" || error.code === "PGRST204") return true;
   const msg = (error.message ?? "").toLowerCase();
-  return msg.includes("event_app_invites") || msg.includes("event_join_codes") || msg.includes("schema cache");
+  return (
+    msg.includes("event_app_invites") ||
+    msg.includes("event_join_codes") ||
+    msg.includes("event_join_links") ||
+    msg.includes("event_app_members") ||
+    msg.includes("event_guest_card") ||
+    msg.includes("schema cache")
+  );
 }
 
 function setupError(): AccessError {
@@ -342,6 +359,16 @@ async function ensureLink(admin: Admin, eventId: string, clientId: string, role:
   if (error && error.code !== "23505") throw new AccessError(500, "Could not add that person to the event.");
 }
 
+async function hostJoinUrl(admin: Admin, eventId: string): Promise<string | null> {
+  try {
+    const links = await ensureJoinLinks(admin, eventId, null);
+    return links.find((link) => link.role === "host")?.url ?? null;
+  } catch (err) {
+    if (err instanceof AccessError && err.status === 503) return null;
+    throw err;
+  }
+}
+
 async function deliver(
   admin: Admin,
   opts: {
@@ -355,12 +382,14 @@ async function deliver(
   },
 ): Promise<DeliveryDto[]> {
   const url = await appUrl(admin);
+  const joinUrl = await hostJoinUrl(admin, opts.eventId);
   const results: DeliveryDto[] = [];
   if (opts.phone) {
     const text = inviteMessage({
       inviter: opts.inviter,
       eventName: opts.event,
       url,
+      joinUrl,
       channel: "sms",
       lang: opts.lang,
     });
@@ -400,6 +429,7 @@ async function deliver(
       inviter: opts.inviter,
       eventName: opts.event,
       url,
+      joinUrl,
       channel: "email",
       lang: opts.lang,
     });
@@ -850,6 +880,16 @@ async function linkJoiner(
     is_contract_holder: false,
   });
   if (error && error.code !== "23505") throw new AccessError(500, "Could not add you to the event.");
+  await rememberMember(admin, args.eventId, args.userId, "host");
+}
+
+async function rememberMember(admin: Admin, eventId: string, userId: string, role: LinkRole) {
+  const { error } = await admin.from("event_app_members").upsert(
+    { event_id: eventId, auth_user_id: userId, role },
+    { onConflict: "event_id,auth_user_id" },
+  );
+  if (isMissingRelation(error)) return;
+  if (error) throw new AccessError(500, "Could not save your place on the event.");
 }
 
 export async function claimInvitesForUser(args: {
@@ -1060,3 +1100,390 @@ export async function appJoinCodeEmailParts(eventId: string): Promise<{ delivere
 }
 
 export { escapeHtml, placeAppJoinCode };
+
+export type JoinLinkCard = {
+  role: LinkRole;
+  url: string;
+  expiresAt: string;
+};
+
+type StoredJoinLink = {
+  role: string;
+  token_ciphertext: string;
+  expires_at: string;
+};
+
+async function readLink(
+  admin: Admin,
+  eventId: string,
+  role: LinkRole,
+  key: string,
+  now: number,
+): Promise<JoinLinkCard | null> {
+  const { data, error } = await admin
+    .from("event_join_links")
+    .select("role, token_ciphertext, expires_at")
+    .eq("event_id", eventId)
+    .eq("role", role)
+    .maybeSingle();
+  assertNoMissing(error);
+  if (error) throw new AccessError(500, "Could not load the join link.");
+  if (!data) return null;
+  const row = data as StoredJoinLink;
+  if (Date.parse(row.expires_at) <= now) return null;
+  const token = decryptJoinToken(row.token_ciphertext, key);
+  if (!token) return null;
+  return { role, url: joinLinkUrl(siteOrigin(), token), expiresAt: row.expires_at };
+}
+
+async function writeLink(
+  admin: Admin,
+  eventId: string,
+  role: LinkRole,
+  userId: string | null,
+  now: number,
+  reset: boolean,
+): Promise<JoinLinkCard> {
+  const key = joinKey();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const token = generateJoinToken();
+    const tokenHash = hashJoinToken(token, key);
+    if (!tokenHash) continue;
+    const row = {
+      event_id: eventId,
+      role,
+      token_hash: tokenHash,
+      token_ciphertext: encryptJoinToken(token, key),
+      expires_at: new Date(joinLinkExpiry(now)).toISOString(),
+      created_by: userId,
+      reset_at: reset ? new Date(now).toISOString() : null,
+      reset_by: reset ? userId : null,
+    };
+    const { error } = await admin.from("event_join_links").upsert(row, { onConflict: "event_id,role" });
+    assertNoMissing(error);
+    if (!error) return { role, url: joinLinkUrl(siteOrigin(), token), expiresAt: row.expires_at };
+    if (error.code !== "23505") throw new AccessError(500, "Could not save the join link.");
+  }
+  throw new AccessError(500, "Could not save the join link.");
+}
+
+export async function ensureJoinLinks(
+  admin: Admin,
+  eventId: string,
+  userId: string | null,
+  now = Date.now(),
+): Promise<JoinLinkCard[]> {
+  await eventName(admin, eventId);
+  const key = joinKey();
+  const roles: LinkRole[] = ["host", "guest"];
+  const out: JoinLinkCard[] = [];
+  for (const role of roles) {
+    const current = await readLink(admin, eventId, role, key, now);
+    out.push(current ?? (await writeLink(admin, eventId, role, userId, now, false)));
+  }
+  return out;
+}
+
+export async function loadJoinLinks(
+  eventId: string,
+): Promise<{ links: JoinLinkCard[]; setup: boolean; error: string | null }> {
+  try {
+    const admin = createAdminClient();
+    return { links: await ensureJoinLinks(admin, eventId, null), setup: false, error: null };
+  } catch (err) {
+    if (err instanceof AccessError && err.status === 503) return { links: [], setup: true, error: null };
+    return { links: [], setup: false, error: "Couldn't load the join links." };
+  }
+}
+
+export async function resetJoinLink(eventId: string, role: LinkRole, userId: string, now = Date.now()) {
+  const admin = createAdminClient();
+  await eventName(admin, eventId);
+  const link = await writeLink(admin, eventId, role, userId, now, true);
+  const actor = await personName(admin, userId);
+  await logEvent(admin, eventId, actor, role === "host" ? "Reset the host join link" : "Reset the guest join link");
+  return link;
+}
+
+/** Raw URLs for <app_host_link> and <app_guest_link>. Null until the table exists. */
+export async function joinLinkTagValues(eventId: string): Promise<{ host: string; guest: string } | null> {
+  try {
+    const admin = createAdminClient();
+    const links = await ensureJoinLinks(admin, eventId, null);
+    return {
+      host: links.find((link) => link.role === "host")?.url ?? "",
+      guest: links.find((link) => link.role === "guest")?.url ?? "",
+    };
+  } catch (err) {
+    if (err instanceof AccessError && (err.status === 503 || err.status === 404)) return null;
+    console.error("join links", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+export async function describeJoinLink(token: string): Promise<
+  | {
+      ok: true;
+      role: LinkRole;
+      eventName: string;
+      pageUrl: string;
+      schemeUrl: string;
+      code: string | null;
+      storeUrl: string | null;
+    }
+  | { ok: false }
+> {
+  const normalized = normalizeJoinToken(token);
+  if (!normalized) return { ok: false };
+  try {
+    const admin = createAdminClient();
+    const hash = hashJoinToken(normalized, joinKey());
+    if (!hash) return { ok: false };
+    const { data, error } = await admin
+      .from("event_join_links")
+      .select("event_id, role, expires_at")
+      .eq("token_hash", hash)
+      .maybeSingle();
+    if (isMissingRelation(error) || error || !data) return { ok: false };
+    if (Date.parse(data.expires_at as string) <= Date.now()) return { ok: false };
+    const role = data.role === "host" || data.role === "guest" ? data.role : null;
+    if (!role) return { ok: false };
+    const name = await eventName(admin, data.event_id as string);
+    let code: string | null = null;
+    if (role === "host") {
+      try {
+        code = (await getJoinCode(data.event_id as string, null)).code;
+      } catch {
+        code = null;
+      }
+    }
+    return {
+      ok: true,
+      role,
+      eventName: name,
+      pageUrl: joinLinkUrl(siteOrigin(), normalized),
+      schemeUrl: appJoinScheme(normalized),
+      code,
+      storeUrl: await appUrl(admin),
+    };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function existingLinkRole(
+  admin: Admin,
+  eventId: string,
+  userId: string,
+  accountType: "staff" | "client" | "event_guest" | null,
+  clientId: string | null,
+): Promise<LinkRole | null> {
+  if (accountType === "client" && clientId) {
+    const { anchorId, links } = await loadLinks(admin, eventId);
+    if (linkFor(links, clientId) || anchorId === clientId) return "host";
+  }
+  const { data, error } = await admin
+    .from("event_app_members")
+    .select("role")
+    .eq("event_id", eventId)
+    .eq("auth_user_id", userId)
+    .maybeSingle();
+  assertNoMissing(error);
+  if (error) throw new AccessError(500, "Could not check that link.");
+  if (data?.role === "host" || data?.role === "guest") return data.role;
+  if (accountType === "event_guest") {
+    const { data: acct } = await admin.from("accounts").select("event_guest_id").eq("auth_user_id", userId).maybeSingle();
+    const guestId = (acct?.event_guest_id as string | null) ?? null;
+    if (guestId) {
+      const { data: guest } = await admin
+        .from("event_guests")
+        .select("id")
+        .eq("id", guestId)
+        .eq("event_id", eventId)
+        .maybeSingle();
+      if (guest) return "guest";
+    }
+  }
+  return null;
+}
+
+async function grantHostLink(
+  admin: Admin,
+  args: {
+    eventId: string;
+    userId: string;
+    accountType: "staff" | "client" | "event_guest" | null;
+    clientId: string | null;
+    email: string | null;
+    phone: string | null;
+    displayName: string | null;
+  },
+) {
+  if (args.accountType === "event_guest") {
+    await rememberMember(admin, args.eventId, args.userId, "host");
+    return;
+  }
+  await linkJoiner(admin, {
+    eventId: args.eventId,
+    userId: args.userId,
+    clientId: args.clientId,
+    email: args.email,
+    phone: args.phone,
+    displayName: args.displayName,
+  });
+}
+
+async function grantGuestLink(
+  admin: Admin,
+  args: {
+    eventId: string;
+    userId: string;
+    accountType: "staff" | "client" | "event_guest" | null;
+    email: string | null;
+    displayName: string | null;
+  },
+) {
+  if (!args.accountType) {
+    const guestId = await insertGuestRoster(admin, args);
+    const { error: acctErr } = await admin.from("accounts").insert({
+      auth_user_id: args.userId,
+      account_type: "event_guest",
+      event_guest_id: guestId,
+      email: args.email,
+      updated_at: new Date().toISOString(),
+    });
+    if (acctErr) throw new AccessError(500, "Could not add you to the event.");
+  } else {
+    await insertGuestRoster(admin, args);
+  }
+  await rememberMember(admin, args.eventId, args.userId, "guest");
+}
+
+async function insertGuestRoster(
+  admin: Admin,
+  args: { eventId: string; email: string | null; displayName: string | null },
+): Promise<string> {
+  if (args.email) {
+    const { data: existing } = await admin.from("event_guests").select("id, email").eq("event_id", args.eventId);
+    const found = (existing ?? []).find((row) => (row.email ?? "").toLowerCase() === args.email);
+    if (found?.id) return found.id as string;
+  }
+  const parts = splitPersonName(args.displayName);
+  const { data, error } = await admin
+    .from("event_guests")
+    .insert({
+      event_id: args.eventId,
+      first_name: parts.first,
+      last_name: parts.last,
+      email: args.email,
+      relationship: "Guest",
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw new AccessError(500, "Could not add you to the event.");
+  return data.id as string;
+}
+
+export async function redeemJoinLink(args: {
+  userId: string;
+  accountType: "staff" | "client" | "event_guest" | null;
+  clientId: string | null;
+  email: string | null;
+  phone: string | null;
+  displayName: string | null;
+  rawToken: string;
+  ip: string | null;
+  now?: number;
+}) {
+  const now = args.now ?? Date.now();
+  const admin = createAdminClient();
+  const since = new Date(now - 60 * 60 * 1000).toISOString();
+  const [{ data: userRows, error: userErr }, { data: ipRows, error: ipErr }] = await Promise.all([
+    admin
+      .from("event_join_attempts")
+      .select("created_at")
+      .eq("auth_user_id", args.userId)
+      .eq("success", false)
+      .gte("created_at", since),
+    args.ip
+      ? admin.from("event_join_attempts").select("created_at").eq("ip", args.ip).eq("success", false).gte("created_at", since)
+      : Promise.resolve({ data: [] as { created_at: string }[], error: null }),
+  ]);
+  assertNoMissing(userErr ?? ipErr);
+  if (userErr || ipErr) throw new AccessError(500, "Could not check that link.");
+
+  const tokenHash = hashJoinToken(args.rawToken, joinKey());
+  let match: { eventId: string; role: LinkRole; expiresAt: number } | null = null;
+  if (tokenHash) {
+    const { data, error } = await admin
+      .from("event_join_links")
+      .select("event_id, role, expires_at")
+      .eq("token_hash", tokenHash)
+      .maybeSingle();
+    assertNoMissing(error);
+    if (error) throw new AccessError(500, "Could not check that link.");
+    if (data && (data.role === "host" || data.role === "guest")) {
+      match = { eventId: data.event_id as string, role: data.role, expiresAt: Date.parse(data.expires_at as string) };
+    }
+  }
+
+  const existingRole = match
+    ? await existingLinkRole(admin, match.eventId, args.userId, args.accountType, args.clientId)
+    : null;
+  const decision = evaluateLinkRedeem({
+    accountType: args.accountType,
+    rawToken: args.rawToken,
+    now,
+    userFailures: (userRows ?? []).map((row) => Date.parse(row.created_at as string)),
+    ipFailures: (ipRows ?? []).map((row) => Date.parse(row.created_at as string)),
+    match,
+    existingRole,
+  });
+
+  if (!decision.ok) {
+    if (decision.countFailure) {
+      await admin.from("event_join_attempts").insert({
+        auth_user_id: args.userId,
+        ip: args.ip,
+        code_hash: tokenHash,
+        event_id: match?.eventId ?? null,
+        success: false,
+        attempt_kind: "link",
+      });
+    }
+    throw new AccessError(decision.status, decision.error, decision.retryAfterSec);
+  }
+
+  if (!decision.alreadyMember) {
+    if (decision.role === "host") {
+      await grantHostLink(admin, {
+        eventId: decision.eventId,
+        userId: args.userId,
+        accountType: args.accountType,
+        clientId: args.clientId,
+        email: normalizeEmail(args.email),
+        phone: args.phone,
+        displayName: args.displayName,
+      });
+    } else {
+      await grantGuestLink(admin, {
+        eventId: decision.eventId,
+        userId: args.userId,
+        accountType: args.accountType,
+        email: normalizeEmail(args.email),
+        displayName: args.displayName,
+      });
+    }
+  }
+
+  await admin.from("event_join_attempts").insert({
+    auth_user_id: args.userId,
+    ip: args.ip,
+    code_hash: tokenHash,
+    event_id: decision.eventId,
+    success: true,
+    attempt_kind: "link",
+  });
+
+  return { ok: true as const, eventId: decision.eventId, role: decision.role, alreadyMember: decision.alreadyMember };
+}

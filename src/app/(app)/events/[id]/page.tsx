@@ -107,7 +107,7 @@ import { summarizeHelperActions, type HelperAction } from "@/lib/helperSummary";
 import { resolveUserNames } from "@/lib/planning";
 import { loadsOnTab } from "@/lib/eventTabData";
 import { visibleInviteStatus } from "@/lib/eventAccess";
-import { isMissingRelation } from "@/lib/eventAccessServer";
+import { isMissingRelation, loadJoinLinks } from "@/lib/eventAccessServer";
 
 export const dynamic = "force-dynamic";
 
@@ -920,6 +920,7 @@ export default async function EventDetailPage({
       canRemove: !protectedMember,
     }];
   });
+  const joinLinkState = want("client") ? await loadJoinLinks(id) : { links: [], setup: false, error: null };
   const appInvites: AppInviteCard[] = appNeedsSetup
     ? []
     : (((appInvitesResult as { data?: { id: string; email: string | null; phone: string | null; name: string | null; role: string | null; status: string; invited_by_name: string | null; expires_at: string }[] | null }).data ?? [])
@@ -1056,6 +1057,9 @@ export default async function EventDetailPage({
         loadError={!appNeedsSetup && appInviteError ? "Couldn't load app invites." : null}
         members={appMembers}
         invites={appInvites}
+        links={joinLinkState.links}
+        linksNeedSetup={joinLinkState.setup}
+        linksError={joinLinkState.error}
       />
     </div>
   );

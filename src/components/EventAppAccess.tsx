@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { emailAppJoinCode, removeAppMember, resendAppInvite, revokeAppInvite } from "@/app/(app)/events/appAccessActions";
+import { emailAppJoinCode, removeAppMember, resendAppInvite, resetAppJoinLink, revokeAppInvite } from "@/app/(app)/events/appAccessActions";
+import type { JoinLinkCard } from "@/lib/eventAccessServer";
 
 export type AppMemberCard = {
   clientId: string;
@@ -29,12 +30,18 @@ export default function EventAppAccess({
   loadError,
   members,
   invites,
+  links = [],
+  linksNeedSetup = false,
+  linksError = null,
 }: {
   eventId: string;
   needsSetup: boolean;
   loadError: string | null;
   members: AppMemberCard[];
   invites: AppInviteCard[];
+  links?: JoinLinkCard[];
+  linksNeedSetup?: boolean;
+  linksError?: string | null;
 }) {
   if (needsSetup) {
     return (
@@ -55,7 +62,7 @@ export default function EventAppAccess({
     <div className="card p-5 lg:col-span-2">
       <h2 className="card-title">App access</h2>
       <p className="mb-4 text-sm text-zinc-500">
-        People who can open this event in the couple&apos;s app, and invites that are still waiting. A partner has the same access as the couple. Guests invited from the planner stay guests.
+        People who can open this event in the couple&apos;s app, and invites that are still waiting. The host link is for the couple and planners. The guest link only opens the sections you mark for guests.
       </p>
       {loadError && <p className="mb-3 text-sm text-red-600">{loadError}</p>}
 
@@ -75,6 +82,7 @@ export default function EventAppAccess({
         ))}
       </ul>
 
+      <JoinLinks links={links} eventId={eventId} needsSetup={linksNeedSetup} error={linksError} />
       <JoinCodeActions eventId={eventId} />
       <p className="mt-3 text-xs text-zinc-500">
         Removing someone takes them off the event. The join code still works until you reset it. The contract holder stays on the event.
@@ -169,6 +177,96 @@ function InviteRow({ eventId, invite }: { eventId: string; invite: AppInviteCard
       </div>
       {error && <p className="w-full text-xs text-red-600">{error}</p>}
     </li>
+  );
+}
+
+function JoinLinks({
+  eventId,
+  links,
+  needsSetup,
+  error,
+}: {
+  eventId: string;
+  links: JoinLinkCard[];
+  needsSetup: boolean;
+  error: string | null;
+}) {
+  if (needsSetup) {
+    return (
+      <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+        Join links need migration{" "}
+        <code className="rounded bg-black/5 px-1.5 py-0.5 dark:bg-white/10">00213_event_join_links.sql</code> before they can be shown.
+      </p>
+    );
+  }
+  return (
+    <div className="mb-4 space-y-3">
+      <h3 className="label-xs">Join links</h3>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {links.map((link) => (
+        <LinkRow key={link.role} eventId={eventId} link={link} />
+      ))}
+      <p className="text-xs text-zinc-500">
+        Put these in an email as <code>&lt;app_host_link&gt;</code> and <code>&lt;app_guest_link&gt;</code>. Reset makes the old link stop working.
+      </p>
+    </div>
+  );
+}
+
+function LinkRow({ eventId, link }: { eventId: string; link: JoinLinkCard }) {
+  const [pending, start] = useTransition();
+  const [url, setUrl] = useState(link.url);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const when = new Date(link.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const label = link.role === "host" ? "Host link" : "Guest link";
+  const hint = link.role === "host" ? "Couple and planners. Full access." : "Guests only see open sections.";
+
+  return (
+    <div className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-white/10">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
+          {label} <span className="text-xs font-normal text-zinc-500">{hint}</span>
+        </p>
+        <p className="text-xs text-zinc-400">Expires {when}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input readOnly value={url} className="input min-w-0 flex-1 py-1.5 text-xs" onFocus={(e) => e.currentTarget.select()} />
+        <button
+          type="button"
+          className="btn-ghost px-3 py-1 text-xs"
+          onClick={() => {
+            void navigator.clipboard.writeText(url).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          className="btn-ghost px-3 py-1 text-xs disabled:opacity-50"
+          onClick={() => {
+            if (!window.confirm(`Reset the ${label.toLowerCase()}? The current one will stop working.`)) return;
+            setError(null);
+            start(async () => {
+              const result = await resetAppJoinLink(eventId, link.role);
+              if (!result.ok || !result.url) {
+                setError(result.error ?? "Could not reset the link.");
+                return;
+              }
+              setUrl(result.url);
+              setCopied(false);
+            });
+          }}
+        >
+          {pending ? "Resetting…" : "Reset"}
+        </button>
+      </div>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
   );
 }
 

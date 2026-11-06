@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveEventRole } from "@/lib/planning";
 
 /* Mobile-app event cover photo. The couple uploads a header photo from the
    Xpress app; they authenticate with their Supabase access token (Bearer). We
@@ -25,9 +26,11 @@ export async function POST(req: Request) {
   const file = form?.get("photo") as File | null;
   if (!eventId) return NextResponse.json({ error: "eventId required" }, { status: 400 });
 
-  // Access check: RLS only returns the event if this login is attached to it.
-  const { data: ev } = await rls.from("events").select("id").eq("id", eventId).maybeSingle();
-  if (!ev) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Hosts and staff only. Guests must not change the cover or read private event fields.
+  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", userData.user.id).maybeSingle();
+  const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
+  const role = await resolveEventRole(rls, userData.user.id, accountType, eventId);
+  if (role !== "staff" && role !== "host") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const admin = createAdminClient();
 
