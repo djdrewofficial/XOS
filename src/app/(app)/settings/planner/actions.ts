@@ -143,7 +143,7 @@ export async function addTemplateSection(
     .maybeSingle();
   const { error } = await supabase.from("planning_template_sections").insert({
     template_id: templateId,
-    title: input?.title?.trim() || (input?.section_type === "headline" ? "New Group" : "New Section"),
+    title: input?.title?.trim() || (input?.section_type === "headline" ? "New Chapter" : "New Moment"),
     icon: input?.icon?.trim() || null,
     section_type: input?.section_type || "timeline",
     songs_enabled: input?.section_type !== "headline",

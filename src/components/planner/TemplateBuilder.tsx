@@ -90,7 +90,7 @@ export default function TemplateBuilder({
   template: BuilderTemplate;
   sections: BuilderSection[];
   eventTypes: { id: string; name: string }[];
-  /** Editing the reusable Section Templates library — hides template-level meta
+  /** Editing the reusable Moment Templates library — hides template-level meta
       (name/event-type/default/duplicate/delete) since it's a fixed singleton. */
   library?: boolean;
 }) {
@@ -124,7 +124,7 @@ export default function TemplateBuilder({
       <div className="overflow-hidden rounded-3xl border border-zinc-200 bg-gradient-to-br from-brand/5 to-transparent dark:border-white/[0.08]">
         <div className="p-6">
           {library ? (
-            <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Section Templates</h2>
+            <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Moment Templates</h2>
           ) : (
             <input
               className="w-full border-0 bg-transparent p-0 text-2xl font-bold text-zinc-900 outline-none placeholder:text-zinc-300 focus:ring-0 dark:text-zinc-50"
@@ -137,7 +137,7 @@ export default function TemplateBuilder({
             />
           )}
           <p className="mt-1 text-sm text-zinc-500">
-            {contentCount} section{contentCount === 1 ? "" : "s"} · {totalQuestions} question{totalQuestions === 1 ? "" : "s"}
+            {contentCount} moment{contentCount === 1 ? "" : "s"} · {totalQuestions} question{totalQuestions === 1 ? "" : "s"}
           </p>
 
           {!library && (
@@ -209,13 +209,13 @@ export default function TemplateBuilder({
           onClick={() => start(() => addTemplateSection(tId, { section_type: "timeline" }).then(() => undefined))}
           className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand to-brand-light px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand/25 transition hover:brightness-110"
         >
-          <FontAwesomeIcon icon={faPlus} /> Add section
+          <FontAwesomeIcon icon={faPlus} /> Add moment
         </button>
         <button
           onClick={() => start(() => addTemplateSection(tId, { section_type: "headline" }).then(() => undefined))}
           className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-600 transition hover:border-brand hover:text-brand dark:border-white/10 dark:text-zinc-300"
         >
-          <FontAwesomeIcon icon={faHeading} /> Add headline
+          <FontAwesomeIcon icon={faHeading} /> Add chapter
         </button>
       </div>
     </div>
@@ -317,7 +317,7 @@ function SectionCard({
         )}
 
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isHeadline ? "bg-zinc-200 text-zinc-500 dark:bg-white/10" : "bg-brand/10 text-brand dark:text-brand-lighter"}`}>
-          {isHeadline ? "Headline" : "Section"}
+          {isHeadline ? "Chapter" : "Moment"}
         </span>
 
         {!isHeadline && (
@@ -330,9 +330,9 @@ function SectionCard({
           </button>
         )}
         <button
-          onClick={() => { if (confirm("Delete this section?")) start(() => deleteTemplateSection(templateId, section.id)); }}
+          onClick={() => { if (confirm(isHeadline ? "Delete this chapter?" : "Delete this moment?")) start(() => deleteTemplateSection(templateId, section.id)); }}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-500/10"
-          title="Delete section"
+          title={isHeadline ? "Delete chapter" : "Delete moment"}
         >
           <FontAwesomeIcon icon={faTrash} />
         </button>
@@ -344,7 +344,7 @@ function SectionCard({
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-400">Description</label>
             <textarea
               className="input min-h-[56px] w-full text-sm"
-              placeholder="Shown at the top of the section for the couple"
+              placeholder="Shown at the top of the moment for the couple"
               defaultValue={section.intro ?? ""}
               onBlur={(e) => { if (e.target.value !== (section.intro ?? "")) patch({ intro: e.target.value || null }); }}
             />
@@ -360,11 +360,11 @@ function SectionCard({
               <option value="">None — standard songs &amp; questions</option>
               <option value="vendors">🤝 Vendor Team (writes to the event&apos;s vendors)</option>
             </select>
-            <p className="mt-1 text-xs text-zinc-400">A module replaces the standard section with a purpose-built experience.</p>
+            <p className="mt-1 text-xs text-zinc-400">A module replaces the standard moment with a purpose-built experience.</p>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-400">Enabled in this section</label>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-400">Enabled in this moment</label>
             <div className="flex flex-wrap gap-2">
               <FeatureToggle icon={faMusic} label="Songs" on={section.songs_enabled} onChange={(v) => patch({ songs_enabled: v })} />
               <FeatureToggle icon={faListCheck} label="Questions" on={section.questions_enabled} onChange={(v) => patch({ questions_enabled: v })} />

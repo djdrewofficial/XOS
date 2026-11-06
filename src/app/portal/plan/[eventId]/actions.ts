@@ -89,17 +89,25 @@ const SETTING_LABELS: Record<string, string> = {
   permissions: "Permissions",
 };
 
+/** Chapter = section_type headline. Moment = timeline or info. Display only. */
+function planItemNoun(sectionType: string | null | undefined): "chapter" | "moment" {
+  return sectionType === "headline" ? "chapter" : "moment";
+}
+
+function settingDisplay(key: string, value: unknown): string {
+  if (key === "section_type") {
+    if (value === "headline") return "Chapter";
+    if (value === "timeline" || value === "info") return "Moment";
+  }
+  if (value === null || value === "") return "—";
+  if (typeof value === "boolean") return value ? "on" : "off";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 /** Render a settings patch as "Title: Ceremony · Songs: on" for the history UI. */
 function describeSettings(patch: Record<string, unknown>): string | null {
-  const parts = Object.entries(patch).map(([k, v]) => {
-    const label = SETTING_LABELS[k] ?? k;
-    const val =
-      v === null || v === "" ? "—"
-      : typeof v === "boolean" ? (v ? "on" : "off")
-      : typeof v === "object" ? JSON.stringify(v)
-      : String(v);
-    return `${label}: ${val}`;
-  });
+  const parts = Object.entries(patch).map(([k, v]) => `${SETTING_LABELS[k] ?? k}: ${settingDisplay(k, v)}`);
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -536,7 +544,8 @@ export async function updateSectionSettings(
     .eq("id", sectionId)
     .eq("event_id", eventId);
   if (error) return { ok: false, error: error.message };
-  await logAction(supabase, eventId, me, "Updated section settings", settings.title ?? before?.title, {
+  const settingsNoun = planItemNoun((settings.section_type ?? before?.section_type) as string | undefined);
+  await logAction(supabase, eventId, me, `Updated ${settingsNoun} settings`, settings.title ?? before?.title, {
     sectionId,
     targetType: "settings",
     targetLabel: (settings.title ?? before?.title) as string | null,
@@ -677,7 +686,8 @@ export async function addSection(
     ),
   );
 
-  const title = input?.title?.trim() || "New Section";
+  const isChapter = input?.section_type === "headline";
+  const title = input?.title?.trim() || (isChapter ? "New Chapter" : "New Moment");
   const { data: created, error } = await admin
     .from("planning_sections")
     .insert({
@@ -691,7 +701,7 @@ export async function addSection(
     .single();
   if (error || !created) return { ok: false, error: error?.message };
 
-  await logAction(supabase, eventId, me, "Added section", title);
+  await logAction(supabase, eventId, me, isChapter ? "Added chapter" : "Added moment", title);
   revalidate();
   return { ok: true, id: created.id as string };
 }
@@ -745,12 +755,13 @@ export async function addLibrarySection(eventId: string, afterSortOrder: number,
   const { supabase, me } = await requireStaff(eventId);
   const { data: ts } = await supabase
     .from("planning_template_sections")
-    .select("title")
+    .select("title, section_type")
     .eq("id", templateSectionId)
     .maybeSingle();
+  const libraryNoun = planItemNoun(ts?.section_type as string | undefined);
   const id = await addLibrarySectionToEvent(eventId, templateSectionId, afterSortOrder);
-  if (!id) return { ok: false as const, error: "Could not add section" };
-  await logAction(supabase, eventId, me, "Added section from library", ts?.title ?? undefined);
+  if (!id) return { ok: false as const, error: `Could not add ${libraryNoun}` };
+  await logAction(supabase, eventId, me, `Added ${libraryNoun} from library`, ts?.title ?? undefined);
   revalidatePath(`/portal/plan/${eventId}`);
   return { ok: true as const, id };
 }
@@ -770,7 +781,7 @@ export async function setSectionTime(eventId: string, sectionId: string, time: s
   const { error } = await admin.from("planning_sections").update({ time_label: value }).eq("id", sectionId).eq("event_id", eventId);
   if (error) throw new Error(error.message);
   if ((before?.time_label ?? null) !== value) {
-    await logAction(supabase, eventId, me, value ? "Set section time" : "Cleared section time", before?.title ?? undefined, {
+    await logAction(supabase, eventId, me, value ? "Set moment time" : "Cleared moment time", before?.title ?? undefined, {
       sectionId,
       targetType: "settings",
       targetLabel: before?.title ?? null,
@@ -790,7 +801,7 @@ export async function reorderSections(eventId: string, orderedIds: string[]) {
       admin.from("planning_sections").update({ sort_order: i }).eq("id", id).eq("event_id", eventId),
     ),
   );
-  await logAction(supabase, eventId, me, "Reordered sections");
+  await logAction(supabase, eventId, me, "Reordered chapters and moments");
   revalidatePath(`/portal/plan/${eventId}`);
 }
 
@@ -815,7 +826,8 @@ export async function deleteSection(eventId: string, sectionId: string) {
 
     const { error } = await admin.from("planning_sections").delete().eq("id", sectionId).eq("event_id", eventId);
     if (error) throw new Error(error.message);
-    await logAction(supabase, eventId, me, "Deleted section (permanent)", sec?.title ?? undefined, {
+    const deletedNoun = planItemNoun(sec?.section_type as string | undefined);
+    await logAction(supabase, eventId, me, `Deleted ${deletedNoun} (permanent)`, sec?.title ?? undefined, {
       sectionId,
       targetType: "section",
       targetLabel: sec?.title ?? null,
@@ -833,7 +845,8 @@ export async function deleteSection(eventId: string, sectionId: string) {
       .eq("id", sectionId)
       .eq("event_id", eventId);
     if (error) throw new Error(error.message);
-    await logAction(supabase, eventId, me, "Removed section (host)", sec?.title ?? undefined, {
+    const removedNoun = planItemNoun(sec?.section_type as string | undefined);
+    await logAction(supabase, eventId, me, `Removed ${removedNoun} (host)`, sec?.title ?? undefined, {
       sectionId,
       targetType: "section",
       targetLabel: sec?.title ?? null,
@@ -927,13 +940,19 @@ export async function restorePlannerValue(eventId: string, auditId: string) {
 
 export async function restoreSection(eventId: string, sectionId: string) {
   const { supabase, me, revalidate } = await requireStaff(eventId);
+  const { data: sec } = await supabase
+    .from("planning_sections")
+    .select("section_type")
+    .eq("id", sectionId)
+    .eq("event_id", eventId)
+    .maybeSingle();
   const { error } = await supabase
     .from("planning_sections")
     .update({ deleted_by_host_at: null, deleted_by_host: null })
     .eq("id", sectionId)
     .eq("event_id", eventId);
   if (error) throw new Error(error.message);
-  await logAction(supabase, eventId, me, "Restored section");
+  await logAction(supabase, eventId, me, `Restored ${planItemNoun(sec?.section_type as string | undefined)}`);
   revalidate();
 }
 
@@ -1360,7 +1379,7 @@ export async function saveSectionClientNotes(eventId: string, sectionId: string,
     .eq("id", sectionId)
     .eq("event_id", eventId)
     .maybeSingle();
-  if (!before) return { ok: false as const, error: "Section not found" };
+  if (!before) return { ok: false as const, error: "Moment not found" };
 
   const { data, error } = await supabase
     .from("planning_sections")
@@ -1370,10 +1389,10 @@ export async function saveSectionClientNotes(eventId: string, sectionId: string,
     .select("id")
     .maybeSingle();
   if (error) return { ok: false as const, error: error.message };
-  if (!data) return { ok: false as const, error: "Section not found" };
+  if (!data) return { ok: false as const, error: "Moment not found" };
 
   if ((before.client_notes ?? null) !== parsed.value) {
-    await logAction(supabase, eventId, me, parsed.value ? "Updated section notes" : "Cleared section notes", before.title ?? undefined, {
+    await logAction(supabase, eventId, me, parsed.value ? "Updated moment notes" : "Cleared moment notes", before.title ?? undefined, {
       sectionId,
       targetType: "section",
       targetLabel: before.title ?? null,
@@ -1399,7 +1418,7 @@ export async function saveSectionStaffNotes(eventId: string, sectionId: string, 
     .eq("id", sectionId)
     .eq("event_id", eventId)
     .maybeSingle();
-  if (!section) return { ok: false as const, error: "Section not found" };
+  if (!section) return { ok: false as const, error: "Moment not found" };
 
   const { error } = await supabase.from("planning_section_staff_notes").upsert(
     { section_id: sectionId, event_id: eventId, body: parsed.value },

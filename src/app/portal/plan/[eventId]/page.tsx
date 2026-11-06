@@ -78,7 +78,7 @@ export default async function PlannerPage({
       .order("sort_order");
     const spotifySections = (secs ?? []).map((s) => ({
       id: s.id as string,
-      title: (s.title as string) ?? "Section",
+      title: (s.title as string) ?? "Moment",
       songCount: (s.planning_songs as { count: number }[] | null)?.[0]?.count ?? 0,
     }));
     spotifyExportEl = (

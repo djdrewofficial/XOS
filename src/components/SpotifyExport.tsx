@@ -279,11 +279,11 @@ export default function SpotifyExport({
               ) : (
                 <>
                   <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    Choose which sections to export{displayName ? ` to ${displayName}` : ""}. Each becomes its own playlist named{" "}
-                    <span className="font-mono text-xs">MM/DD - Event - Section</span>. You&apos;ll confirm the matches next.
+                    Choose which moments to export{displayName ? ` to ${displayName}` : ""}. Each becomes its own playlist named{" "}
+                    <span className="font-mono text-xs">MM/DD - Event - Moment</span>. You&apos;ll confirm the matches next.
                   </p>
                   {withSongs.length === 0 ? (
-                    <p className="rounded-lg border border-zinc-200 px-3 py-3 text-center text-sm text-zinc-400 dark:border-white/10">No planner sections with songs yet.</p>
+                    <p className="rounded-lg border border-zinc-200 px-3 py-3 text-center text-sm text-zinc-400 dark:border-white/10">No planner moments with songs yet.</p>
                   ) : (
                     <div className="space-y-2">
                       {withSongs.map((s) => {

@@ -234,7 +234,7 @@ export async function createSpotifyPlaylistsFromConfirmed(
   for (const pick of wanted) {
     const { data: sec } = await admin.from("planning_sections").select("title").eq("id", pick.sectionId).eq("event_id", eventId).maybeSingle();
     if (!sec) continue;
-    const title = (sec.title as string) ?? "Section";
+    const title = (sec.title as string) ?? "Moment";
     const uris = [...new Set(pick.trackIds)].map((id) => `spotify:track:${id}`);
     const name = `${mmdd} - ${eventName} - ${title}`;
     const pl = await createSpotifyPlaylist(user.id, name, `Exported from XOS · ${eventName}`.trim());

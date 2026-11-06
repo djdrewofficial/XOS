@@ -610,8 +610,8 @@ export default async function EditHelperPage({
 
       <Section title="XOS Planner Template">
         <Note>
-          When this helper runs, assign this planning template to the event (sets up the couple&apos;s music &amp;
-          timeline sections). Applied once — it won&apos;t overwrite an event that already uses this template.
+          When this helper runs, assign this planning template to the event (sets up the couple&apos;s chapters
+          and moments). Applied once — it won&apos;t overwrite an event that already uses this template.
           Manage templates in <strong>Settings → XOS Planner</strong>.
         </Note>
         <Row label="Assign template">
