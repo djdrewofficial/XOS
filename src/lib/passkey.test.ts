@@ -338,4 +338,11 @@ describe("passkey migration and session minting", () => {
     assert.match(login, /Sign in with a passkey|PasskeyLogin/);
     assert.match(login, /username webauthn/);
   });
+
+  it("logs a database failure by code and message, without the row", () => {
+    assert.match(server, /console\.error\("passkey database error:", error\.code \?\? "", error\.message\)/);
+    assert.doesNotMatch(server, /console\.error\([^)]*details/);
+    assert.doesNotMatch(server, /console\.error\([^)]*public_key/);
+    assert.doesNotMatch(server, /console\.error\([^)]*credential_id/);
+  });
 });
