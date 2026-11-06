@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { appleClientSecret, appleSignInConfig, revokeAppleAuthorization } from "./appleSignIn.ts";
-import { deleteAppAccountDecision, readAppleAuthorizationCode, runAppAccountDeletion } from "./deleteAppAccount.ts";
+import {
+  appleRevokeLog,
+  deleteAppAccountDecision,
+  guestAccessGranted,
+  hostAccessGranted,
+  loginUsesApple,
+  readAppleAuthorizationCode,
+  runAppAccountDeletion,
+  staffAccessGranted,
+} from "./deleteAppAccount.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const route = readFileSync(join(root, "src/app/api/mobile/delete-account/route.ts"), "utf8");
@@ -138,18 +147,74 @@ describe("run deletion", () => {
 });
 
 describe("delete-account route", () => {
-  it("removes the login and membership, and leaves Xpress records alone", () => {
+  it("removes only the app login and leaves event content untouched", () => {
     assert.match(route, /runAppAccountDeletion/);
     assert.match(route, /event_app_members/);
     assert.match(route, /device_tokens/);
-    assert.match(route, /accounts/);
+    assert.match(route, /from\("accounts"\)/);
     assert.match(route, /deleteUser/);
-    assert.match(route, /appleAuthorizationCode/);
-    assert.equal(route.includes('.from("events")'), false);
-    assert.equal(route.includes('.from("documents")'), false);
-    assert.equal(route.includes('.from("clients")'), false);
-    assert.equal(route.includes('.from("payments")'), false);
-    assert.equal(route.includes('.from("event_clients")'), false);
-    assert.equal(route.includes('.from("employees").update'), false);
+    assert.match(route, /loginUsesApple/);
+    assert.equal(existsSync(join(root, "supabase/migrations/00214_app_account_deletion.sql")), false);
+    for (const table of ["events", "documents", "clients", "payments", "event_clients", "event_guests", "planning_songs", "planning_question_answers"]) {
+      assert.equal(route.includes(`.from("${table}")`), false, table);
+    }
+  });
+});
+
+describe("access after the app login is gone", () => {
+  const gone = { staff: false, clientOnEvent: false, hostMembership: false, guestRecord: false, guestMembership: false };
+
+  it("grants nothing to a deleted or account-less user", () => {
+    assert.equal(staffAccessGranted({ accountType: null, employeeLinked: false }), false);
+    assert.equal(staffAccessGranted({ accountType: "client", employeeLinked: false }), false);
+    assert.equal(staffAccessGranted({ accountType: "event_guest", employeeLinked: false }), false);
+    assert.equal(staffAccessGranted({ accountType: null, employeeLinked: true }), true);
+    assert.equal(hostAccessGranted(gone), false);
+    assert.equal(guestAccessGranted(gone), false);
+    assert.equal(hostAccessGranted({ staff: false, clientOnEvent: true, hostMembership: false }), true);
+    assert.equal(guestAccessGranted({ ...gone, guestMembership: true }), true);
+  });
+
+  it("logs the Apple outcome without the code or key", () => {
+    const skipped = appleRevokeLog({ usedApple: false, hadCode: false, result: null });
+    const missing = appleRevokeLog({ usedApple: true, hadCode: false, result: null });
+    const ok = appleRevokeLog({ usedApple: true, hadCode: true, result: { ok: true } });
+    const failed = appleRevokeLog({ usedApple: true, hadCode: true, result: { ok: false, error: "Apple token exchange failed (400)." } });
+    assert.match(skipped, /did not use Apple/);
+    assert.match(missing, /no authorization code/);
+    assert.match(ok, /succeeded/);
+    assert.match(failed, /failed \(400\)/);
+    for (const line of [skipped, missing, ok, failed]) {
+      assert.equal(line.includes("auth-code"), false);
+      assert.equal(line.includes("BEGIN PRIVATE"), false);
+    }
+    assert.equal(loginUsesApple({ app_metadata: { provider: "apple" }, identities: [] }), true);
+    assert.equal(loginUsesApple({ identities: [{ provider: "email" }] }), false);
+  });
+
+  it("logs a successful Apple revoke and still deletes the login", async () => {
+    const logs: string[] = [];
+    const steps: string[] = [];
+    const result = await runAppAccountDeletion({
+      accountType: "event_guest",
+      employeeId: null,
+      linkedEmployee: false,
+      usedApple: true,
+      appleAuthorizationCode: "auth-code",
+      env,
+      log: (message) => logs.push(message),
+      revoke: async () => ({ ok: true }),
+      removeAppData: async () => {
+        steps.push("app-login");
+      },
+      deleteAuthUser: async () => {
+        steps.push("auth");
+        return null;
+      },
+    });
+    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(steps, ["app-login", "auth"]);
+    assert.match(logs[0] ?? "", /succeeded/);
+    assert.equal((logs[0] ?? "").includes("auth-code"), false);
   });
 });

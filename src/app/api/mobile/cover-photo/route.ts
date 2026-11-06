@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEventRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 
 /* Mobile-app event cover photo. The couple uploads a header photo from the
    Xpress app; they authenticate with their Supabase access token (Bearer). We
@@ -27,8 +28,8 @@ export async function POST(req: Request) {
   if (!eventId) return NextResponse.json({ error: "eventId required" }, { status: 400 });
 
   // Hosts and staff only. Guests must not change the cover or read private event fields.
-  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", userData.user.id).maybeSingle();
-  const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
+  const accountType = await lookupMobileAccountKind(rls, userData.user.id);
+  if (!accountType) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const role = await resolveEventRole(rls, userData.user.id, accountType, eventId);
   if (role !== "staff" && role !== "host") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -36,7 +37,18 @@ export async function POST(req: Request) {
 
   // No file => remove the cover photo.
   if (!file || file.size === 0) {
-    await admin.from("events").update({ cover_photo_url: null }).eq("id", eventId);
+    const cleared = await admin
+      .from("events")
+      .update({
+        cover_photo_url: null,
+        cover_photo_updated_by: userData.user.id,
+        cover_photo_hidden_at: null,
+        cover_photo_hidden_by: null,
+      })
+      .eq("id", eventId);
+    if (cleared.error && /cover_photo_updated_by|cover_photo_hidden/i.test(cleared.error.message ?? "")) {
+      await admin.from("events").update({ cover_photo_url: null }).eq("id", eventId);
+    }
     return NextResponse.json({ ok: true, url: null });
   }
   if (file.size > 12 * 1024 * 1024) return NextResponse.json({ error: "Image too large (max 12MB)" }, { status: 413 });
@@ -49,8 +61,21 @@ export async function POST(req: Request) {
   if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
   const url = admin.storage.from("event-photos").getPublicUrl(path).data.publicUrl;
-  const { error } = await admin.from("events").update({ cover_photo_url: url }).eq("id", eventId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const saved = await admin
+    .from("events")
+    .update({
+      cover_photo_url: url,
+      cover_photo_updated_by: userData.user.id,
+      cover_photo_hidden_at: null,
+      cover_photo_hidden_by: null,
+    })
+    .eq("id", eventId);
+  if (saved.error && /cover_photo_updated_by|cover_photo_hidden/i.test(saved.error.message ?? "")) {
+    const { error } = await admin.from("events").update({ cover_photo_url: url }).eq("id", eventId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  } else if (saved.error) {
+    return NextResponse.json({ error: saved.error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true, url });
 }

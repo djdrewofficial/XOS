@@ -3,20 +3,23 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireMobileStaffModule } from "@/lib/apiAuth";
 import { resolveEventRole, type PlannerRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 import {
   noteWriteStatus,
   notesGetBody,
   parseNotesPut,
   planningNotesAccess,
 } from "@/lib/planningNotes";
+import { notesForViewer } from "@/lib/ugcModeration";
+import { viewerBlocks } from "@/lib/ugcModerationServer";
 
 /* Couple notes + staff-only notes for one planning moment.
    GET  { notes, staffNotes? }  — staffNotes is present only for staff.
    PUT  { notes?, staffNotes? } — staffNotes is 403 for anyone who is not staff.
    JWT-verified via the /api/mobile/ prefix. Writes go through the caller's own
-   client so RLS (and the client_notes column guard) still apply. A login with
-   no accounts row is rejected: staff is a positive account_type, matching
-   xos_is_staff(), not the old "missing row means staff" fallback. */
+   client so RLS (and the client_notes column guard) still apply. Account kind
+   comes from lookupMobileAccountKind: a missing accounts row is staff only
+   when an employee record is linked. */
 
 const SECTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,7 +35,7 @@ function userClient(token: string) {
 }
 
 async function caller(token: string, eventId: string): Promise<
-  | { role: PlannerRole | null; rls: SupabaseClient }
+  | { role: PlannerRole | null; rls: SupabaseClient; userId: string }
   | { error: NextResponse }
 > {
   if (!token) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -40,26 +43,48 @@ async function caller(token: string, eventId: string): Promise<
   const { data: userData, error } = await rls.auth.getUser(token);
   if (error || !userData?.user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
 
-  const { data: acct } = await rls
-    .from("accounts")
-    .select("account_type")
-    .eq("auth_user_id", userData.user.id)
-    .maybeSingle();
-  const accountType = acct?.account_type as "staff" | "client" | "event_guest" | undefined;
+  const accountType = await lookupMobileAccountKind(rls, userData.user.id);
   if (!accountType) return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
 
   const role = await resolveEventRole(rls, userData.user.id, accountType, eventId);
-  return { role, rls };
+  return { role, rls, userId: userData.user.id };
 }
 
 async function loadSection(sectionId: string) {
   const admin = createAdminClient();
-  const { data } = await admin
+  const full = await admin
     .from("planning_sections")
-    .select("id, event_id, client_notes, guest_enabled")
+    .select("id, event_id, client_notes, guest_enabled, client_notes_updated_by, client_notes_hidden_at")
     .eq("id", sectionId)
     .maybeSingle();
-  return data as { id: string; event_id: string; client_notes: string | null; guest_enabled: boolean | null } | null;
+  if (full.error && /client_notes_updated_by|client_notes_hidden_at/i.test(full.error.message ?? "")) {
+    const basic = await admin
+      .from("planning_sections")
+      .select("id, event_id, client_notes, guest_enabled")
+      .eq("id", sectionId)
+      .maybeSingle();
+    if (!basic.data) return null;
+    return {
+      ...basic.data,
+      client_notes_updated_by: null,
+      client_notes_hidden_at: null,
+    } as {
+      id: string;
+      event_id: string;
+      client_notes: string | null;
+      guest_enabled: boolean | null;
+      client_notes_updated_by: string | null;
+      client_notes_hidden_at: string | null;
+    };
+  }
+  return full.data as {
+    id: string;
+    event_id: string;
+    client_notes: string | null;
+    guest_enabled: boolean | null;
+    client_notes_updated_by: string | null;
+    client_notes_hidden_at: string | null;
+  } | null;
 }
 
 async function readStaffNotes(rls: SupabaseClient, sectionId: string): Promise<string | null> {
@@ -98,7 +123,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const staffNotes = who.role === "staff" ? await readStaffNotes(who.rls, sectionId) : null;
-  return NextResponse.json(notesGetBody(section.client_notes ?? null, staffNotes, who.role));
+  const blocked = await viewerBlocks(
+    (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, ""),
+    section.event_id,
+    who.userId,
+    who.role,
+  );
+  const viewed = notesForViewer(
+    section.client_notes ?? null,
+    section.client_notes_updated_by ?? null,
+    Boolean(section.client_notes_hidden_at),
+    who.role,
+    blocked,
+  );
+  const body = notesGetBody(viewed.notes, staffNotes, who.role);
+  return NextResponse.json(viewed.hidden ? { ...body, hidden: true } : body);
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {

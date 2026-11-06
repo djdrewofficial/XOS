@@ -23,13 +23,13 @@ Language links are real anchors, so they work without JavaScript. The active lan
 
 - Privacy sections 1–15, English and Spanish, including the staff OpenAI disclosure. Acceptance of the policy is not permission for that processing. The disclosure does not say client recommendations have stopped on every installed build or on the live server.
 - Terms sections 1–10, English and Spanish. Accepting the terms is not permission for third-party AI. The text still says a separate authorization is only proposed.
-- Deletion: what the current route removes, what it keeps (CRM, guest and event records, songs, answers, notes, contracts, payments, public cover photos, planner files, invitation logs), the unverified retention schedule, and that an Apple revocation attempt can fail.
+- Deletion: removing the app login, account row, event app memberships, and device tokens. Planning details, the guest record, the contract, and payment records stay with the booking. An Apple revoke is attempted and can fail. No retention period is stated.
 
 No effective date is printed. Section 14 and terms section 10 still say a revision or effective date is added when a change is approved and published.
 
 ## What was left off the public pages
 
-Review labels such as “Draft for review. Not yet effective.” are not shown to customers. The deletion page uses this lead instead, in both languages: the page describes the current route and is not a claim that the route meets every app-store deletion rule.
+Review labels such as “Draft for review. Not yet effective.” are not shown to customers. The deletion page states what the app login deletion removes and what stays with the booking.
 
 The in-app confirmation buttons, the welcome and upload notices, the staff AI opt-in, and the App Store worksheet are only in `approved-policy-pack.md`. Do not build the AI choices, a consent checkbox, or a success message from this pull request. Those controls are not implemented.
 
@@ -38,7 +38,7 @@ These two sentences stay internal because they are instructions to us, not a cus
 - Do not promise that Apple authorization is always revoked successfully. Revocation and failure handling need to be tested and repaired where needed.
 - No debe prometerse que la autorización de Apple siempre se revoca correctamente. Deben probarse y corregirse la revocación y la gestión de fallos cuando sea necesario.
 
-The public retention heading is “Retention” / “Conservación”. The approved sentences under it are unchanged, including “proposed governing standard, not an existing configured deletion schedule” and the unverified backup/PITR window.
+There is no public retention period and no anonymization job. Drew limited deletion to the app account only.
 
 ## Still unresolved before anyone treats this as a live legal release
 

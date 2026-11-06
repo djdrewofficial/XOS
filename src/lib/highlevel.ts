@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 // circular import back to this file. Re-exported below for existing importers.
 import { toE164 } from "@/lib/phone";
 import { isPhoneOptedOut, recordSmsOptSignal, classifySmsKeyword } from "@/lib/smsOptOut";
+import { marketingSendAllowed, type MarketingConsentAction } from "@/lib/smsMarketingConsent";
 
 /* ============ HighLevel (LeadConnector API v2) config ============
    Set in .env.local (and Netlify env for prod):
@@ -797,6 +798,24 @@ export async function processSmsOutbox(
     for (const c of clientRows ?? []) clientById.set(c.id as string, c);
   }
 
+  const marketingLatest = new Map<string, { action: MarketingConsentAction; phone: string }>();
+  if (clientIds.length) {
+    const { data: consentRows, error: consentErr } = await supabase
+      .from("sms_marketing_consent_events")
+      .select("client_id, phone_e164, action, created_at")
+      .in("client_id", clientIds)
+      .order("created_at", { ascending: false });
+    if (!consentErr) {
+      for (const row of consentRows ?? []) {
+        const clientId = row.client_id as string | null;
+        if (!clientId || marketingLatest.has(clientId)) continue;
+        if (row.action === "grant" || row.action === "withdraw") {
+          marketingLatest.set(clientId, { action: row.action, phone: row.phone_e164 as string });
+        }
+      }
+    }
+  }
+
   let sent = 0;
   let failed = 0;
   let suppressed = 0;
@@ -840,7 +859,15 @@ export async function processSmsOutbox(
     // is_marketing=false) are unaffected.
     if (channel === "SMS" && msg.is_marketing) {
       const consented = msg.client_id ? clientById.get(msg.client_id)?.sms_opt_in === true : false;
-      if (!consented) {
+      const scoped = msg.client_id ? marketingLatest.get(msg.client_id) : undefined;
+      const phoneOk = marketingLatest.size
+        ? marketingSendAllowed({
+            legacyOptIn: consented,
+            latest: scoped ?? null,
+            toNumber: msg.to_number,
+          })
+        : true;
+      if (!consented || (scoped && !phoneOk)) {
         await supabase
           .from("sms_log")
           .update({ status: "suppressed", error: "no SMS marketing consent on file" })

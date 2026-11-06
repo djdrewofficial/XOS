@@ -29,7 +29,7 @@ describe("app policy text", () => {
       }
       for (const id of DOCS) {
         assert.match(policyPlainText(id, lang), /drew@xpressdjs\.com/);
-        assert.ok(APP_POLICIES[lang][id].sections.length >= 6);
+        assert.ok(APP_POLICIES[lang][id].sections.length >= 3);
       }
       assert.match(policyPlainText("privacy", lang), /events@xpressdjs\.com/);
       assert.match(policyPlainText("terms", lang), /events@xpressdjs\.com/);
@@ -45,30 +45,43 @@ describe("app policy text", () => {
     const es = policyPlainText("privacy", "es");
     assert.match(en, /Removing client-facing song recommendations does not remove staff AI/);
     assert.match(en, /This disclosure is not itself permission to send personal data to third-party AI/);
+    assert.match(en, /unless you opt in for that event/);
+    assert.match(en, /You can withdraw/);
+    assert.match(es, /Puede retirar esa elección/);
+    assert.doesNotMatch(en, /—/);
     assert.match(en, /OpenAI/);
     assert.match(es, /no elimina la IA del personal/);
     assert.match(es, /no constituye por sí mismo autorización/);
     const terms = policyPlainText("terms", "en");
+    const termsEs = policyPlainText("terms", "es");
     assert.match(terms, /Accepting these Terms is not explicit permission for third-party AI processing/);
+    assert.match(terms, /Anyone on the event can report content or a person/);
+    assert.match(terms, /Hosts can remove guest content and remove guests/);
+    assert.match(terms, /Xpress can remove content that breaks these terms/);
+    assert.match(termsEs, /Cualquier persona en el evento puede reportar contenido o a una persona/);
+    assert.match(termsEs, /Los anfitriones pueden quitar el contenido de los invitados y quitar invitados/);
+    assert.doesNotMatch(`${terms}\n${termsEs}`, /—/);
     assert.match(terms, /proposed separate authorization/);
     assert.doesNotMatch(en, /all AI processing has stopped/);
     assert.doesNotMatch(en, /For You has been removed from every/);
   });
 
-  it("describes the limited deletion route without a retention-year promise", () => {
+  it("says deletion removes the login and leaves the booking records", () => {
+    for (const lang of LANGS) {
+      const privacy = policyPlainText("privacy", lang);
+      const deletion = policyPlainText("deletion", lang);
+      assert.doesNotMatch(`${privacy}\n${deletion}`, /—/);
+      assert.doesNotMatch(deletion, /Former guest|Invitado anterior|within \d+ days|retained for \d+ years/);
+    }
     const en = policyPlainText("deletion", "en");
     const es = policyPlainText("deletion", "es");
-    assert.match(en, /not a claim that the route meets every app-store deletion rule/);
-    assert.match(en, /public cover photos/);
-    assert.match(en, /CRM client records/);
-    assert.match(en, /not an existing configured deletion schedule/);
-    assert.match(en, /can fail or be skipped/);
-    assert.match(es, /portadas públicas/);
-    assert.match(es, /no un calendario de eliminación ya configurado/);
-    assert.doesNotMatch(en, /within \d+ days/);
-    assert.doesNotMatch(en, /retained for \d+ years/);
-    assert.doesNotMatch(en, /Delete my account/);
-    assert.doesNotMatch(en, /Allow selected uses/);
+    assert.match(en, /removes your app login and access/);
+    assert.match(en, /planning details, guest record, contract, and payment records stay/);
+    assert.match(en, /so your DJ can perform the event and as required by law/);
+    assert.match(policyPlainText("privacy", "en"), /removes your app login and access/);
+    assert.match(es, /quita el acceso a la aplicación/);
+    assert.match(es, /registro del invitado/);
+    assert.match(es, /cuando la ley lo exige/);
   });
 
   it("does not print an effective date or the review banner", () => {

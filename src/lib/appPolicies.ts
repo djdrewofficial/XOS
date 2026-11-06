@@ -59,7 +59,7 @@ const privacyEn: PolicySection[] = [
   },
   {
     heading: "8. Why we use information",
-    body: "We use account and event information to authenticate you, associate you with the correct event, save and share planning contributions, prepare and deliver booked services, show relevant booking records, send invitations and operational messages, respond to support, and investigate security or access problems. Optional social handles are not required for core planning. Marketing texts require a separate optional permission and must not be bundled into acceptance of these policies or access to planning. Operational messages about your account, invitations or booking are distinct from marketing.",
+    body: "We use account and event information to authenticate you, associate you with the correct event, save and share planning contributions, prepare and deliver booked services, show relevant booking records, send invitations and operational messages, respond to support, and investigate security or access problems. Optional social handles are not required for core planning. Marketing texts require a separate optional permission and must not be bundled into acceptance of these policies or access to planning. Operational messages about your account, invitations or booking are distinct from marketing. Marketing texts are a separate choice, off until you turn them on, and they are stored only for the mobile number already on your booking record. That choice records the time, the disclosure version, and whether it came from the app or the web. It is not permission for email, and it is not permission for booking or account texts. You can withdraw it later in the app. Replying STOP still stops texts to that number. If no mobile number is on file, we do not store a marketing text choice.",
   },
   {
     heading: "9. Providers and external content",
@@ -67,15 +67,15 @@ const privacyEn: PolicySection[] = [
   },
   {
     heading: "10. Staff AI processing",
-    body: "Removing client-facing song recommendations does not remove staff AI. Staff XOS tools can send OpenAI event and planning information for summaries, event questions and run-of-show drafts. Depending on the tool, inputs include client names, email, phone, venue and address, planning answers, songs, notes, must-play and do-not-play details, internal notes and Fireflies meeting transcripts. A morning briefing can include event or couple names, venues, payment amounts and unsigned-contract dates. A staff assistant can also receive content staff paste into it. These are separate staff workflows, not music-account linking. This disclosure is not itself permission to send personal data to third-party AI. Where explicit permission is required, it must be obtained before the sharing. Do not treat general policy acceptance or a host's invitation as another person's AI permission.",
+    body: "Removing client-facing song recommendations does not remove staff AI. Staff XOS tools can send OpenAI event and planning information for summaries, event questions and run-of-show drafts. Depending on the tool, inputs include client names, email, phone, venue and address, planning answers, songs, notes, must-play and do-not-play details, internal notes and Fireflies meeting transcripts. A morning briefing can include event or couple names, venues, payment amounts and unsigned-contract dates. A staff assistant can also receive content staff paste into it. These are separate staff workflows, not music-account linking. This disclosure is not itself permission to send personal data to third-party AI. Where explicit permission is required, it must be obtained before the sharing. Do not treat general policy acceptance or a host's invitation as another person's AI permission. Staff AI tools do not send your personal data to OpenAI unless you opt in for that event in the app. You can withdraw that choice later in the app. Opting in can include your name, email, phone, venue and address, planning answers, song choices, notes, must-play and do-not-play details, internal event notes, and meeting transcripts. A morning briefing can include the event name, venue, payment amounts, and unsigned contract dates only after that opt-in. Withdrawal stops later staff AI use of your personal data for that event. It does not undo a transfer that already happened. Your opt-in covers only you and that event. It does not cover a guest or co-host. Their contact details and free-text answers are left out unless that person has their own opt-in. Call transcripts and internal notes are not sent to OpenAI. The staff assistant can still receive words a staff member types. Email addresses and phone numbers in that chat are refused. A name typed in a sentence is not fully blocked there.",
   },
   {
     heading: "11. Other disclosures and advertising",
     body: "We disclose information to the people involved in your event and to providers as described above. We may also disclose information where required by applicable law, to respond to lawful requests, or as necessary to address fraud, abuse or legal claims, subject to applicable protections. No advertising or cross-app tracking SDK was identified in the reviewed client code. That finding is not a guarantee about every server log or every provider's independent practices, and it does not establish unverified vendor contractual terms. Any materially different collection or use needs appropriate notice and any required permission.",
   },
   {
-    heading: "12. Retention and deletion",
-    body: "Deleting your app login does not currently delete the complete booking or event record. The in-app route removes the authentication account, account record, event-app memberships and device-token records associated with that login. Some planning author identifiers are cleared and associated likes are deleted. CRM and guest records, event records, planning songs, answers and notes, contracts, payments, cover photos, planner files and invitation logs remain unless separately removed. Clearing an author identifier does not necessarily anonymize content that contains names or event details. There is no verified configured retention schedule for these retained records or join-attempt logs. Backup and point-in-time-recovery retention periods have not been verified for the live service. We cannot promise a fixed deletion period or immediate erasure of backup copies. Contact us to request review or removal of retained information; applicable legal rights are not limited by these technical constraints.",
+    heading: "12. Deletion",
+    body: "Deleting your account removes your app login and access. You cannot sign back in with that login. We remove the app account record, event app memberships, and device tokens for that login. The event's planning details, guest record, contract, and payment records stay with the booking so your DJ can perform the event and as required by law. If you signed in with Apple, we try to revoke that sign-in. The login is still removed if that request fails.",
   },
   {
     heading: "13. Choices, rights and security",
@@ -122,7 +122,7 @@ const privacyEs: PolicySection[] = [
   },
   {
     heading: "8. Para qué utilizamos la información",
-    body: "Utilizamos los datos de cuenta y evento para autenticarle, asociarle al evento correcto, guardar y compartir aportaciones, preparar y prestar los servicios reservados, mostrar registros de reserva pertinentes, enviar invitaciones y mensajes operativos, atender consultas e investigar problemas de seguridad o acceso. Los nombres de usuario de redes sociales son opcionales y no se necesitan para la planificación básica. Los SMS de marketing requieren una autorización opcional y separada que no debe agruparse con la aceptación de estas políticas ni con el acceso a la planificación. Los mensajes operativos sobre la cuenta, las invitaciones o la reserva son distintos del marketing.",
+    body: "Utilizamos los datos de cuenta y evento para autenticarle, asociarle al evento correcto, guardar y compartir aportaciones, preparar y prestar los servicios reservados, mostrar registros de reserva pertinentes, enviar invitaciones y mensajes operativos, atender consultas e investigar problemas de seguridad o acceso. Los nombres de usuario de redes sociales son opcionales y no se necesitan para la planificación básica. Los SMS de marketing requieren una autorización opcional y separada que no debe agruparse con la aceptación de estas políticas ni con el acceso a la planificación. Los mensajes operativos sobre la cuenta, las invitaciones o la reserva son distintos del marketing. Los textos promocionales son una elección separada, apagada hasta que usted la active, y solo se guardan para el número móvil que ya está en su reserva. Esa elección guarda la hora, la versión del aviso y si vino de la aplicación o de la web. No es permiso para correo electrónico ni para textos de la reserva o de la cuenta. Puede retirarla después en la aplicación. Responder STOP sigue deteniendo los textos a ese número. Si no hay un número móvil en el registro, no guardamos una elección de textos promocionales.",
   },
   {
     heading: "9. Proveedores y contenido externo",
@@ -130,15 +130,15 @@ const privacyEs: PolicySection[] = [
   },
   {
     heading: "10. Tratamiento mediante IA del personal",
-    body: "Eliminar las recomendaciones de canciones para clientes no elimina la IA del personal. Las herramientas de XOS pueden enviar a OpenAI datos del evento y de planificación para generar resúmenes, responder preguntas y preparar borradores del programa del evento. Según la herramienta, se incluyen nombres, correo, teléfono, lugar y dirección del evento, respuestas, canciones, notas, preferencias de canciones imprescindibles y prohibidas, notas internas y transcripciones de reuniones de Fireflies. Un informe matutino puede incluir nombres del evento o de la pareja, lugares, importes de pagos y fechas de contratos sin firmar. Un asistente del personal también puede recibir contenido pegado por el personal. Son procesos separados y no vinculan cuentas de música. Este aviso no constituye por sí mismo autorización para enviar datos personales a una IA de terceros. Cuando se requiera autorización expresa, debe obtenerse antes de compartirlos. No interprete la aceptación general de políticas ni la invitación de un anfitrión como autorización de IA de otra persona.",
+    body: "Eliminar las recomendaciones de canciones para clientes no elimina la IA del personal. Las herramientas de XOS pueden enviar a OpenAI datos del evento y de planificación para generar resúmenes, responder preguntas y preparar borradores del programa del evento. Según la herramienta, se incluyen nombres, correo, teléfono, lugar y dirección del evento, respuestas, canciones, notas, preferencias de canciones imprescindibles y prohibidas, notas internas y transcripciones de reuniones de Fireflies. Un informe matutino puede incluir nombres del evento o de la pareja, lugares, importes de pagos y fechas de contratos sin firmar. Un asistente del personal también puede recibir contenido pegado por el personal. Son procesos separados y no vinculan cuentas de música. Este aviso no constituye por sí mismo autorización para enviar datos personales a una IA de terceros. Cuando se requiera autorización expresa, debe obtenerse antes de compartirlos. No interprete la aceptación general de políticas ni la invitación de un anfitrión como autorización de IA de otra persona. Las herramientas de IA del personal no envían sus datos personales a OpenAI salvo que usted lo permita para ese evento en la aplicación. Puede retirar esa elección más tarde en la aplicación. Permitirlo puede incluir su nombre, correo, teléfono, lugar y dirección del evento, respuestas de planificación, canciones, notas, preferencias de canciones imprescindibles y prohibidas, notas internas del evento y transcripciones de reuniones. Un informe matutino puede incluir el nombre del evento, el lugar, los importes de pagos y las fechas de contratos sin firmar solo después de ese permiso. Retirarlo detiene el uso posterior de sus datos personales en la IA del personal para ese evento. No deshace un envío que ya se hizo. Su permiso cubre solo a usted y a ese evento. No cubre a un invitado ni a un coanfitrión. Sus datos de contacto y respuestas de texto libre quedan fuera salvo que esa persona tenga su propio permiso. Las transcripciones de llamadas y las notas internas no se envían a OpenAI. El asistente del personal todavía puede recibir texto que un miembro del personal escriba. Los correos y teléfonos en ese chat se rechazan. Un nombre escrito en una frase no queda bloqueado por completo.",
   },
   {
     heading: "11. Otras comunicaciones de datos y publicidad",
     body: "Compartimos información con las personas que participan en su evento y con proveedores según lo descrito. También podemos comunicar información cuando lo exija la legislación aplicable, para responder a solicitudes legales o cuando sea necesario para abordar fraude, abusos o reclamaciones, con las protecciones aplicables. No se identificó un SDK de publicidad o seguimiento entre aplicaciones en el código del cliente revisado. Esto no garantiza las prácticas de cada registro de servidor o proveedor independiente ni acredita condiciones contractuales de proveedores no verificadas. Cualquier recopilación o uso sustancialmente diferente necesita el aviso adecuado y los permisos exigibles.",
   },
   {
-    heading: "12. Conservación y eliminación",
-    body: "Eliminar su acceso a la aplicación no elimina actualmente el registro completo de la reserva o del evento. El proceso dentro de la aplicación elimina la cuenta de autenticación, el registro de cuenta, las pertenencias al evento en la aplicación y los registros de tokens de dispositivo asociados a ese acceso. Se borran algunos identificadores de autor y los Me gusta asociados. Permanecen los registros de CRM e invitados, eventos, canciones, respuestas y notas de planificación, contratos, pagos, portadas, archivos del planificador y registros de invitaciones, salvo que se eliminen por separado. Quitar un identificador de autor no anonimiza necesariamente un contenido que incluya nombres o detalles del evento. No se ha verificado un calendario de conservación configurado para estos registros o los de intentos de acceso. Tampoco se han verificado los plazos del servicio activo para copias de seguridad y recuperación a un momento dado. No podemos prometer un plazo fijo de eliminación ni el borrado inmediato de las copias. Contacte con nosotros para solicitar la revisión o eliminación de información conservada; estas limitaciones técnicas no restringen sus derechos legales.",
+    heading: "12. Eliminación",
+    body: "Eliminar su cuenta quita el acceso a la aplicación. No podrá volver a entrar con ese acceso. Quitamos el registro de la cuenta de la aplicación, las pertenencias al evento en la aplicación y los tokens de dispositivo de ese acceso. Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva para que su DJ pueda realizar el evento y cuando la ley lo exige. Si inició sesión con Apple, intentamos revocar ese acceso. El acceso se elimina aunque esa solicitud falle.",
   },
   {
     heading: "13. Opciones, derechos y seguridad",
@@ -173,7 +173,7 @@ const termsEn: PolicySection[] = [
   },
   {
     heading: "5. Appropriate use and reports",
-    body: "Do not post unlawful, threatening, harassing, hateful, exploitative, sexually abusive or infringing content; impersonate someone; spam invitations; upload malicious files; probe accounts or storage without authorization; or try to bypass event roles or security. Do not expose another person's confidential information. Send content or access concerns to events@xpressdjs.com with the event and enough detail to identify the issue, without forwarding unnecessary sensitive material. Xpress may review reports and restrict access or remove content to address misuse, safety, rights or legal requirements. This statement does not claim that in-app reporting, blocking or automated content filtering tools already exist.",
+    body: "Do not post unlawful, threatening, harassing, hateful, exploitative, sexually abusive or infringing content; impersonate someone; spam invitations; upload malicious files; probe accounts or storage without authorization; or try to bypass event roles or security. Do not expose another person's confidential information. Send content or access concerns to events@xpressdjs.com with the event and enough detail to identify the issue, without forwarding unnecessary sensitive material. Xpress may review reports and restrict access or remove content to address misuse, safety, rights or legal requirements. You may not post anything unlawful, hateful, harassing, or spam. Anyone on the event can report content or a person. Hosts can remove guest content and remove guests. Xpress can remove content that breaks these terms.",
   },
   {
     heading: "6. Photos, documents and music",
@@ -189,7 +189,7 @@ const termsEn: PolicySection[] = [
   },
   {
     heading: "9. Ending access and deletion",
-    body: "You may stop using the app and initiate account deletion within it. Login deletion removes access but currently leaves separate booking and event data as explained in the deletion notice. It does not cancel your event, extinguish payment obligations or cancel a booking agreement. You can separately request review or removal of retained personal information. Applicable statutory rights continue to apply. Access may be restricted to address misuse or security needs, but doing so does not determine rights under the booking agreement.",
+    body: "You may stop using the app and delete your account in it. Deleting removes your app login and access. The event's planning details, guest record, contract, and payment records stay with the booking, as explained in the deletion notice. It does not cancel your event, your payment obligations, or the booking agreement.",
   },
   {
     heading: "10. Updates and contact",
@@ -216,7 +216,7 @@ const termsEs: PolicySection[] = [
   },
   {
     heading: "5. Uso adecuado y avisos",
-    body: "No publique contenido ilícito, amenazante, de acoso, de odio, de explotación, de abuso sexual o que infrinja derechos; no suplante identidades; no envíe invitaciones masivas no deseadas; no suba archivos maliciosos; no explore cuentas o almacenamiento sin autorización; ni intente eludir roles o seguridad. No exponga información confidencial ajena. Informe de problemas de contenido o acceso a events@xpressdjs.com, indicando el evento y detalles suficientes para identificar el problema, sin reenviar material sensible innecesario. Xpress podrá revisar avisos y restringir accesos o retirar contenido para abordar usos indebidos, seguridad, derechos u obligaciones legales. Esto no afirma que ya existan herramientas dentro de la aplicación para denunciar, bloquear o filtrar contenido automáticamente.",
+    body: "No publique contenido ilícito, amenazante, de acoso, de odio, de explotación, de abuso sexual o que infrinja derechos; no suplante identidades; no envíe invitaciones masivas no deseadas; no suba archivos maliciosos; no explore cuentas o almacenamiento sin autorización; ni intente eludir roles o seguridad. No exponga información confidencial ajena. Informe de problemas de contenido o acceso a events@xpressdjs.com, indicando el evento y detalles suficientes para identificar el problema, sin reenviar material sensible innecesario. Xpress podrá revisar avisos y restringir accesos o retirar contenido para abordar usos indebidos, seguridad, derechos u obligaciones legales. No publiques nada ilegal, de odio, acosador o spam. Cualquier persona en el evento puede reportar contenido o a una persona. Los anfitriones pueden quitar el contenido de los invitados y quitar invitados. Xpress puede quitar el contenido que incumpla estos términos.",
   },
   {
     heading: "6. Fotos, documentos y música",
@@ -232,7 +232,7 @@ const termsEs: PolicySection[] = [
   },
   {
     heading: "9. Fin del acceso y eliminación",
-    body: "Puede dejar de usar la aplicación e iniciar la eliminación de su cuenta dentro de ella. Eliminar el acceso impide entrar, pero actualmente deja datos separados de reserva y evento según el aviso de eliminación. No cancela su evento, extingue obligaciones de pago ni cancela el contrato de reserva. Puede solicitar por separado la revisión o eliminación de datos personales conservados. Sus derechos legales siguen vigentes. El acceso puede restringirse por uso indebido o seguridad, pero esto no determina los derechos derivados del contrato de reserva.",
+    body: "Puede dejar de usar la aplicación y eliminar su cuenta dentro de ella. Eliminar quita el acceso a la aplicación. Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva, según el aviso de eliminación. No cancela su evento, sus obligaciones de pago ni el contrato de reserva.",
   },
   {
     heading: "10. Cambios y contacto",
@@ -242,55 +242,31 @@ const termsEs: PolicySection[] = [
 
 const deletionEn: PolicySection[] = [
   {
-    heading: "Delete your app account",
-    body: "You can initiate deletion using the account-deletion option inside the app and confirm that you want to delete your login. You do not need to email us to initiate that login deletion. If you cannot access the app, contact drew@xpressdjs.com for help with a data request. Staff accounts use a separate administrative process; this client deletion route refuses staff accounts.",
+    heading: "What deletion removes",
+    body: "Deleting your account removes your app login and access. You cannot sign back in with that login. We remove the app account record, event app memberships, and device tokens for that login. You can start this from the account deletion option in the app. If you cannot open the app, contact drew@xpressdjs.com. Staff accounts use a separate process. This client route refuses staff accounts.",
   },
   {
-    heading: "What is removed",
-    body: "The current process deletes your Supabase authentication user, the app account record, event-app memberships and device-token records for that login. Planning author references covered by the deletion relationships are set to null, and associated likes are removed. You lose access through that account. This is not a promise that every copy of your identity disappears from event text or other records.",
-  },
-  {
-    heading: "What remains",
-    body: "The current process keeps CRM client records, client-to-event links, guest records, events, songs, planning answers and notes, contracts and payments, public cover photos, private planner files and invitation or email logs. Some retained content can still identify you. Keeping these records in the present implementation is not proof that every record is legally required or may be retained indefinitely.",
-  },
-  {
-    heading: "Further personal-data removal",
-    body: "Write to drew@xpressdjs.com identifying the relevant event and the information you want reviewed, corrected or removed. Do not send a password or card number. We may verify your identity and distinguish your information from other participants' records. A separate request does not waive statutory rights and is not a substitute for making the in-app deletion flow meet applicable requirements. We cannot promise a fixed number of days or automatic removal of every event file under the current implementation.",
-  },
-  {
-    heading: "Retention",
-    body: "Retention should be limited to what is necessary for identified service, accounting, legal or dispute purposes, with record-specific periods and lawful exceptions. That is a proposed governing standard, not an existing configured deletion schedule. No live backup/PITR window or cleanup schedule for invitation logs and failed join logs has been verified. Backups and files need separate handling. Deleting a login does not cancel a booking or change the booking agreement.",
+    heading: "What stays with the booking",
+    body: "The event's planning details, guest record, contract, and payment records stay with the booking so your DJ can perform the event and as required by law. Songs, answers, notes, and the names on the guest and booking records are not removed by this deletion. It does not cancel the event or change payment obligations.",
   },
   {
     heading: "Sign in with Apple",
-    body: "The deletion process can request a fresh Apple authorization code and attempt token revocation. The attempt can fail or be skipped even though the login is deleted.",
+    body: "If you signed in with Apple, we try to revoke that sign-in. The login is still removed if that request fails. App support is events@xpressdjs.com.",
   },
 ];
 
 const deletionEs: PolicySection[] = [
   {
-    heading: "Eliminar su cuenta de la aplicación",
-    body: "Puede iniciar la eliminación mediante la opción de eliminación de cuenta dentro de la aplicación y confirmar que desea eliminar su acceso. No necesita enviar un correo para iniciar esa eliminación. Si no puede acceder, escriba a drew@xpressdjs.com para obtener ayuda con una solicitud de datos. Las cuentas del personal siguen un proceso administrativo separado; el proceso del cliente rechaza las cuentas del personal.",
+    heading: "Qué quita la eliminación",
+    body: "Eliminar su cuenta quita el acceso a la aplicación. No podrá volver a entrar con ese acceso. Quitamos el registro de la cuenta de la aplicación, las pertenencias al evento en la aplicación y los tokens de dispositivo de ese acceso. Puede iniciarlo desde la opción de eliminación de cuenta en la aplicación. Si no puede abrir la aplicación, escriba a drew@xpressdjs.com. Las cuentas del personal usan otro proceso. Esta vía del cliente rechaza las cuentas del personal.",
   },
   {
-    heading: "Qué se elimina",
-    body: "El proceso actual elimina su usuario de autenticación de Supabase, el registro de cuenta de la aplicación, las pertenencias al evento en la aplicación y los registros de tokens de dispositivo de ese acceso. Las referencias de autor cubiertas por las relaciones de eliminación se establecen en null y se eliminan los Me gusta asociados. Pierde el acceso mediante esa cuenta. Esto no promete que todas las copias de su identidad desaparezcan del texto del evento u otros registros.",
-  },
-  {
-    heading: "Qué permanece",
-    body: "Se conservan registros de clientes del CRM, vínculos entre clientes y eventos, registros de invitados, eventos, canciones, respuestas y notas, contratos y pagos, portadas públicas, archivos privados del planificador y registros de invitaciones o correos. Parte del contenido conservado todavía puede identificarle. Que la implementación actual conserve esos registros no demuestra que todos sean obligatorios por ley ni que puedan conservarse indefinidamente.",
-  },
-  {
-    heading: "Eliminación adicional de datos personales",
-    body: "Escriba a drew@xpressdjs.com indicando el evento y la información que desea revisar, corregir o eliminar. No envíe contraseñas ni números de tarjeta. Podemos verificar su identidad y distinguir sus datos de los de otros participantes. Una solicitud separada no supone renunciar a derechos legales ni sustituye la obligación de que el proceso dentro de la aplicación cumpla los requisitos aplicables. La implementación actual no permite prometer un número fijo de días ni la eliminación automática de todos los archivos del evento.",
-  },
-  {
-    heading: "Conservación",
-    body: "La conservación debería limitarse a lo necesario para fines identificados de servicio, contabilidad, obligaciones legales o controversias, con plazos por tipo de registro y excepciones legales. Es una norma propuesta, no un calendario de eliminación ya configurado. No se han verificado los plazos activos de copias de seguridad y recuperación a un momento dado ni los calendarios de limpieza de registros de invitaciones e intentos fallidos de acceso. Las copias y los archivos necesitan tratamiento separado. Eliminar un acceso no cancela una reserva ni cambia el contrato.",
+    heading: "Qué permanece con la reserva",
+    body: "Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva para que su DJ pueda realizar el evento y cuando la ley lo exige. Las canciones, respuestas, notas y los nombres de los registros de invitado y de reserva no se quitan con esta eliminación. No cancela el evento ni cambia las obligaciones de pago.",
   },
   {
     heading: "Iniciar sesión con Apple",
-    body: "El proceso puede solicitar un código de autorización nuevo e intentar revocar el token de Apple. El intento puede fallar u omitirse aunque se elimine el acceso.",
+    body: "Si inició sesión con Apple, intentamos revocar ese acceso. El acceso se elimina aunque esa solicitud falle. El soporte de la aplicación es events@xpressdjs.com.",
   },
 ];
 
@@ -312,10 +288,10 @@ export const APP_POLICIES: Record<PolicyLang, Record<PolicyDocId, PolicyDocument
     },
     deletion: {
       id: "deletion",
-      title: "Account deletion and retention",
-      description: "What the Xpress client app deletes today, and what booking and event records remain.",
+      title: "Account deletion",
+      description: "Deleting an Xpress app login removes access. The booking and its planning details stay.",
       navLabel: "Account deletion",
-      lead: "This page describes the current in-app deletion route. It is not a claim that the route meets every app-store deletion rule.",
+      lead: "Deleting your account removes your app login and access. The event's planning details, guest record, contract, and payment records stay with the booking so your DJ can perform the event and as required by law.",
       sections: deletionEn,
     },
   },
@@ -336,10 +312,10 @@ export const APP_POLICIES: Record<PolicyLang, Record<PolicyDocId, PolicyDocument
     },
     deletion: {
       id: "deletion",
-      title: "Eliminación de cuenta y conservación",
-      description: "Qué elimina hoy la aplicación de Xpress y qué registros de reserva y del evento permanecen.",
+      title: "Eliminación de cuenta",
+      description: "Eliminar el acceso a la aplicación de Xpress quita la entrada. La reserva y sus detalles de planificación permanecen.",
       navLabel: "Eliminación de cuenta",
-      lead: "Esta página describe el proceso actual de eliminación dentro de la aplicación. No es una declaración de cumplimiento de las normas del App Store.",
+      lead: "Eliminar su cuenta quita el acceso a la aplicación. Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva para que su DJ pueda realizar el evento y cuando la ley lo exige.",
       sections: deletionEs,
     },
   },

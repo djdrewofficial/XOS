@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEventRole } from "@/lib/planning";
-import { isUuid } from "@/lib/mobileCouple";
+import { isUuid, lookupMobileAccountKind } from "@/lib/mobileCouple";
+import { textForViewer } from "@/lib/ugcModeration";
+import { viewerBlocks } from "@/lib/ugcModerationServer";
 
 /* Safe event card. Guests do not get prices, pay links, notes, or client ids.
    Hosts and staff get the same card here. Payments and the booking agreement
@@ -22,8 +24,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ eventId:
   });
   const { data, error } = await rls.auth.getUser(token);
   if (error || !data.user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", data.user.id).maybeSingle();
-  const accountType = acct?.account_type as "staff" | "client" | "event_guest" | undefined;
+  const accountType = await lookupMobileAccountKind(rls, data.user.id);
   if (!accountType) return NextResponse.json({ error: "You don't have access to that." }, { status: 403 });
   const role = await resolveEventRole(rls, data.user.id, accountType, eventId);
   if (!role) return NextResponse.json({ error: "You don't have access to that." }, { status: 403 });
@@ -38,6 +39,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ eventId:
 
   const venue = event.venue as { name?: string | null } | null;
   const eventType = event.event_type as { name?: string | null } | null;
+  let coverPhotoUrl = (event.cover_photo_url as string | null) ?? null;
+  const coverMeta = await admin
+    .from("events")
+    .select("cover_photo_updated_by, cover_photo_hidden_at")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (!coverMeta.error && coverMeta.data) {
+    const blocked = await viewerBlocks(token, eventId, data.user.id, role);
+    const viewed = textForViewer(
+      coverPhotoUrl,
+      (coverMeta.data.cover_photo_updated_by as string | null) ?? null,
+      Boolean(coverMeta.data.cover_photo_hidden_at),
+      role,
+      blocked,
+    );
+    coverPhotoUrl = viewed.text;
+  }
   return NextResponse.json({
     role,
     event: {
@@ -47,7 +65,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ eventId:
       startTime: event.start_time,
       endTime: event.end_time,
       guestCount: event.guest_count,
-      coverPhotoUrl: event.cover_photo_url,
+      coverPhotoUrl,
       eventTypeId: event.event_type_id,
       eventType: eventType?.name ?? null,
       venueName: venue?.name ?? null,

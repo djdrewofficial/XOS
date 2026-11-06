@@ -18,6 +18,49 @@ export function deleteAppAccountDecision(input: {
   return { ok: true };
 }
 
+/** Staff is an accounts row of type staff, or an employee link. No row is not staff. */
+export function staffAccessGranted(input: { accountType: string | null; employeeLinked: boolean }): boolean {
+  return input.accountType === "staff" || input.employeeLinked;
+}
+
+/** Host access needs staff, a client link on that event, or a host membership. */
+export function hostAccessGranted(input: { staff: boolean; clientOnEvent: boolean; hostMembership: boolean }): boolean {
+  return input.staff || input.clientOnEvent || input.hostMembership;
+}
+
+/** Guest access needs a guest row or guest membership, and not staff or host access. */
+export function guestAccessGranted(input: {
+  staff: boolean;
+  clientOnEvent: boolean;
+  hostMembership: boolean;
+  guestRecord: boolean;
+  guestMembership: boolean;
+}): boolean {
+  if (hostAccessGranted(input)) return false;
+  return input.guestRecord || input.guestMembership;
+}
+
+export function loginUsesApple(user: {
+  app_metadata?: { provider?: string } | null;
+  identities?: Array<{ provider?: string }> | null;
+}): boolean {
+  if (user.app_metadata?.provider === "apple") return true;
+  return (user.identities ?? []).some((identity) => identity.provider === "apple");
+}
+
+/** Outcome line for the server log. Never include the code, token, or key. */
+export function appleRevokeLog(input: {
+  usedApple: boolean;
+  hadCode: boolean;
+  result: { ok: true } | { ok: false; error: string } | null;
+}): string {
+  if (!input.hadCode && !input.usedApple) return "Apple token revoke skipped: this login did not use Apple.";
+  if (!input.hadCode) return "Apple token revoke skipped: no authorization code.";
+  if (!input.result) return "Apple token revoke failed: Apple token revoke is not available.";
+  if (input.result.ok) return "Apple token revoke succeeded.";
+  return `Apple token revoke failed: ${input.result.error}`;
+}
+
 export function readAppleAuthorizationCode(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const code = (body as { appleAuthorizationCode?: unknown }).appleAuthorizationCode;
@@ -43,6 +86,7 @@ export async function runAppAccountDeletion(input: {
   employeeId: string | null;
   linkedEmployee: boolean;
   appleAuthorizationCode: string | null;
+  usedApple?: boolean;
   env: {
     APPLE_SIGNIN_KEY_ID?: string;
     APPLE_SIGNIN_PRIVATE_KEY?: string;
@@ -59,25 +103,25 @@ export async function runAppAccountDeletion(input: {
   const decision = deleteAppAccountDecision(input);
   if (!decision.ok) return decision;
 
+  const hadCode = Boolean(input.appleAuthorizationCode);
+  const usedApple = Boolean(input.usedApple) || hadCode;
+  let appleResult: { ok: true } | { ok: false; error: string } | null = null;
   if (input.appleAuthorizationCode) {
-    let result: { ok: true } | { ok: false; error: string } = {
-      ok: false,
-      error: "Apple token revoke is not available.",
-    };
+    appleResult = { ok: false, error: "Apple token revoke is not available." };
     if (input.revoke) {
       try {
-        result = await input.revoke({
+        appleResult = await input.revoke({
           code: input.appleAuthorizationCode,
           env: input.env,
           nowSec: input.nowSec,
           fetchImpl: input.fetchImpl,
         });
       } catch {
-        result = { ok: false, error: "Apple token revoke failed." };
+        appleResult = { ok: false, error: "Apple token revoke failed." };
       }
     }
-    if (!result.ok) input.log?.(`Apple token revoke failed: ${result.error}`);
   }
+  input.log?.(appleRevokeLog({ usedApple, hadCode, result: appleResult }));
 
   try {
     await input.removeAppData();

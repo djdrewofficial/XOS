@@ -6,6 +6,7 @@ import { requireModule } from "@/lib/auth";
 import { getSpotifyConnection, createSpotifyPlaylist, addTracksToSpotifyPlaylist } from "@/lib/spotifyAuth";
 import { searchMusic } from "@/lib/music";
 import { isOpenAIConfigured, chatComplete } from "@/lib/openai";
+import { contractClientHasAiConsent } from "@/lib/aiConsent";
 
 /* Staff-only Spotify export, two phases:
    1) resolvePlannerTracksForExport — match every song in the chosen sections to a
@@ -167,9 +168,13 @@ export async function resolvePlannerTracksForExport(
     if (count >= MAX_SONGS) break;
   }
 
-  // Clean all YouTube songs (across every section) in one AI call.
+  // Clean YouTube titles with OpenAI only after the contract client opts in.
+  // Without consent, matching uses the title and channel already stored.
   const ytSongs = loaded.flatMap((s) => s.songs).filter((s) => s.provider === "youtube");
-  const cleaned = await aiCleanYouTube(ytSongs.map((s) => ({ title: s.title, channel: s.artist })));
+  const allowAi = await contractClientHasAiConsent(admin, eventId);
+  const cleaned = allowAi
+    ? await aiCleanYouTube(ytSongs.map((s) => ({ title: s.title, channel: s.artist })))
+    : ytSongs.map((s) => ({ title: s.title, artist: s.artist ?? "" }));
   const ytClean = new Map<string, { title: string; artist: string }>();
   ytSongs.forEach((s, idx) => ytClean.set(s.id, cleaned[idx]));
 

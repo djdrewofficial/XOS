@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEventRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 
 /* Sections the couple can add from the app: template sections staff flagged
    `client_addable`, from the event's own template, minus ones already on the
@@ -21,8 +22,8 @@ export async function GET(req: Request) {
   const { data: userData, error: userErr } = await rls.auth.getUser(token);
   if (userErr || !userData?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const uid = userData.user.id;
-  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", uid).maybeSingle();
-  const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
+  const accountType = await lookupMobileAccountKind(rls, uid);
+  if (!accountType) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const role = await resolveEventRole(rls, uid, accountType, eventId);
   if (role !== "staff" && role !== "host") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 

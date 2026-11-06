@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isOpenAIConfigured } from "@/lib/openai";
 import { runAssistant } from "@/lib/assistant";
+import { ASSISTANT_CONTACT_BLOCKED, assistantTextHasDirectContact } from "@/lib/aiConsent";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,9 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as { messages?: { role?: string; content?: string }[] };
   const incoming = (body.messages ?? []).filter((m) => m && typeof m.content === "string");
   if (!incoming.length) return NextResponse.json({ error: "No message." }, { status: 400 });
+  if (incoming.some((message) => message.role !== "assistant" && assistantTextHasDirectContact(String(message.content ?? "")))) {
+    return NextResponse.json({ error: ASSISTANT_CONTACT_BLOCKED }, { status: 400 });
+  }
 
   try {
     const reply = await runAssistant(supabase, incoming);
