@@ -10,9 +10,9 @@ export { ROLES, type Role };
 
 export type Access = "none" | "view" | "edit";
 
-/** Roles that MUST use 2FA — they handle client PII, money, and contracts.
-    Regular "employee" stays opt-in. */
-export const TWO_FA_REQUIRED_ROLES: ReadonlySet<Role> = new Set<Role>(["master_admin", "admin", "salesperson"]);
+/** Every staff role needs a passkey or a second factor before using XOS.
+    Password alone is not enough. */
+export const TWO_FA_REQUIRED_ROLES: ReadonlySet<Role> = new Set<Role>(ROLES.map(([id]) => id));
 
 /** Ordered so "edit" implies "view" implies "none". */
 const ACCESS_RANK: Record<Access, number> = { none: 0, view: 1, edit: 2 };

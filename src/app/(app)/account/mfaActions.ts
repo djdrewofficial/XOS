@@ -6,6 +6,7 @@ import {
   disableEmailMfaForSession,
   emailFactorStatus,
   sendEmailMfaCodeForSession,
+  unenrollVerifiedFactorForSession,
   verifyEmailMfaCodeForSession,
   type EmailMfaResult,
 } from "@/lib/emailMfaServer";
@@ -31,6 +32,12 @@ export async function verifyEmailMfaCode(purpose: EmailMfaPurpose, code: string)
 
 export async function disableEmailMfa(): Promise<EmailMfaResult> {
   const result = await disableEmailMfaForSession();
+  if (result.ok) revalidatePath("/account/security");
+  return result;
+}
+
+export async function turnOffVerifiedFactor(factorId: string): Promise<EmailMfaResult> {
+  const result = await unenrollVerifiedFactorForSession(factorId);
   if (result.ok) revalidatePath("/account/security");
   return result;
 }

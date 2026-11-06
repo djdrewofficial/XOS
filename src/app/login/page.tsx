@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AuthShell from "@/components/AuthShell";
+import PasskeyLogin from "@/components/PasskeyLogin";
+import { cancelPasskeyCeremony } from "@/lib/passkeyBrowser";
 import { createClient } from "@/lib/supabase/client";
 
 /** After signing in for another app (/sso/*, e.g. the photo gallery), go back there. */
@@ -23,6 +25,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    cancelPasskeyCeremony();
     const supabase = createClient();
     const { data: signIn, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
@@ -30,14 +33,16 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-    // If this account has 2FA enrolled, finish the second step before landing.
-    // Authenticator and text codes show up as nextLevel aal2. Email codes do
-    // not, so the flag on the login is checked too.
+    // Password sign-in still finishes a second step when one is enrolled.
+    // A passkey-only account has no Supabase factor, so the passkey flag sends
+    // them to confirm that passkey. Signing in with the passkey button skips this.
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     const emailMfa = signIn.user?.app_metadata?.email_mfa === true;
+    const passkeyMfa = signIn.user?.app_metadata?.passkey_mfa === true;
     const next = ssoNext();
     const needsSecondFactor =
-      (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") || (emailMfa && aal?.currentLevel !== "aal2");
+      (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") ||
+      ((emailMfa || passkeyMfa) && aal?.currentLevel !== "aal2");
     if (needsSecondFactor) {
       router.push(next ? `/2fa?next=${encodeURIComponent(next)}` : "/2fa");
       return;
@@ -81,14 +86,42 @@ export default function LoginPage() {
     router.refresh();
   }
 
+  async function afterPasskey() {
+    const next = ssoNext();
+    if (next) {
+      window.location.assign(next);
+      return;
+    }
+    const supabase = createClient();
+    const { data } = await supabase.auth.getUser();
+    const userId = data.user?.id;
+    let landing = "/";
+    const { data: emp } = userId
+      ? await supabase.from("employees").select("permission_tier, landing_page").eq("auth_user_id", userId).maybeSingle()
+      : { data: null };
+    if (emp?.landing_page) {
+      landing = emp.landing_page;
+    } else {
+      const role = emp?.permission_tier || "master_admin";
+      const { data: rs } = await supabase.from("role_settings").select("landing_page").eq("role", role).maybeSingle();
+      landing = rs?.landing_page || "/";
+      if (!rs?.landing_page) {
+        const { data: cs } = await supabase.from("company_settings").select("landing_page").eq("id", true).maybeSingle();
+        landing = cs?.landing_page || "/";
+      }
+    }
+    window.location.assign(landing);
+  }
+
   return (
     <AuthShell subtitle="XOS · Xpress Operating System">
+      <PasskeyLogin onSignedIn={afterPasskey} />
       <form onSubmit={handleSubmit}>
         <label className="label-xs">Email</label>
         <input
           type="email"
           required
-          autoComplete="email"
+          autoComplete="username webauthn"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="input mb-4 w-full"

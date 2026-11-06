@@ -94,6 +94,8 @@ describe("sign-in gate", () => {
     nextLevel: "aal1",
     emailEnrolled: false,
     emailStepUp: false,
+    passkeyEnrolled: false,
+    passkeyStepUp: false,
     roleRequiresMfa: true,
   };
 
@@ -116,6 +118,18 @@ describe("sign-in gate", () => {
     assert.equal(decideMfaGate({ ...base, roleRequiresMfa: false }), "allow");
     assert.equal(decideMfaGate({ ...base, aalKnown: false }), "allow");
     assert.equal(decideMfaGate({ ...base, aalKnown: false, emailEnrolled: true }), "challenge");
+    assert.equal(decideMfaGate({ ...base, aalKnown: false, passkeyEnrolled: true }), "challenge");
+  });
+
+  it("treats a passkey ceremony as fully verified, and a passkey alone as something to answer", () => {
+    assert.equal(decideMfaGate({ ...base, passkeyEnrolled: true }), "challenge");
+    assert.equal(decideMfaGate({ ...base, passkeyEnrolled: true, passkeyStepUp: true }), "allow");
+    assert.equal(
+      decideMfaGate({ ...base, nextLevel: "aal2", emailEnrolled: true, passkeyStepUp: true }),
+      "allow",
+    );
+    assert.equal(decideMfaGate({ ...base, passkeyStepUp: true, aalKnown: false }), "allow");
+    assert.equal(decideMfaGate({ ...base, passkeyEnrolled: false, emailEnrolled: false }), "enroll");
   });
 });
 

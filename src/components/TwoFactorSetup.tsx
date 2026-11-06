@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { disableEmailMfa, removeSupabaseFactorWithEmailCode, sendEmailMfaCode, verifyEmailMfaCode } from "@/app/(app)/account/mfaActions";
+import { disableEmailMfa, removeSupabaseFactorWithEmailCode, sendEmailMfaCode, turnOffVerifiedFactor, verifyEmailMfaCode } from "@/app/(app)/account/mfaActions";
 import { createClient } from "@/lib/supabase/client";
 import { friendlySupabaseMfaError, maskEmail, maskPhone, sixDigitCode } from "@/lib/mfaMethods";
 import { formatPhone, toE164 } from "@/lib/phone";
@@ -18,6 +18,7 @@ export default function TwoFactorSetup({
   email = null,
   emailEnrolled = false,
   emailReady = true,
+  passkeyCount = 0,
 }: {
   required?: boolean;
   suggestedPhone?: string | null;
@@ -25,6 +26,7 @@ export default function TwoFactorSetup({
   email?: string | null;
   emailEnrolled?: boolean;
   emailReady?: boolean;
+  passkeyCount?: number;
 }) {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
@@ -56,24 +58,21 @@ export default function TwoFactorSetup({
     };
   }, [supabase]);
 
-  const anyOn = Boolean(totp || phoneFactor || emailOn);
+  const anyOn = Boolean(totp || phoneFactor || emailOn || passkeyCount > 0);
 
   async function turnOffFactor(factor: Factor, label: string) {
     setError(null);
-    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal?.currentLevel === "aal2") {
-      const { error: unenrollErr } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
-      if (!unenrollErr) {
-        await refresh();
-        router.refresh();
-        return;
-      }
-      if (!/aal/i.test(unenrollErr.message)) {
-        setError(unenrollErr.message);
-        return;
-      }
+    const result = await turnOffVerifiedFactor(factor.id);
+    if (result.ok) {
+      await refresh();
+      router.refresh();
+      return;
     }
-    setRemove({ factorId: factor.id, label });
+    if (/sign-in code or use your passkey/i.test(result.error)) {
+      setRemove({ factorId: factor.id, label });
+      return;
+    }
+    setError(result.error);
   }
 
   const [remove, setRemove] = useState<{ factorId: string; label: string } | null>(null);
@@ -84,7 +83,7 @@ export default function TwoFactorSetup({
     <div className="space-y-6">
       {required && !anyOn && (
         <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
-          Your role requires two-factor authentication. Turn on at least one method below.
+          Your account needs a passkey or two-factor authentication before you can use XOS. Add a passkey above, or turn on a code here.
         </p>
       )}
       {anyOn ? (
@@ -93,8 +92,8 @@ export default function TwoFactorSetup({
         </p>
       ) : null}
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Add a second step at sign-in. Use an authenticator app, a text message, or a code emailed to you.
-        You can turn on more than one and pick whichever you have on the sign-in screen.
+        Password sign-in can ask for an authenticator app, a text message, or a code emailed to you.
+        You can turn on more than one and pick whichever you have. A passkey sign-in does not ask for a code.
       </p>
 
       <Method
