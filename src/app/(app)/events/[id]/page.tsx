@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
 import InviteToXosButton from "@/components/InviteToXosButton";
+import AiConsentBadge from "@/components/AiConsentBadge";
 import EventAppAccess, { type AppInviteCard, type AppMemberCard } from "@/components/EventAppAccess";
 import NoteItem from "@/components/NoteItem";
 import {
@@ -72,6 +73,7 @@ import { splitSchedule, type SchedRow } from "@/lib/scheduleLock";
 import { eventWithinDays } from "@/lib/paymentSchedule";
 import StaffSection from "@/components/StaffSection";
 import UrlTabs from "@/components/UrlTabs";
+import EventModerationPanel from "@/components/EventModerationPanel";
 import SaveButton from "@/components/SaveButton";
 import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
@@ -288,6 +290,7 @@ export default async function EventDetailPage({
     { data: schedVendorContacts },
     { data: schedPaymentAmounts },
     appInvitesResult,
+    openReportsCount,
   ] = await Promise.all([
     loadsOnTab(activeTab, "planningTemplates")
       ? supabase.from("planning_templates").select("id, name").eq("is_library", false).order("name")
@@ -387,8 +390,14 @@ export default async function EventDetailPage({
           .eq("status", "pending")
           .order("invited_at", { ascending: false })
       : skip,
+    supabase
+      .from("event_content_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", id)
+      .eq("status", "open"),
   ]);
 
+  const openReportCount = openReportsCount.error ? 0 : (openReportsCount.count ?? 0);
   const sameDayEvents = event.event_date ? (sameDayByDate[event.event_date] ?? []) : [];
 
   const spotifySections = (plannerSections ?? []).map((s) => ({
@@ -2281,6 +2290,7 @@ export default async function EventDetailPage({
 
   const notesTab = (
     <div className="max-w-3xl space-y-6">
+      {activeTab === "notes" && <EventModerationPanel eventId={id} />}
       {/* Planner status */}
       <div className="card p-5">
         <div className="flex items-center justify-between gap-2">
@@ -2685,6 +2695,7 @@ export default async function EventDetailPage({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <AiConsentBadge eventId={id} />
             {event.status && (
               <span
                 className="status-chip px-3 py-1.5 text-sm"
@@ -2822,7 +2833,7 @@ export default async function EventDetailPage({
               </div>
             ),
           },
-          { id: "notes", label: "Planning / Notes", badge: internalNotes.length, content: notesTab },
+          { id: "notes", label: "Planning / Notes", badge: openReportCount > 0 ? openReportCount : internalNotes.length || undefined, content: notesTab },
         ]}
       />
 
