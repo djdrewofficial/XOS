@@ -9,8 +9,16 @@ import {
 } from "@/lib/passkeyBrowser";
 
 /** Passwordless staff sign-in. A successful passkey opens a Supabase session
-    and counts as fully verified, so there is no second code after it. */
-export default function PasskeyLogin({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
+    and counts as fully verified, so there is no second code after it.
+    `choice` is one of the four first-screen buttons and does not open the
+    prompt until the person presses it. */
+export default function PasskeyLogin({
+  onSignedIn,
+  choice = false,
+}: {
+  onSignedIn: () => Promise<void>;
+  choice?: boolean;
+}) {
   const [supported, setSupported] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +29,7 @@ export default function PasskeyLogin({ onSignedIn }: { onSignedIn: () => Promise
     void (async () => {
       const ok = passkeysLookSupported();
       if (!cancelled) setSupported(ok);
-      if (!ok || !(await conditionalPasskeysAvailable())) return;
+      if (choice || !ok || !(await conditionalPasskeysAvailable())) return;
       if (cancelled) return;
       const result = await signInWithPasskey(true);
       if (cancelled || (!result.ok && result.cancelled)) return;
@@ -35,12 +43,16 @@ export default function PasskeyLogin({ onSignedIn }: { onSignedIn: () => Promise
       cancelled = true;
       cancelPasskeyCeremony();
     };
-  }, []);
+  }, [choice]);
 
-  if (!supported) return null;
+  if (!supported && !choice) return null;
 
   async function click() {
     setError(null);
+    if (!passkeysLookSupported()) {
+      setError("Passkeys are not available in this browser.");
+      return;
+    }
     setBusy(true);
     cancelPasskeyCeremony();
     const result = await signInWithPasskey(false);
@@ -58,18 +70,22 @@ export default function PasskeyLogin({ onSignedIn }: { onSignedIn: () => Promise
 
   return (
     <div className="mb-5">
-      <button type="button" onClick={click} disabled={busy} className="btn-primary w-full disabled:opacity-50">
-        {busy ? "Waiting for the passkey…" : "Sign in with a passkey"}
+      <button type="button" onClick={click} disabled={busy} className={`${choice ? "btn-ghost" : "btn-primary"} w-full disabled:opacity-50`}>
+        {busy ? "Waiting for the passkey…" : choice ? "Passkey" : "Sign in with a passkey"}
       </button>
-      <p className="mt-2 text-center text-xs text-zinc-500">
-        Face ID, Touch ID, a device PIN, or a passkey in 1Password or iCloud Keychain.
-      </p>
+      {choice ? null : (
+        <p className="mt-2 text-center text-xs text-zinc-500">
+          Face ID, Touch ID, a device PIN, or a passkey in 1Password or iCloud Keychain.
+        </p>
+      )}
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
-      <div className="mt-5 flex items-center gap-3">
-        <div className="h-px flex-1 bg-zinc-200 dark:bg-white/10" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">or</span>
-        <div className="h-px flex-1 bg-zinc-200 dark:bg-white/10" />
-      </div>
+      {choice ? null : (
+        <div className="mt-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-zinc-200 dark:bg-white/10" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">or</span>
+          <div className="h-px flex-1 bg-zinc-200 dark:bg-white/10" />
+        </div>
+      )}
     </div>
   );
 }
