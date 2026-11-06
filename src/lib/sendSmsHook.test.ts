@@ -24,8 +24,11 @@ const phone = "+13055550199";
 const nowSec = 1_700_000_000;
 const nowMs = nowSec * 1000;
 
-function payload(code = otp, to = phone) {
-  return JSON.stringify({ user: { phone: to }, sms: { otp: code } });
+function payload(code = otp, to = phone, smsPhone?: string) {
+  return JSON.stringify({
+    user: { phone: to },
+    sms: smsPhone ? { otp: code, phone: smsPhone } : { otp: code },
+  });
 }
 
 function sign(body: string, id = "msg_01", timestamp = String(nowSec), hmacKey: Buffer = key) {
@@ -288,6 +291,26 @@ describe("handleSendSmsHook", () => {
     assert.match(blockedJson.error.message, /Too many login codes/);
     assert.equal(blockedJson.error.message.includes("299999"), false);
     assert.equal(h.sent.length, 8);
+  });
+
+  it("texts the MFA factor number when it differs from the login phone", async () => {
+    const h = harness(async () => ({ ok: true, messageId: "hl_mfa" }));
+    const factor = "+13055550100";
+    const body = payload(otp, phone, factor);
+    const res = await h.handle(request({ body, id: "msg_factor", signature: `v1,${sign(body, "msg_factor")}` }));
+    assert.equal(res.status, 200);
+    assert.equal(h.sent.length, 1);
+    assert.equal(h.sent[0]?.phone, factor);
+    assert.equal(h.sent[0]?.body.includes(otp), true);
+  });
+
+  it("does not fall back to the login phone when the factor number is unusable", async () => {
+    const h = harness(async () => ({ ok: true, messageId: "hl_bad" }));
+    const body = payload(otp, phone, "555");
+    const res = await h.handle(request({ body, id: "msg_bad_factor", signature: `v1,${sign(body, "msg_bad_factor")}` }));
+    assert.equal(res.status, 200);
+    assert.match((await res.json()).error.message, /phone/i);
+    assert.equal(h.sent.length, 0);
   });
 
   it("does not throw the code into a log when the sender throws", async () => {

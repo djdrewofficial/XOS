@@ -18,6 +18,26 @@ export async function passwordChangeNeedsTotp(supabase: SupabaseClient): Promise
   }
 }
 
+/** Raise the current session from aal1 to aal2 with a text-message factor.
+    The challenge has to be created first — that send is what delivers the code.
+    Returns an error string, or null when the session is now aal2. */
+export async function elevateSessionWithPhone(
+  supabase: SupabaseClient,
+  input: { factorId: string; challengeId: string; code: string },
+): Promise<string | null> {
+  if (!/^\d{6}$/.test((input.code ?? "").trim())) return "Enter the 6-digit code from the text message.";
+  const { data: factors, error: listErr } = await supabase.auth.mfa.listFactors();
+  if (listErr) return listErr.message;
+  const factor = factors?.phone?.find((f) => f.id === input.factorId && f.status === "verified");
+  if (!factor) return "No text-message verification is enrolled on this account.";
+  const { error } = await supabase.auth.mfa.verify({
+    factorId: factor.id,
+    challengeId: input.challengeId,
+    code: input.code.trim(),
+  });
+  return error ? error.message : null;
+}
+
 /** Raise the current session from aal1 to aal2 with the enrolled TOTP factor.
     Same challenge + verify the /2fa page uses. Returns an error string, or
     null when the session is now aal2. */

@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AuthShell from "@/components/AuthShell";
-import AuthenticatorCodeField from "@/components/AuthenticatorCodeField";
+import MfaPasswordStep, { type MfaPasswordSelection } from "@/components/MfaPasswordStep";
 import PasswordChecklist from "@/components/PasswordChecklist";
+import { setPasswordWithEmailCode } from "@/app/(app)/account/actions";
 import { createClient } from "@/lib/supabase/client";
-import { elevateSessionWithTotp, passwordChangeNeedsTotp } from "@/lib/mfaStepUp";
+import { elevateSessionWithPhone, elevateSessionWithTotp, passwordChangeNeedsTotp } from "@/lib/mfaStepUp";
 import {
   PASSWORD_CHANGE_MFA_PROMPT,
   PASSWORD_CHANGE_NONCE_PROMPT,
   nextPasswordChangeStep,
-  totpCodeError,
 } from "@/lib/passwordChange";
 import { passwordMeetsPolicy } from "@/lib/passwordPolicy";
 
@@ -67,7 +67,14 @@ export default function SetPasswordPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "invalid">("loading");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
-  const [totp, setTotp] = useState("");
+  const [code, setCode] = useState("");
+  const [selection, setSelection] = useState<MfaPasswordSelection>({
+    method: "totp",
+    phoneFactorId: null,
+    phoneChallengeId: null,
+    ready: false,
+  });
+  const onSelection = useCallback((value: MfaPasswordSelection) => setSelection(value), []);
   const [nonce, setNonce] = useState("");
   const [needsMfa, setNeedsMfa] = useState(false);
   const [needsNonce, setNeedsNonce] = useState(false);
@@ -220,20 +227,55 @@ export default function SetPasswordPage() {
     // is raised the same way /2fa does. No authenticator: update directly.
     if (await passwordChangeNeedsTotp(supabase)) {
       setNeedsMfa(true);
-      const format = totpCodeError(totp);
-      if (format) {
-        setError(format);
+      if (!selection.ready) {
+        setError(PASSWORD_CHANGE_MFA_PROMPT);
         setSaving(false);
         return;
       }
-      const mfaError = await elevateSessionWithTotp(supabase, totp);
-      if (mfaError) {
-        setError(mfaError);
+      if (selection.method === "email") {
+        const result = await setPasswordWithEmailCode({ next: pw, confirm: pw2, code: code.trim() });
         setSaving(false);
+        if (!result.ok) {
+          if (result.needsMfa) setNeedsMfa(true);
+          if (result.needsNonce) setNeedsNonce(true);
+          setError(result.error);
+          return;
+        }
+        await supabase.auth.signOut({ scope: "others" });
+        clearRecovery();
+        setDone(true);
+        setTimeout(() => {
+          router.push("/");
+          router.refresh();
+        }, 900);
         return;
+      }
+      if (selection.method === "phone") {
+        if (!selection.phoneFactorId || !selection.phoneChallengeId) {
+          setError("Text yourself a code first.");
+          setSaving(false);
+          return;
+        }
+        const mfaError = await elevateSessionWithPhone(supabase, {
+          factorId: selection.phoneFactorId,
+          challengeId: selection.phoneChallengeId,
+          code,
+        });
+        if (mfaError) {
+          setError(mfaError);
+          setSaving(false);
+          return;
+        }
+      } else {
+        const mfaError = await elevateSessionWithTotp(supabase, code);
+        if (mfaError) {
+          setError(mfaError);
+          setSaving(false);
+          return;
+        }
       }
       setNeedsMfa(false);
-      setTotp("");
+      setCode("");
     }
     const nonceValue = nonce.trim();
     const { error } = await supabase.auth.updateUser({
@@ -272,7 +314,7 @@ export default function SetPasswordPage() {
   const canSubmit =
     passwordMeetsPolicy(pw) &&
     pw === pw2 &&
-    (!needsMfa || totpCodeError(totp) === null) &&
+    (!needsMfa || selection.ready) &&
     (!needsNonce || nonce.trim().length > 0);
 
   return (
@@ -318,13 +360,7 @@ export default function SetPasswordPage() {
           <p className="mb-4 mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
             For your security, passwords found in known data breaches can&apos;t be used.
           </p>
-          {needsMfa && (
-            <AuthenticatorCodeField
-              value={totp}
-              onChange={setTotp}
-              hint="This account uses an authenticator app. Enter the current 6-digit code. We check it, then save the new password."
-            />
-          )}
+          {needsMfa && <MfaPasswordStep code={code} onCode={setCode} onSelection={onSelection} />}
           {needsNonce && (
             <div className="mb-4">
               <label className="label-xs">Confirmation code</label>

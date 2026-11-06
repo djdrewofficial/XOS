@@ -31,9 +31,14 @@ export default function LoginPage() {
       return;
     }
     // If this account has 2FA enrolled, finish the second step before landing.
+    // Authenticator and text codes show up as nextLevel aal2. Email codes do
+    // not, so the flag on the login is checked too.
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    const emailMfa = signIn.user?.app_metadata?.email_mfa === true;
     const next = ssoNext();
-    if (aal && aal.currentLevel === "aal1" && aal.nextLevel === "aal2") {
+    const needsSecondFactor =
+      (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") || (emailMfa && aal?.currentLevel !== "aal2");
+    if (needsSecondFactor) {
       router.push(next ? `/2fa?next=${encodeURIComponent(next)}` : "/2fa");
       return;
     }

@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import AuthenticatorCodeField from "@/components/AuthenticatorCodeField";
+import { useCallback, useState } from "react";
+import MfaPasswordStep, { type MfaPasswordSelection } from "@/components/MfaPasswordStep";
 import PasswordChecklist from "@/components/PasswordChecklist";
 import { passwordMeetsPolicy } from "@/lib/passwordPolicy";
-import { totpCodeError } from "@/lib/passwordChange";
 import { changeMyPassword, emailMyPasswordReset, sendPasswordChangeCode } from "@/app/(app)/account/actions";
 
 /** Logged-in password change on My Account. Requires the current password so a
@@ -15,7 +14,14 @@ export default function ChangePasswordForm() {
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [nonce, setNonce] = useState("");
-  const [totp, setTotp] = useState("");
+  const [code, setCode] = useState("");
+  const [selection, setSelection] = useState<MfaPasswordSelection>({
+    method: "totp",
+    phoneFactorId: null,
+    phoneChallengeId: null,
+    ready: false,
+  });
+  const onSelection = useCallback((value: MfaPasswordSelection) => setSelection(value), []);
   const [needsNonce, setNeedsNonce] = useState(false);
   const [needsMfa, setNeedsMfa] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +33,7 @@ export default function ChangePasswordForm() {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [sendingCode, setSendingCode] = useState(false);
 
-  const totpOk = !needsMfa || totpCodeError(totp) === null;
+  const totpOk = !needsMfa || selection.ready;
   const nonceOk = !needsNonce || nonce.trim().length > 0;
   const canSubmit =
     current.length > 0 && passwordMeetsPolicy(pw) && pw === pw2 && pw !== current && totpOk && nonceOk;
@@ -48,8 +54,8 @@ export default function ChangePasswordForm() {
       setError("Passwords don't match.");
       return;
     }
-    if (needsMfa && totpCodeError(totp)) {
-      setError(totpCodeError(totp));
+    if (needsMfa && !selection.ready) {
+      setError("Enter the 6-digit verification code.");
       return;
     }
     setSaving(true);
@@ -59,7 +65,11 @@ export default function ChangePasswordForm() {
       next: pw,
       confirm: pw2,
       nonce: nonce.trim() || undefined,
-      totp: totp.trim() || undefined,
+      method: needsMfa ? selection.method : undefined,
+      totp: needsMfa && selection.method !== "email" ? code.trim() : undefined,
+      phoneFactorId: selection.phoneFactorId ?? undefined,
+      phoneChallengeId: selection.phoneChallengeId ?? undefined,
+      emailCode: needsMfa && selection.method === "email" ? code.trim() : undefined,
     });
     setSaving(false);
     if (!result.ok) {
@@ -77,7 +87,7 @@ export default function ChangePasswordForm() {
     setPw("");
     setPw2("");
     setNonce("");
-    setTotp("");
+    setCode("");
     setNeedsNonce(false);
     setNeedsMfa(false);
     setSaved(true);
@@ -149,13 +159,7 @@ export default function ChangePasswordForm() {
       <p className="mb-4 mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
         For your security, passwords found in known data breaches can&apos;t be used.
       </p>
-      {needsMfa && (
-        <AuthenticatorCodeField
-          value={totp}
-          onChange={setTotp}
-          hint="This account uses an authenticator app. Enter the current 6-digit code. We check it, then save the new password."
-        />
-      )}
+      {needsMfa && <MfaPasswordStep code={code} onCode={setCode} onSelection={onSelection} />}
       {needsNonce && (
         <div className="mb-4">
           <label className="label-xs">Confirmation code</label>
@@ -201,7 +205,7 @@ export default function ChangePasswordForm() {
         {linkSent && (
           <p className="mt-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
             Check your inbox for a link to choose a new password. If this account uses two-factor authentication, have
-            your authenticator app ready.
+            your authenticator, phone, or email ready.
           </p>
         )}
         {linkError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{linkError}</p>}

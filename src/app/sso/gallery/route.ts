@@ -1,8 +1,12 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getMe } from "@/lib/auth";
 import { accessAtLeast, TWO_FA_REQUIRED_ROLES } from "@/lib/permissions";
 import { galleryCallbackUrl, signGalleryPass } from "@/lib/gallerySso";
+import { decideMfaGate } from "@/lib/mfaGate";
+import { MFA_EMAIL_COOKIE, readMfaEmailStepUp, sessionIdFromAccessToken } from "@/lib/mfaStepUpCookie";
+import { permCacheSecret } from "@/lib/permSnapshot";
 
 /* Sign in to the photo gallery with XOS. The gallery's "Sign in with XOS" button
    sends the browser here with ?state=…; this route is login-walled (and 2FA-gated)
@@ -38,13 +42,31 @@ export async function GET(req: Request) {
   if (!me) return back("/login");
 
   // The middleware already enforces 2FA, but it fails open on errors; a pass into
-  // another app fails closed instead.
+  // another app fails closed instead. Email codes satisfy the same decision as
+  // an authenticator or text code.
   const { data: aal, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (aalError || !aal) return new NextResponse("Couldn't check two-factor sign-in. Try again.", { status: 503 });
-  if (aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") return back("/2fa");
-  if (aal.currentLevel !== "aal2" && TWO_FA_REQUIRED_ROLES.has(me.role)) {
-    return noStore(NextResponse.redirect(new URL("/account/security", url)));
-  }
+  const { data: authUser } = await supabase.auth.getUser();
+  const emailEnrolled = authUser.user?.app_metadata?.email_mfa === true;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const emailStepUp = await readMfaEmailStepUp(
+    (await cookies()).get(MFA_EMAIL_COOKIE)?.value,
+    permCacheSecret(),
+    me.userId,
+    sessionIdFromAccessToken(session?.access_token),
+  );
+  const decision = decideMfaGate({
+    aalKnown: true,
+    currentLevel: aal.currentLevel,
+    nextLevel: aal.nextLevel,
+    emailEnrolled,
+    emailStepUp,
+    roleRequiresMfa: TWO_FA_REQUIRED_ROLES.has(me.role),
+  });
+  if (decision === "challenge") return back("/2fa");
+  if (decision === "enroll") return noStore(NextResponse.redirect(new URL("/account/security", url)));
 
   const access = me.accountType === "staff" ? me.can.gallery ?? "none" : "none";
   const refused = new URL(target);

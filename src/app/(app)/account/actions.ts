@@ -5,15 +5,19 @@ import { createClient as createSupabaseJsClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getMe } from "@/lib/auth";
-import { elevateSessionWithTotp, passwordChangeNeedsTotp } from "@/lib/mfaStepUp";
+import { verifyEmailMfaCodeForSession, setPasswordAfterVerifiedEmail, currentEmailStepUp } from "@/lib/emailMfaServer";
+import { elevateSessionWithPhone, elevateSessionWithTotp, passwordChangeNeedsTotp } from "@/lib/mfaStepUp";
+import { sessionIdFromAccessToken } from "@/lib/mfaStepUpCookie";
+import type { MfaMethod } from "@/lib/mfaMethods";
 import {
   PASSWORD_CHANGE_MFA_PROMPT,
   PASSWORD_CHANGE_NONCE_PROMPT,
   classifyCurrentPasswordError,
   currentPasswordErrorMessage,
+  isInsufficientAal,
   nextPasswordChangeStep,
 } from "@/lib/passwordChange";
-import { validatePasswordChange } from "@/lib/passwordPolicy";
+import { passwordMeetsPolicy, validatePasswordChange } from "@/lib/passwordPolicy";
 import { deliverPasswordReset } from "@/lib/sendPasswordReset";
 import { syncEmployeeLoginPhone } from "@/lib/loginPhoneAdmin";
 import { flashPhoneNotice } from "@/lib/phoneNotice";
@@ -96,6 +100,10 @@ export async function changeMyPassword(input: {
   confirm: string;
   nonce?: string;
   totp?: string;
+  method?: MfaMethod;
+  phoneFactorId?: string;
+  phoneChallengeId?: string;
+  emailCode?: string;
 }): Promise<PasswordChangeResult> {
   const validated = validatePasswordChange(input);
   if (!validated.ok) return validated;
@@ -125,11 +133,39 @@ export async function changeMyPassword(input: {
     await verifier.auth.signOut({ scope: "local" }).catch(() => {});
   }
 
+  let emailVerifiedNow = false;
   if (await passwordChangeNeedsTotp(supabase)) {
-    const totp = input.totp ?? "";
-    if (!totp.trim()) return { ok: false, needsMfa: true, error: PASSWORD_CHANGE_MFA_PROMPT };
-    const mfaError = await elevateSessionWithTotp(supabase, totp);
-    if (mfaError) return { ok: false, needsMfa: true, error: mfaError };
+    const method = input.method ?? "totp";
+    if (method === "phone") {
+      if (!input.phoneFactorId || !input.phoneChallengeId) {
+        return { ok: false, needsMfa: true, error: "Text yourself a code first." };
+      }
+      const mfaError = await elevateSessionWithPhone(supabase, {
+        factorId: input.phoneFactorId,
+        challengeId: input.phoneChallengeId,
+        code: input.totp ?? "",
+      });
+      if (mfaError) return { ok: false, needsMfa: true, error: mfaError };
+    } else if (method === "email") {
+      const verified = await verifyEmailMfaCodeForSession("signin", input.emailCode ?? "");
+      if (!verified.ok) return { ok: false, needsMfa: true, error: verified.error };
+      emailVerifiedNow = true;
+    } else {
+      const totp = input.totp ?? "";
+      if (!totp.trim()) return { ok: false, needsMfa: true, error: PASSWORD_CHANGE_MFA_PROMPT };
+      const mfaError = await elevateSessionWithTotp(supabase, totp);
+      if (mfaError) return { ok: false, needsMfa: true, error: mfaError };
+    }
+  } else if (user.app_metadata?.email_mfa === true) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const stepped = await currentEmailStepUp(user.id, sessionIdFromAccessToken(session?.access_token));
+    if (!stepped) {
+      const verified = await verifyEmailMfaCodeForSession("signin", input.emailCode ?? "");
+      if (!verified.ok) return { ok: false, needsMfa: true, error: verified.error };
+      emailVerifiedNow = true;
+    }
   }
 
   const nonce = input.nonce?.trim() || undefined;
@@ -138,6 +174,15 @@ export async function changeMyPassword(input: {
     current_password: input.current,
     ...(nonce ? { nonce } : {}),
   });
+  if (updateError && isInsufficientAal(updateError) && emailVerifiedNow) {
+    // Auth has no email factor, so a session that only proved email stays aal1
+    // and updateUser refuses while an authenticator or phone factor exists.
+    // The current password was checked above and the email code was single-use.
+    const fallback = await setPasswordAfterVerifiedEmail(user.id, input.next);
+    if (!fallback.ok) return fallback;
+    await supabase.auth.signOut({ scope: "others" });
+    return { ok: true };
+  }
   if (updateError) {
     const step = nextPasswordChangeStep({ error: updateError, hasNonce: Boolean(nonce) });
     if (step.action === "send-nonce") {
@@ -150,6 +195,54 @@ export async function changeMyPassword(input: {
     if (step.action === "step-up-mfa") {
       return { ok: false, needsMfa: true, error: PASSWORD_CHANGE_MFA_PROMPT };
     }
+    return { ok: false, error: step.error };
+  }
+
+  await supabase.auth.signOut({ scope: "others" });
+  return { ok: true };
+}
+
+function isRecoverySession(methods: { method?: string }[] | string[] | null | undefined): boolean {
+  return (methods ?? []).some((entry) => (typeof entry === "string" ? entry : entry.method) === "recovery");
+}
+
+/** Set a password from the reset-link page when the backup factor is email.
+    Refuses a normal signed-in session so this cannot skip the current password.
+    Authenticator and text codes still go through mfa.verify on that page. */
+export async function setPasswordWithEmailCode(input: {
+  next: string;
+  confirm: string;
+  code: string;
+}): Promise<PasswordChangeResult> {
+  if (!passwordMeetsPolicy(input.next)) return { ok: false, error: "Your password doesn't meet all the requirements." };
+  if (input.next !== input.confirm) return { ok: false, error: "Passwords don't match." };
+  if (input.next.length > 256) return { ok: false, error: "That password is too long." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "You need to be signed in again." };
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (!isRecoverySession(aal?.currentAuthenticationMethods)) {
+    return { ok: false, error: "Open the reset link from your email, or change the password from My Account." };
+  }
+
+  const verified = await verifyEmailMfaCodeForSession("signin", input.code);
+  if (!verified.ok) return { ok: false, needsMfa: true, error: verified.error };
+
+  const { error: updateError } = await supabase.auth.updateUser({ password: input.next });
+  if (updateError && isInsufficientAal(updateError)) {
+    const fallback = await setPasswordAfterVerifiedEmail(user.id, input.next);
+    if (!fallback.ok) return fallback;
+  } else if (updateError) {
+    const step = nextPasswordChangeStep({ error: updateError, hasNonce: false });
+    if (step.action === "send-nonce") {
+      const { error: reauthError } = await supabase.auth.reauthenticate();
+      if (reauthError) return { ok: false, error: reauthError.message || "Couldn't send a confirmation code. Try again." };
+      return { ok: false, needsNonce: true, error: PASSWORD_CHANGE_NONCE_PROMPT };
+    }
+    if (step.action === "step-up-mfa") return { ok: false, needsMfa: true, error: PASSWORD_CHANGE_MFA_PROMPT };
     return { ok: false, error: step.error };
   }
 

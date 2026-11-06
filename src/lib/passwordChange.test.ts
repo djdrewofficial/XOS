@@ -176,10 +176,10 @@ describe("My Account surfaces the change-password section", () => {
     assert.match(security, /ChangePasswordSection/);
     assert.match(form, /emailMyPasswordReset/);
     assert.match(form, /PasswordChecklist/);
-    assert.match(form, /AuthenticatorCodeField/);
+    assert.match(form, /MfaPasswordStep/);
     assert.match(setPassword, /elevateSessionWithTotp/);
     assert.match(setPassword, /passwordChangeNeedsTotp/);
-    assert.match(setPassword, /AuthenticatorCodeField/);
+    assert.match(setPassword, /MfaPasswordStep/);
     assert.doesNotMatch(setPassword, /AAL2 session is required/);
     assert.match(twoFa, /elevateSessionWithTotp/);
     assert.match(setPassword, /router\.push\("\/"\)/);

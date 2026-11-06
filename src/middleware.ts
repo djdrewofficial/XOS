@@ -18,6 +18,8 @@ import {
   signPermSnap,
   type PermSnap,
 } from "@/lib/permSnapshot";
+import { decideMfaGate } from "@/lib/mfaGate";
+import { MFA_EMAIL_COOKIE, readMfaEmailStepUp, sessionIdFromAccessToken } from "@/lib/mfaStepUpCookie";
 
 /** Supabase Auth "Send SMS" hook. Supabase's servers POST the phone OTP here
     with no staff session and no Cloudflare `x-origin-verify` header (the call
@@ -101,9 +103,19 @@ export async function middleware(request: NextRequest) {
   // left the next click hanging or logged out until a full reload.
   let pendingAuthCookies: PendingCookie[] = [];
   let permSet: { value: string; maxAge: number } | null = null;
+  let clearMfaCookie = false;
 
   const finish = (res: NextResponse) => {
     for (const c of pendingAuthCookies) res.cookies.set(c.name, c.value, c.options);
+    if (clearMfaCookie) {
+      res.cookies.set(MFA_EMAIL_COOKIE, "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 0,
+      });
+    }
     if (permSet) {
       res.cookies.set(PERM_COOKIE, permSet.value, {
         httpOnly: true,
@@ -136,6 +148,8 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (!user && request.cookies.get(MFA_EMAIL_COOKIE)) clearMfaCookie = true;
 
   const { pathname } = request.nextUrl;
   // PUBLIC routes: client signing links + machine endpoints (webhook/cron do
@@ -317,25 +331,44 @@ export async function middleware(request: NextRequest) {
         return finish(response);
       }
 
-      // 2FA gate. Anyone with an enrolled factor must complete the TOTP challenge
-      // (aal1 -> aal2). Master admins, admins, and salespeople MUST have 2FA — if
-      // they haven't set it up, force them to the setup page first. Regular
-      // employees may opt in. Fails open on a lookup error so an MFA hiccup can
-      // never lock staff out.
+      // 2FA gate. Authenticator and text codes are Supabase factors: a verified
+      // one makes nextLevel aal2, and the session has to reach aal2. Email codes
+      // are not a Supabase factor. A signed cookie bound to this session is the
+      // email proof, and it satisfies the same gate. Master admins, admins, and
+      // salespeople must enroll something. An assurance-lookup failure still
+      // fails open, except an email factor already on the user is still required.
       const aal = await aalPromise;
-      if (aal) {
-        const hasFactor = aal.nextLevel === "aal2";
-        if (hasFactor && aal.currentLevel === "aal1" && !pathname.startsWith("/2fa")) {
-          const url = request.nextUrl.clone();
-          url.pathname = "/2fa";
-          return finish(NextResponse.redirect(withNext(url, request)));
-        }
-        if (!hasFactor && TWO_FA_REQUIRED_ROLES.has(gate.role) && !pathname.startsWith("/account/security")) {
-          const url = request.nextUrl.clone();
-          url.pathname = "/account/security";
-          url.search = "";
-          return finish(NextResponse.redirect(url));
-        }
+      const emailEnrolled = user.app_metadata?.email_mfa === true;
+      let emailStepUp = false;
+      if (emailEnrolled) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        emailStepUp = await readMfaEmailStepUp(
+          request.cookies.get(MFA_EMAIL_COOKIE)?.value,
+          permCacheSecret(),
+          user.id,
+          sessionIdFromAccessToken(session?.access_token),
+        );
+      }
+      const decision = decideMfaGate({
+        aalKnown: Boolean(aal),
+        currentLevel: aal?.currentLevel,
+        nextLevel: aal?.nextLevel,
+        emailEnrolled,
+        emailStepUp,
+        roleRequiresMfa: TWO_FA_REQUIRED_ROLES.has(gate.role),
+      });
+      if (decision === "challenge" && !pathname.startsWith("/2fa")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/2fa";
+        return finish(NextResponse.redirect(withNext(url, request)));
+      }
+      if (decision === "enroll" && !pathname.startsWith("/account/security")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/account/security";
+        url.search = "";
+        return finish(NextResponse.redirect(url));
       }
 
       const moduleKey = moduleForPath(pathname);
