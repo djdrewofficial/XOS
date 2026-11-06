@@ -56,6 +56,41 @@ export function normalizeConsentPhone(raw: string | null | undefined): string | 
   return toE164(raw ?? "");
 }
 
+export type MarketingHistoryRow = {
+  authUserId: string | null;
+  phone: string;
+  action: MarketingConsentAction;
+  createdAt: string;
+};
+
+/** Outbox gate. The staff boolean is used only when this client has no app history at all.
+    Any history, including a grant for an old number or a row for someone else's login,
+    turns the boolean off. A send then needs the latest trusted row for the current
+    booking number to be a grant, and the destination must be that number. */
+export function marketingOutboxDecision(input: {
+  legacyOptIn: boolean;
+  accountAuthUserId: string | null;
+  currentCellPhone: string | null;
+  toNumber: string | null;
+  history: MarketingHistoryRow[];
+}): boolean {
+  if (input.history.length === 0) return input.legacyOptIn;
+  const cell = normalizeConsentPhone(input.currentCellPhone);
+  const to = normalizeConsentPhone(input.toNumber);
+  if (!cell || !to || cell !== to) return false;
+  const trusted = input.history
+    .filter((row) =>
+      marketingRowBoundToClient({
+        rowAuthUserId: row.authUserId,
+        accountAuthUserId: input.accountAuthUserId,
+        rowPhone: row.phone,
+        clientCellPhone: input.currentCellPhone,
+      }),
+    )
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  return trusted[trusted.length - 1]?.action === "grant";
+}
+
 /** A history row counts only when it was written by that client's login
     and names the mobile number currently on the booking. */
 export function marketingRowBoundToClient(input: {

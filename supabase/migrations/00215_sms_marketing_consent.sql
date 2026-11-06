@@ -87,7 +87,37 @@ declare
   phone text;
   prior text;
 begin
-  if tg_op <> 'INSERT' then
+  if tg_op = 'DELETE' then
+    -- auth.users ON DELETE CASCADE removes this login's history during app
+    -- account deletion. A direct delete, including from the table owner, is rejected.
+    -- The cascade statement runs inside the parent constraint trigger.
+    if pg_trigger_depth() > 1 then
+      return old;
+    end if;
+    raise exception 'SMS marketing consent history cannot be changed' using errcode = '42501';
+  end if;
+
+  if tg_op = 'UPDATE' then
+    -- clients ON DELETE SET NULL and events ON DELETE SET NULL clear only that
+    -- foreign key. Phone, actor, action, and timestamp stay. A direct update
+    -- is rejected, including a hand-written SET NULL.
+    if pg_trigger_depth() > 1
+       and new.id is not distinct from old.id
+       and new.auth_user_id is not distinct from old.auth_user_id
+       and new.phone_e164 is not distinct from old.phone_e164
+       and new.action is not distinct from old.action
+       and new.disclosure_version is not distinct from old.disclosure_version
+       and new.source is not distinct from old.source
+       and new.created_at is not distinct from old.created_at
+       and (new.client_id is not distinct from old.client_id or new.client_id is null)
+       and (new.event_id is not distinct from old.event_id or new.event_id is null)
+       and (
+         new.client_id is distinct from old.client_id
+         or new.event_id is distinct from old.event_id
+       )
+    then
+      return new;
+    end if;
     raise exception 'SMS marketing consent history cannot be changed' using errcode = '42501';
   end if;
   select * into acct from public.accounts where auth_user_id = new.auth_user_id;

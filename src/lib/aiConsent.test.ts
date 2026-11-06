@@ -17,7 +17,13 @@ import {
   songLineAllowed,
   songNoteAllowed,
 } from "./aiConsent.ts";
-import { currentMarketingConsent, marketingRowBoundToClient, marketingSendAllowed, normalizeConsentPhone } from "./smsMarketingConsent.ts";
+import {
+  currentMarketingConsent,
+  marketingOutboxDecision,
+  marketingRowBoundToClient,
+  marketingSendAllowed,
+  normalizeConsentPhone,
+} from "./smsMarketingConsent.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -80,6 +86,69 @@ describe("AI consent state", () => {
     assert.equal(marketingSendAllowed({ legacyOptIn: true, latest: { action: "grant", phone: "+13055551212" }, toNumber: "786-555-0100" }), false);
     assert.equal(marketingSendAllowed({ legacyOptIn: true, latest: { action: "withdraw", phone: "+13055551212" }, toNumber: "305-555-1212" }), false);
     assert.equal(marketingSendAllowed({ legacyOptIn: true, latest: null, toNumber: "305-555-1212" }), true);
+  });
+
+  it("does not let an old app choice authorize a new booking number", () => {
+    const owner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const other = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const phoneA = "+13055551212";
+    const phoneB = "+17865550100";
+    const base = {
+      legacyOptIn: true,
+      accountAuthUserId: owner,
+      currentCellPhone: "786-555-0100",
+      toNumber: "786-555-0100",
+    };
+    assert.equal(
+      marketingOutboxDecision({
+        ...base,
+        history: [{ authUserId: owner, phone: phoneA, action: "grant", createdAt: "2026-11-06T01:00:00Z" }],
+      }),
+      false,
+    );
+    assert.equal(
+      marketingOutboxDecision({
+        ...base,
+        history: [{ authUserId: owner, phone: phoneA, action: "withdraw", createdAt: "2026-11-06T02:00:00Z" }],
+      }),
+      false,
+    );
+    assert.equal(marketingOutboxDecision({ ...base, legacyOptIn: true, history: [] }), true);
+    assert.equal(marketingOutboxDecision({ ...base, legacyOptIn: false, history: [] }), false);
+    assert.equal(
+      marketingOutboxDecision({
+        ...base,
+        history: [{ authUserId: owner, phone: phoneB, action: "grant", createdAt: "2026-11-06T03:00:00Z" }],
+      }),
+      true,
+    );
+    assert.equal(
+      marketingOutboxDecision({
+        ...base,
+        legacyOptIn: true,
+        history: [{ authUserId: other, phone: phoneB, action: "grant", createdAt: "2026-11-06T04:00:00Z" }],
+      }),
+      false,
+    );
+    assert.equal(
+      marketingOutboxDecision({
+        ...base,
+        history: [
+          { authUserId: other, phone: phoneB, action: "grant", createdAt: "2026-11-06T05:00:00Z" },
+          { authUserId: owner, phone: phoneB, action: "withdraw", createdAt: "2026-11-06T04:00:00Z" },
+        ],
+      }),
+      false,
+    );
+    assert.equal(
+      marketingOutboxDecision({
+        ...base,
+        toNumber: phoneA,
+        currentCellPhone: phoneB,
+        history: [{ authUserId: owner, phone: phoneB, action: "grant", createdAt: "2026-11-06T03:00:00Z" }],
+      }),
+      false,
+    );
   });
 
   it("lets a client read and change only their own row, and lets staff read only", () => {
@@ -162,7 +231,8 @@ describe("AI consent schema and call sites", () => {
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /not_contract_client/);
     assert.match(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /eligibleNumber/);
     assert.match(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /clients\.cell_phone/);
-    assert.match(read("src/lib/highlevel.ts"), /marketingSendAllowed/);
+    assert.match(read("src/lib/highlevel.ts"), /marketingOutboxDecision/);
+    assert.doesNotMatch(read("src/lib/highlevel.ts"), /marketingLatest\.size/);
     assert.match(read("src/app/api/assistant/chat/route.ts"), /assistantTextHasDirectContact/);
     assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /sms_marketing_consent_events/);
     assert.equal(existsSync(join(root, "src/app/api/music/recommend/route.ts")), false);
@@ -172,9 +242,13 @@ describe("AI consent schema and call sites", () => {
     assert.doesNotMatch(read("src/app/api/mobile/ai-consent/route.ts"), /from\("ai_consents"\)\.upsert/);
     assert.match(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /sms_marketing_consent_record/);
     assert.doesNotMatch(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /from\("sms_marketing_consent_events"\)\.insert/);
-    assert.match(read("src/lib/highlevel.ts"), /marketingRowBoundToClient/);
+    assert.match(read("src/lib/smsMarketingConsent.ts"), /marketingRowBoundToClient/);
+    assert.match(read("src/lib/highlevel.ts"), /historyByClient/);
     assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /grant select on table public\.sms_marketing_consent_events to authenticated, service_role/);
     assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /SMS marketing consent history cannot be changed/);
+    assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /pg_trigger_depth\(\) > 1/);
+    assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /on delete cascade/);
+    assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /on delete set null/);
     assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /new\.phone_e164 is distinct from phone/);
     assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /new\.created_at := now\(\)/);
     assert.doesNotMatch(read("supabase/migrations/00215_sms_marketing_consent.sql"), /create policy "own insert sms marketing consent"/);

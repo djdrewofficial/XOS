@@ -66,9 +66,9 @@ describe("consent writes under authenticated and service-role sessions", { timeo
         event_id uuid references public.events(id)
       );
       create table public.accounts (
-        auth_user_id uuid primary key references auth.users(id),
+        auth_user_id uuid primary key references auth.users(id) on delete cascade,
         account_type text not null,
-        client_id uuid references public.clients(id),
+        client_id uuid references public.clients(id) on delete cascade,
         event_guest_id uuid references public.event_guests(id)
       );
       create table public.employees (
@@ -349,6 +349,147 @@ describe("consent writes under authenticated and service-role sessions", { timeo
     );
     assert.equal(history.rows[1].phone_e164, "+13055551212");
     await db.exec(`update public.clients set cell_phone = '305-555-1212' where id = '${clientA}'`);
+  });
+
+  it("lets parent deletes cascade and still rejects direct history changes", async () => {
+    const userFk = "abababab-abab-4aba-8aba-abababababab";
+    const clientFk = "cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd";
+    const eventFk = "efefefef-efef-4efe-8efe-efefefefefef";
+    const userGone = "90909090-9090-4909-8909-909090909090";
+    const clientGone = "91919191-9191-4919-8919-919191919191";
+    await db.exec("reset role");
+    await db.exec(`
+      insert into auth.users (id) values ('${userFk}'), ('${userGone}');
+      insert into public.clients (id, cell_phone) values
+        ('${clientFk}', '305-555-0199'),
+        ('${clientGone}', '954-555-0177');
+      insert into public.events (id, client_id) values ('${eventFk}', null);
+      insert into public.event_clients (event_id, client_id, is_contract_holder, is_primary)
+        values ('${eventFk}', '${clientFk}', true, false);
+      insert into public.accounts (auth_user_id, account_type, client_id) values
+        ('${userFk}', 'client', '${clientFk}'),
+        ('${userGone}', 'client', '${clientGone}');
+    `);
+    await db.exec("set role service_role");
+    await db.exec(`
+      select public.sms_marketing_consent_record('${userFk}', '${eventFk}', 'grant', '2026-11-06', 'app');
+      select public.sms_marketing_consent_record('${userGone}', null, 'grant', '2026-11-06', 'app');
+    `);
+    await db.exec("reset role");
+
+    const directDelete = await denied(`
+      delete from public.sms_marketing_consent_events where auth_user_id = '${userFk}'
+    `);
+    assert.match(directDelete, /cannot be changed/i);
+    const directPhone = await denied(`
+      update public.sms_marketing_consent_events
+      set phone_e164 = '+19995550100'
+      where auth_user_id = '${userFk}'
+    `);
+    assert.match(directPhone, /cannot be changed/i);
+    const directClientNull = await denied(`
+      update public.sms_marketing_consent_events
+      set client_id = null
+      where auth_user_id = '${userFk}'
+    `);
+    assert.match(directClientNull, /cannot be changed/i);
+    const directEventNull = await denied(`
+      update public.sms_marketing_consent_events
+      set event_id = null
+      where auth_user_id = '${userFk}'
+    `);
+    assert.match(directEventNull, /cannot be changed/i);
+    await db.exec("set role service_role");
+    const serviceDelete = await denied(`
+      delete from public.sms_marketing_consent_events where auth_user_id = '${userFk}'
+    `);
+    assert.match(serviceDelete, /permission denied/i);
+    await db.exec("reset role");
+
+    await db.exec(`
+      create or replace function public.consent_fk_phone_smuggle()
+      returns trigger language plpgsql as $fn$
+      begin
+        update public.sms_marketing_consent_events
+        set phone_e164 = '+19995550100'
+        where client_id = old.id;
+        return old;
+      end;
+      $fn$;
+      create trigger consent_fk_phone_smuggle
+        before delete on public.clients
+        for each row execute function public.consent_fk_phone_smuggle();
+    `);
+    await db.exec(`delete from public.event_clients where client_id = '${clientFk}'`);
+    const smuggle = await denied(`delete from public.clients where id = '${clientFk}'`);
+    assert.match(smuggle, /cannot be changed/i);
+    await db.exec(`
+      drop trigger consent_fk_phone_smuggle on public.clients;
+      drop function public.consent_fk_phone_smuggle();
+    `);
+    const intact = await db.query<{
+      client_id: string;
+      event_id: string;
+      phone_e164: string;
+      action: string;
+      auth_user_id: string;
+    }>(
+      `select client_id, event_id, phone_e164, action, auth_user_id
+       from public.sms_marketing_consent_events where auth_user_id = $1`,
+      [userFk],
+    );
+    assert.equal(intact.rows.length, 1);
+    assert.equal(intact.rows[0].client_id, clientFk);
+    assert.equal(intact.rows[0].event_id, eventFk);
+    assert.equal(intact.rows[0].phone_e164, "+13055550199");
+    assert.equal(intact.rows[0].action, "grant");
+
+    await db.exec(`delete from public.clients where id = '${clientFk}'`);
+    const afterClient = await db.query<{
+      client_id: string | null;
+      event_id: string | null;
+      phone_e164: string;
+      action: string;
+      auth_user_id: string;
+      created_at: string;
+    }>(
+      `select client_id, event_id, phone_e164, action, auth_user_id, created_at::text
+       from public.sms_marketing_consent_events where auth_user_id = $1`,
+      [userFk],
+    );
+    assert.equal(afterClient.rows[0].client_id, null);
+    assert.equal(afterClient.rows[0].event_id, eventFk);
+    assert.equal(afterClient.rows[0].phone_e164, "+13055550199");
+    assert.equal(afterClient.rows[0].action, "grant");
+    assert.equal(afterClient.rows[0].auth_user_id, userFk);
+
+    await db.exec(`delete from public.events where id = '${eventFk}'`);
+    const afterEvent = await db.query<{ client_id: string | null; event_id: string | null; phone_e164: string; action: string }>(
+      `select client_id, event_id, phone_e164, action
+       from public.sms_marketing_consent_events where auth_user_id = $1`,
+      [userFk],
+    );
+    assert.equal(afterEvent.rows[0].client_id, null);
+    assert.equal(afterEvent.rows[0].event_id, null);
+    assert.equal(afterEvent.rows[0].phone_e164, "+13055550199");
+    assert.equal(afterEvent.rows[0].action, "grant");
+
+    const beforeAuth = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.sms_marketing_consent_events where auth_user_id = '${userGone}'`,
+    );
+    assert.equal(beforeAuth.rows[0].n, 1);
+    await db.exec(`delete from auth.users where id = '${userGone}'`);
+    const afterAuth = await db.query<{ consent: number; account: number }>(
+      `select
+         (select count(*)::int from public.sms_marketing_consent_events where auth_user_id = '${userGone}') as consent,
+         (select count(*)::int from public.accounts where auth_user_id = '${userGone}') as account`,
+    );
+    assert.equal(afterAuth.rows[0].consent, 0);
+    assert.equal(afterAuth.rows[0].account, 0);
+    const kept = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.sms_marketing_consent_events where auth_user_id = '${userFk}'`,
+    );
+    assert.equal(kept.rows[0].n, 1);
   });
 });
 
