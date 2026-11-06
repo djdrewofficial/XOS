@@ -254,10 +254,28 @@ export async function addSong(eventId: string, song: SongInput) {
 
 export async function removeSong(eventId: string, songId: string) {
   const { supabase, me, revalidate } = await requireEventMember(eventId);
-  // Snapshot the whole row before deleting — this is what "Restore" re-inserts.
+  // Snapshot the whole row before hiding. Staff restore upserts that snapshot.
+  // The row stays in the database (hidden_at) so the DJ can still see it.
   const { data: song } = await supabase.from("planning_songs").select("*").eq("id", songId).eq("event_id", eventId).maybeSingle();
-  const { error } = await supabase.from("planning_songs").delete().eq("id", songId).eq("event_id", eventId);
-  if (error) throw new Error(error.message);
+  const hidden = await supabase
+    .from("planning_songs")
+    .update({ hidden_at: new Date().toISOString(), hidden_by: me.userId })
+    .eq("id", songId)
+    .eq("event_id", eventId)
+    .select("id");
+  let error = hidden.error;
+  if (error && /hidden_at|schema cache/i.test(error.message ?? "")) {
+    const removed = await supabase.from("planning_songs").delete().eq("id", songId).eq("event_id", eventId);
+    error = removed.error;
+  } else if (!error && (hidden.data?.length ?? 0) === 0) {
+    throw new Error("You can only remove your own content.");
+  }
+  if (error) {
+    if (error.code === "42501" || /only remove your own|this was removed/i.test(error.message ?? "")) {
+      throw new Error("You can only remove your own content.");
+    }
+    throw new Error(error.message);
+  }
   await logAction(supabase, eventId, me, "Removed song", songLabel(song), {
     songId,
     sectionId: song?.section_id ?? null,

@@ -53,7 +53,14 @@ describe("app policy text", () => {
     assert.match(es, /no elimina la IA del personal/);
     assert.match(es, /no constituye por sí mismo autorización/);
     const terms = policyPlainText("terms", "en");
+    const termsEs = policyPlainText("terms", "es");
     assert.match(terms, /Accepting these Terms is not explicit permission for third-party AI processing/);
+    assert.match(terms, /Anyone on the event can report content or a person/);
+    assert.match(terms, /Hosts can remove guest content and remove guests/);
+    assert.match(terms, /Xpress can remove content that breaks these terms/);
+    assert.match(termsEs, /Cualquier persona en el evento puede reportar contenido o a una persona/);
+    assert.match(termsEs, /Los anfitriones pueden quitar el contenido de los invitados y quitar invitados/);
+    assert.doesNotMatch(`${terms}\n${termsEs}`, /—/);
     assert.match(terms, /proposed separate authorization/);
     assert.doesNotMatch(en, /all AI processing has stopped/);
     assert.doesNotMatch(en, /For You has been removed from every/);
