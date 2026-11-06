@@ -10,6 +10,8 @@ import { appUrl } from "@/lib/signing";
 import { toE164 } from "@/lib/phone";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { syncSubjectLoginPhone } from "@/lib/loginPhoneAdmin";
+import { appJoinCodeEmailParts } from "@/lib/eventAccessServer";
+import { placeAppJoinCode } from "@/lib/eventAccess";
 
 export type AccountType = "staff" | "client" | "event_guest";
 
@@ -197,6 +199,9 @@ export async function sendAccountInvite(args: {
   eventGuestId?: string;
   /** Staff only: also text the set-password link to this number. */
   phone?: string | null;
+  /** Extra HTML after the invite body. loggedAppendHtml is what email_log stores. */
+  appendHtml?: string;
+  loggedAppendHtml?: string;
 }): Promise<{ ok: boolean; error?: string; message?: string; notice?: string }> {
   const email = (args.email ?? "").trim().toLowerCase();
   if (!email) return { ok: false, error: "No email on file — add one first." };
@@ -239,10 +244,14 @@ export async function sendAccountInvite(args: {
       if (js) appLinks = { ios: js.vibo_ios_url, android: js.vibo_android_url, web: js.vibo_web_url };
     }
 
+    const contentHtml = inviteHtml(greeting, link, args.type, appLinks) + (args.appendHtml ?? "");
     const mail = await sendBrandedEmail({
       to: email,
-      subject: args.type === "staff" ? "Your XOS account is ready" : "Your Xpress account — set your password & download the app",
-      contentHtml: inviteHtml(greeting, link, args.type, appLinks),
+      subject: args.type === "staff" ? "Your XOS account is ready" : "Your Xpress account is ready",
+      contentHtml,
+      loggedBodyHtml: args.loggedAppendHtml
+        ? inviteHtml(greeting, link, args.type, appLinks) + args.loggedAppendHtml
+        : undefined,
     });
     if (args.type !== "staff") return withNotice(mail);
 
@@ -296,9 +305,18 @@ export async function inviteClientToXos(args: {
       ? await admin.from("email_templates").select("subject, body_html").eq("id", templateId).eq("is_active", true).maybeSingle()
       : { data: null };
 
+    const joinCode = await appJoinCodeEmailParts(args.eventId);
+
     // No template configured/active → fall back to the built-in invite email.
     if (!tpl) {
-      const sent = await sendAccountInvite({ type: "client", email, name: args.name, clientId: args.clientId });
+      const sent = await sendAccountInvite({
+        type: "client",
+        email,
+        name: args.name,
+        clientId: args.clientId,
+        appendHtml: joinCode?.delivered,
+        loggedAppendHtml: joinCode?.logged,
+      });
       return sent.ok && phoneNotice && !sent.notice ? { ...sent, notice: phoneNotice } : sent;
     }
 
@@ -311,8 +329,10 @@ export async function inviteClientToXos(args: {
     // The set-password tags are per-recipient and can't come from render_merge_tags
     // (they need a freshly minted recovery link), so inject them here.
     body = body.split("<set_password_button>").join(button(link, "Set My Password")).split("<set_password_link>").join(link);
+    const loggedBody = joinCode ? placeAppJoinCode(body, joinCode.logged) : undefined;
+    if (joinCode) body = placeAppJoinCode(body, joinCode.delivered);
 
-    const mailed = await sendBrandedEmail({ to: email, subject, contentHtml: body });
+    const mailed = await sendBrandedEmail({ to: email, subject, contentHtml: body, loggedBodyHtml: loggedBody, supabase: admin });
     return mailed.ok && phoneNotice ? { ...mailed, notice: phoneNotice } : mailed;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
