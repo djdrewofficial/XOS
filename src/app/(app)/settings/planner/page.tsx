@@ -25,9 +25,12 @@ export default async function PlannerTemplatesPage() {
   if (ids.length) {
     const { data: secs } = await supabase
       .from("planning_template_sections")
-      .select("template_id")
+      .select("template_id, section_type")
       .in("template_id", ids);
-    for (const s of secs ?? []) counts.set(s.template_id, (counts.get(s.template_id) ?? 0) + 1);
+    for (const s of secs ?? []) {
+      if (s.section_type === "headline") continue;
+      counts.set(s.template_id, (counts.get(s.template_id) ?? 0) + 1);
+    }
   }
 
   // ---- Section Templates library (reuses the template builder) ----
@@ -87,7 +90,7 @@ export default async function PlannerTemplatesPage() {
             <tr>
               <th className="px-4 py-2.5 text-left">Template</th>
               <th className="px-4 py-2.5 text-left">Event Type</th>
-              <th className="px-3 py-2.5 text-center">Sections</th>
+              <th className="px-3 py-2.5 text-center">Moments</th>
               <th className="px-3 py-2.5 text-center">Default</th>
               <th className="px-4 py-2.5"></th>
             </tr>
@@ -146,14 +149,14 @@ export default async function PlannerTemplatesPage() {
   const sectionTemplatesTab = libraryTemplate ? (
     <div>
       <p className="mb-4 text-sm text-zinc-500">
-        Reusable sections you can drop onto any event — on demand, or automatically when a matching add-on is attached
-        (set that on the add-on&apos;s <strong>Planning Sections</strong> tab, e.g. Photo Booth → &ldquo;Your Photo-booth Xperience&rdquo;).
+        Reusable moments you can drop onto any event — on demand, or automatically when a matching add-on is attached
+        (set that on the add-on&apos;s <strong>Planning Moments</strong> tab, e.g. Photo Booth → &ldquo;Your Photo-booth Xperience&rdquo;).
         These never seed onto an event by themselves.
       </p>
       <TemplateBuilder template={libraryTemplate} sections={librarySections} eventTypes={[]} library />
     </div>
   ) : (
-    <p className="text-sm text-zinc-500">Run migration 00100 to enable the Section Templates library.</p>
+    <p className="text-sm text-zinc-500">Run migration 00100 to enable the Moment Templates library.</p>
   );
 
   return (
@@ -161,14 +164,14 @@ export default async function PlannerTemplatesPage() {
       <div className="mb-5">
         <h1 className="page-title mb-1">XOS Planner</h1>
         <p className="text-sm text-zinc-500">
-          Build reusable section &amp; question sets for the client planner.
+          Build reusable chapters, moments, and question sets for the client planner.
         </p>
       </div>
 
       <Tabs
         tabs={[
           { id: "templates", label: "Event Templates", content: eventTemplatesTab },
-          { id: "sections", label: "Section Templates", badge: librarySections.length || undefined, content: sectionTemplatesTab },
+          { id: "sections", label: "Moment Templates", badge: librarySections.length || undefined, content: sectionTemplatesTab },
         ]}
       />
     </div>

@@ -381,7 +381,7 @@ export default async function EventDetailPage({
 
   const spotifySections = (plannerSections ?? []).map((s) => ({
     id: s.id as string,
-    title: (s.title as string) ?? "Section",
+    title: (s.title as string) ?? "Moment",
     songCount: (s.planning_songs as { count: number }[] | null)?.[0]?.count ?? 0,
   }));
 
@@ -466,11 +466,11 @@ export default async function EventDetailPage({
       .order("sort_order");
     if (secErr) {
       // client_notes is added in 00207. Until that migration is applied, keep the counts.
-      const { data: fallback } = await supabase.from("planning_sections").select("id, planning_songs(count)").eq("event_id", id);
-      plannerSectionCount = (fallback ?? []).length;
+      const { data: fallback } = await supabase.from("planning_sections").select("id, section_type, planning_songs(count)").eq("event_id", id);
+      plannerSectionCount = (fallback ?? []).filter((s) => s.section_type !== "headline").length;
       plannerSongCount = songCount(fallback);
     } else {
-      plannerSectionCount = (secs ?? []).length;
+      plannerSectionCount = (secs ?? []).filter((s) => s.section_type !== "headline").length;
       plannerSongCount = songCount(secs);
       const { data: staffRows } = await supabase
         .from("planning_section_staff_notes")
@@ -483,7 +483,7 @@ export default async function EventDetailPage({
         .filter((s) => s.section_type !== "headline")
         .map((s) => ({
           id: s.id as string,
-          title: (s.title as string) || "Section",
+          title: (s.title as string) || "Moment",
           notes: (s.client_notes as string | null) ?? null,
           staffNotes: staffById.get(s.id as string) ?? null,
         }));
@@ -1091,7 +1091,7 @@ export default async function EventDetailPage({
             </select>
           </div>
           <SaveButton className="btn-ghost px-4 py-2 text-xs" savedLabel="Applied">Apply &amp; re-seed</SaveButton>
-          <p className="w-full text-[11px] text-zinc-400">Choosing a template rebuilds this event&apos;s planner from it (clears current planner sections).</p>
+          <p className="w-full text-[11px] text-zinc-400">Choosing a template rebuilds this event&apos;s planner from it (clears the current chapters and moments).</p>
         </form>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -2230,7 +2230,7 @@ export default async function EventDetailPage({
         {plannerMode === "xos" && (
           <>
             <p className="mt-1 text-sm text-zinc-500">
-              {plannerSectionCount} section{plannerSectionCount === 1 ? "" : "s"} · {plannerSongCount} song{plannerSongCount === 1 ? "" : "s"} in the in-house planner.
+              {plannerSectionCount} moment{plannerSectionCount === 1 ? "" : "s"} · {plannerSongCount} song{plannerSongCount === 1 ? "" : "s"} in the in-house planner.
             </p>
             <EventSectionNotes eventId={id} sections={plannerNoteSections} canEdit={ffCanEdit} />
           </>

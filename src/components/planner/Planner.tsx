@@ -269,7 +269,7 @@ export default function Planner({
         <div className="mt-4 flex justify-end">
           <div className="inline-flex gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-white/[0.04]">
             <ModeBtn active={mode === "guided"} onClick={() => setMode("guided")} icon={faRoute} label="Guided" />
-            <ModeBtn active={mode === "all"} onClick={() => setMode("all")} icon={faTableCells} label="All sections" />
+            <ModeBtn active={mode === "all"} onClick={() => setMode("all")} icon={faTableCells} label="All moments" />
           </div>
         </div>
       )}
@@ -283,7 +283,7 @@ export default function Planner({
           <ActivityLog entries={planning.auditLog} />
         ) : sections.length === 0 ? (
           <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500 dark:border-white/[0.08] dark:bg-white/[0.02]">
-            {isGuest ? "Nothing to fill out just yet — check back soon!" : isStaff ? "No planning sections yet." : "Your DJ is still setting things up — check back soon!"}
+            {isGuest ? "Nothing to fill out just yet — check back soon!" : isStaff ? "No chapters or moments yet." : "Your DJ is still setting things up — check back soon!"}
           </div>
         ) : mode === "guided" ? (
           <GuidedFlow eventId={eventId} steps={guidedSteps} role={role} vendors={vendors} staffCanEdit={staffCanEdit} doNotPlayNotes={planning.doNotPlayNotes} onSeeAll={() => setMode("all")} />
@@ -557,13 +557,13 @@ function InsertBar({
   if (open) {
     return (
       <div className="my-1.5 rounded-xl border border-brand/40 bg-brand/[0.03] p-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-brand dark:text-brand-lighter">New section</p>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-brand dark:text-brand-lighter">New moment</p>
         <div className="flex gap-2">
           <input className="input w-14 text-center" placeholder="🎉" value={icon} onChange={(e) => setIcon(e.target.value)} />
           <input
             autoFocus
             className="input flex-1"
-            placeholder="Section name"
+            placeholder="Moment name"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => {
@@ -574,14 +574,14 @@ function InsertBar({
         </div>
         <div className="mt-2 flex gap-2">
           <button onClick={add} disabled={pending} className="btn-primary px-3 py-1.5 text-sm disabled:opacity-50">
-            {pending ? "Adding…" : "Add blank section"}
+            {pending ? "Adding…" : "Add blank moment"}
           </button>
           <button onClick={() => setOpen(false)} className="btn-ghost px-3 py-1.5 text-sm">Cancel</button>
         </div>
 
         {libraryOptions.length > 0 && (
           <div className="mt-3 border-t border-brand/15 pt-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">From Section Templates</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">From Moment Templates</p>
             <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
               {libraryOptions.map((o) => (
                 <button
@@ -616,7 +616,7 @@ function InsertBar({
       <button
         onClick={() => setOpen(true)}
         className="relative z-10 flex h-4 w-4 items-center justify-center rounded-full bg-brand text-[9px] text-white opacity-0 shadow transition hover:scale-125 group-hover:opacity-100"
-        title="Add a section here"
+        title="Add a moment here"
       >
         <FontAwesomeIcon icon={faPlus} />
       </button>
@@ -678,7 +678,7 @@ function SectionCard({
           {section.icon} {section.title}
         </span>
         {isStaff && (
-          <button onClick={onSettings} className="text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-brand">
+          <button onClick={onSettings} className="text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-brand" title="Chapter settings">
             <FontAwesomeIcon icon={faGear} />
           </button>
         )}
@@ -705,18 +705,18 @@ function SectionCard({
         </button>
         <div className="flex items-center gap-1.5 opacity-0 transition group-hover:opacity-100">
           {isStaff && (
-            <button onClick={onSettings} className="text-zinc-300 hover:text-brand" title="Section settings">
+            <button onClick={onSettings} className="text-zinc-300 hover:text-brand" title="Moment settings">
               <FontAwesomeIcon icon={faGear} />
             </button>
           )}
           {canDelete && (
             <button
               onClick={() => {
-                if (confirm(role === "staff" ? "Permanently delete this section?" : "Remove this section?")) start(() => onDelete());
+                if (confirm(role === "staff" ? "Permanently delete this moment?" : "Remove this moment?")) start(() => onDelete());
               }}
               disabled={pending}
               className="text-zinc-300 hover:text-red-500"
-              title={role === "staff" ? "Delete section" : "Remove section"}
+              title={role === "staff" ? "Delete moment" : "Remove moment"}
             >
               <FontAwesomeIcon icon={faTrash} />
             </button>
@@ -750,7 +750,7 @@ function HostDeletedSections({ eventId, sections }: { eventId: string; sections:
   const [pending, start] = useTransition();
   return (
     <div className="mt-4 rounded-2xl border border-dashed border-zinc-300 p-3 dark:border-white/10">
-      <p className="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-zinc-400">Host Deleted Sections</p>
+      <p className="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-zinc-400">Host Deleted Moments</p>
       <ul className="space-y-1.5">
         {sections.map((s) => (
           <li key={s.id} className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-white/10">
@@ -840,7 +840,7 @@ function SectionTimeEditor({ eventId, sectionId, value, canEdit }: { eventId: st
           ? "border-brand/30 bg-brand/5 text-brand dark:text-brand-lighter"
           : "border-dashed border-zinc-300 text-zinc-400 hover:border-brand hover:text-brand dark:border-white/15"
       }`}
-      title="Edit section time"
+      title="Edit moment time"
     >
       <FontAwesomeIcon icon={faClock} /> {value || "Add a time"}
     </button>
@@ -927,7 +927,7 @@ function SectionDetail({ eventId, section, role, vendors, staffCanEdit = true, d
         {isStaff && (
           <label className="mb-5 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 dark:border-white/10 dark:text-zinc-300">
             <GuestToggle eventId={eventId} sectionId={section.id} enabled={section.guest_enabled} />
-            <FontAwesomeIcon icon={faUserGroup} className="text-amber-500" /> Let invited guests answer this section
+            <FontAwesomeIcon icon={faUserGroup} className="text-amber-500" /> Let invited guests answer this moment
           </label>
         )}
 
@@ -1433,7 +1433,7 @@ function GuidedFlow({
           Thanks for sharing the details — your DJ now has everything to make your night perfect. You can keep editing anytime.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button onClick={onSeeAll} className="btn-primary">Review all sections</button>
+          <button onClick={onSeeAll} className="btn-primary">Review all moments</button>
           <button onClick={() => { setDone(false); setI(0); scrollPlannerTop(); }} className="btn-ghost">Go through again</button>
         </div>
       </div>

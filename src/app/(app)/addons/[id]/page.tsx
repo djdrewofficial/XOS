@@ -176,9 +176,9 @@ export default async function AddonDetailPage({
   const sectionsTab = (
     <form action={saveAddonPlanningSections.bind(null, id)}>
       <p className="mb-4 max-w-2xl text-sm text-zinc-500">
-        Planner sections auto-added to an event whenever this add-on is attached — e.g. a Photo Booth add-on dropping in a
-        &ldquo;Your Photo-booth Xperience&rdquo; section. Build these in{" "}
-        <Link href="/settings/planner" className="font-semibold text-brand hover:underline dark:text-brand-lighter">Settings → Planner → Section Templates</Link>.
+        Planner moments auto-added to an event whenever this add-on is attached — e.g. a Photo Booth add-on dropping in a
+        &ldquo;Your Photo-booth Xperience&rdquo; moment. Build these in{" "}
+        <Link href="/settings/planner" className="font-semibold text-brand hover:underline dark:text-brand-lighter">Settings → Planner → Moment Templates</Link>.
       </p>
       <div className="card max-w-2xl space-y-1 p-5">
         {(templateSections ?? []).map((s) => (
@@ -188,10 +188,10 @@ export default async function AddonDetailPage({
           </label>
         ))}
         {(templateSections ?? []).length === 0 && (
-          <p className="text-sm text-zinc-500">No section templates yet — create some in Settings → Planner → Section Templates.</p>
+          <p className="text-sm text-zinc-500">No moment templates yet — create some in Settings → Planner → Moment Templates.</p>
         )}
       </div>
-      <SaveButton className="btn-primary mt-4">Save Planning Sections</SaveButton>
+      <SaveButton className="btn-primary mt-4">Save Planning Moments</SaveButton>
     </form>
   );
 
@@ -265,7 +265,7 @@ export default async function AddonDetailPage({
         tabs={[
           { id: "settings", label: "Settings", content: settingsTab },
           { id: "equipment", label: "Assigned Equipment", badge: (equipDefaults ?? []).length || undefined, content: equipmentTab },
-          { id: "sections", label: "Planning Sections", badge: (assignedSections ?? []).length || undefined, content: sectionsTab },
+          { id: "sections", label: "Planning Moments", badge: (assignedSections ?? []).length || undefined, content: sectionsTab },
           { id: "versions", label: "Versions", badge: `v${currentVersion}`, content: versionsTab },
         ]}
       />

@@ -12,13 +12,13 @@ import {
   uploadSectionCover,
 } from "@/app/portal/plan/[eventId]/actions";
 
-const PERM_ACTIONS: { key: string; label: string }[] = [
-  { key: "delete", label: "Who can delete this section" },
-  { key: "rename", label: "Who can rename this section" },
-  { key: "cover", label: "Who can modify cover photo" },
-  { key: "reorder_songs", label: "Who can reorder songs" },
-  { key: "edit_notes", label: "Who can view & edit notes" },
-  { key: "change_time", label: "Who can change time" },
+const PERM_ACTIONS: { key: string; verb: string }[] = [
+  { key: "delete", verb: "delete" },
+  { key: "rename", verb: "rename" },
+  { key: "cover", verb: "modify the cover photo of" },
+  { key: "reorder_songs", verb: "reorder songs in" },
+  { key: "edit_notes", verb: "view & edit notes on" },
+  { key: "change_time", verb: "change the time of" },
 ];
 
 // Client-safe option label (can't import value helpers from the server-only planning module).
@@ -72,6 +72,9 @@ export default function SectionSettings({
   }
   const [perms, setPerms] = useState(initialPerms);
   const [confirming, setConfirming] = useState(false);
+  const isChapter = type === "headline";
+  const noun = isChapter ? "chapter" : "moment";
+  const Noun = isChapter ? "Chapter" : "Moment";
 
   // Unsaved-changes detection (the question editor + cover upload save on their
   // own, so they're intentionally not part of this).
@@ -130,7 +133,7 @@ export default function SectionSettings({
         {/* Header (sticky) */}
         <div className="flex shrink-0 items-center justify-between rounded-t-2xl border-b border-zinc-200 bg-white px-6 py-4 dark:border-white/10 dark:bg-zinc-900">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-            Section settings — {section.icon} {section.title}
+            {Noun} settings — {section.icon} {section.title}
           </h2>
           <button onClick={requestClose} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
             <FontAwesomeIcon icon={faXmark} />
@@ -141,8 +144,8 @@ export default function SectionSettings({
           {/* Type */}
           <Group label="Type">
             <div className="flex gap-2">
-              <TypeBtn active={type === "timeline"} onClick={() => setType("timeline")} label="Section" />
-              <TypeBtn active={type === "headline"} onClick={() => setType("headline")} label="Headline" />
+              <TypeBtn active={type === "timeline"} onClick={() => setType("timeline")} label="Moment" />
+              <TypeBtn active={type === "headline"} onClick={() => setType("headline")} label="Chapter" />
             </div>
           </Group>
 
@@ -151,12 +154,12 @@ export default function SectionSettings({
             <div className="space-y-3">
               <div className="flex gap-2">
                 <input className="input w-16 text-center" placeholder="🎉" value={icon} onChange={(e) => setIcon(e.target.value)} />
-                <input className="input flex-1" placeholder="Section name" value={title} onChange={(e) => setTitle(e.target.value)} />
+                <input className="input flex-1" placeholder={`${Noun} name`} value={title} onChange={(e) => setTitle(e.target.value)} />
               </div>
               {type !== "headline" && (
                 <textarea className="input min-h-[64px] w-full" placeholder="Description" value={intro} onChange={(e) => setIntro(e.target.value)} />
               )}
-              <CoverUpload eventId={eventId} sectionId={section.id} url={section.section_cover_url} />
+              <CoverUpload eventId={eventId} sectionId={section.id} url={section.section_cover_url} noun={noun} />
             </div>
           </Group>
 
@@ -164,7 +167,7 @@ export default function SectionSettings({
           <Group label="Permissions">
             <div className="space-y-3">
               <div>
-                <p className="mb-1.5 text-xs text-zinc-500">Who will see this section</p>
+                <p className="mb-1.5 text-xs text-zinc-500">Who will see this {noun}</p>
                 <div className="flex gap-2">
                   <RolePill active label="DJ" locked />
                   <RolePill active label="Host" locked />
@@ -173,7 +176,7 @@ export default function SectionSettings({
               </div>
               {PERM_ACTIONS.map((a) => (
                 <div key={a.key}>
-                  <p className="mb-1.5 text-xs text-zinc-500">{a.label}</p>
+                  <p className="mb-1.5 text-xs text-zinc-500">Who can {a.verb} this {noun}</p>
                   <div className="flex gap-2">
                     <RolePill active label="DJ" locked />
                     <RolePill active={perms[a.key]} label="Host" onClick={() => setPerms((p) => ({ ...p, [a.key]: !p[a.key] }))} />
@@ -194,7 +197,7 @@ export default function SectionSettings({
                     <NumberRow label="Must-play limit" value={mustPlayLimit} onChange={setMustPlayLimit} placeholder="∞" />
                     <ToggleRow label="Show on Music tab (vibe curation)" on={onMusic} onToggle={() => setOnMusic((v) => !v)} />
                     <p className="text-xs text-zinc-500">
-                      Surfaces this section on the couple&apos;s Music tab for playlist/vibe curation (e.g. Cocktail Hour, Dinner, Open Dancing). Turn off for single-song moments.
+                      Surfaces this moment on the couple&apos;s Music tab for playlist/vibe curation (e.g. Cocktail Hour, Dinner, Open Dancing). Turn off for single-song moments.
                     </p>
                   </div>
                 )}
@@ -223,7 +226,7 @@ export default function SectionSettings({
               <Group label="Client timeline">
                 <ToggleRow label="Show on couple's timeline" on={onTimeline} onToggle={() => setOnTimeline((v) => !v)} />
                 <p className="mt-2 text-xs text-zinc-500">
-                  Turn off for informational sections (e.g. Vendor Team) that belong in the plan but not on the couple&apos;s event timeline.
+                  Turn off for informational moments (e.g. Vendor Team) that belong in the plan but not on the couple&apos;s event timeline.
                 </p>
               </Group>
             </>
@@ -247,7 +250,7 @@ export default function SectionSettings({
             <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl dark:bg-zinc-900">
               <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50">Unsaved changes</h3>
               <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                You&apos;ve made changes to this section. Do you want to save them before closing?
+                You&apos;ve made changes to this {noun}. Do you want to save them before closing?
               </p>
               <div className="mt-4 flex flex-wrap justify-end gap-2">
                 <button onClick={() => setConfirming(false)} className="btn-ghost">Keep editing</button>
@@ -325,7 +328,7 @@ function NumberRow({ label, value, onChange, placeholder }: { label: string; val
   );
 }
 
-function CoverUpload({ eventId, sectionId, url }: { eventId: string; sectionId: string; url: string | null }) {
+function CoverUpload({ eventId, sectionId, url, noun }: { eventId: string; sectionId: string; url: string | null; noun: string }) {
   const ref = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   function pick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -345,7 +348,7 @@ function CoverUpload({ eventId, sectionId, url }: { eventId: string; sectionId: 
       <input ref={ref} type="file" accept="image/*" className="hidden" onChange={pick} />
       <button onClick={() => ref.current?.click()} disabled={pending} className="inline-flex items-center gap-2 text-sm font-semibold text-brand dark:text-brand-lighter">
         <FontAwesomeIcon icon={pending ? faSpinner : faImage} className={pending ? "animate-spin" : ""} />
-        {url ? "Change section cover" : "Add section cover"}
+        {url ? `Change ${noun} cover` : `Add ${noun} cover`}
       </button>
     </div>
   );
