@@ -74,9 +74,12 @@ create table if not exists public.event_content_reports (
   resolved_at timestamptz,
   created_at timestamptz not null default now(),
   constraint event_content_reports_details_len check (details is null or char_length(details) <= 1000),
+  -- A live user or song-like report must name the person. That requirement is
+  -- enforced on insert. After the reported login is deleted, target_user_id is
+  -- cleared and the report row stays, so this check allows that null.
   constraint event_content_reports_target check (
-    (target_type = 'user' and target_user_id is not null)
-    or (target_type = 'song_like' and target_id is not null and target_user_id is not null)
+    (target_type = 'user')
+    or (target_type = 'song_like' and target_id is not null)
     or (target_type not in ('user', 'song_like') and target_id is not null)
   )
 );
@@ -244,6 +247,41 @@ grant execute on function public.xos_ugc_row_visible(uuid, uuid, timestamptz) to
 
 -- ───────────────────────── Hide and delete guards ─────────────────────────
 
+-- True when a nested update only clears user foreign keys to null.
+-- Parent account deletion uses this. A direct edit that points a column at
+-- someone else does not.
+create or replace function public.xos_fk_user_clear(old_row jsonb, new_row jsonb)
+returns boolean
+language sql
+immutable
+as $$
+  select
+    (old_row - array[
+      'hidden_by', 'uploaded_by', 'updated_by', 'requested_by', 'answered_by', 'added_by',
+      'account_id', 'client_notes_updated_by', 'client_notes_hidden_by',
+      'cover_photo_updated_by', 'cover_photo_hidden_by', 'target_user_id', 'resolved_by'
+    ]) is not distinct from
+    (new_row - array[
+      'hidden_by', 'uploaded_by', 'updated_by', 'requested_by', 'answered_by', 'added_by',
+      'account_id', 'client_notes_updated_by', 'client_notes_hidden_by',
+      'cover_photo_updated_by', 'cover_photo_hidden_by', 'target_user_id', 'resolved_by'
+    ])
+    and not exists (
+      select 1
+      from jsonb_object_keys(old_row) as key
+      where key = any (array[
+        'hidden_by', 'uploaded_by', 'updated_by', 'requested_by', 'answered_by', 'added_by',
+        'account_id', 'client_notes_updated_by', 'client_notes_hidden_by',
+        'cover_photo_updated_by', 'cover_photo_hidden_by', 'target_user_id', 'resolved_by'
+      ])
+        and (old_row -> key) is distinct from (new_row -> key)
+        and (new_row -> key) is distinct from 'null'::jsonb
+    );
+$$;
+
+revoke all on function public.xos_fk_user_clear(jsonb, jsonb) from public, anon;
+grant execute on function public.xos_fk_user_clear(jsonb, jsonb) to authenticated, service_role;
+
 create or replace function public.ugc_guard_hide()
 returns trigger
 language plpgsql
@@ -254,6 +292,9 @@ declare
   event_id uuid;
   shared boolean := false;
 begin
+  if pg_trigger_depth() > 1 and public.xos_fk_user_clear(to_jsonb(old), to_jsonb(new)) then
+    return new;
+  end if;
   if tg_table_name = 'planning_songs' then
     author_id := old.requested_by;
     event_id := old.event_id;
@@ -329,17 +370,23 @@ language plpgsql
 set search_path = public
 as $$
 begin
+  if pg_trigger_depth() > 1 then
+    return old;
+  end if;
   if current_user in ('service_role', 'postgres', 'supabase_admin') then
     return old;
   end if;
   if public.xos_is_staff() then
     return old;
   end if;
-  if tg_table_name = 'planning_song_likes' and old.account_id = auth.uid() then
-    return old;
-  end if;
-  if tg_table_name = 'event_files' and old.source is distinct from 'planner_timeline' then
-    return old;
+  if tg_table_name = 'planning_song_likes' then
+    if old.account_id = auth.uid() then
+      return old;
+    end if;
+  elsif tg_table_name = 'event_files' then
+    if old.source is distinct from 'planner_timeline' then
+      return old;
+    end if;
   end if;
   raise exception 'Remove content by hiding it so the DJ can still see it'
     using errcode = '42501';
@@ -386,6 +433,9 @@ language plpgsql
 set search_path = public
 as $$
 begin
+  if pg_trigger_depth() > 1 and public.xos_fk_user_clear(to_jsonb(old), to_jsonb(new)) then
+    return new;
+  end if;
   if current_user in ('service_role', 'postgres', 'supabase_admin') or public.xos_is_staff() then
     if new.client_notes is distinct from old.client_notes then
       if auth.uid() is not null then
@@ -450,6 +500,9 @@ language plpgsql
 set search_path = public
 as $$
 begin
+  if pg_trigger_depth() > 1 and public.xos_fk_user_clear(to_jsonb(old), to_jsonb(new)) then
+    return new;
+  end if;
   if new.cover_photo_url is not distinct from old.cover_photo_url
      and new.cover_photo_updated_by is not distinct from old.cover_photo_updated_by
      and new.cover_photo_hidden_at is not distinct from old.cover_photo_hidden_at
@@ -495,6 +548,51 @@ create trigger events_guard_cover_hide
   before update on public.events
   for each row
   execute function public.events_guard_cover_hide();
+
+-- 00213 rejects a guest change to requested_by. Account deletion clears that
+-- column through the foreign key, with no signed-in user. Keep the guest lock
+-- for a direct edit.
+create or replace function public.planning_songs_limit_guest_update()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if pg_trigger_depth() > 1 and public.xos_fk_user_clear(to_jsonb(old), to_jsonb(new)) then
+    return new;
+  end if;
+  if current_user in ('service_role', 'postgres', 'supabase_admin') then
+    return new;
+  end if;
+  if public.xos_is_host(old.event_id) then
+    return new;
+  end if;
+  if new.id is distinct from old.id
+     or new.event_id is distinct from old.event_id
+     or new.section_id is distinct from old.section_id
+     or new.requested_by is distinct from old.requested_by
+  then
+    raise exception 'Guests cannot move a song to another event or section'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists planning_songs_limit_guest_update on public.planning_songs;
+create trigger planning_songs_limit_guest_update
+  before update on public.planning_songs
+  for each row
+  execute function public.planning_songs_limit_guest_update();
+
+drop trigger if exists planning_sections_limit_client_update on public.planning_sections;
+create trigger planning_sections_limit_client_update
+  before update on public.planning_sections
+  for each row
+  execute function public.planning_sections_limit_client_update();
+
+revoke all on function public.planning_songs_limit_guest_update() from public, anon;
+grant execute on function public.planning_songs_limit_guest_update() to authenticated, service_role;
 
 -- ───────────────────────── RLS: hidden and blocked rows ─────────────────────────
 
@@ -613,6 +711,28 @@ set search_path = public
 as $$
 begin
   if tg_op = 'UPDATE' then
+    -- Reported-user and resolver deletion clear only those foreign keys.
+    -- Reason, details, target type, song id, reporter, and status stay.
+    if pg_trigger_depth() > 1
+       and new.id is not distinct from old.id
+       and new.event_id is not distinct from old.event_id
+       and new.reporter_id is not distinct from old.reporter_id
+       and new.target_type is not distinct from old.target_type
+       and new.target_id is not distinct from old.target_id
+       and new.reason is not distinct from old.reason
+       and new.details is not distinct from old.details
+       and new.created_at is not distinct from old.created_at
+       and new.status is not distinct from old.status
+       and new.resolved_at is not distinct from old.resolved_at
+       and (new.target_user_id is not distinct from old.target_user_id or new.target_user_id is null)
+       and (new.resolved_by is not distinct from old.resolved_by or new.resolved_by is null)
+       and (
+         new.target_user_id is distinct from old.target_user_id
+         or new.resolved_by is distinct from old.resolved_by
+       )
+    then
+      return new;
+    end if;
     if new.id is distinct from old.id
        or new.event_id is distinct from old.event_id
        or new.reporter_id is distinct from old.reporter_id
@@ -639,6 +759,15 @@ begin
   if auth.uid() is null or new.reporter_id is distinct from auth.uid() then
     raise exception 'Report reporter must be the signed-in member' using errcode = '42501';
   end if;
+  if new.target_type = 'user' and new.target_user_id is null then
+    raise exception 'Report target is required' using errcode = '23514';
+  end if;
+  if new.target_type = 'song_like' and (new.target_id is null or new.target_user_id is null) then
+    raise exception 'Report target is required' using errcode = '23514';
+  end if;
+  if new.target_type not in ('user', 'song_like') and new.target_id is null then
+    raise exception 'Report target is required' using errcode = '23514';
+  end if;
   if not (
     public.xos_user_is_host(new.event_id, new.reporter_id)
     or public.xos_user_is_guest(new.event_id, new.reporter_id)
@@ -661,6 +790,11 @@ set search_path = public
 as $$
 begin
   if tg_op = 'DELETE' then
+    -- Event, blocker, and blocked-user deletion cascade this row.
+    -- A direct delete still has to be the member who blocked.
+    if pg_trigger_depth() > 1 then
+      return old;
+    end if;
     if auth.uid() is null or old.blocker_id is distinct from auth.uid() then
       raise exception 'Block can only be removed by the member who created it' using errcode = '42501';
     end if;

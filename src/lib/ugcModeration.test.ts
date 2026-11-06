@@ -329,6 +329,9 @@ describe("database rules", () => {
     assert.match(migration, /Report identity cannot be changed/);
     assert.match(migration, /Report reporter must be the signed-in member/);
     assert.match(migration, /Block must be filed by the signed-in member/);
+    assert.match(migration, /pg_trigger_depth\(\) > 1/);
+    assert.match(migration, /Block can only be removed by the member who created it/);
+    assert.match(migration, /target_type = 'user'/);
     assert.match(migration, /new\.created_at := now\(\)/);
   });
 
