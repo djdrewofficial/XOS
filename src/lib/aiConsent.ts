@@ -62,6 +62,17 @@ export function clientContactAllowed(clientId: string | null | undefined, consen
   return typeof clientId === "string" && clientId.length > 0 && consentedClientIds.has(clientId);
 }
 
+/** A consent row may cover only the client id on that person's account.
+    A mismatched client id is ignored, so it cannot opt in someone else. */
+export function trustedConsentClientId(
+  consentClientId: string | null | undefined,
+  accountClientId: string | null | undefined,
+): string | null {
+  if (typeof accountClientId !== "string" || accountClientId.length === 0) return null;
+  if (typeof consentClientId === "string" && consentClientId.length > 0 && consentClientId !== accountClientId) return null;
+  return accountClientId;
+}
+
 /** Blocks emails and phone numbers typed into the staff assistant. Names in a sentence are not detected. */
 export function assistantTextHasDirectContact(text: string): boolean {
   if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) return true;
@@ -126,15 +137,18 @@ export async function consentedPeopleForEvent(
     .select("auth_user_id, client_id, granted_at, withdrawn_at")
     .eq("event_id", eventId);
   if (error || !data?.length) return { userIds, clientIds };
-  for (const row of data) {
-    if (!consentIsActive(row as ConsentRow) || !row.auth_user_id) continue;
-    userIds.add(row.auth_user_id as string);
-    if (row.client_id) clientIds.add(row.client_id as string);
-  }
+  const active = data.filter((row) => consentIsActive(row as ConsentRow) && row.auth_user_id);
+  for (const row of active) userIds.add(row.auth_user_id as string);
   if (!userIds.size) return { userIds, clientIds };
   const { data: accounts } = await sb.from("accounts").select("auth_user_id, client_id").in("auth_user_id", [...userIds]);
   for (const account of accounts ?? []) {
-    if (account.client_id && userIds.has(account.auth_user_id as string)) clientIds.add(account.client_id as string);
+    const authUserId = account.auth_user_id as string;
+    if (!userIds.has(authUserId)) continue;
+    const own = active.filter((row) => row.auth_user_id === authUserId);
+    const matching = own.find((row) => !row.client_id || row.client_id === account.client_id);
+    if (!matching) continue;
+    const clientId = trustedConsentClientId(matching.client_id as string | null, account.client_id as string | null);
+    if (clientId) clientIds.add(clientId);
   }
   return { userIds, clientIds };
 }

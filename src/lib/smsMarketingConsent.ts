@@ -55,3 +55,17 @@ export function marketingSendAllowed(input: {
 export function normalizeConsentPhone(raw: string | null | undefined): string | null {
   return toE164(raw ?? "");
 }
+
+/** A history row counts only when it was written by that client's login
+    and names the mobile number currently on the booking. */
+export function marketingRowBoundToClient(input: {
+  rowAuthUserId: string | null;
+  accountAuthUserId: string | null;
+  rowPhone: string;
+  clientCellPhone: string | null;
+}): boolean {
+  if (!input.rowAuthUserId || !input.accountAuthUserId) return false;
+  if (input.rowAuthUserId !== input.accountAuthUserId) return false;
+  const cell = normalizeConsentPhone(input.clientCellPhone);
+  return Boolean(cell) && cell === input.rowPhone;
+}

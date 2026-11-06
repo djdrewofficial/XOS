@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 import { resolveEventRole } from "@/lib/planning";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { AI_CONSENT_POLICY_VERSION, consentIsActive, contractClientAuthUserId, type ConsentRow } from "@/lib/aiConsent";
 
 /* Client app opt-in for staff AI tools.
@@ -115,34 +116,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Action must be grant or withdraw." }, { status: 400 });
   }
   const source = body?.source === "web" ? "web" : "app";
-  if (action === "grant") {
-    if (body?.policyVersion !== AI_CONSENT_POLICY_VERSION) {
-      return NextResponse.json({ error: "Update the app before allowing AI tools." }, { status: 400 });
-    }
-    const now = new Date().toISOString();
-    const { error } = await who.rls.from("ai_consents").upsert(
-      {
-        auth_user_id: who.userId,
-        client_id: who.clientId,
-        event_guest_id: who.guestId,
-        event_id: eventId,
-        granted_at: now,
-        withdrawn_at: null,
-        policy_version: AI_CONSENT_POLICY_VERSION,
-        source,
-        updated_at: now,
-      },
-      { onConflict: "auth_user_id,event_id" },
+  if (action === "grant" && body?.policyVersion !== AI_CONSENT_POLICY_VERSION) {
+    return NextResponse.json({ error: "Update the app before allowing AI tools." }, { status: 400 });
+  }
+  if (!who.clientId) {
+    return NextResponse.json(
+      { error: "not_contract_client", capability: { canGrant: false, canWithdraw: false, reason: "not_contract_client" } },
+      { status: 403 },
     );
-    if (error) return NextResponse.json({ error: "Could not save AI consent." }, { status: 500 });
-  } else {
-    const now = new Date().toISOString();
-    const { error } = await who.rls
-      .from("ai_consents")
-      .update({ withdrawn_at: now, updated_at: now })
-      .eq("auth_user_id", who.userId)
-      .eq("event_id", eventId);
-    if (error) return NextResponse.json({ error: "Could not withdraw AI consent." }, { status: 500 });
+  }
+  const { error } = await createAdminClient().rpc("ai_consent_save", {
+    p_auth_user_id: who.userId,
+    p_event_id: eventId,
+    p_action: action,
+    p_policy_version: AI_CONSENT_POLICY_VERSION,
+    p_source: source,
+  });
+  if (error) {
+    const denied = error.code === "42501" || /contract|account|staff/i.test(error.message);
+    return NextResponse.json(
+      { error: denied ? "You don't have access to that." : "Could not save AI consent." },
+      { status: denied ? 403 : 500 },
+    );
   }
   const loaded = await loadRow(who.rls, who.userId, eventId);
   if ("error" in loaded) return loaded.error;

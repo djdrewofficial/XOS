@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 // circular import back to this file. Re-exported below for existing importers.
 import { toE164 } from "@/lib/phone";
 import { isPhoneOptedOut, recordSmsOptSignal, classifySmsKeyword } from "@/lib/smsOptOut";
-import { marketingSendAllowed, type MarketingConsentAction } from "@/lib/smsMarketingConsent";
+import { marketingRowBoundToClient, marketingSendAllowed, type MarketingConsentAction } from "@/lib/smsMarketingConsent";
 
 /* ============ HighLevel (LeadConnector API v2) config ============
    Set in .env.local (and Netlify env for prod):
@@ -789,29 +789,42 @@ export async function processSmsOutbox(
     bypass_comms_pause?: boolean | null;
   }>;
   const clientIds = [...new Set(queued.map((m) => m.client_id).filter(Boolean) as string[])];
-  const clientById = new Map<string, { first_name?: string; last_name?: string; email?: string; sms_opt_in?: boolean }>();
+  const clientById = new Map<string, { first_name?: string; last_name?: string; email?: string; sms_opt_in?: boolean; cell_phone?: string | null }>();
+  const accountAuthByClient = new Map<string, string>();
   if (clientIds.length) {
-    const { data: clientRows } = await supabase
-      .from("clients")
-      .select("id, first_name, last_name, email, sms_opt_in")
-      .in("id", clientIds);
+    const [{ data: clientRows }, { data: accountRows }] = await Promise.all([
+      supabase.from("clients").select("id, first_name, last_name, email, sms_opt_in, cell_phone").in("id", clientIds),
+      supabase.from("accounts").select("client_id, auth_user_id").eq("account_type", "client").in("client_id", clientIds),
+    ]);
     for (const c of clientRows ?? []) clientById.set(c.id as string, c);
+    for (const account of accountRows ?? []) {
+      if (account.client_id && account.auth_user_id) accountAuthByClient.set(account.client_id as string, account.auth_user_id as string);
+    }
   }
 
   const marketingLatest = new Map<string, { action: MarketingConsentAction; phone: string }>();
   if (clientIds.length) {
     const { data: consentRows, error: consentErr } = await supabase
       .from("sms_marketing_consent_events")
-      .select("client_id, phone_e164, action, created_at")
+      .select("client_id, auth_user_id, phone_e164, action, created_at")
       .in("client_id", clientIds)
       .order("created_at", { ascending: false });
     if (!consentErr) {
       for (const row of consentRows ?? []) {
         const clientId = row.client_id as string | null;
         if (!clientId || marketingLatest.has(clientId)) continue;
-        if (row.action === "grant" || row.action === "withdraw") {
-          marketingLatest.set(clientId, { action: row.action, phone: row.phone_e164 as string });
+        if (row.action !== "grant" && row.action !== "withdraw") continue;
+        if (
+          !marketingRowBoundToClient({
+            rowAuthUserId: (row.auth_user_id as string | null) ?? null,
+            accountAuthUserId: accountAuthByClient.get(clientId) ?? null,
+            rowPhone: row.phone_e164 as string,
+            clientCellPhone: clientById.get(clientId)?.cell_phone ?? null,
+          })
+        ) {
+          continue;
         }
+        marketingLatest.set(clientId, { action: row.action, phone: row.phone_e164 as string });
       }
     }
   }

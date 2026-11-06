@@ -26,9 +26,8 @@ create index if not exists sms_marketing_consent_client_idx
 
 alter table public.sms_marketing_consent_events enable row level security;
 
-revoke all on table public.sms_marketing_consent_events from public, anon;
-grant select, insert on table public.sms_marketing_consent_events to authenticated;
-grant select, insert, update, delete on table public.sms_marketing_consent_events to service_role;
+revoke all on table public.sms_marketing_consent_events from public, anon, authenticated, service_role;
+grant select on table public.sms_marketing_consent_events to authenticated, service_role;
 
 drop policy if exists "staff read sms marketing consent" on public.sms_marketing_consent_events;
 create policy "staff read sms marketing consent"
@@ -45,12 +44,160 @@ create policy "own read sms marketing consent"
   using (auth_user_id = auth.uid());
 
 drop policy if exists "own insert sms marketing consent" on public.sms_marketing_consent_events;
-create policy "own insert sms marketing consent"
-  on public.sms_marketing_consent_events
-  for insert
-  to authenticated
-  with check (
-    auth_user_id = auth.uid()
-    and not public.xos_is_staff()
-    and length(btrim(phone_e164)) > 0
-  );
+
+-- Same US E.164 rules as src/lib/smsMarketingConsent.ts. A grant can only
+-- name the booking mobile already stored on clients.cell_phone.
+create or replace function public.xos_phone_e164(raw text)
+returns text
+language plpgsql
+immutable
+as $$
+declare
+  digits text;
+begin
+  if raw is null then
+    return null;
+  end if;
+  digits := regexp_replace(raw, '\D', '', 'g');
+  if left(btrim(raw), 1) = '+' then
+    if length(digits) < 10 then
+      return null;
+    end if;
+    return '+' || digits;
+  end if;
+  if length(digits) = 10 then
+    return '+1' || digits;
+  end if;
+  if length(digits) = 11 and left(digits, 1) = '1' then
+    return '+' || digits;
+  end if;
+  return null;
+end;
+$$;
+
+create or replace function public.sms_marketing_consent_enforce()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  acct public.accounts%rowtype;
+  cell text;
+  phone text;
+  prior text;
+begin
+  if tg_op <> 'INSERT' then
+    raise exception 'SMS marketing consent history cannot be changed' using errcode = '42501';
+  end if;
+  select * into acct from public.accounts where auth_user_id = new.auth_user_id;
+  if not found or acct.account_type <> 'client' or acct.client_id is null then
+    raise exception 'SMS marketing consent requires the client account' using errcode = '42501';
+  end if;
+  if exists (
+    select 1 from public.employees e where e.auth_user_id = new.auth_user_id
+  ) then
+    raise exception 'Staff cannot record SMS marketing consent' using errcode = '42501';
+  end if;
+  if new.client_id is distinct from acct.client_id then
+    raise exception 'SMS marketing consent client does not match the account' using errcode = '42501';
+  end if;
+  if new.event_id is not null and not (
+    exists (
+      select 1 from public.events e
+      where e.id = new.event_id and e.client_id = acct.client_id
+    )
+    or exists (
+      select 1 from public.event_clients ec
+      where ec.event_id = new.event_id and ec.client_id = acct.client_id
+    )
+  ) then
+    raise exception 'SMS marketing consent event is not this client' using errcode = '42501';
+  end if;
+  select c.cell_phone into cell from public.clients c where c.id = acct.client_id;
+  phone := public.xos_phone_e164(cell);
+  if phone is not null then
+    if new.phone_e164 is distinct from phone then
+      raise exception 'SMS marketing consent phone does not match the booking mobile' using errcode = '42501';
+    end if;
+  else
+    if new.action <> 'withdraw' then
+      raise exception 'SMS marketing consent requires the booking mobile' using errcode = '42501';
+    end if;
+    select e.phone_e164 into prior
+    from public.sms_marketing_consent_events e
+    where e.auth_user_id = new.auth_user_id
+    order by e.created_at desc
+    limit 1;
+    if prior is null or new.phone_e164 is distinct from prior then
+      raise exception 'SMS marketing consent phone does not match the booking mobile' using errcode = '42501';
+    end if;
+  end if;
+  new.created_at := now();
+  return new;
+end;
+$$;
+
+-- The only write path. Phone and client come from the account, not the caller.
+create or replace function public.sms_marketing_consent_record(
+  p_auth_user_id uuid,
+  p_event_id uuid,
+  p_action text,
+  p_disclosure_version text,
+  p_source text
+)
+returns public.sms_marketing_consent_events
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  acct public.accounts%rowtype;
+  phone text;
+  row public.sms_marketing_consent_events;
+begin
+  if p_action not in ('grant', 'withdraw') then
+    raise exception 'SMS marketing consent action is not allowed' using errcode = '42501';
+  end if;
+  if p_source not in ('app', 'web') then
+    raise exception 'SMS marketing consent source is not allowed' using errcode = '42501';
+  end if;
+  if p_disclosure_version is null or btrim(p_disclosure_version) = '' then
+    raise exception 'SMS marketing consent disclosure is required' using errcode = '42501';
+  end if;
+  select * into acct from public.accounts where auth_user_id = p_auth_user_id;
+  if not found or acct.account_type <> 'client' or acct.client_id is null then
+    raise exception 'SMS marketing consent requires the client account' using errcode = '42501';
+  end if;
+  select public.xos_phone_e164(c.cell_phone) into phone
+  from public.clients c
+  where c.id = acct.client_id;
+  if phone is null and p_action = 'withdraw' then
+    select e.phone_e164 into phone
+    from public.sms_marketing_consent_events e
+    where e.auth_user_id = p_auth_user_id
+    order by e.created_at desc
+    limit 1;
+  end if;
+  if phone is null then
+    return null;
+  end if;
+  insert into public.sms_marketing_consent_events (
+    auth_user_id, client_id, event_id, phone_e164, action, disclosure_version, source
+  ) values (
+    p_auth_user_id, acct.client_id, p_event_id, phone, p_action, p_disclosure_version, p_source
+  )
+  returning * into row;
+  return row;
+end;
+$$;
+
+drop trigger if exists sms_marketing_consent_enforce on public.sms_marketing_consent_events;
+create trigger sms_marketing_consent_enforce
+  before insert or update or delete on public.sms_marketing_consent_events
+  for each row execute function public.sms_marketing_consent_enforce();
+
+revoke all on function public.xos_phone_e164(text) from public, anon, authenticated;
+revoke all on function public.sms_marketing_consent_enforce() from public, anon, authenticated, service_role;
+revoke all on function public.sms_marketing_consent_record(uuid, uuid, text, text, text) from public, anon, authenticated;
+grant execute on function public.sms_marketing_consent_record(uuid, uuid, text, text, text) to service_role;

@@ -602,6 +602,103 @@ create policy "member deletes own block" on public.event_member_blocks
   for delete to authenticated
   using (blocker_id = auth.uid());
 
+-- Report and block identity is frozen after insert. A signed-in member cannot
+-- file as someone else, and staff resolution cannot move the report to another
+-- person, event, or target. created_at is the server clock.
+create or replace function public.event_content_reports_enforce()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE' then
+    if new.id is distinct from old.id
+       or new.event_id is distinct from old.event_id
+       or new.reporter_id is distinct from old.reporter_id
+       or new.target_type is distinct from old.target_type
+       or new.target_id is distinct from old.target_id
+       or new.target_user_id is distinct from old.target_user_id
+       or new.reason is distinct from old.reason
+       or new.details is distinct from old.details
+       or new.created_at is distinct from old.created_at
+    then
+      raise exception 'Report identity cannot be changed' using errcode = '42501';
+    end if;
+    if new.status = 'open' then
+      new.resolved_by := null;
+      new.resolved_at := null;
+    elsif auth.uid() is null or not public.xos_is_staff() then
+      raise exception 'Only staff can resolve a report' using errcode = '42501';
+    else
+      new.resolved_by := auth.uid();
+      new.resolved_at := now();
+    end if;
+    return new;
+  end if;
+  if auth.uid() is null or new.reporter_id is distinct from auth.uid() then
+    raise exception 'Report reporter must be the signed-in member' using errcode = '42501';
+  end if;
+  if not (
+    public.xos_user_is_host(new.event_id, new.reporter_id)
+    or public.xos_user_is_guest(new.event_id, new.reporter_id)
+  ) then
+    raise exception 'Report reporter is not on that event' using errcode = '42501';
+  end if;
+  new.created_at := now();
+  new.status := 'open';
+  new.resolved_by := null;
+  new.resolved_at := null;
+  return new;
+end;
+$$;
+
+create or replace function public.event_member_blocks_enforce()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'DELETE' then
+    if auth.uid() is null or old.blocker_id is distinct from auth.uid() then
+      raise exception 'Block can only be removed by the member who created it' using errcode = '42501';
+    end if;
+    return old;
+  end if;
+  if auth.uid() is null or new.blocker_id is distinct from auth.uid() then
+    raise exception 'Block must be filed by the signed-in member' using errcode = '42501';
+  end if;
+  if not (
+    public.xos_user_is_host(new.event_id, new.blocker_id)
+    or public.xos_user_is_guest(new.event_id, new.blocker_id)
+  ) then
+    raise exception 'Blocker is not on that event' using errcode = '42501';
+  end if;
+  if not (
+    public.xos_user_is_host(new.event_id, new.blocked_id)
+    or public.xos_user_is_guest(new.event_id, new.blocked_id)
+  ) then
+    raise exception 'Blocked member is not on that event' using errcode = '42501';
+  end if;
+  new.created_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists event_content_reports_enforce on public.event_content_reports;
+create trigger event_content_reports_enforce
+  before insert or update on public.event_content_reports
+  for each row execute function public.event_content_reports_enforce();
+
+drop trigger if exists event_member_blocks_enforce on public.event_member_blocks;
+create trigger event_member_blocks_enforce
+  before insert or delete on public.event_member_blocks
+  for each row execute function public.event_member_blocks_enforce();
+
+revoke all on function public.event_content_reports_enforce() from public, anon, authenticated, service_role;
+revoke all on function public.event_member_blocks_enforce() from public, anon, authenticated, service_role;
+
 -- Guests cannot delete someone else's membership. Authenticated has no delete
 -- grant on event_app_members (00213 grants select only). Host removal goes
 -- through the service role after the app checks the target is a guest.

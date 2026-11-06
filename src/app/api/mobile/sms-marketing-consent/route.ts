@@ -154,20 +154,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Update the app before allowing marketing texts." }, { status: 400 });
   }
   const priorGrant = [...events].reverse().find((event) => event.action === "grant");
-  const phoneToRecord = who.phone ?? (action === "withdraw" ? priorGrant?.phone ?? null : null);
-  if (!phoneToRecord) return NextResponse.json(present(who, events));
+  if (!who.phone && action === "withdraw" && !priorGrant) return NextResponse.json(present(who, events));
+  if (!who.clientId) return NextResponse.json(present(who, events));
   const source = body?.source === "web" ? "web" : "app";
-  const eventId = typeof body?.eventId === "string" && body.eventId.trim() ? body.eventId.trim() : null;
-  const { error } = await who.rls.from("sms_marketing_consent_events").insert({
-    auth_user_id: who.userId,
-    client_id: who.clientId,
-    event_id: eventId,
-    phone_e164: phoneToRecord,
-    action,
-    disclosure_version: body?.disclosureVersion || SMS_MARKETING_DISCLOSURE_VERSION,
-    source,
+  const eventId =
+    typeof body?.eventId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.eventId.trim())
+      ? body.eventId.trim()
+      : null;
+  const { error } = await createAdminClient().rpc("sms_marketing_consent_record", {
+    p_auth_user_id: who.userId,
+    p_event_id: eventId,
+    p_action: action,
+    p_disclosure_version: SMS_MARKETING_DISCLOSURE_VERSION,
+    p_source: source,
   });
-  if (error) return NextResponse.json({ error: "Could not save the texting choice." }, { status: 500 });
+  if (error) {
+    const denied = error.code === "42501" || /client|phone|event|staff/i.test(error.message);
+    return NextResponse.json(
+      { error: denied ? "You don't have access to that." : "Could not save the texting choice." },
+      { status: denied ? 403 : 500 },
+    );
+  }
 
   if (who.clientId) {
     const admin = createAdminClient();

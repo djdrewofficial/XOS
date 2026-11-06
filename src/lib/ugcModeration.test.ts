@@ -222,6 +222,10 @@ describe("database rules", () => {
     assert.match(migration, /using \(public\.xos_is_staff\(\)\)/);
     assert.match(migration, /enable row level security/);
     assert.match(migration, /revoke all on table public\.event_content_reports from public, anon/);
+    assert.match(migration, /Report identity cannot be changed/);
+    assert.match(migration, /Report reporter must be the signed-in member/);
+    assert.match(migration, /Block must be filed by the signed-in member/);
+    assert.match(migration, /new\.created_at := now\(\)/);
   });
 
   it("hides removed and blocked rows from non-staff", () => {

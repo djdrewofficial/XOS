@@ -13,10 +13,11 @@ import {
   clientContactAllowed,
   consentIsActive,
   rowsForAi,
+  trustedConsentClientId,
   songLineAllowed,
   songNoteAllowed,
 } from "./aiConsent.ts";
-import { currentMarketingConsent, marketingSendAllowed, normalizeConsentPhone } from "./smsMarketingConsent.ts";
+import { currentMarketingConsent, marketingRowBoundToClient, marketingSendAllowed, normalizeConsentPhone } from "./smsMarketingConsent.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -99,17 +100,56 @@ describe("AI consent state", () => {
 describe("AI consent schema and call sites", () => {
   const sql = read("supabase/migrations/00214_ai_consent.sql");
 
-  it("locks consent rows to the owner for writes and to staff for read", () => {
+  it("lets the signed-in person read a row and keeps writes on the server function", () => {
     assert.match(sql, /auth_user_id = auth\.uid\(\)/);
     assert.match(sql, /public\.xos_is_staff\(\)/);
     assert.match(sql, /for select/);
-    assert.match(sql, /for insert/);
-    assert.match(sql, /for update/);
-    assert.match(sql, /not public\.xos_is_staff\(\)/);
+    assert.match(sql, /grant select on table public\.ai_consents to authenticated/);
+    assert.match(sql, /grant execute on function public\.ai_consent_save/);
+    assert.match(sql, /revoke insert, update, delete on table public\.ai_consents from service_role/);
+    assert.match(sql, /new\.client_id is distinct from acct\.client_id/);
+    assert.match(sql, /new\.created_at := now\(\)/);
+    assert.match(sql, /AI consent identity cannot be changed/);
+    assert.doesNotMatch(sql, /create policy "own insert ai consents"/);
+    assert.doesNotMatch(sql, /create policy "own update ai consents"/);
+    assert.doesNotMatch(sql, /event_app_members/);
     assert.doesNotMatch(sql, /for all/);
     assert.match(sql, /policy_version/);
     assert.match(sql, /withdrawn_at/);
     assert.match(sql, /source in \('app', 'web'\)/);
+  });
+
+  it("does not treat a forged consent client id as that person's opt-in", () => {
+    assert.equal(trustedConsentClientId("victim-client", "real-client"), null);
+    assert.equal(trustedConsentClientId("real-client", "real-client"), "real-client");
+    assert.equal(trustedConsentClientId(null, "real-client"), "real-client");
+    assert.equal(
+      marketingRowBoundToClient({
+        rowAuthUserId: "attacker",
+        accountAuthUserId: "owner",
+        rowPhone: "+13055551212",
+        clientCellPhone: "305-555-1212",
+      }),
+      false,
+    );
+    assert.equal(
+      marketingRowBoundToClient({
+        rowAuthUserId: "owner",
+        accountAuthUserId: "owner",
+        rowPhone: "+13055551212",
+        clientCellPhone: "786-555-0100",
+      }),
+      false,
+    );
+    assert.equal(
+      marketingRowBoundToClient({
+        rowAuthUserId: "owner",
+        accountAuthUserId: "owner",
+        rowPhone: "+13055551212",
+        clientCellPhone: "(305) 555-1212",
+      }),
+      true,
+    );
   });
 
   it("blocks personal staff tools without consent and strips the morning briefing", () => {
@@ -128,6 +168,16 @@ describe("AI consent schema and call sites", () => {
     assert.equal(existsSync(join(root, "src/app/api/music/recommend/route.ts")), false);
     assert.match(read("src/app/(app)/events/[id]/spotify-export-actions.ts"), /contractClientHasAiConsent/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /action !== "grant" && action !== "withdraw"/);
+    assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /ai_consent_save/);
+    assert.doesNotMatch(read("src/app/api/mobile/ai-consent/route.ts"), /from\("ai_consents"\)\.upsert/);
+    assert.match(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /sms_marketing_consent_record/);
+    assert.doesNotMatch(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /from\("sms_marketing_consent_events"\)\.insert/);
+    assert.match(read("src/lib/highlevel.ts"), /marketingRowBoundToClient/);
+    assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /grant select on table public\.sms_marketing_consent_events to authenticated, service_role/);
+    assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /SMS marketing consent history cannot be changed/);
+    assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /new\.phone_e164 is distinct from phone/);
+    assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /new\.created_at := now\(\)/);
+    assert.doesNotMatch(read("supabase/migrations/00215_sms_marketing_consent.sql"), /create policy "own insert sms marketing consent"/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /AI_CONSENT_POLICY_VERSION/);
     assert.equal(AI_CONSENT_POLICY_VERSION, "2026-11-06");
     const assistant = read("src/lib/assistantTools.ts");
