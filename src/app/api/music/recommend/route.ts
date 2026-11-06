@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isOpenAIConfigured, chatComplete } from "@/lib/openai";
 import { searchMusic } from "@/lib/music";
+import { callerHasAiConsent } from "@/lib/aiConsent";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,9 @@ export async function POST(req: Request) {
   }
   if (!isOpenAIConfigured()) {
     return NextResponse.json({ error: "Recommendations aren't configured yet." }, { status: 503 });
+  }
+  if (!(await callerHasAiConsent(supabase, userData.user.id, eventId))) {
+    return NextResponse.json({ error: "Allow AI tools for this event before asking for suggestions." }, { status: 403 });
   }
 
   // ── Ask the model for picks grounded in the couple's own words ──

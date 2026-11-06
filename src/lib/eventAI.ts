@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { chatComplete, isOpenAIConfigured } from "@/lib/openai";
+import { AI_CONSENT_BLOCKED, contractClientHasAiConsent } from "@/lib/aiConsent";
 
 /* Event intelligence: gather everything known about one event (basics, staff,
    package/add-ons, the planner timeline + songs + Q&A, Fireflies call notes/transcript,
@@ -131,6 +132,7 @@ function nameField(e: unknown, key: string): string {
 
 export async function summarizeEvent(sb: SupabaseClient, eventId: string): Promise<{ ok: boolean; text?: string; error?: string }> {
   if (!isOpenAIConfigured()) return { ok: false, error: "OpenAI isn't configured (OPENAI_API_KEY missing)." };
+  if (!(await contractClientHasAiConsent(sb, eventId))) return { ok: false, error: AI_CONSENT_BLOCKED };
   const ctx = await buildEventContext(sb, eventId);
   if (!ctx) return { ok: false, error: "Event not found." };
   const system =
@@ -145,6 +147,7 @@ export async function summarizeEvent(sb: SupabaseClient, eventId: string): Promi
 
 export async function answerEventQuestion(sb: SupabaseClient, eventId: string, question: string): Promise<{ ok: boolean; text?: string; error?: string }> {
   if (!isOpenAIConfigured()) return { ok: false, error: "OpenAI isn't configured (OPENAI_API_KEY missing)." };
+  if (!(await contractClientHasAiConsent(sb, eventId))) return { ok: false, error: AI_CONSENT_BLOCKED };
   const ctx = await buildEventContext(sb, eventId);
   if (!ctx) return { ok: false, error: "Event not found." };
   const system = `You answer questions about ONE specific event for the staff of a DJ/event company, using ONLY the event data below. If the answer isn't in the data, say you don't have that on file (never guess). Be concise and specific — quote song titles, times, and names exactly.\n\n=== EVENT DATA ===\n${ctx}`;

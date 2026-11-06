@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
 import InviteToXosButton from "@/components/InviteToXosButton";
+import AiConsentBadge from "@/components/AiConsentBadge";
 import EventAppAccess, { type AppInviteCard, type AppMemberCard } from "@/components/EventAppAccess";
 import NoteItem from "@/components/NoteItem";
 import {
@@ -2685,6 +2686,7 @@ export default async function EventDetailPage({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <AiConsentBadge eventId={id} />
             {event.status && (
               <span
                 className="status-chip px-3 py-1.5 text-sm"

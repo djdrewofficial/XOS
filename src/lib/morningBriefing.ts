@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { chatComplete, isOpenAIConfigured } from "@/lib/openai";
 import { sendBrandedEmail } from "@/lib/mailgun";
+import { briefingEventForAi, consentedEventIds } from "@/lib/aiConsent";
 
 /* Daily morning briefing: gather the day's operational picture, let GPT write a
    friendly skimmable summary, and email it to the office. Runs from the
@@ -19,20 +20,20 @@ export async function sendMorningBriefing(admin: SupabaseClient, to = "events@xp
   const [{ data: events }, { data: dues }, { data: unsigned }] = await Promise.all([
     admin
       .from("events")
-      .select("name, event_date, start_time, venue:venues(name), status:event_statuses(name), package:packages(name)")
+      .select("id, name, event_date, start_time, venue:venues(name), status:event_statuses(name), package:packages(name)")
       .gte("event_date", todayStr)
       .lte("event_date", in14)
       .is("archived_at", null)
       .order("event_date", { ascending: true }),
     admin
       .from("scheduled_payments")
-      .select("due_date, amount, label, event:events(name, archived_at)")
+      .select("due_date, amount, label, event:events(id, name, archived_at)")
       .gte("due_date", todayStr)
       .lte("due_date", in7)
       .order("due_date", { ascending: true }),
     admin
       .from("events")
-      .select("name, event_date, contract_sent_date")
+      .select("id, name, event_date, contract_sent_date")
       .not("contract_sent_date", "is", null)
       .is("contract_signed_date", null)
       .gte("event_date", todayStr)
@@ -40,19 +41,44 @@ export async function sendMorningBriefing(admin: SupabaseClient, to = "events@xp
       .order("event_date", { ascending: true }),
   ]);
 
-  const evList = (events ?? []).map((e) => ({
-    name: e.name,
-    date: e.event_date,
-    start: e.start_time,
-    venue: pluck(e, "venue", "name"),
-    status: pluck(e, "status", "name"),
-    package: pluck(e, "package", "name"),
-    today: e.event_date === todayStr,
-  }));
+  const eventIds = [
+    ...(events ?? []).map((event) => event.id as string),
+    ...(dues ?? []).map((row) => pluck(row, "event", "id")).filter((id): id is string => Boolean(id)),
+    ...(unsigned ?? []).map((event) => event.id as string),
+  ];
+  const allowed = await consentedEventIds(admin, eventIds);
+  const evList = (events ?? []).map((e) => {
+    const safe = briefingEventForAi(
+      { id: e.id as string, name: e.name as string | null, venue: pluck(e, "venue", "name") },
+      allowed.has(e.id as string),
+    );
+    return {
+      name: safe.name ?? "Private event",
+      date: e.event_date,
+      start: e.start_time,
+      venue: safe.venue,
+      status: pluck(e, "status", "name"),
+      package: pluck(e, "package", "name"),
+      today: e.event_date === todayStr,
+    };
+  });
   const dueList = (dues ?? [])
     .filter((d) => !pluckRaw(d, "event")?.archived_at)
-    .map((d) => ({ due: d.due_date, amount: Number(d.amount) || 0, label: d.label, event: pluck(d, "event", "name") }));
-  const unsignedList = (unsigned ?? []).map((u) => ({ name: u.name, date: u.event_date, sent: u.contract_sent_date }));
+    .map((d) => {
+      const eventId = pluck(d, "event", "id");
+      const name = pluck(d, "event", "name");
+      return {
+        due: d.due_date,
+        amount: Number(d.amount) || 0,
+        label: d.label,
+        event: eventId && allowed.has(eventId) ? name : "Private event",
+      };
+    });
+  const unsignedList = (unsigned ?? []).map((u) => ({
+    name: allowed.has(u.id as string) ? u.name : "Private event",
+    date: u.event_date,
+    sent: u.contract_sent_date,
+  }));
 
   const data = {
     today: todayStr,

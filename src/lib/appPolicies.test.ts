@@ -45,6 +45,10 @@ describe("app policy text", () => {
     const es = policyPlainText("privacy", "es");
     assert.match(en, /Removing client-facing song recommendations does not remove staff AI/);
     assert.match(en, /This disclosure is not itself permission to send personal data to third-party AI/);
+    assert.match(en, /unless you opt in for that event/);
+    assert.match(en, /You can withdraw/);
+    assert.match(es, /Puede retirar esa elección/);
+    assert.doesNotMatch(en, /—/);
     assert.match(en, /OpenAI/);
     assert.match(es, /no elimina la IA del personal/);
     assert.match(es, /no constituye por sí mismo autorización/);
