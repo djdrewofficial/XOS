@@ -22,6 +22,8 @@
     "@fortawesome/react-fontawesome": "^3.3.1",
     "@paypal/paypal-server-sdk": "^2.4.0",
     "@paypal/react-paypal-js": "^10.0.0",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.3",
     "@sparticuz/chromium": "^149.0.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.1",

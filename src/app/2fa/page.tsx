@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import AuthenticatorCodeField from "@/components/AuthenticatorCodeField";
 import MfaMethodSwitch from "@/components/MfaMethodSwitch";
 import { emailMfaAvailability, sendEmailMfaCode, verifyEmailMfaCode } from "@/app/(app)/account/mfaActions";
+import { stepUpWithPasskey } from "@/lib/passkeyBrowser";
 import { createClient } from "@/lib/supabase/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { elevateSessionWithTotp } from "@/lib/mfaStepUp";
@@ -26,6 +27,7 @@ export default function TwoFactorChallengePage() {
   const [phone, setPhone] = useState<PhoneFactor | null>(null);
   const [emailOn, setEmailOn] = useState(false);
   const [emailHint, setEmailHint] = useState<string | null>(null);
+  const [passkeyOn, setPasskeyOn] = useState(false);
   const [phoneChallengeId, setPhoneChallengeId] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +41,13 @@ export default function TwoFactorChallengePage() {
     if (started.current) return;
     started.current = true;
     let active = true;
-    Promise.all([supabase().auth.mfa.listFactors(), supabase().auth.mfa.getAuthenticatorAssuranceLevel(), emailMfaAvailability()]).then(
-      ([factors, aal, email]) => {
+    Promise.all([
+      supabase().auth.mfa.listFactors(),
+      supabase().auth.mfa.getAuthenticatorAssuranceLevel(),
+      emailMfaAvailability(),
+      supabase().auth.getUser(),
+    ]).then(
+      ([factors, aal, email, user]) => {
         if (!active) return;
         if (aal.data?.currentLevel === "aal2") {
           finish();
@@ -50,18 +57,20 @@ export default function TwoFactorChallengePage() {
         const phoneFactor = factors.data?.phone?.[0] ?? null;
         const phoneId = phoneFactor?.id ?? null;
         const phoneNumber = phoneFactor ? readPhone(phoneFactor) : null;
+        const hasPasskey = user.data.user?.app_metadata?.passkey_mfa === true;
         setTotpId(totp?.id ?? null);
         setPhone(phoneId ? { id: phoneId, phone: phoneNumber } : null);
         setEmailOn(email.enrolled);
         setEmailHint(email.hint);
+        setPasskeyOn(hasPasskey);
         const next = pickMfaMethod({ totp: Boolean(totp), phone: Boolean(phoneId), email: email.enrolled });
-        if (!next) {
+        if (!next && !hasPasskey) {
           router.replace("/");
           return;
         }
         setMethod(next);
         setReady(true);
-        if (next !== "totp") {
+        if (next && next !== "totp") {
           void deliver(next, { phoneId, phoneNumber, hint: email.hint });
         }
       },
@@ -187,6 +196,18 @@ export default function TwoFactorChallengePage() {
     finish();
   }
 
+  async function usePasskey() {
+    setError(null);
+    setBusy(true);
+    const result = await stepUpWithPasskey();
+    setBusy(false);
+    if (!result.ok) {
+      if (!result.cancelled) setError(result.error);
+      return;
+    }
+    finish();
+  }
+
   async function signOut() {
     await supabase().auth.signOut();
     router.push("/login");
@@ -220,8 +241,19 @@ export default function TwoFactorChallengePage() {
         <p className="mb-6 text-center text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 dark:text-zinc-600">
           Two-Factor Verification
         </p>
-        {!ready || !method ? (
+        {!ready ? (
           <p className="mb-4 text-center text-sm text-zinc-500">Checking your verification methods…</p>
+        ) : !method ? (
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-600 dark:text-zinc-300">
+              This password sign-in still needs your passkey. Face ID, Touch ID, a device PIN, or the passkey in
+              1Password or iCloud Keychain will finish it.
+            </p>
+            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+            <button type="button" onClick={usePasskey} disabled={busy} className="btn-primary w-full disabled:opacity-50">
+              {busy ? "Waiting for the passkey…" : "Use a passkey"}
+            </button>
+          </div>
         ) : (
           <>
             {info && <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-300">{info}</p>}
@@ -243,6 +275,16 @@ export default function TwoFactorChallengePage() {
               {busy ? "Verifying…" : "Verify"}
             </button>
             <MfaMethodSwitch methods={methods} current={method} onPick={choose} />
+            {passkeyOn && (
+              <button
+                type="button"
+                onClick={usePasskey}
+                disabled={busy}
+                className="mt-3 w-full text-center text-xs font-semibold text-brand hover:underline disabled:opacity-50 dark:text-brand-lighter"
+              >
+                Use a passkey instead
+              </button>
+            )}
           </>
         )}
         <button type="button" onClick={signOut} className="mt-4 w-full text-center text-xs text-zinc-500 hover:underline">

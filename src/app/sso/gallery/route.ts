@@ -6,6 +6,7 @@ import { accessAtLeast, TWO_FA_REQUIRED_ROLES } from "@/lib/permissions";
 import { galleryCallbackUrl, signGalleryPass } from "@/lib/gallerySso";
 import { decideMfaGate } from "@/lib/mfaGate";
 import { MFA_EMAIL_COOKIE, readMfaEmailStepUp, sessionIdFromAccessToken } from "@/lib/mfaStepUpCookie";
+import { MFA_PASSKEY_COOKIE, readMfaPasskeyStepUp } from "@/lib/passkeyStepUpCookie";
 import { permCacheSecret } from "@/lib/permSnapshot";
 
 /* Sign in to the photo gallery with XOS. The gallery's "Sign in with XOS" button
@@ -48,21 +49,23 @@ export async function GET(req: Request) {
   if (aalError || !aal) return new NextResponse("Couldn't check two-factor sign-in. Try again.", { status: 503 });
   const { data: authUser } = await supabase.auth.getUser();
   const emailEnrolled = authUser.user?.app_metadata?.email_mfa === true;
+  const passkeyEnrolled = authUser.user?.app_metadata?.passkey_mfa === true;
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const emailStepUp = await readMfaEmailStepUp(
-    (await cookies()).get(MFA_EMAIL_COOKIE)?.value,
-    permCacheSecret(),
-    me.userId,
-    sessionIdFromAccessToken(session?.access_token),
-  );
+  const sessionId = sessionIdFromAccessToken(session?.access_token);
+  const jar = await cookies();
+  const stepUpSecret = permCacheSecret();
+  const emailStepUp = await readMfaEmailStepUp(jar.get(MFA_EMAIL_COOKIE)?.value, stepUpSecret, me.userId, sessionId);
+  const passkeyStepUp = await readMfaPasskeyStepUp(jar.get(MFA_PASSKEY_COOKIE)?.value, stepUpSecret, me.userId, sessionId);
   const decision = decideMfaGate({
     aalKnown: true,
     currentLevel: aal.currentLevel,
     nextLevel: aal.nextLevel,
     emailEnrolled,
     emailStepUp,
+    passkeyEnrolled,
+    passkeyStepUp,
     roleRequiresMfa: TWO_FA_REQUIRED_ROLES.has(me.role),
   });
   if (decision === "challenge") return back("/2fa");

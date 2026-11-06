@@ -6,6 +6,8 @@ import { permCacheSecret } from "@/lib/permSnapshot";
 import { sendBrandedEmail } from "@/lib/mailgun";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { LAST_METHOD_MESSAGE, factorBucket, isLastMethodError, removalWouldLeaveNone } from "@/lib/passkey";
+import { loadAuthMethods, sessionIsStrong } from "@/lib/strongAuthServer";
 import {
   EMAIL_MFA_LOG_HTML,
   EMAIL_MFA_SUBJECT,
@@ -34,6 +36,7 @@ type StaffSession = {
   supabase: SupabaseClient;
   userId: string;
   email: string;
+  emailFlag: boolean;
   sessionId: string;
 };
 
@@ -66,7 +69,13 @@ async function staffSession(): Promise<{ ok: true; ctx: StaffSession } | { ok: f
 
   return {
     ok: true,
-    ctx: { supabase, userId: user.id, email: user.email.trim().toLowerCase(), sessionId },
+    ctx: {
+      supabase,
+      userId: user.id,
+      email: user.email.trim().toLowerCase(),
+      emailFlag: user.app_metadata?.email_mfa === true,
+      sessionId,
+    },
   };
 }
 
@@ -247,9 +256,16 @@ export async function disableEmailMfaForSession(): Promise<EmailMfaResult> {
   const session = await staffSession();
   if (!session.ok) return session;
   const { ctx } = session;
-  const { data: aal } = await ctx.supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  const stepped = aal?.currentLevel === "aal2" || (await currentEmailStepUp(ctx.userId, ctx.sessionId));
-  if (!stepped) return { ok: false, error: "Verify a sign-in code first, then turn this off." };
+  const satisfied = await sessionIsStrong({ supabase: ctx.supabase, userId: ctx.userId, sessionId: ctx.sessionId });
+  if (!satisfied) return { ok: false, error: "Verify a sign-in code or use your passkey first, then turn this off." };
+  const methods = await loadAuthMethods({
+    supabase: ctx.supabase,
+    admin: createAdminClient(),
+    userId: ctx.userId,
+    emailFlag: ctx.emailFlag,
+  });
+  if (!methods.ok) return { ok: false, error: methods.error };
+  if (removalWouldLeaveNone(methods.methods, "email")) return { ok: false, error: LAST_METHOD_MESSAGE };
 
   const admin = createAdminClient();
   const { data: existing, error: readErr } = await admin.auth.admin.getUserById(ctx.userId);
@@ -262,6 +278,7 @@ export async function disableEmailMfaForSession(): Promise<EmailMfaResult> {
   const { error } = await admin.rpc("xos_email_mfa_clear", { p_user_id: ctx.userId });
   if (error) {
     await admin.auth.admin.updateUserById(ctx.userId, { app_metadata: { ...meta, email_mfa: true } });
+    if (isLastMethodError(error.message)) return { ok: false, error: LAST_METHOD_MESSAGE };
     return { ok: false, error: isMissingEmailMfaSchema(error.message) ? MISSING : "Couldn't turn off email codes." };
   }
   await clearEmailStepUpCookie();
@@ -278,8 +295,16 @@ export async function deleteSupabaseFactorAfterEmailCode(factorId: string, code:
   const { ctx } = session;
   const { data: factors, error: listErr } = await ctx.supabase.auth.mfa.listFactors();
   if (listErr) return { ok: false, error: listErr.message };
-  const mine = (factors?.all ?? []).find((factor: { id: string; status: string }) => factor.id === factorId && factor.status === "verified");
+  const mine = (factors?.all ?? []).find((factor: { id: string; status: string; factor_type: string }) => factor.id === factorId && factor.status === "verified");
   if (!mine) return { ok: false, error: "That verification method isn't on this account." };
+  const methods = await loadAuthMethods({
+    supabase: ctx.supabase,
+    admin: createAdminClient(),
+    userId: ctx.userId,
+    emailFlag: ctx.emailFlag,
+  });
+  if (!methods.ok) return { ok: false, error: methods.error };
+  if (removalWouldLeaveNone(methods.methods, factorBucket(mine.factor_type))) return { ok: false, error: LAST_METHOD_MESSAGE };
 
   const checked = await consume(ctx, "signin", code);
   if (!checked.ok) return checked;
@@ -288,7 +313,47 @@ export async function deleteSupabaseFactorAfterEmailCode(factorId: string, code:
 
   const admin = createAdminClient();
   const { error } = await admin.auth.admin.mfa.deleteFactor({ id: factorId, userId: ctx.userId });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: isLastMethodError(error.message) ? LAST_METHOD_MESSAGE : error.message };
+  return { ok: true };
+}
+
+/** Turn off an authenticator or text factor without leaving the account with
+    neither a passkey nor a second factor. An aal2 session uses the normal
+    unenroll. Otherwise the admin API removes it after this session has already
+    verified a code or a passkey. */
+export async function unenrollVerifiedFactorForSession(factorId: string): Promise<EmailMfaResult> {
+  if (!/^[0-9a-f-]{36}$/i.test(factorId)) return { ok: false, error: "That verification method isn't on this account." };
+  const session = await staffSession();
+  if (!session.ok) return session;
+  const { ctx } = session;
+  const satisfied = await sessionIsStrong({ supabase: ctx.supabase, userId: ctx.userId, sessionId: ctx.sessionId });
+  if (!satisfied) return { ok: false, error: "Verify a sign-in code or use your passkey first, then turn this off." };
+
+  const { data: factors, error: listErr } = await ctx.supabase.auth.mfa.listFactors();
+  if (listErr) return { ok: false, error: listErr.message };
+  const mine = (factors?.all ?? []).find((factor) => factor.id === factorId && factor.status === "verified");
+  if (!mine) return { ok: false, error: "That verification method isn't on this account." };
+
+  const methods = await loadAuthMethods({
+    supabase: ctx.supabase,
+    admin: createAdminClient(),
+    userId: ctx.userId,
+    emailFlag: ctx.emailFlag,
+  });
+  if (!methods.ok) return { ok: false, error: methods.error };
+  if (removalWouldLeaveNone(methods.methods, factorBucket(mine.factor_type))) return { ok: false, error: LAST_METHOD_MESSAGE };
+
+  const { data: aal } = await ctx.supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal?.currentLevel === "aal2") {
+    const { error } = await ctx.supabase.auth.mfa.unenroll({ factorId });
+    if (!error) return { ok: true };
+    if (isLastMethodError(error.message)) return { ok: false, error: LAST_METHOD_MESSAGE };
+    if (!/aal/i.test(error.message)) return { ok: false, error: error.message };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.mfa.deleteFactor({ id: factorId, userId: ctx.userId });
+  if (error) return { ok: false, error: isLastMethodError(error.message) ? LAST_METHOD_MESSAGE : error.message };
   return { ok: true };
 }
 
