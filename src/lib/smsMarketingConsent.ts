@@ -63,17 +63,20 @@ export type MarketingHistoryRow = {
   createdAt: string;
 };
 
-/** Outbox gate. The staff boolean is used only when this client has no app history at all.
-    Any history, including a grant for an old number or a row for someone else's login,
-    turns the boolean off. A send then needs the latest trusted row for the current
-    booking number to be a grant, and the destination must be that number. */
+/** Outbox gate. The staff boolean is used only after a successful read that found no app history.
+    A failed read is not an empty history. Any history that was read, including a grant for an
+    old number or a row for someone else's login, turns the boolean off. A send then needs the
+    latest trusted row for the current booking number to be a grant, and the destination must
+    be that number. */
 export function marketingOutboxDecision(input: {
   legacyOptIn: boolean;
   accountAuthUserId: string | null;
   currentCellPhone: string | null;
   toNumber: string | null;
-  history: MarketingHistoryRow[];
+  /** null when the history query failed. An empty array is a successful read with no rows. */
+  history: MarketingHistoryRow[] | null;
 }): boolean {
+  if (input.history == null) return false;
   if (input.history.length === 0) return input.legacyOptIn;
   const cell = normalizeConsentPhone(input.currentCellPhone);
   const to = normalizeConsentPhone(input.toNumber);
@@ -89,6 +92,33 @@ export function marketingOutboxDecision(input: {
     )
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   return trusted[trusted.length - 1]?.action === "grant";
+}
+
+/** What the SMS drain should do with one claimed row.
+    Transactional texts ignore consent history. Marketing is suppressed, not sent
+    and not left queued, when the history read fails or consent is not established. */
+export function smsMarketingDrainDecision(input: {
+  isMarketing: boolean;
+  clientId: string | null;
+  legacyOptIn: boolean;
+  accountAuthUserId: string | null;
+  currentCellPhone: string | null;
+  toNumber: string | null;
+  historyReadOk: boolean;
+  history: MarketingHistoryRow[];
+}): { send: true } | { send: false; error: string } {
+  if (!input.isMarketing) return { send: true };
+  if (!input.historyReadOk) return { send: false, error: "SMS marketing consent could not be confirmed" };
+  if (!input.clientId) return { send: false, error: "no SMS marketing consent on file" };
+  const allowed = marketingOutboxDecision({
+    legacyOptIn: input.legacyOptIn,
+    accountAuthUserId: input.accountAuthUserId,
+    currentCellPhone: input.currentCellPhone,
+    toNumber: input.toNumber,
+    history: input.history,
+  });
+  if (!allowed) return { send: false, error: "no SMS marketing consent on file" };
+  return { send: true };
 }
 
 /** A history row counts only when it was written by that client's login

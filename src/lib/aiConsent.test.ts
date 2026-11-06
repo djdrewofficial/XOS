@@ -23,6 +23,7 @@ import {
   marketingRowBoundToClient,
   marketingSendAllowed,
   normalizeConsentPhone,
+  smsMarketingDrainDecision,
 } from "./smsMarketingConsent.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -149,6 +150,61 @@ describe("AI consent state", () => {
       }),
       false,
     );
+    assert.equal(marketingOutboxDecision({ ...base, history: null }), false);
+  });
+
+  it("suppresses marketing when the history read fails and still sends transactional texts", () => {
+    const owner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const withdrawnOnOldNumber = [
+      { authUserId: owner, phone: "+13055551212", action: "withdraw" as const, createdAt: "2026-11-06T02:00:00Z" },
+    ];
+    const failed = smsMarketingDrainDecision({
+      isMarketing: true,
+      clientId: "client-1",
+      legacyOptIn: true,
+      accountAuthUserId: owner,
+      currentCellPhone: "786-555-0100",
+      toNumber: "786-555-0100",
+      historyReadOk: false,
+      history: withdrawnOnOldNumber,
+    });
+    assert.deepEqual(failed, { send: false, error: "SMS marketing consent could not be confirmed" });
+
+    const readWithdrawal = smsMarketingDrainDecision({
+      isMarketing: true,
+      clientId: "client-1",
+      legacyOptIn: true,
+      accountAuthUserId: owner,
+      currentCellPhone: "786-555-0100",
+      toNumber: "786-555-0100",
+      historyReadOk: true,
+      history: withdrawnOnOldNumber,
+    });
+    assert.deepEqual(readWithdrawal, { send: false, error: "no SMS marketing consent on file" });
+
+    const legacy = smsMarketingDrainDecision({
+      isMarketing: true,
+      clientId: "client-1",
+      legacyOptIn: true,
+      accountAuthUserId: owner,
+      currentCellPhone: "786-555-0100",
+      toNumber: "786-555-0100",
+      historyReadOk: true,
+      history: [],
+    });
+    assert.deepEqual(legacy, { send: true });
+
+    const transactional = smsMarketingDrainDecision({
+      isMarketing: false,
+      clientId: "client-1",
+      legacyOptIn: true,
+      accountAuthUserId: owner,
+      currentCellPhone: "786-555-0100",
+      toNumber: "786-555-0100",
+      historyReadOk: false,
+      history: withdrawnOnOldNumber,
+    });
+    assert.deepEqual(transactional, { send: true });
   });
 
   it("lets a client read and change only their own row, and lets staff read only", () => {
@@ -231,8 +287,11 @@ describe("AI consent schema and call sites", () => {
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /not_contract_client/);
     assert.match(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /eligibleNumber/);
     assert.match(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /clients\.cell_phone/);
-    assert.match(read("src/lib/highlevel.ts"), /marketingOutboxDecision/);
+    assert.match(read("src/lib/highlevel.ts"), /smsMarketingDrainDecision/);
+    assert.match(read("src/lib/highlevel.ts"), /status: "suppressed", error: decision\.error/);
     assert.doesNotMatch(read("src/lib/highlevel.ts"), /marketingLatest\.size/);
+    assert.doesNotMatch(read("src/lib/highlevel.ts"), /historyReadOk\s*\n\s*\?/);
+    assert.match(read("src/lib/smsMarketingConsent.ts"), /if \(input\.history == null\) return false/);
     assert.match(read("src/app/api/assistant/chat/route.ts"), /assistantTextHasDirectContact/);
     assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /sms_marketing_consent_events/);
     assert.equal(existsSync(join(root, "src/app/api/music/recommend/route.ts")), false);
