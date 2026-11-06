@@ -1,7 +1,16 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { chatComplete, isOpenAIConfigured } from "@/lib/openai";
-import { AI_CONSENT_BLOCKED, contractClientHasAiConsent } from "@/lib/aiConsent";
+import {
+  AI_CONSENT_BLOCKED,
+  answerAllowed,
+  clientContactAllowed,
+  consentedPeopleForEvent,
+  contractClientAuthUserId,
+  contractClientHasAiConsent,
+  songLineAllowed,
+  songNoteAllowed,
+} from "@/lib/aiConsent";
 
 /* Event intelligence: gather everything known about one event (basics, staff,
    package/add-ons, the planner timeline + songs + Q&A, Fireflies call notes/transcript,
@@ -23,11 +32,15 @@ export async function buildEventContext(
   eventId: string,
   opts: { transcriptChars?: number } = {},
 ): Promise<string> {
-  const transcriptChars = opts.transcriptChars ?? 5000;
+  void opts.transcriptChars;
+  const [{ userIds, clientIds }, contractUserId] = await Promise.all([
+    consentedPeopleForEvent(sb, eventId),
+    contractClientAuthUserId(sb, eventId),
+  ]);
   const { data: e } = await sb
     .from("events")
     .select(
-      `name, event_date, setup_time, start_time, end_time, guest_count, internal_notes, planning_seeded, custom_fields,
+      `name, event_date, setup_time, start_time, end_time, guest_count, planning_seeded, custom_fields,
        event_type:event_types(name), status:event_statuses(name), venue:venues(name,address,city),
        package:packages(name), salesperson:employees(first_name,last_name,stage_name)`,
     )
@@ -35,17 +48,15 @@ export async function buildEventContext(
     .maybeSingle();
   if (!e) return "";
 
-  const [{ data: ecs }, { data: staff }, { data: addons }, { data: secs }, { data: songs }, { data: qs }, { data: ans }, { data: ff }, { data: notes }] =
+  const [{ data: ecs }, { data: staff }, { data: addons }, { data: secs }, { data: songs }, { data: qs }, { data: ans }] =
     await Promise.all([
-      sb.from("event_clients").select("role,is_primary,client:clients(first_name,last_name,email,cell_phone)").eq("event_id", eventId),
+      sb.from("event_clients").select("role,is_primary,client:clients(id,first_name,last_name,email,cell_phone)").eq("event_id", eventId),
       sb.from("event_staff").select("role,employee:employees(first_name,last_name,stage_name)").eq("event_id", eventId),
       sb.from("event_addons").select("quantity,addon:addons(name)").eq("event_id", eventId),
       sb.from("planning_sections").select("id,title,time_label,section_type,intro,sort_order").eq("event_id", eventId).order("sort_order"),
-      sb.from("planning_songs").select("section_id,title,artist,note,must_play,do_not_play,sort_order").eq("event_id", eventId).order("sort_order"),
+      sb.from("planning_songs").select("section_id,title,artist,note,must_play,do_not_play,requested_by,sort_order").eq("event_id", eventId).order("sort_order"),
       sb.from("planning_questions").select("id,section_id,prompt").eq("event_id", eventId),
-      sb.from("planning_question_answers").select("question_id,answer").eq("event_id", eventId),
-      sb.from("fireflies_meetings").select("title,meeting_date,summary_overview,action_items_raw,transcript_text").eq("event_id", eventId).order("meeting_date", { ascending: false }),
-      sb.from("event_notes").select("body,created_at").eq("event_id", eventId).order("created_at"),
+      sb.from("planning_question_answers").select("question_id,answer,answered_by").eq("event_id", eventId),
     ]);
 
   const L: string[] = [];
@@ -53,11 +64,15 @@ export async function buildEventContext(
   L.push(`Date: ${pick(e, "event_date") ?? "?"} · Setup ${pick(e, "setup_time") ?? "?"} · Start ${pick(e, "start_time") ?? "?"} · End ${pick(e, "end_time") ?? "?"}`);
   L.push(`Type: ${nameField(e, "event_type")} · Status: ${nameField(e, "status")} · Guests: ${pick(e, "guest_count") ?? "?"}`);
   const v = pick(e, "venue") as { name?: string; address?: string; city?: string } | null;
-  L.push(`Venue: ${v?.name ?? "?"}${v?.city ? ` (${v.city})` : ""}`);
+  const venueBits = [v?.name, v?.city].filter(Boolean).join(", ");
+  L.push(`Venue: ${venueBits || "?"}${v?.address ? ` ${v.address}` : ""}`);
   L.push(`Package: ${nameField(e, "package")}`);
   L.push(`Salesperson: ${nameOf(pick(e, "salesperson")) || "?"}`);
 
-  const clients = (ecs ?? []).map((c) => `${nameOf(pick(c, "client"))}${pick(c, "role") ? ` (${pick(c, "role")})` : ""}`).filter(Boolean);
+  const clients = (ecs ?? [])
+    .filter((c) => clientContactAllowed((pick(c, "client") as { id?: string } | null)?.id, clientIds))
+    .map((c) => `${nameOf(pick(c, "client"))}${pick(c, "role") ? ` (${pick(c, "role")})` : ""}`)
+    .filter(Boolean);
   if (clients.length) L.push(`Clients: ${clients.join(", ")}`);
 
   const staffList = (staff ?? []).map((s) => `${nameOf(pick(s, "employee"))} — ${pick(s, "role") ?? "Staff"}`).filter((x) => x.trim() !== "— Staff");
@@ -68,10 +83,15 @@ export async function buildEventContext(
 
   // Planner timeline
   if (pick(e, "planning_seeded")) {
-    const ansByQ = new Map((ans ?? []).map((a) => [pick(a, "question_id") as string, pick(a, "answer") as string]));
+    const ansByQ = new Map(
+      (ans ?? [])
+        .filter((a) => answerAllowed(pick(a, "answered_by") as string | null, userIds))
+        .map((a) => [pick(a, "question_id") as string, pick(a, "answer") as string]),
+    );
     const qById = new Map((qs ?? []).map((q) => [pick(q, "id") as string, q]));
     const songsBySec = new Map<string, Row[]>();
     for (const s of songs ?? []) {
+      if (!songLineAllowed(pick(s, "requested_by") as string | null, userIds, contractUserId)) continue;
       const sid = pick(s, "section_id") as string;
       const arr = songsBySec.get(sid) ?? [];
       arr.push(s as Row);
@@ -95,7 +115,8 @@ export async function buildEventContext(
       }
       for (const s of songsBySec.get(sid) ?? []) {
         const tags = [pick(s, "must_play") ? "MUST-PLAY" : "", pick(s, "do_not_play") ? "DO-NOT-PLAY" : ""].filter(Boolean).join("/");
-        L.push(`- ♪ ${pick(s, "title")}${pick(s, "artist") ? ` — ${pick(s, "artist")}` : ""}${tags ? ` [${tags}]` : ""}${pick(s, "note") ? ` (${pick(s, "note")})` : ""}`);
+        const note = songNoteAllowed(pick(s, "requested_by") as string | null, userIds) ? pick(s, "note") : null;
+        L.push(`- ♪ ${pick(s, "title")}${pick(s, "artist") ? ` — ${pick(s, "artist")}` : ""}${tags ? ` [${tags}]` : ""}${note ? ` (${note})` : ""}`);
       }
     }
     // unattached answers (questions with no section match)
@@ -106,21 +127,7 @@ export async function buildEventContext(
     L.push(`\n## PLANNER: not started.`);
   }
 
-  // Fireflies calls
-  if ((ff ?? []).length) {
-    L.push(`\n## CALL NOTES (Fireflies)`);
-    for (const m of (ff ?? []).slice(0, 2)) {
-      L.push(`\n### Call: ${pick(m, "title") ?? "Untitled"} (${pick(m, "meeting_date") ?? ""})`);
-      if (pick(m, "summary_overview")) L.push(`Summary: ${clamp(pick(m, "summary_overview") as string, 1500)}`);
-      if (pick(m, "action_items_raw")) L.push(`Action items:\n${clamp(pick(m, "action_items_raw") as string, 1500)}`);
-      if (pick(m, "transcript_text")) L.push(`Transcript:\n${clamp(pick(m, "transcript_text") as string, transcriptChars)}`);
-    }
-  }
-
-  // Notes
-  const noteLines = (notes ?? []).map((n) => `- ${pick(n, "body")}`).filter((x) => x !== "- ");
-  if (pick(e, "internal_notes")) noteLines.unshift(`- ${pick(e, "internal_notes")}`);
-  if (noteLines.length) L.push(`\n## INTERNAL NOTES\n${noteLines.join("\n")}`);
+  L.push("\n## OMITTED\nCall transcripts, internal notes, and free text from people who have not opted in are not included.");
 
   return L.join("\n");
 }

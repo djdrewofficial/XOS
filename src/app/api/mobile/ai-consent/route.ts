@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 import { resolveEventRole } from "@/lib/planning";
-import { AI_CONSENT_POLICY_VERSION, consentIsActive, type ConsentRow } from "@/lib/aiConsent";
+import { AI_CONSENT_POLICY_VERSION, consentIsActive, contractClientAuthUserId, type ConsentRow } from "@/lib/aiConsent";
 
 /* Client app opt-in for staff AI tools.
    GET  /api/mobile/ai-consent?eventId=<uuid>
@@ -25,14 +25,26 @@ function userClient(token: string) {
   });
 }
 
-function present(eventId: string, row: ConsentRow | null) {
+function present(eventId: string, row: ConsentRow | null, who: { userId: string; clientId: string | null; guestId: string | null }) {
+  const granted = consentIsActive(row);
   return {
     eventId,
-    granted: consentIsActive(row),
+    granted,
     grantedAt: row?.granted_at ?? null,
     withdrawnAt: row?.withdrawn_at ?? null,
     policyVersion: row?.policy_version ?? null,
     source: row?.source ?? null,
+    actor: {
+      authUserId: who.userId,
+      role: "contract_client",
+      clientId: who.clientId,
+      eventGuestId: who.guestId,
+    },
+    capability: {
+      canGrant: !granted,
+      canWithdraw: granted,
+      reason: null,
+    },
   };
 }
 
@@ -50,6 +62,15 @@ async function caller(req: Request, eventId: string) {
   const role = await resolveEventRole(rls, data.user.id, accountType, eventId);
   if (role !== "host" && role !== "guest") {
     return { error: NextResponse.json({ error: "You don't have access to that." }, { status: 403 }) };
+  }
+  const contractUserId = await contractClientAuthUserId(rls, eventId);
+  if (contractUserId !== data.user.id) {
+    return {
+      error: NextResponse.json(
+        { error: "not_contract_client", capability: { canGrant: false, canWithdraw: false, reason: "not_contract_client" } },
+        { status: 403 },
+      ),
+    };
   }
   const { data: acct } = await rls
     .from("accounts")
@@ -76,7 +97,7 @@ export async function GET(req: Request) {
   if ("error" in who) return who.error;
   const loaded = await loadRow(who.rls, who.userId, eventId);
   if ("error" in loaded) return loaded.error;
-  return NextResponse.json(present(eventId, loaded.row));
+  return NextResponse.json(present(eventId, loaded.row, who));
 }
 
 export async function POST(req: Request) {
@@ -125,5 +146,5 @@ export async function POST(req: Request) {
   }
   const loaded = await loadRow(who.rls, who.userId, eventId);
   if ("error" in loaded) return loaded.error;
-  return NextResponse.json(present(eventId, loaded.row));
+  return NextResponse.json(present(eventId, loaded.row, who));
 }

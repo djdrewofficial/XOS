@@ -32,17 +32,44 @@ export function canWriteConsent(actor: ConsentActor, rowUserId: string): boolean
   return actor.onEvent && !actor.staff && actor.authUserId === rowUserId;
 }
 
-export type BriefingEvent = {
-  id: string;
-  name: string | null;
-  venue: string | null;
-};
-
-/** Drop names and venue text when this event's client has not opted in. Dates and amounts stay. */
-export function briefingEventForAi<T extends BriefingEvent>(event: T, allowed: boolean): T {
-  if (allowed) return event;
-  return { ...event, name: "Private event", venue: null };
+/** Rows without that person's permission are left out of the model payload, not renamed. */
+export function rowsForAi<T extends { allowed: boolean }>(rows: T[]): Omit<T, "allowed">[] {
+  return rows.filter((row) => row.allowed).map(({ allowed: _allowed, ...rest }) => rest);
 }
+
+/** A free-text answer is included only when its author opted in. Unknown authors are omitted. */
+export function answerAllowed(answeredBy: string | null | undefined, consentedUserIds: ReadonlySet<string>): boolean {
+  return typeof answeredBy === "string" && answeredBy.length > 0 && consentedUserIds.has(answeredBy);
+}
+
+/** A song line is included only when the person who added it opted in.
+    An unattributed song title can ride along with the contract client's own opt-in.
+    Its free-text note never does, unless that author opted in. */
+export function songLineAllowed(
+  requestedBy: string | null | undefined,
+  consentedUserIds: ReadonlySet<string>,
+  contractUserId: string | null,
+): boolean {
+  if (typeof requestedBy === "string" && requestedBy.length > 0) return consentedUserIds.has(requestedBy);
+  return typeof contractUserId === "string" && consentedUserIds.has(contractUserId);
+}
+
+export function songNoteAllowed(requestedBy: string | null | undefined, consentedUserIds: ReadonlySet<string>): boolean {
+  return typeof requestedBy === "string" && requestedBy.length > 0 && consentedUserIds.has(requestedBy);
+}
+
+export function clientContactAllowed(clientId: string | null | undefined, consentedClientIds: ReadonlySet<string>): boolean {
+  return typeof clientId === "string" && clientId.length > 0 && consentedClientIds.has(clientId);
+}
+
+/** Blocks emails and phone numbers typed into the staff assistant. Names in a sentence are not detected. */
+export function assistantTextHasDirectContact(text: string): boolean {
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) return true;
+  return /(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]*)\d{3}[\s.-]?\d{4}/.test(text);
+}
+
+export const ASSISTANT_CONTACT_BLOCKED =
+  "This assistant is not an approved path for client contact details. Remove email addresses and phone numbers. Names typed in a sentence are not fully blocked here.";
 
 async function contractClientId(sb: SupabaseClient, eventId: string): Promise<string | null> {
   const { data: event, error } = await sb.from("events").select("client_id").eq("id", eventId).maybeSingle();
@@ -56,18 +83,24 @@ async function contractClientId(sb: SupabaseClient, eventId: string): Promise<st
   return (rows.find((row) => row.is_contract_holder) ?? rows.find((row) => row.is_primary))?.client_id ?? null;
 }
 
-/** True only when the contract client's app login has an active consent for this event. */
-export async function contractClientHasAiConsent(sb: SupabaseClient, eventId: string): Promise<boolean> {
+export async function contractClientAuthUserId(sb: SupabaseClient, eventId: string): Promise<string | null> {
   const clientId = await contractClientId(sb, eventId);
-  if (!clientId) return false;
-  const { data: account, error: accountErr } = await sb
+  if (!clientId) return null;
+  const { data: account, error } = await sb
     .from("accounts")
     .select("auth_user_id")
     .eq("client_id", clientId)
     .eq("account_type", "client")
     .maybeSingle();
-  if (accountErr || !account?.auth_user_id) return false;
-  return callerHasAiConsent(sb, account.auth_user_id as string, eventId);
+  if (error || !account?.auth_user_id) return null;
+  return account.auth_user_id as string;
+}
+
+/** True only when the contract client's app login has an active consent for this event. */
+export async function contractClientHasAiConsent(sb: SupabaseClient, eventId: string): Promise<boolean> {
+  const userId = await contractClientAuthUserId(sb, eventId);
+  if (!userId) return false;
+  return callerHasAiConsent(sb, userId, eventId);
 }
 
 export async function callerHasAiConsent(sb: SupabaseClient, authUserId: string, eventId: string): Promise<boolean> {
@@ -79,6 +112,31 @@ export async function callerHasAiConsent(sb: SupabaseClient, authUserId: string,
     .maybeSingle();
   if (error) return false;
   return consentIsActive(data as ConsentRow | null);
+}
+
+/** People on this event with an active consent. A contract client's row does not add anyone else. */
+export async function consentedPeopleForEvent(
+  sb: SupabaseClient,
+  eventId: string,
+): Promise<{ userIds: Set<string>; clientIds: Set<string> }> {
+  const userIds = new Set<string>();
+  const clientIds = new Set<string>();
+  const { data, error } = await sb
+    .from("ai_consents")
+    .select("auth_user_id, client_id, granted_at, withdrawn_at")
+    .eq("event_id", eventId);
+  if (error || !data?.length) return { userIds, clientIds };
+  for (const row of data) {
+    if (!consentIsActive(row as ConsentRow) || !row.auth_user_id) continue;
+    userIds.add(row.auth_user_id as string);
+    if (row.client_id) clientIds.add(row.client_id as string);
+  }
+  if (!userIds.size) return { userIds, clientIds };
+  const { data: accounts } = await sb.from("accounts").select("auth_user_id, client_id").in("auth_user_id", [...userIds]);
+  for (const account of accounts ?? []) {
+    if (account.client_id && userIds.has(account.auth_user_id as string)) clientIds.add(account.client_id as string);
+  }
+  return { userIds, clientIds };
 }
 
 /** Event ids whose contract client has an active consent. Missing table fails closed. */
