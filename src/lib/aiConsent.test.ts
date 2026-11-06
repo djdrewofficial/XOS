@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -125,8 +125,7 @@ describe("AI consent schema and call sites", () => {
     assert.match(read("src/lib/highlevel.ts"), /marketingSendAllowed/);
     assert.match(read("src/app/api/assistant/chat/route.ts"), /assistantTextHasDirectContact/);
     assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /sms_marketing_consent_events/);
-    assert.match(read("src/app/api/music/recommend/route.ts"), /callerHasAiConsent/);
-    assert.match(read("src/app/api/music/recommend/route.ts"), /contractClientHasAiConsent/);
+    assert.equal(existsSync(join(root, "src/app/api/music/recommend/route.ts")), false);
     assert.match(read("src/app/(app)/events/[id]/spotify-export-actions.ts"), /contractClientHasAiConsent/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /action !== "grant" && action !== "withdraw"/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /AI_CONSENT_POLICY_VERSION/);
