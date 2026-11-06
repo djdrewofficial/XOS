@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEventRole } from "@/lib/planning";
 import { isUuid, lookupMobileAccountKind } from "@/lib/mobileCouple";
+import { textForViewer } from "@/lib/ugcModeration";
+import { viewerBlocks } from "@/lib/ugcModerationServer";
 
 /* Safe event card. Guests do not get prices, pay links, notes, or client ids.
    Hosts and staff get the same card here. Payments and the booking agreement
@@ -37,6 +39,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ eventId:
 
   const venue = event.venue as { name?: string | null } | null;
   const eventType = event.event_type as { name?: string | null } | null;
+  let coverPhotoUrl = (event.cover_photo_url as string | null) ?? null;
+  const coverMeta = await admin
+    .from("events")
+    .select("cover_photo_updated_by, cover_photo_hidden_at")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (!coverMeta.error && coverMeta.data) {
+    const blocked = await viewerBlocks(token, eventId, data.user.id, role);
+    const viewed = textForViewer(
+      coverPhotoUrl,
+      (coverMeta.data.cover_photo_updated_by as string | null) ?? null,
+      Boolean(coverMeta.data.cover_photo_hidden_at),
+      role,
+      blocked,
+    );
+    coverPhotoUrl = viewed.text;
+  }
   return NextResponse.json({
     role,
     event: {
@@ -46,7 +65,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ eventId:
       startTime: event.start_time,
       endTime: event.end_time,
       guestCount: event.guest_count,
-      coverPhotoUrl: event.cover_photo_url,
+      coverPhotoUrl,
       eventTypeId: event.event_type_id,
       eventType: eventType?.name ?? null,
       venueName: venue?.name ?? null,

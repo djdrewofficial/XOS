@@ -4,6 +4,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { contentVisible } from "@/lib/ugcModeration";
 
 export type SectionType = "info" | "timeline" | "headline";
 export type AnswerType = "short" | "long" | "select" | "multiselect" | "scale" | "yesno" | "image_select";
@@ -467,7 +468,7 @@ export async function loadEventPlanning(
   role: PlannerRole,
 ): Promise<EventPlanning> {
   const isStaff = role === "staff";
-  const [{ data: sections }, { data: questions }, { data: answers }, { data: songs }, { data: likes }, audit, staffNoteRes, doNotPlayRes] =
+  const [{ data: sections }, { data: questions }, { data: answers }, { data: songs }, { data: likes }, audit, staffNoteRes, doNotPlayRes, blockRes] =
     await Promise.all([
       supabase.from("planning_sections").select("*").eq("event_id", eventId).order("sort_order"),
       supabase.from("planning_questions").select("*").eq("event_id", eventId).order("sort_order"),
@@ -497,7 +498,15 @@ export async function loadEventPlanning(
       role === "guest"
         ? Promise.resolve({ data: null as { body: string | null } | null })
         : supabase.from("planning_do_not_play_notes").select("body").eq("event_id", eventId).maybeSingle(),
+      role === "staff"
+        ? Promise.resolve({ data: [] as { blocked_id: string }[], error: null })
+        : supabase.from("event_member_blocks").select("blocked_id").eq("event_id", eventId).eq("blocker_id", myUserId),
     ]);
+
+  const blockedAuthorIds = new Set<string>();
+  if (!blockRes.error) {
+    for (const row of blockRes.data ?? []) blockedAuthorIds.add(row.blocked_id);
+  }
 
   const staffNoteBySection = new Map<string, string | null>();
   if (isStaff) {
@@ -583,7 +592,14 @@ export async function loadEventPlanning(
       songs_enabled: sec.songs_enabled ?? true,
       questions_enabled: sec.questions_enabled ?? true,
       notes_enabled: sec.notes_enabled ?? true,
-      client_notes: (sec.client_notes as string | null) ?? null,
+      client_notes: contentVisible({
+        viewerRole: role,
+        authorId: (sec.client_notes_updated_by as string | null) ?? null,
+        hidden: Boolean(sec.client_notes_hidden_at),
+        blockedAuthorIds,
+      })
+        ? ((sec.client_notes as string | null) ?? null)
+        : null,
       staff_notes: isStaff ? staffNoteBySection.get(sec.id) ?? null : null,
       time_enabled: sec.time_enabled ?? false,
       on_timeline: sec.on_timeline ?? null,

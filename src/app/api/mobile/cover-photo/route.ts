@@ -37,7 +37,18 @@ export async function POST(req: Request) {
 
   // No file => remove the cover photo.
   if (!file || file.size === 0) {
-    await admin.from("events").update({ cover_photo_url: null }).eq("id", eventId);
+    const cleared = await admin
+      .from("events")
+      .update({
+        cover_photo_url: null,
+        cover_photo_updated_by: userData.user.id,
+        cover_photo_hidden_at: null,
+        cover_photo_hidden_by: null,
+      })
+      .eq("id", eventId);
+    if (cleared.error && /cover_photo_updated_by|cover_photo_hidden/i.test(cleared.error.message ?? "")) {
+      await admin.from("events").update({ cover_photo_url: null }).eq("id", eventId);
+    }
     return NextResponse.json({ ok: true, url: null });
   }
   if (file.size > 12 * 1024 * 1024) return NextResponse.json({ error: "Image too large (max 12MB)" }, { status: 413 });
@@ -50,8 +61,21 @@ export async function POST(req: Request) {
   if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
   const url = admin.storage.from("event-photos").getPublicUrl(path).data.publicUrl;
-  const { error } = await admin.from("events").update({ cover_photo_url: url }).eq("id", eventId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const saved = await admin
+    .from("events")
+    .update({
+      cover_photo_url: url,
+      cover_photo_updated_by: userData.user.id,
+      cover_photo_hidden_at: null,
+      cover_photo_hidden_by: null,
+    })
+    .eq("id", eventId);
+  if (saved.error && /cover_photo_updated_by|cover_photo_hidden/i.test(saved.error.message ?? "")) {
+    const { error } = await admin.from("events").update({ cover_photo_url: url }).eq("id", eventId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  } else if (saved.error) {
+    return NextResponse.json({ error: saved.error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true, url });
 }
