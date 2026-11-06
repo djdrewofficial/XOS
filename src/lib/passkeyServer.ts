@@ -12,8 +12,8 @@ import {
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { isOwnerEmail } from "@/lib/permissions";
-import { permCacheSecret } from "@/lib/permSnapshot";
-import { sessionIdFromAccessToken } from "@/lib/mfaStepUpCookie";
+import { MFA_EMAIL_COOKIE, sessionIdFromAccessToken } from "@/lib/mfaStepUpCookie";
+import { PERM_COOKIE, permCacheSecret } from "@/lib/permSnapshot";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { clientIpFromHeaders } from "@/lib/rateLimit";
@@ -522,10 +522,52 @@ export async function passkeyAuthenticationVerify(
   const stamped = await stampPasskeyCookie(account.user.id, minted.sessionId);
   if (!stamped) {
     const supabase = await createClient();
-    await supabase.auth.signOut();
+    await signOutLocalSession(supabase);
     return { ok: false, error: "Couldn't finish passkey sign-in. Try again." };
   }
   return { ok: true };
+}
+
+/** End only the session this request just opened. `local` revokes that refresh
+    token and leaves every other device, including the phone app, signed in.
+    The server client writes the Supabase auth cookies on SIGNED_OUT. If that
+    revoke fails, auth-js returns before the write, so those cookies are
+    expired here too. Email, passkey, and permission proofs are separate
+    cookies and have to be cleared in the same response. */
+async function signOutLocalSession(supabase: SupabaseClient): Promise<void> {
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch {
+    // Still drop the cookies below. A thrown revoke must not leave this browser signed in.
+  }
+  await expireSupabaseAuthCookies();
+  await clearStaffProofCookies();
+}
+
+async function expireSupabaseAuthCookies(): Promise<void> {
+  try {
+    const jar = await cookies();
+    // Same attributes @supabase/ssr uses when it writes the session cookie.
+    // A mismatched httpOnly or Secure flag would leave the original cookie.
+    for (const cookie of jar.getAll()) {
+      if (!cookie.name.startsWith("sb-") || !cookie.name.includes("-auth-token")) continue;
+      jar.set(cookie.name, "", { path: "/", maxAge: 0, sameSite: "lax", httpOnly: false });
+    }
+  } catch {
+    // Server Components cannot write cookies. The route that mints a session can.
+  }
+}
+
+async function clearStaffProofCookies(): Promise<void> {
+  try {
+    const jar = await cookies();
+    const gone = cookieOptions(0);
+    jar.set(MFA_EMAIL_COOKIE, "", gone);
+    jar.set(MFA_PASSKEY_COOKIE, "", gone);
+    jar.set(PERM_COOKIE, "", gone);
+  } catch {
+    // Server Components cannot write cookies. The route that mints a session can.
+  }
 }
 
 /** Open a real Supabase session for a user who just proved a passkey.
@@ -549,12 +591,12 @@ async function mintStaffSession(
     type: "magiclink",
   });
   if (verifyErr || !verified.session || verified.user?.id !== user.id) {
-    await supabase.auth.signOut();
+    await signOutLocalSession(supabase);
     return { ok: false, error: "Couldn't finish passkey sign-in. Try again." };
   }
   const sessionId = sessionIdFromAccessToken(verified.session.access_token);
   if (!sessionId) {
-    await supabase.auth.signOut();
+    await signOutLocalSession(supabase);
     return { ok: false, error: "Couldn't finish passkey sign-in. Try again." };
   }
   return { ok: true, sessionId };

@@ -339,6 +339,28 @@ describe("passkey migration and session minting", () => {
     assert.match(login, /username webauthn/);
   });
 
+  it("signs out only the minted browser session and clears the staff proof cookies", () => {
+    assert.match(server, /signOut\(\{\s*scope:\s*"local"\s*\}\)/);
+    assert.doesNotMatch(server, /auth\.signOut\(\s*\)/);
+    assert.match(server, /jar\.set\(MFA_EMAIL_COOKIE,\s*""/);
+    assert.match(server, /jar\.set\(MFA_PASSKEY_COOKIE,\s*""/);
+    assert.match(server, /jar\.set\(PERM_COOKIE,\s*""/);
+    assert.match(server, /includes\("-auth-token"\)/);
+    const sidebar = readFileSync(join(root, "src/components/Sidebar.tsx"), "utf8");
+    const button = readFileSync(join(root, "src/components/SignOutButton.tsx"), "utf8");
+    const twoFa = readFileSync(join(root, "src/app/2fa/page.tsx"), "utf8");
+    const account = readFileSync(join(root, "src/app/(app)/account/actions.ts"), "utf8");
+    const reset = readFileSync(join(root, "src/app/auth/set-password/page.tsx"), "utf8");
+    for (const text of [sidebar, button, twoFa]) {
+      assert.match(text, /signOut\(\{\s*scope:\s*"local"\s*\}\)/);
+      assert.doesNotMatch(text, /auth\.signOut\(\s*\)/);
+    }
+    assert.match(account, /signOut\(\{\s*scope:\s*"others"\s*\}\)/);
+    assert.match(reset, /signOut\(\{\s*scope:\s*"others"\s*\}\)/);
+    assert.doesNotMatch(account, /auth\.signOut\(\s*\)/);
+    assert.doesNotMatch(reset, /auth\.signOut\(\s*\)/);
+  });
+
   it("logs a database failure by code and message, without the row", () => {
     assert.match(server, /console\.error\("passkey database error:", error\.code \?\? "", error\.message\)/);
     assert.doesNotMatch(server, /console\.error\([^)]*details/);
