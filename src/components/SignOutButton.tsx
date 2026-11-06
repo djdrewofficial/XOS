@@ -9,7 +9,7 @@ export default function SignOutButton({ className }: { className?: string }) {
   const router = useRouter();
   async function signOut() {
     const supabase = createClient();
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
     router.push("/login");
     router.refresh();
   }

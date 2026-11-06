@@ -168,7 +168,7 @@ export default function Sidebar({ can }: { can?: Record<string, string> }) {
 
   async function signOut() {
     const supabase = createClient();
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
     router.push("/login");
     router.refresh();
   }
