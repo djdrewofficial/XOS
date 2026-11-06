@@ -1,7 +1,10 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 
-/* Supabase Auth "Send SMS" hook (phone OTP for the xpress-client app).
-   Supabase POSTs { user.phone, sms.otp } signed with Standard Webhooks.
+/* Supabase Auth "Send SMS" hook.
+   Used for xpress-client phone sign-in and for staff phone MFA. Supabase POSTs
+   { user, sms.otp, sms.phone } signed with Standard Webhooks. sms.phone is the
+   MFA factor number (or the number being confirmed). user.phone is only the
+   fallback when sms.phone is absent.
    GoTrue only forwards a hook's error.message when the HTTP status is 200 or
    202 (auth/internal/hooks/hookshttp). A 4xx/5xx is replaced with a generic
    sentence and the real reason never reaches the app. After the signature
@@ -189,9 +192,11 @@ function readOtp(body: string): { phone: string; otp: string } | { error: string
   const record = data as { user?: { phone?: unknown }; sms?: { otp?: unknown; phone?: unknown } };
   const userPhone = typeof record.user?.phone === "string" ? record.user.phone.trim() : "";
   const smsPhone = typeof record.sms?.phone === "string" ? record.sms.phone.trim() : "";
-  const phone = userPhone || smsPhone;
+  // sms.phone is the factor (or the number being confirmed). Prefer it so a
+  // staff MFA text is not delivered to a different login phone.
+  const phone = smsPhone || userPhone;
   const otp = typeof record.sms?.otp === "string" ? record.sms.otp.trim() : "";
-  if (!phone) return { error: "user.phone is missing." };
+  if (!phone) return { error: "A phone number is missing." };
   if (!/^\d{6}$/.test(otp)) return { error: "sms.otp must be a 6-digit code." };
   return { phone, otp };
 }

@@ -7,7 +7,7 @@ export const PASSWORD_CHANGE_NONCE_PROMPT =
   "We emailed you a confirmation code. Enter it below to finish changing your password.";
 
 export const PASSWORD_CHANGE_MFA_PROMPT =
-  "Enter the 6-digit code from your authenticator app to finish changing your password.";
+  "Enter a 6-digit code from your authenticator app, a text message, or the email we send you.";
 
 export type AuthErrorLike = {
   code?: string | null;

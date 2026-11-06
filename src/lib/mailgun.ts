@@ -650,6 +650,9 @@ export async function sendBrandedEmail(opts: {
   subject: string;
   /** Inner HTML placed inside the white card body of the branded shell. */
   contentHtml: string;
+  /** Stored in email_log instead of the delivered HTML. Use this for one-time
+      codes so the log cannot be used to sign in. */
+  loggedBodyHtml?: string;
   /** Optional file attachments (Mailgun path only, e.g. a run-of-show PDF). */
   attachments?: { filename: string; data: Buffer; contentType: string }[];
   supabase?: SupabaseClient;
@@ -717,7 +720,7 @@ export async function sendBrandedEmail(opts: {
     from_address: fromEmail,
     reply_to: cs?.reply_to ?? fromEmail,
     subject: opts.subject,
-    body_html: html,
+    body_html: opts.loggedBodyHtml ?? html,
     status: result.ok ? "sent" : "failed",
     sent_at: result.ok ? new Date().toISOString() : null,
     provider_message_id: result.ok ? result.id || null : null,

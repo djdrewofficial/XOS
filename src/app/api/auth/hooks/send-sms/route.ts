@@ -2,7 +2,9 @@ import { sendDirectSms } from "@/lib/highlevel";
 import { toE164 } from "@/lib/phone";
 import { handleSendSmsHook } from "@/lib/sendSmsHook";
 
-/* Supabase Auth → Send SMS hook for xpress-client phone OTP.
+/* Supabase Auth → Send SMS hook.
+   xpress-client phone sign-in and staff phone MFA both land here. Text codes
+   go out through HighLevel. Twilio is not used.
    Dashboard → Authentication → Hooks → Send SMS:
      https://xos.xpressdjs.com/api/auth/hooks/send-sms
    Secret: SEND_SMS_HOOK_SECRET (full `v1,whsec_...` value, Netlify env only).
