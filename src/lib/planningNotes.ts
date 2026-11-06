@@ -48,7 +48,8 @@ export type NotesPutResult =
   | { ok: false; status: 400 | 403; error: string };
 
 /** Validate a PUT body. staffNotes from a non-staff caller is 403 and nothing
-    is applied. Guests cannot write couple notes. At least one field is required. */
+    is applied. Guests may write the couple notes. The route still requires the
+    section to be open to guests. At least one field is required. */
 export function parseNotesPut(body: unknown, role: PlanningNoteRole): NotesPutResult {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { ok: false, status: 400, error: "Missing fields" };
@@ -58,7 +59,6 @@ export function parseNotesPut(body: unknown, role: PlanningNoteRole): NotesPutRe
   const hasStaff = Object.prototype.hasOwnProperty.call(rec, "staffNotes");
   if (!hasNotes && !hasStaff) return { ok: false, status: 400, error: "Missing fields" };
   if (hasStaff && role !== "staff") return { ok: false, status: 403, error: "Forbidden" };
-  if (hasNotes && role === "guest") return { ok: false, status: 403, error: "Forbidden" };
 
   const out: { ok: true; notes?: string | null; staffNotes?: string | null } = { ok: true };
   if (hasNotes) {

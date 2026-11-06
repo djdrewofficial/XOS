@@ -33,7 +33,7 @@ export async function GET(req: Request) {
   if (!eventId) return NextResponse.json({ error: "Missing event." }, { status: 400 });
 
   const role = await authedRole(token, eventId);
-  if (role !== "staff" && role !== "host" && role !== "guest") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (role !== "staff" && role !== "host") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const admin = createAdminClient();
   const { data } = await admin

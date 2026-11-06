@@ -261,7 +261,7 @@ export default function Planner({
       {isGuest && (
         <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
           <FontAwesomeIcon icon={faUserGroup} className="mr-2" />
-          You&apos;ve been invited to help with a few questions for this event. Thanks for pitching in!
+          You can see and fill out the parts of this event that were opened for guests.
         </div>
       )}
 
@@ -862,10 +862,10 @@ function SectionDetail({ eventId, section, role, vendors, staffCanEdit = true, d
   const isPhotoBooth = section.module === "photobooth";
   const canEditSongs =
     section.songs_enabled &&
-    !isGuest &&
-    (isStaff || (role === "host" && section.client_editable && !section.locked));
+    (isStaff || (!section.locked && role === "host" && section.client_editable));
+  const canAddSongs = canEditSongs || (isGuest && section.songs_enabled && !section.locked);
   // Photo Booth is a special module — its own layout replaces songs + questions.
-  const showSongs = !isPhotoBooth && section.songs_enabled && !isGuest && section.section_type !== "headline";
+  const showSongs = !isPhotoBooth && section.songs_enabled && section.section_type !== "headline";
   const showQuestions = !isPhotoBooth && section.questions_enabled && section.questions.length >= 0;
   const atLimit = section.song_limit != null && section.songs.length >= section.song_limit;
   const mustPlayFull = section.must_play_limit != null && section.must_play_count >= section.must_play_limit;
@@ -919,15 +919,15 @@ function SectionDetail({ eventId, section, role, vendors, staffCanEdit = true, d
           sectionId={section.id}
           notes={section.client_notes}
           staffNotes={isStaff ? section.staff_notes : null}
-          showNotes={isStaff || (section.notes_enabled && (allows(section.permissions, "edit_notes", role) || !!section.client_notes))}
-          canEditNotes={isStaff ? staffCanEdit : !isGuest && section.notes_enabled && allows(section.permissions, "edit_notes", role)}
+          showNotes={isStaff || (section.notes_enabled && (isGuest || allows(section.permissions, "edit_notes", role) || !!section.client_notes))}
+          canEditNotes={isStaff ? staffCanEdit : section.notes_enabled && (isGuest || allows(section.permissions, "edit_notes", role))}
           showStaffNotes={isStaff}
         />
 
         {isStaff && (
           <label className="mb-5 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 dark:border-white/10 dark:text-zinc-300">
             <GuestToggle eventId={eventId} sectionId={section.id} enabled={section.guest_enabled} />
-            <FontAwesomeIcon icon={faUserGroup} className="text-amber-500" /> Let invited guests answer this moment
+            <FontAwesomeIcon icon={faUserGroup} className="text-amber-500" /> Let guests see and fill out this moment
           </label>
         )}
 
@@ -1021,10 +1021,10 @@ function SectionDetail({ eventId, section, role, vendors, staffCanEdit = true, d
               </button>
             )}
 
-            {canEditSongs && !atLimit && (
+            {canAddSongs && !atLimit && (
               <div className="mt-4 flex flex-wrap items-start gap-2">
                 <MusicSearch eventId={eventId} sectionId={section.id} onAdd={addSong} />
-                <SpotifyImport eventId={eventId} sectionId={section.id} />
+                {canEditSongs && <SpotifyImport eventId={eventId} sectionId={section.id} />}
               </div>
             )}
             {atLimit && (

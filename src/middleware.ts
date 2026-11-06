@@ -178,6 +178,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/privacy") ||
     pathname.startsWith("/terms") ||
     pathname.startsWith("/sign/") ||
+    pathname.startsWith("/j/") ||
+    pathname.startsWith("/.well-known/") ||
     pathname.startsWith("/pay/") ||
     pathname.startsWith("/welcome/") ||
     pathname.startsWith("/proposal/") ||

@@ -1368,7 +1368,8 @@ export async function uploadSectionCover(eventId: string, sectionId: string, for
 /** Couple-visible notes on a planning moment. Hosts and staff. RLS plus the
     column guard keep this to client_notes on the caller's own event. */
 export async function saveSectionClientNotes(eventId: string, sectionId: string, notes: string) {
-  const { supabase, me, revalidate } = await requireHost(eventId);
+  const { supabase, me, revalidate, role } = await requireEventMember(eventId);
+  if (role !== "staff" && role !== "host" && role !== "guest") throw new Error("Not allowed");
   if (me.accountType === "staff") await requireModule("events", "edit", { mode: "throw", supabase });
   const parsed = parsePlanningNote(notes);
   if (!parsed.ok) return { ok: false as const, error: parsed.error };

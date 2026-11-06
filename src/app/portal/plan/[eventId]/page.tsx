@@ -34,15 +34,37 @@ export default async function PlannerPage({
   const me = await getMe(supabase);
   if (!me) redirect("/login");
 
-  const { data: event } = await supabase
-    .from("events")
-    .select("id, name, event_date, event_type_id, cover_photo_url")
-    .eq("id", eventId)
-    .maybeSingle();
-  if (!event) notFound();
-
   const role = await resolveEventRole(supabase, me.userId, me.accountType, eventId);
   if (!role) notFound();
+
+  // Guests cannot select the events row (prices, pay links, notes). They read
+  // event_guest_card. Before that view exists, the events select still works.
+  let event: { id: string; name: string | null; event_date: string | null; event_type_id: string | null; cover_photo_url: string | null } | null =
+    null;
+  if (role === "guest") {
+    const card = await supabase
+      .from("event_guest_card")
+      .select("id, name, event_date, event_type_id, cover_photo_url")
+      .eq("id", eventId)
+      .maybeSingle();
+    event = card.data;
+    if (!event && card.error) {
+      const legacy = await supabase
+        .from("events")
+        .select("id, name, event_date, event_type_id, cover_photo_url")
+        .eq("id", eventId)
+        .maybeSingle();
+      event = legacy.data;
+    }
+  } else {
+    const full = await supabase
+      .from("events")
+      .select("id, name, event_date, event_type_id, cover_photo_url")
+      .eq("id", eventId)
+      .maybeSingle();
+    event = full.data;
+  }
+  if (!event) notFound();
 
   // Seed sections from the matching template on first open (admin client).
   await ensureEventPlanning(eventId, event.event_type_id);

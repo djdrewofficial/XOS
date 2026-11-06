@@ -55,14 +55,16 @@ describe("section notes access", () => {
     assert.equal("staffNotes" in notesGetBody("hi", "secret", "host"), false);
   });
 
-  it("rejects staffNotes from anyone who is not staff, and notes from a guest", () => {
+  it("rejects staffNotes from anyone who is not staff, and lets a guest write couple notes", () => {
     const host = parseNotesPut({ notes: "  details  ", staffNotes: "hidden" }, "host");
     assert.equal(host.ok, false);
     if (!host.ok) assert.equal(host.status, 403);
 
-    const guest = parseNotesPut({ notes: "nope" }, "guest");
-    assert.equal(guest.ok, false);
-    if (!guest.ok) assert.equal(guest.status, 403);
+    const guest = parseNotesPut({ notes: "  song ideas  " }, "guest");
+    assert.deepEqual(guest, { ok: true, notes: "song ideas" });
+    const guestStaff = parseNotesPut({ staffNotes: "nope" }, "guest");
+    assert.equal(guestStaff.ok, false);
+    if (!guestStaff.ok) assert.equal(guestStaff.status, 403);
 
     const staff = parseNotesPut({ notes: "  details  ", staffNotes: "  internal  " }, "staff");
     assert.deepEqual(staff, { ok: true, notes: "details", staffNotes: "internal" });
