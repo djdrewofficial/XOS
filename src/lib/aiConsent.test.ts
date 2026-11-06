@@ -74,6 +74,7 @@ describe("AI consent schema and call sites", () => {
     assert.match(read("src/app/api/events/[id]/run-of-show/route.ts"), /contractClientHasAiConsent/);
     assert.match(read("src/lib/morningBriefing.ts"), /briefingEventForAi/);
     assert.match(read("src/app/api/music/recommend/route.ts"), /callerHasAiConsent/);
+    assert.match(read("src/app/api/music/recommend/route.ts"), /contractClientHasAiConsent/);
     assert.match(read("src/app/(app)/events/[id]/spotify-export-actions.ts"), /contractClientHasAiConsent/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /action !== "grant" && action !== "withdraw"/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /AI_CONSENT_POLICY_VERSION/);
