@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEventRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 
 /* The couple uploads their planner's official timeline (PDF or image) from the
    app. Stored in the private `event-files` bucket and recorded in `event_files`
@@ -21,8 +22,8 @@ async function authedRole(token: string, eventId: string) {
   const { data: userData, error } = await rls.auth.getUser(token);
   if (error || !userData?.user) return null;
   const uid = userData.user.id;
-  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", uid).maybeSingle();
-  const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
+  const accountType = await lookupMobileAccountKind(rls, uid);
+  if (!accountType) return null;
   return resolveEventRole(rls, uid, accountType, eventId);
 }
 

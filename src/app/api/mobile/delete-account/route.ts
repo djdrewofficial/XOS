@@ -3,18 +3,16 @@ import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isMissingRelation } from "@/lib/eventAccessServer";
 import { revokeAppleAuthorization } from "@/lib/appleSignIn";
-import { readAppleAuthorizationCode, runAppAccountDeletion, type AppAccountType } from "@/lib/deleteAppAccount";
+import { loginUsesApple, readAppleAuthorizationCode, runAppAccountDeletion, type AppAccountType } from "@/lib/deleteAppAccount";
 
-/* Self-serve account deletion for the couples app (App Store 5.1.1(v)).
-   Deletes the signed-in person's login and app membership: the accounts row,
-   event_app_members, and this login's push tokens. Then the auth user.
+/* Self-serve account deletion for the couples app.
+   Removes only the app login: the auth user, the accounts row, event_app_members,
+   and this login's device tokens. Guest names, planning rows, bookings, contracts,
+   payments, and files are not changed here.
 
-   Never deletes a staff login. Never deletes events, clients, event guests,
-   payments, or booking agreements. Those stay with Xpress.
-
+   Never deletes a staff login.
    Optional body { appleAuthorizationCode } is exchanged and revoked with Apple.
-   A revoke failure is logged and does not stop deletion.
-   POST with an empty body is allowed. */
+   The outcome is logged without the code or token. A revoke failure does not stop deletion. */
 
 export async function POST(req: Request) {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -45,6 +43,7 @@ export async function POST(req: Request) {
     employeeId: (acct?.employee_id as string | null) ?? null,
     linkedEmployee: Boolean(employee?.id),
     appleAuthorizationCode,
+    usedApple: loginUsesApple(userData.user),
     env: {
       APPLE_SIGNIN_KEY_ID: process.env.APPLE_SIGNIN_KEY_ID,
       APPLE_SIGNIN_PRIVATE_KEY: process.env.APPLE_SIGNIN_PRIVATE_KEY,

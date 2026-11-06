@@ -74,8 +74,8 @@ const privacyEn: PolicySection[] = [
     body: "We disclose information to the people involved in your event and to providers as described above. We may also disclose information where required by applicable law, to respond to lawful requests, or as necessary to address fraud, abuse or legal claims, subject to applicable protections. No advertising or cross-app tracking SDK was identified in the reviewed client code. That finding is not a guarantee about every server log or every provider's independent practices, and it does not establish unverified vendor contractual terms. Any materially different collection or use needs appropriate notice and any required permission.",
   },
   {
-    heading: "12. Retention and deletion",
-    body: "Deleting your app login does not currently delete the complete booking or event record. The in-app route removes the authentication account, account record, event-app memberships and device-token records associated with that login. Some planning author identifiers are cleared and associated likes are deleted. CRM and guest records, event records, planning songs, answers and notes, contracts, payments, cover photos, planner files and invitation logs remain unless separately removed. Clearing an author identifier does not necessarily anonymize content that contains names or event details. There is no verified configured retention schedule for these retained records or join-attempt logs. Backup and point-in-time-recovery retention periods have not been verified for the live service. We cannot promise a fixed deletion period or immediate erasure of backup copies. Contact us to request review or removal of retained information; applicable legal rights are not limited by these technical constraints.",
+    heading: "12. Deletion",
+    body: "Deleting your account removes your app login and access. You cannot sign back in with that login. We remove the app account record, event app memberships, and device tokens for that login. The event's planning details, guest record, contract, and payment records stay with the booking so your DJ can perform the event and as required by law. If you signed in with Apple, we try to revoke that sign-in. The login is still removed if that request fails.",
   },
   {
     heading: "13. Choices, rights and security",
@@ -137,8 +137,8 @@ const privacyEs: PolicySection[] = [
     body: "Compartimos información con las personas que participan en su evento y con proveedores según lo descrito. También podemos comunicar información cuando lo exija la legislación aplicable, para responder a solicitudes legales o cuando sea necesario para abordar fraude, abusos o reclamaciones, con las protecciones aplicables. No se identificó un SDK de publicidad o seguimiento entre aplicaciones en el código del cliente revisado. Esto no garantiza las prácticas de cada registro de servidor o proveedor independiente ni acredita condiciones contractuales de proveedores no verificadas. Cualquier recopilación o uso sustancialmente diferente necesita el aviso adecuado y los permisos exigibles.",
   },
   {
-    heading: "12. Conservación y eliminación",
-    body: "Eliminar su acceso a la aplicación no elimina actualmente el registro completo de la reserva o del evento. El proceso dentro de la aplicación elimina la cuenta de autenticación, el registro de cuenta, las pertenencias al evento en la aplicación y los registros de tokens de dispositivo asociados a ese acceso. Se borran algunos identificadores de autor y los Me gusta asociados. Permanecen los registros de CRM e invitados, eventos, canciones, respuestas y notas de planificación, contratos, pagos, portadas, archivos del planificador y registros de invitaciones, salvo que se eliminen por separado. Quitar un identificador de autor no anonimiza necesariamente un contenido que incluya nombres o detalles del evento. No se ha verificado un calendario de conservación configurado para estos registros o los de intentos de acceso. Tampoco se han verificado los plazos del servicio activo para copias de seguridad y recuperación a un momento dado. No podemos prometer un plazo fijo de eliminación ni el borrado inmediato de las copias. Contacte con nosotros para solicitar la revisión o eliminación de información conservada; estas limitaciones técnicas no restringen sus derechos legales.",
+    heading: "12. Eliminación",
+    body: "Eliminar su cuenta quita el acceso a la aplicación. No podrá volver a entrar con ese acceso. Quitamos el registro de la cuenta de la aplicación, las pertenencias al evento en la aplicación y los tokens de dispositivo de ese acceso. Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva para que su DJ pueda realizar el evento y cuando la ley lo exige. Si inició sesión con Apple, intentamos revocar ese acceso. El acceso se elimina aunque esa solicitud falle.",
   },
   {
     heading: "13. Opciones, derechos y seguridad",
@@ -189,7 +189,7 @@ const termsEn: PolicySection[] = [
   },
   {
     heading: "9. Ending access and deletion",
-    body: "You may stop using the app and initiate account deletion within it. Login deletion removes access but currently leaves separate booking and event data as explained in the deletion notice. It does not cancel your event, extinguish payment obligations or cancel a booking agreement. You can separately request review or removal of retained personal information. Applicable statutory rights continue to apply. Access may be restricted to address misuse or security needs, but doing so does not determine rights under the booking agreement.",
+    body: "You may stop using the app and delete your account in it. Deleting removes your app login and access. The event's planning details, guest record, contract, and payment records stay with the booking, as explained in the deletion notice. It does not cancel your event, your payment obligations, or the booking agreement.",
   },
   {
     heading: "10. Updates and contact",
@@ -232,7 +232,7 @@ const termsEs: PolicySection[] = [
   },
   {
     heading: "9. Fin del acceso y eliminación",
-    body: "Puede dejar de usar la aplicación e iniciar la eliminación de su cuenta dentro de ella. Eliminar el acceso impide entrar, pero actualmente deja datos separados de reserva y evento según el aviso de eliminación. No cancela su evento, extingue obligaciones de pago ni cancela el contrato de reserva. Puede solicitar por separado la revisión o eliminación de datos personales conservados. Sus derechos legales siguen vigentes. El acceso puede restringirse por uso indebido o seguridad, pero esto no determina los derechos derivados del contrato de reserva.",
+    body: "Puede dejar de usar la aplicación y eliminar su cuenta dentro de ella. Eliminar quita el acceso a la aplicación. Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva, según el aviso de eliminación. No cancela su evento, sus obligaciones de pago ni el contrato de reserva.",
   },
   {
     heading: "10. Cambios y contacto",
@@ -242,55 +242,31 @@ const termsEs: PolicySection[] = [
 
 const deletionEn: PolicySection[] = [
   {
-    heading: "Delete your app account",
-    body: "You can initiate deletion using the account-deletion option inside the app and confirm that you want to delete your login. You do not need to email us to initiate that login deletion. If you cannot access the app, contact drew@xpressdjs.com for help with a data request. Staff accounts use a separate administrative process; this client deletion route refuses staff accounts.",
+    heading: "What deletion removes",
+    body: "Deleting your account removes your app login and access. You cannot sign back in with that login. We remove the app account record, event app memberships, and device tokens for that login. You can start this from the account deletion option in the app. If you cannot open the app, contact drew@xpressdjs.com. Staff accounts use a separate process. This client route refuses staff accounts.",
   },
   {
-    heading: "What is removed",
-    body: "The current process deletes your Supabase authentication user, the app account record, event-app memberships and device-token records for that login. Planning author references covered by the deletion relationships are set to null, and associated likes are removed. You lose access through that account. This is not a promise that every copy of your identity disappears from event text or other records.",
-  },
-  {
-    heading: "What remains",
-    body: "The current process keeps CRM client records, client-to-event links, guest records, events, songs, planning answers and notes, contracts and payments, public cover photos, private planner files and invitation or email logs. Some retained content can still identify you. Keeping these records in the present implementation is not proof that every record is legally required or may be retained indefinitely.",
-  },
-  {
-    heading: "Further personal-data removal",
-    body: "Write to drew@xpressdjs.com identifying the relevant event and the information you want reviewed, corrected or removed. Do not send a password or card number. We may verify your identity and distinguish your information from other participants' records. A separate request does not waive statutory rights and is not a substitute for making the in-app deletion flow meet applicable requirements. We cannot promise a fixed number of days or automatic removal of every event file under the current implementation.",
-  },
-  {
-    heading: "Retention",
-    body: "Retention should be limited to what is necessary for identified service, accounting, legal or dispute purposes, with record-specific periods and lawful exceptions. That is a proposed governing standard, not an existing configured deletion schedule. No live backup/PITR window or cleanup schedule for invitation logs and failed join logs has been verified. Backups and files need separate handling. Deleting a login does not cancel a booking or change the booking agreement.",
+    heading: "What stays with the booking",
+    body: "The event's planning details, guest record, contract, and payment records stay with the booking so your DJ can perform the event and as required by law. Songs, answers, notes, and the names on the guest and booking records are not removed by this deletion. It does not cancel the event or change payment obligations.",
   },
   {
     heading: "Sign in with Apple",
-    body: "The deletion process can request a fresh Apple authorization code and attempt token revocation. The attempt can fail or be skipped even though the login is deleted.",
+    body: "If you signed in with Apple, we try to revoke that sign-in. The login is still removed if that request fails. App support is events@xpressdjs.com.",
   },
 ];
 
 const deletionEs: PolicySection[] = [
   {
-    heading: "Eliminar su cuenta de la aplicación",
-    body: "Puede iniciar la eliminación mediante la opción de eliminación de cuenta dentro de la aplicación y confirmar que desea eliminar su acceso. No necesita enviar un correo para iniciar esa eliminación. Si no puede acceder, escriba a drew@xpressdjs.com para obtener ayuda con una solicitud de datos. Las cuentas del personal siguen un proceso administrativo separado; el proceso del cliente rechaza las cuentas del personal.",
+    heading: "Qué quita la eliminación",
+    body: "Eliminar su cuenta quita el acceso a la aplicación. No podrá volver a entrar con ese acceso. Quitamos el registro de la cuenta de la aplicación, las pertenencias al evento en la aplicación y los tokens de dispositivo de ese acceso. Puede iniciarlo desde la opción de eliminación de cuenta en la aplicación. Si no puede abrir la aplicación, escriba a drew@xpressdjs.com. Las cuentas del personal usan otro proceso. Esta vía del cliente rechaza las cuentas del personal.",
   },
   {
-    heading: "Qué se elimina",
-    body: "El proceso actual elimina su usuario de autenticación de Supabase, el registro de cuenta de la aplicación, las pertenencias al evento en la aplicación y los registros de tokens de dispositivo de ese acceso. Las referencias de autor cubiertas por las relaciones de eliminación se establecen en null y se eliminan los Me gusta asociados. Pierde el acceso mediante esa cuenta. Esto no promete que todas las copias de su identidad desaparezcan del texto del evento u otros registros.",
-  },
-  {
-    heading: "Qué permanece",
-    body: "Se conservan registros de clientes del CRM, vínculos entre clientes y eventos, registros de invitados, eventos, canciones, respuestas y notas, contratos y pagos, portadas públicas, archivos privados del planificador y registros de invitaciones o correos. Parte del contenido conservado todavía puede identificarle. Que la implementación actual conserve esos registros no demuestra que todos sean obligatorios por ley ni que puedan conservarse indefinidamente.",
-  },
-  {
-    heading: "Eliminación adicional de datos personales",
-    body: "Escriba a drew@xpressdjs.com indicando el evento y la información que desea revisar, corregir o eliminar. No envíe contraseñas ni números de tarjeta. Podemos verificar su identidad y distinguir sus datos de los de otros participantes. Una solicitud separada no supone renunciar a derechos legales ni sustituye la obligación de que el proceso dentro de la aplicación cumpla los requisitos aplicables. La implementación actual no permite prometer un número fijo de días ni la eliminación automática de todos los archivos del evento.",
-  },
-  {
-    heading: "Conservación",
-    body: "La conservación debería limitarse a lo necesario para fines identificados de servicio, contabilidad, obligaciones legales o controversias, con plazos por tipo de registro y excepciones legales. Es una norma propuesta, no un calendario de eliminación ya configurado. No se han verificado los plazos activos de copias de seguridad y recuperación a un momento dado ni los calendarios de limpieza de registros de invitaciones e intentos fallidos de acceso. Las copias y los archivos necesitan tratamiento separado. Eliminar un acceso no cancela una reserva ni cambia el contrato.",
+    heading: "Qué permanece con la reserva",
+    body: "Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva para que su DJ pueda realizar el evento y cuando la ley lo exige. Las canciones, respuestas, notas y los nombres de los registros de invitado y de reserva no se quitan con esta eliminación. No cancela el evento ni cambia las obligaciones de pago.",
   },
   {
     heading: "Iniciar sesión con Apple",
-    body: "El proceso puede solicitar un código de autorización nuevo e intentar revocar el token de Apple. El intento puede fallar u omitirse aunque se elimine el acceso.",
+    body: "Si inició sesión con Apple, intentamos revocar ese acceso. El acceso se elimina aunque esa solicitud falle. El soporte de la aplicación es events@xpressdjs.com.",
   },
 ];
 
@@ -312,10 +288,10 @@ export const APP_POLICIES: Record<PolicyLang, Record<PolicyDocId, PolicyDocument
     },
     deletion: {
       id: "deletion",
-      title: "Account deletion and retention",
-      description: "What the Xpress client app deletes today, and what booking and event records remain.",
+      title: "Account deletion",
+      description: "Deleting an Xpress app login removes access. The booking and its planning details stay.",
       navLabel: "Account deletion",
-      lead: "This page describes the current in-app deletion route. It is not a claim that the route meets every app-store deletion rule.",
+      lead: "Deleting your account removes your app login and access. The event's planning details, guest record, contract, and payment records stay with the booking so your DJ can perform the event and as required by law.",
       sections: deletionEn,
     },
   },
@@ -336,10 +312,10 @@ export const APP_POLICIES: Record<PolicyLang, Record<PolicyDocId, PolicyDocument
     },
     deletion: {
       id: "deletion",
-      title: "Eliminación de cuenta y conservación",
-      description: "Qué elimina hoy la aplicación de Xpress y qué registros de reserva y del evento permanecen.",
+      title: "Eliminación de cuenta",
+      description: "Eliminar el acceso a la aplicación de Xpress quita la entrada. La reserva y sus detalles de planificación permanecen.",
       navLabel: "Eliminación de cuenta",
-      lead: "Esta página describe el proceso actual de eliminación dentro de la aplicación. No es una declaración de cumplimiento de las normas del App Store.",
+      lead: "Eliminar su cuenta quita el acceso a la aplicación. Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva para que su DJ pueda realizar el evento y cuando la ley lo exige.",
       sections: deletionEs,
     },
   },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireMobileStaffModule } from "@/lib/apiAuth";
 import { resolveEventRole, type PlannerRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 import { noteWriteStatus, parseDoNotPlayPut } from "@/lib/planningNotes";
 
 /* Per-event "also avoid" text (artists, genres, styles — not specific songs).
@@ -34,12 +35,7 @@ async function caller(token: string, eventId: string): Promise<
   const { data: userData, error } = await rls.auth.getUser(token);
   if (error || !userData?.user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
 
-  const { data: acct } = await rls
-    .from("accounts")
-    .select("account_type")
-    .eq("auth_user_id", userData.user.id)
-    .maybeSingle();
-  const accountType = acct?.account_type as "staff" | "client" | "event_guest" | undefined;
+  const accountType = await lookupMobileAccountKind(rls, userData.user.id);
   if (!accountType) return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
 
   const role = await resolveEventRole(rls, userData.user.id, accountType, eventId);

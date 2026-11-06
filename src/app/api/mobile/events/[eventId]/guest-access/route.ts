@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireMobileStaffModule } from "@/lib/apiAuth";
 import { resolveEventRole } from "@/lib/planning";
-import { isUuid } from "@/lib/mobileCouple";
+import { isUuid, lookupMobileAccountKind } from "@/lib/mobileCouple";
 
 /* Hosts and staff choose which planning sections guests can see and fill out.
    GET → { sections: [{ id, title, guestEnabled }] }
@@ -20,8 +20,8 @@ async function callerRole(req: Request, eventId: string, need: "view" | "edit") 
   });
   const { data, error } = await rls.auth.getUser(token);
   if (error || !data.user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", data.user.id).maybeSingle();
-  const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
+  const accountType = await lookupMobileAccountKind(rls, data.user.id);
+  if (!accountType) return NextResponse.json({ error: "You don't have access to that." }, { status: 403 });
   const role = await resolveEventRole(rls, data.user.id, accountType, eventId);
   if (role !== "staff" && role !== "host") return NextResponse.json({ error: "You don't have access to that." }, { status: 403 });
   if (role === "staff") {

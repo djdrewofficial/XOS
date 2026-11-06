@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireMobileStaffModule } from "@/lib/apiAuth";
 import { resolveEventRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 
 /* Mobile section management (reorder / delete / restore). Staff + hosts only —
    guests are rejected. Hosts can't write planning_sections under RLS (staff-only
@@ -30,9 +31,8 @@ export async function POST(req: Request) {
   const eventId = String(body?.eventId ?? "");
   if (!eventId || !action) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-  // Resolve the caller's role for this event (no account row → owner/staff).
-  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", uid).maybeSingle();
-  const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
+  const accountType = await lookupMobileAccountKind(rls, uid);
+  if (!accountType) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const role = await resolveEventRole(rls, uid, accountType, eventId);
   if (role !== "staff" && role !== "host") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 

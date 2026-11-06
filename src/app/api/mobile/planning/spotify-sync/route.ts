@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEventRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 import { reconcileSection, type SyncSectionRow } from "@/lib/spotifySync";
 
 /* Mobile Spotify live-sync enable/disable for a song section. JWT-verified;
@@ -26,8 +27,8 @@ export async function POST(req: Request) {
   const sectionId = String(body?.sectionId ?? "");
   if (!eventId || !sectionId || !action) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", uid).maybeSingle();
-  const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
+  const accountType = await lookupMobileAccountKind(rls, uid);
+  if (!accountType) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const role = await resolveEventRole(rls, uid, accountType, eventId);
   if (role !== "staff" && role !== "host") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
