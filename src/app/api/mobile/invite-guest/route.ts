@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveEventRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 import { sendAccountInvite } from "@/lib/accounts";
 
 /* Invite a partner or planner from the couple's app. The host (couple) submits a
@@ -36,8 +37,8 @@ export async function POST(req: Request) {
   if (!EMAIL_RE.test(email)) return NextResponse.json({ error: "A valid email is required." }, { status: 400 });
 
   // Only the couple (host) or staff can invite people to an event.
-  const { data: acct } = await rls.from("accounts").select("account_type").eq("auth_user_id", uid).maybeSingle();
-  const accountType = (acct?.account_type as "staff" | "client" | "event_guest" | undefined) ?? "staff";
+  const accountType = await lookupMobileAccountKind(rls, uid);
+  if (!accountType) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const role = await resolveEventRole(rls, uid, accountType, eventId);
   if (role !== "staff" && role !== "host") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 

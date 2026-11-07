@@ -175,6 +175,8 @@ export async function middleware(request: NextRequest) {
   const isPublic =
     isAuthSendSmsHook(pathname) ||
     pathname.startsWith("/app-privacy") ||
+    pathname.startsWith("/app-terms") ||
+    pathname.startsWith("/app-data-deletion") ||
     pathname.startsWith("/privacy") ||
     pathname.startsWith("/terms") ||
     pathname.startsWith("/sign/") ||

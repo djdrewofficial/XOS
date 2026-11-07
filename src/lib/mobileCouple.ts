@@ -44,6 +44,28 @@ export type MobileCaller = {
   clientId: string | null;
 };
 
+/** A missing accounts row is staff only when an employee row is linked. */
+export function accountKindForAccess(input: {
+  accountType: string | null | undefined;
+  employeeLinked: boolean;
+}): "staff" | "client" | "event_guest" | null {
+  if (input.accountType === "staff" || input.accountType === "client" || input.accountType === "event_guest") {
+    return input.accountType;
+  }
+  return input.employeeLinked ? "staff" : null;
+}
+
+export async function lookupMobileAccountKind(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<"staff" | "client" | "event_guest" | null> {
+  const { data: acct } = await supabase.from("accounts").select("account_type").eq("auth_user_id", userId).maybeSingle();
+  const typed = accountKindForAccess({ accountType: acct?.account_type as string | null, employeeLinked: false });
+  if (typed) return typed;
+  const { data: emp } = await supabase.from("employees").select("id").eq("auth_user_id", userId).maybeSingle();
+  return accountKindForAccess({ accountType: null, employeeLinked: Boolean(emp?.id) });
+}
+
 export async function requireMobileUser(req: Request): Promise<MobileCaller | NextResponse> {
   const token = bearerToken(req);
   if (!token) return NextResponse.json({ error: "Sign in required." }, { status: 401 });

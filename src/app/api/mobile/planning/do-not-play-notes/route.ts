@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireMobileStaffModule } from "@/lib/apiAuth";
 import { resolveEventRole, type PlannerRole } from "@/lib/planning";
+import { lookupMobileAccountKind } from "@/lib/mobileCouple";
 import { noteWriteStatus, parseDoNotPlayPut } from "@/lib/planningNotes";
+import { textForViewer } from "@/lib/ugcModeration";
+import { viewerBlocks } from "@/lib/ugcModerationServer";
 
 /* Per-event "also avoid" text (artists, genres, styles — not specific songs).
    GET and PUT /api/mobile/planning/do-not-play-notes?eventId=<uuid>
@@ -26,7 +29,7 @@ function userClient(token: string) {
 }
 
 async function caller(token: string, eventId: string): Promise<
-  | { role: PlannerRole | null; rls: SupabaseClient }
+  | { role: PlannerRole | null; rls: SupabaseClient; userId: string }
   | { error: NextResponse }
 > {
   if (!token) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -34,16 +37,11 @@ async function caller(token: string, eventId: string): Promise<
   const { data: userData, error } = await rls.auth.getUser(token);
   if (error || !userData?.user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
 
-  const { data: acct } = await rls
-    .from("accounts")
-    .select("account_type")
-    .eq("auth_user_id", userData.user.id)
-    .maybeSingle();
-  const accountType = acct?.account_type as "staff" | "client" | "event_guest" | undefined;
+  const accountType = await lookupMobileAccountKind(rls, userData.user.id);
   if (!accountType) return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
 
   const role = await resolveEventRole(rls, userData.user.id, accountType, eventId);
-  return { role, rls };
+  return { role, rls, userId: userData.user.id };
 }
 
 function eventIdFrom(req: Request): string {
@@ -66,22 +64,32 @@ async function authorize(req: Request, need: "view" | "edit") {
     const denied = await requireMobileStaffModule(who.rls, token, "events", need);
     if (denied) return { error: denied } as const;
   }
-  return { eventId, rls: who.rls } as const;
+  return { eventId, rls: who.rls, role: who.role, userId: who.userId, token } as const;
 }
 
-async function readText(rls: SupabaseClient, eventId: string): Promise<string | null> {
-  const { data } = await rls
+async function readText(
+  rls: SupabaseClient,
+  eventId: string,
+  viewer: { userId: string; role: PlannerRole; token: string },
+): Promise<{ text: string | null; hidden?: true }> {
+  const full = await rls
     .from("planning_do_not_play_notes")
-    .select("body")
+    .select("body, updated_by, hidden_at")
     .eq("event_id", eventId)
     .maybeSingle();
-  return (data?.body as string | null) ?? null;
+  const data = full.error && /hidden_at/i.test(full.error.message ?? "")
+    ? await rls.from("planning_do_not_play_notes").select("body, updated_by").eq("event_id", eventId).maybeSingle()
+    : full;
+  const row = data.data as { body?: string | null; updated_by?: string | null; hidden_at?: string | null } | null;
+  const blocked = await viewerBlocks(viewer.token, eventId, viewer.userId, viewer.role);
+  return textForViewer(row?.body ?? null, row?.updated_by ?? null, Boolean(row?.hidden_at), viewer.role, blocked);
 }
 
 export async function GET(req: Request) {
   const gate = await authorize(req, "view");
   if ("error" in gate) return gate.error;
-  return NextResponse.json({ text: await readText(gate.rls, gate.eventId) });
+  const viewed = await readText(gate.rls, gate.eventId, gate);
+  return NextResponse.json({ text: viewed.text, ...(viewed.hidden ? { hidden: true } : {}) });
 }
 
 export async function PUT(req: Request) {
@@ -99,5 +107,6 @@ export async function PUT(req: Request) {
     const status = noteWriteStatus(error) ?? 500;
     return NextResponse.json({ error: status === 403 ? "Forbidden" : error.message }, { status });
   }
-  return NextResponse.json({ text: await readText(gate.rls, gate.eventId) });
+  const viewed = await readText(gate.rls, gate.eventId, gate);
+  return NextResponse.json({ text: viewed.text, ...(viewed.hidden ? { hidden: true } : {}) });
 }

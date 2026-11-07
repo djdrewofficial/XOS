@@ -23,6 +23,8 @@ export default function TermsPage() {
         Entertainment Corp (&ldquo;Xpress,&rdquo; &ldquo;we,&rdquo; &ldquo;us&rdquo;). By using our
         site or services you agree to these terms. The <strong>signed booking agreement</strong> for
         your specific event governs that event and controls over these general terms where they differ.
+        The mobile app has separate <a className="text-violet-700 underline dark:text-violet-400" href="/app-terms">terms of use</a>.
+        Those app terms do not replace the booking agreement.
       </p>
 
       <Section title="Bookings & payments">

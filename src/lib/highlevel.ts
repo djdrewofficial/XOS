@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 // circular import back to this file. Re-exported below for existing importers.
 import { toE164 } from "@/lib/phone";
 import { isPhoneOptedOut, recordSmsOptSignal, classifySmsKeyword } from "@/lib/smsOptOut";
+import { smsMarketingDrainDecision, type MarketingHistoryRow } from "@/lib/smsMarketingConsent";
 
 /* ============ HighLevel (LeadConnector API v2) config ============
    Set in .env.local (and Netlify env for prod):
@@ -788,13 +789,51 @@ export async function processSmsOutbox(
     bypass_comms_pause?: boolean | null;
   }>;
   const clientIds = [...new Set(queued.map((m) => m.client_id).filter(Boolean) as string[])];
-  const clientById = new Map<string, { first_name?: string; last_name?: string; email?: string; sms_opt_in?: boolean }>();
+  const clientById = new Map<string, { first_name?: string; last_name?: string; email?: string; sms_opt_in?: boolean; cell_phone?: string | null }>();
+  const accountAuthByClient = new Map<string, string>();
   if (clientIds.length) {
-    const { data: clientRows } = await supabase
-      .from("clients")
-      .select("id, first_name, last_name, email, sms_opt_in")
-      .in("id", clientIds);
+    const [{ data: clientRows }, { data: accountRows }] = await Promise.all([
+      supabase.from("clients").select("id, first_name, last_name, email, sms_opt_in, cell_phone").in("id", clientIds),
+      supabase.from("accounts").select("client_id, auth_user_id").eq("account_type", "client").in("client_id", clientIds),
+    ]);
     for (const c of clientRows ?? []) clientById.set(c.id as string, c);
+    for (const account of accountRows ?? []) {
+      if (account.client_id && account.auth_user_id) accountAuthByClient.set(account.client_id as string, account.auth_user_id as string);
+    }
+  }
+
+  const historyByClient = new Map<string, MarketingHistoryRow[]>();
+  let historyReadOk = false;
+  if (clientIds.length) {
+    try {
+      const { data: consentRows, error: consentErr } = await supabase
+        .from("sms_marketing_consent_events")
+        .select("client_id, auth_user_id, phone_e164, action, created_at")
+        .in("client_id", clientIds)
+        .order("created_at", { ascending: true });
+      if (consentErr) {
+        console.error("processSmsOutbox: SMS marketing history read failed:", consentErr);
+      } else {
+        historyReadOk = true;
+        for (const row of consentRows ?? []) {
+          const clientId = row.client_id as string | null;
+          if (!clientId) continue;
+          if (row.action !== "grant" && row.action !== "withdraw") continue;
+          const list = historyByClient.get(clientId) ?? [];
+          list.push({
+            authUserId: (row.auth_user_id as string | null) ?? null,
+            phone: row.phone_e164 as string,
+            action: row.action,
+            createdAt: row.created_at as string,
+          });
+          historyByClient.set(clientId, list);
+        }
+      }
+    } catch (err) {
+      console.error("processSmsOutbox: SMS marketing history read failed:", err);
+    }
+  } else {
+    historyReadOk = true;
   }
 
   let sent = 0;
@@ -834,16 +873,26 @@ export async function processSmsOutbox(
       continue;
     }
 
-    // TCPA marketing-consent gate — a message flagged as marketing may only send
-    // to a recipient who has recorded SMS consent (clients.sms_opt_in). No client
-    // on file → no consent record → suppress. Transactional messages (default
-    // is_marketing=false) are unaffected.
+    // Marketing texts. The staff boolean applies only after a successful history
+    // read that found no rows. A missing table, missing column, timeout, or any
+    // other read error suppresses the marketing row. It is not sent and it is
+    // not left queued. Transactional messages skip this gate.
     if (channel === "SMS" && msg.is_marketing) {
-      const consented = msg.client_id ? clientById.get(msg.client_id)?.sms_opt_in === true : false;
-      if (!consented) {
+      const client = msg.client_id ? clientById.get(msg.client_id) : undefined;
+      const decision = smsMarketingDrainDecision({
+        isMarketing: true,
+        clientId: msg.client_id,
+        legacyOptIn: client?.sms_opt_in === true,
+        accountAuthUserId: msg.client_id ? accountAuthByClient.get(msg.client_id) ?? null : null,
+        currentCellPhone: client?.cell_phone ?? null,
+        toNumber: msg.to_number,
+        historyReadOk,
+        history: msg.client_id ? historyByClient.get(msg.client_id) ?? [] : [],
+      });
+      if (!decision.send) {
         await supabase
           .from("sms_log")
-          .update({ status: "suppressed", error: "no SMS marketing consent on file" })
+          .update({ status: "suppressed", error: decision.error })
           .eq("id", msg.id);
         suppressed++;
         continue;
