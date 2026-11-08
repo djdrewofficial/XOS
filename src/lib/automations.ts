@@ -35,7 +35,7 @@ export async function runAutomations(
   supabase: SupabaseClient,
   eventId: string,
   trigger: AutomationTrigger,
-  opts: { statusId?: string } = {}
+  opts: { statusId?: string; drain?: "all" | "event" } = {}
 ): Promise<void> {
   const { data: ev } = await supabase
     .from("events")
@@ -89,6 +89,7 @@ export async function runAutomations(
   if (matched.length === 0) return;
 
   let ran = false;
+  const queuedSince = new Date().toISOString();
   // A matched helper can assign a planning template. Apply once: only reseed when
   // it actually changes the event's template (so it never wipes planning twice).
   const desiredTemplate = matched.find((h) => h.planning_template_id)?.planning_template_id ?? null;
@@ -124,11 +125,17 @@ export async function runAutomations(
     }
   }
 
-  // deliver anything the helpers queued (emails/SMS)
+  // deliver anything the helpers queued (emails/SMS). "event" sends only rows
+  // queued for this event after this call started, not the whole outbox.
   if (ran) {
     try {
-      await processOutbox(supabase);
-      await processSmsOutbox(supabase);
+      if (opts.drain === "event") {
+        const { drainEventOutbox } = await import("@/lib/scopedOutbox");
+        await drainEventOutbox(admin, eventId, queuedSince);
+      } else {
+        await processOutbox(supabase);
+        await processSmsOutbox(supabase);
+      }
     } catch {
       /* the outbox cron retries */
     }

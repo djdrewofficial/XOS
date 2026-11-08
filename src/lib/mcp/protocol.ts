@@ -1,5 +1,5 @@
 import { canonicalJson, hashToken, hashesEqual, sha256 } from "./crypto";
-import { redact } from "./redact";
+import { auditView, redact } from "./redact";
 import { tokenDecision } from "./auth";
 import { missingScopes, scopesAllow } from "./scopes";
 import type { McpStore } from "./store";
@@ -55,7 +55,7 @@ const WHOAMI: LiveTool = {
 const CONFIRM: LiveTool = {
   name: "xos_confirm",
   description:
-    "Execute a risky action that was already previewed. Pass only the confirmation_id from that preview. The id is single-use, expires in 10 minutes, and is bound to the exact arguments and token from the preview. Calling a risky tool without this step never performs it. Sending different arguments here is rejected.",
+    "Read the status of a preview. This does not approve the action and does not run it. A signed-in person approves the exact receipt in XOS. A chat draft card is still required before a host asks for that approval.",
   scopes: [],
   confirm: false,
   inputSchema: {
@@ -113,7 +113,9 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
 
   const token = await store.findTokenByHash(hashToken(raw));
   if (!token || !hashesEqual(token.token_hash, hashToken(raw))) {
-    if (call.ip) await store.hitRateLimit("mcp:authfail", call.ip, limits.authFailsPerIp, limits.windowMs, now);
+    if (call.ip && (await limited(store, "mcp:authfail", call.ip, limits.authFailsPerIp, limits.windowMs, now))) {
+      return finish(429, rpcError(null, -32029, "Too many authentication attempts"), { status: "rate_limited", errorCode: "rate_limited" });
+    }
     return finish(401, rpcError(null, -32001, "Invalid bearer token"), { status: "unauthorized", errorCode: "invalid" });
   }
   tokenId = token.id;
@@ -130,7 +132,7 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
   }
   await store.touchToken(token.id, now);
 
-  if (await store.hitRateLimit("mcp:token", token.id, limits.perToken, limits.windowMs, now)) {
+  if (await limited(store, "mcp:token", token.id, limits.perToken, limits.windowMs, now)) {
     return finish(429, rpcError(null, -32029, "Rate limit exceeded"), { status: "rate_limited", errorCode: "rate_limited" });
   }
 
@@ -202,7 +204,7 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
   const keyFromArgs = typeof argsIn.idempotency_key === "string" ? argsIn.idempotency_key.trim() : "";
   delete argsIn.idempotency_key;
   idempotencyKey = (call.idempotencyKey ?? "").trim() || keyFromArgs || null;
-  argsRedacted = redact(argsIn, secrets);
+  argsRedacted = auditView(argsIn, secrets);
 
   const invalid = validateArgs(tool.inputSchema, argsIn);
   if (invalid) {
@@ -257,61 +259,68 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
   }
 
   if (tool.confirm) {
-    let preview: unknown;
+    let snapshot: unknown = { arguments: argsIn };
+    let shown: unknown = snapshot;
     try {
-      preview = tool.preview ? await tool.preview(argsIn, ctx) : { arguments: argsIn };
+      if (tool.freeze) snapshot = await tool.freeze(argsIn, ctx);
+      shown = tool.preview ? await tool.preview(argsIn, ctx) : snapshot;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Preview failed";
       return finish(200, rpcError(rpc.id, -32000, String(redact(message, secrets))), { status: "error", errorCode: "preview" });
     }
-    const safePreview = redact(preview, secrets);
+    const effectHash = sha256(canonicalJson(snapshot));
+    const receipt = redact({ receipt: shown, effect_snapshot: snapshot, effect_hash: effectHash }, secrets);
     const row = await store.createConfirmation({
       tokenId: token.id,
       toolName: tool.name,
       argsHash: sha256(canonicalJson(argsIn)),
       args: argsIn,
-      preview: safePreview,
+      preview: receipt,
       expiresAt: new Date(now.getTime() + CONFIRM_TTL_MS).toISOString(),
     });
     confirmationId = row.id;
     const payload = redact({
-      status: "confirmation_required",
+      status: "pending_human",
       executed: false,
+      approved: false,
       confirmation_id: row.id,
       expires_at: row.expiresAt,
       tool: tool.name,
-      preview: safePreview,
-      next: "Call xos_confirm with this confirmation_id to perform the action. The id is single-use and bound to these arguments.",
+      receipt: shown,
+      next: "A signed-in XOS master admin must approve this receipt in Settings → Agent Access. xos_confirm only reports status. It does not approve and it does not run the action. A chat draft card is still required before a host asks for that approval.",
     }, secrets);
     return finish(200, rpcOk(rpc.id, toolResult(payload, false)), { status: "confirmation_required" });
   }
 
-  if (idempotencyKey) {
-    const cached = await freshIdempotency(store, token.id, idempotencyKey, tool.name, sha256(canonicalJson(argsIn)), now);
-    if (cached === "mismatch") {
-      return finish(200, rpcError(rpc.id, -32000, "Idempotency key was already used for a different call"), { status: "error", errorCode: "idempotency" });
-    }
-    if (cached) return finish(200, rpcOk(rpc.id, cached), { status: "idempotent_replay" });
+  const write = harmfulWrite(tool);
+  if (write && !idempotencyKey) {
+    return finish(200, rpcError(rpc.id, -32602, "This write requires an Idempotency-Key of 8 to 200 characters."), { status: "error", errorCode: "idempotency" });
+  }
+  if (idempotencyKey && write) {
+    const reserved = await store.reserveIdempotency(token.id, idempotencyKey, tool.name, sha256(canonicalJson(argsIn)), now, IDEMPOTENCY_TTL_MS);
+    const blocked = idempotencyBlock(rpc.id, reserved);
+    if (blocked) return finish(blocked.status, blocked.body, blocked.audit);
+    if (reserved.kind === "replay") return finish(200, rpcOk(rpc.id, reserved.response), { status: "idempotent_replay" });
   }
 
-  if (await store.hitRateLimit("mcp:execute", token.id, limits.perExecute, limits.windowMs, now)) {
+  if (write && (await limited(store, "mcp:execute", token.id, limits.perExecute, limits.windowMs, now))) {
     return finish(429, rpcError(rpc.id, -32029, "Rate limit exceeded for writes"), { status: "rate_limited", errorCode: "rate_limited" });
   }
 
+  if (write && !(await beginAudit(store, { tokenId, tokenName, toolName, argsRedacted, confirmationId, idempotencyKey, requestId }))) {
+    return finish(503, rpcError(rpc.id, -32010, "Audit log unavailable. Nothing was changed."), { status: "error", errorCode: "audit" });
+  }
+
   const outcome = await runExecute(tool, argsIn, ctx, secrets);
-  if (idempotencyKey) {
-    await store.saveIdempotency(token.id, idempotencyKey, {
-      toolName: tool.name,
-      argsHash: sha256(canonicalJson(argsIn)),
-      response: outcome.body,
-    }, now);
+  if (idempotencyKey && write) {
+    await store.finishIdempotency(token.id, idempotencyKey, outcome.ok ? "completed" : "failed", outcome.body);
   }
   return finish(200, rpcOk(rpc.id, outcome.body), { status: outcome.ok ? "ok" : "error", errorCode: outcome.ok ? null : "tool" });
 }
 
 async function confirm(
   store: McpStore,
-  catalog: readonly LiveTool[],
+  _catalog: readonly LiveTool[],
   input: {
     rpcId: unknown;
     confirmationId: string;
@@ -324,71 +333,80 @@ async function confirm(
     setConfirmation: (id: string) => void;
   },
 ) {
+  void input.idempotencyKey;
+  void input.limits;
   input.setConfirmation(input.confirmationId);
   const row = await store.getConfirmation(input.confirmationId);
   if (!row || row.tokenId !== input.ctx.token.id) {
     return input.finish(200, rpcError(input.rpcId, -32004, "Confirmation not found"), { status: "error", errorCode: "confirmation_missing" });
   }
-  const tool = catalog.find((item) => item.name === row.toolName);
-  if (!tool || !tool.confirm) {
-    return input.finish(200, rpcError(input.rpcId, -32004, "Confirmation does not match a runnable tool"), { status: "error", errorCode: "confirmation_tool" });
-  }
-  if (!scopesAllow(input.ctx.token.scopes, tool.scopes)) {
-    return input.finish(200, rpcError(input.rpcId, -32003, `Missing scope: ${missingScopes(input.ctx.token.scopes, tool.scopes).join(", ")}`), {
-      status: "forbidden",
-      errorCode: "forbidden",
-    });
-  }
-  try {
-    await tool.authorize?.(row.args, input.ctx);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Not allowed";
-    return input.finish(200, rpcError(input.rpcId, err instanceof McpScopeError ? -32003 : -32000, String(redact(message, input.secrets))), {
-      status: err instanceof McpScopeError ? "forbidden" : "error",
-      errorCode: "authorize",
-    });
-  }
-  const argsHash = sha256(canonicalJson(row.args));
-  if (argsHash !== row.argsHash) {
-    return input.finish(200, rpcError(input.rpcId, -32004, "Confirmation arguments were tampered with"), { status: "error", errorCode: "confirmation_tamper" });
-  }
-  if (input.idempotencyKey) {
-    const cached = await freshIdempotency(store, input.ctx.token.id, input.idempotencyKey, tool.name, argsHash, input.now);
-    if (cached === "mismatch") {
-      return input.finish(200, rpcError(input.rpcId, -32000, "Idempotency key was already used for a different call"), { status: "error", errorCode: "idempotency" });
-    }
-    if (cached) return input.finish(200, rpcOk(input.rpcId, cached), { status: "idempotent_replay" });
-  }
-  if (row.usedAt) {
-    return input.finish(200, rpcError(input.rpcId, -32004, "Confirmation already used"), { status: "error", errorCode: "confirmation_replay" });
-  }
-  if (Date.parse(row.expiresAt) <= input.now.getTime()) {
-    return input.finish(200, rpcError(input.rpcId, -32004, "Confirmation expired"), { status: "error", errorCode: "confirmation_expired" });
-  }
-  if (await store.hitRateLimit("mcp:execute", input.ctx.token.id, input.limits.perExecute, input.limits.windowMs, input.now)) {
-    return input.finish(429, rpcError(input.rpcId, -32029, "Rate limit exceeded for writes"), { status: "rate_limited", errorCode: "rate_limited" });
-  }
-  const consumed = await store.consumeConfirmation(row.id, input.now);
-  if (!consumed) {
-    return input.finish(200, rpcError(input.rpcId, -32004, "Confirmation already used"), { status: "error", errorCode: "confirmation_replay" });
-  }
-  const outcome = await runExecute(tool, consumed.args, input.ctx, input.secrets);
-  if (input.idempotencyKey) {
-    await store.saveIdempotency(input.ctx.token.id, input.idempotencyKey, {
-      toolName: tool.name,
-      argsHash,
-      response: outcome.body,
-    }, input.now);
-  }
-  return input.finish(200, rpcOk(input.rpcId, outcome.body), { status: outcome.ok ? "ok" : "error", errorCode: outcome.ok ? null : "tool" });
+  const payload = redact({
+    executed: Boolean(row.usedAt),
+    approved: Boolean(row.approvedAt),
+    rejected: Boolean(row.rejectedAt),
+    expired: Date.parse(row.expiresAt) <= input.now.getTime(),
+    tool: row.toolName,
+    receipt: (row.preview as { receipt?: unknown } | null)?.receipt ?? row.preview,
+    result: row.result,
+    message: row.usedAt
+      ? "A person already approved this in XOS and it has run. This call did not run it again."
+      : "This call does not approve and does not run the action. A signed-in person has to approve the receipt in XOS.",
+  }, input.secrets);
+  return input.finish(200, rpcOk(input.rpcId, toolResult(payload, false)), { status: "ok" });
 }
 
-async function freshIdempotency(store: McpStore, tokenId: string, key: string, toolName: string, argsHash: string, now: Date) {
-  const row = await store.getIdempotency(tokenId, key);
-  if (!row) return null;
-  if (now.getTime() - Date.parse(row.createdAt) > IDEMPOTENCY_TTL_MS) return null;
-  if (row.toolName !== toolName || row.argsHash !== argsHash) return "mismatch" as const;
-  return row.response;
+/** Runs a preview only after a signed-in person has been recorded as the approver.
+    The agent bearer cannot call this. Mutable template and helper snapshots are
+    checked again and the action is refused if they changed. */
+export async function executeHumanApproved(
+  store: McpStore,
+  tools: readonly LiveTool[],
+  input: {
+    confirmationId: string;
+    userId: string;
+    token: { id: string; name: string; scopes: readonly string[] };
+    now: Date;
+    admin: SupabaseClient;
+    secrets: readonly string[];
+  },
+): Promise<{ ok: boolean; body: unknown }> {
+  if (!input.userId) throw new Error("A signed-in person is required.");
+  const row = await store.getConfirmation(input.confirmationId);
+  if (!row) throw new Error("Approval not found.");
+  if (row.tokenId !== input.token.id) throw new Error("Approval not found.");
+  if (row.usedAt) throw new Error("This preview was already performed.");
+  if (row.rejectedAt) throw new Error("This preview was rejected.");
+  if (Date.parse(row.expiresAt) <= input.now.getTime()) throw new Error("This preview expired. Ask for a new one.");
+  const tool = tools.find((item) => item.name === row.toolName);
+  if (!tool?.confirm) throw new Error("This preview cannot be run.");
+  if (sha256(canonicalJson(row.args)) !== row.argsHash) throw new Error("Stored arguments do not match the receipt.");
+  if (!scopesAllow(input.token.scopes, tool.scopes)) throw new Error("The token no longer has the scopes for this action.");
+  const ctx: ToolContext = { now: input.now, token: input.token, admin: input.admin };
+  await tool.authorize?.(row.args, ctx);
+  if (tool.freeze) {
+    const fresh = await tool.freeze(row.args, ctx);
+    const stored = (row.preview as { effect_hash?: string } | null)?.effect_hash;
+    if (!stored || sha256(canonicalJson(fresh)) !== stored) {
+      throw new Error("A template or helper changed after the preview. Nothing was run. Ask for a new preview.");
+    }
+  }
+  const begun = await beginAudit(store, {
+    tokenId: row.tokenId,
+    tokenName: input.token.name,
+    toolName: row.toolName,
+    argsRedacted: auditView(row.args, input.secrets),
+    confirmationId: row.id,
+    idempotencyKey: null,
+    requestId: null,
+  });
+  if (!begun) throw new Error("Audit log unavailable. Nothing was changed.");
+  const decided = await store.decideConfirmation(row.id, { userId: input.userId, now: input.now, kind: "approve" });
+  if (!decided?.approvedBy) throw new Error("Could not record the approval. Nothing was run.");
+  const consumed = await store.consumeConfirmation(row.id, input.now);
+  if (!consumed) throw new Error("This preview was already performed.");
+  const outcome = await runExecute(tool, consumed.args, ctx, input.secrets);
+  await store.saveConfirmationResult(row.id, outcome.body);
+  return outcome;
 }
 
 async function runExecute(tool: LiveTool, args: Record<string, unknown>, ctx: ToolContext, secrets: readonly string[]) {
@@ -403,12 +421,61 @@ async function runExecute(tool: LiveTool, args: Record<string, unknown>, ctx: To
   }
 }
 
+function harmfulWrite(tool: LiveTool) {
+  return tool.confirm || tool.writes === true;
+}
+
+function idempotencyBlock(id: unknown, reserved: { kind: string; response?: unknown }) {
+  if (reserved.kind === "invalid_key") {
+    return { status: 200, body: rpcError(id, -32602, "Idempotency key must be 8 to 200 characters with no whitespace."), audit: { status: "error", errorCode: "idempotency" } };
+  }
+  if (reserved.kind === "mismatch") {
+    return { status: 200, body: rpcError(id, -32000, "Idempotency key was already used for a different call"), audit: { status: "error", errorCode: "idempotency" } };
+  }
+  if (reserved.kind === "in_progress") {
+    return { status: 409, body: rpcError(id, -32011, "A call with this idempotency key is still running."), audit: { status: "error", errorCode: "idempotency" } };
+  }
+  if (reserved.kind === "uncertain") {
+    return { status: 409, body: rpcError(id, -32012, "An earlier call with this key did not finish cleanly. Do not retry it. Check whether the effect happened, then use a new key."), audit: { status: "error", errorCode: "idempotency" } };
+  }
+  return null;
+}
+
+async function limited(store: McpStore, bucket: string, key: string, max: number, windowMs: number, now: Date) {
+  try {
+    return await store.hitRateLimit(bucket, key, max, windowMs, now);
+  } catch {
+    return true;
+  }
+}
+
+async function beginAudit(
+  store: McpStore,
+  row: { tokenId: string | null; tokenName: string | null; toolName: string | null; argsRedacted: unknown; confirmationId: string | null; idempotencyKey: string | null; requestId: string | null },
+) {
+  try {
+    await store.insertAudit({
+      ...row,
+      status: "begun",
+      errorCode: null,
+      durationMs: null,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function publicTool(tool: LiveTool) {
+  const human = tool.confirm
+    ? " A person must approve the exact receipt in XOS before this runs. xos_confirm does not approve it and does not run it."
+    : "";
+  const draft = tool.scopes.some((scope) => scope.startsWith("comms."))
+    ? " A chat host must still show a draft card for a human to accept. This confirmation id is not that card."
+    : "";
   return {
     name: tool.name,
-    description: tool.confirm
-      ? `${tool.description} Requires confirmation: the first call returns a preview and confirmation_id and does not perform the action.`
-      : tool.description,
+    description: `${tool.description}${human}${draft}`,
     inputSchema: tool.inputSchema,
     annotations: tool.confirm ? { destructiveHint: true, readOnlyHint: false } : undefined,
   };

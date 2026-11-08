@@ -1,4 +1,11 @@
 import type { ServiceTokenRow } from "./auth";
+import {
+  decideIdempotency,
+  idempotencyKeyError,
+  type IdempotencyDecision,
+  type IdempotencySnapshot,
+  type IdempotencyStatus,
+} from "./idempotency";
 
 export type AuditRow = {
   tokenId: string | null;
@@ -22,14 +29,15 @@ export type ConfirmationRow = {
   preview: unknown;
   expiresAt: string;
   usedAt: string | null;
+  /** Set only by a signed-in XOS staff session. An agent token cannot write this. */
+  approvedAt: string | null;
+  approvedBy: string | null;
+  rejectedAt: string | null;
+  rejectedBy: string | null;
+  result: unknown;
 };
 
-export type IdempotencyRow = {
-  toolName: string;
-  argsHash: string;
-  response: unknown;
-  createdAt: string;
-};
+export type IdempotencyRow = IdempotencySnapshot;
 
 export interface McpStore {
   findTokenByHash(hash: string): Promise<ServiceTokenRow | null>;
@@ -38,12 +46,16 @@ export interface McpStore {
   audits(): Promise<AuditRow[]>;
   /** True when the key is already at `max` inside the window. Records a hit only when allowed. */
   hitRateLimit(bucket: string, key: string, max: number, windowMs: number, now: Date): Promise<boolean>;
-  createConfirmation(row: Omit<ConfirmationRow, "id" | "usedAt"> & { id?: string }): Promise<ConfirmationRow>;
+  createConfirmation(row: Omit<ConfirmationRow, "id" | "usedAt" | "approvedAt" | "approvedBy" | "rejectedAt" | "rejectedBy" | "result"> & { id?: string }): Promise<ConfirmationRow>;
   getConfirmation(id: string): Promise<ConfirmationRow | null>;
+  /** Staff session only. Does not run the tool. */
+  decideConfirmation(id: string, decision: { userId: string; now: Date; kind: "approve" | "reject" }): Promise<ConfirmationRow | null>;
+  saveConfirmationResult(id: string, result: unknown): Promise<void>;
   /** Marks the confirmation used if it is still unused. Returns null when it was already used. */
   consumeConfirmation(id: string, now: Date): Promise<ConfirmationRow | null>;
-  getIdempotency(tokenId: string, key: string): Promise<IdempotencyRow | null>;
-  saveIdempotency(tokenId: string, key: string, row: Omit<IdempotencyRow, "createdAt">, now: Date): Promise<void>;
+  /** Claims the key before any effect. Concurrent callers cannot both receive "owned". */
+  reserveIdempotency(tokenId: string, key: string, toolName: string, argsHash: string, now: Date, ttlMs: number): Promise<IdempotencyDecision>;
+  finishIdempotency(tokenId: string, key: string, status: IdempotencyStatus, response: unknown): Promise<void>;
 }
 
 export function memoryStore(): { store: McpStore; addToken(row: ServiceTokenRow): void } {
@@ -72,9 +84,12 @@ export function memoryStore(): { store: McpStore; addToken(row: ServiceTokenRow)
     },
     async hitRateLimit(bucket, key, max, windowMs, now) {
       const cutoff = now.getTime() - windowMs;
-      const recent = hits.filter((hit) => hit.bucket === bucket && hit.key === key && hit.at > cutoff);
-      if (recent.length >= max) return true;
       hits.push({ bucket, key, at: now.getTime() });
+      const recent = hits.filter((hit) => hit.bucket === bucket && hit.key === key && hit.at > cutoff);
+      if (recent.length > max) {
+        hits.pop();
+        return true;
+      }
       return false;
     },
     async createConfirmation(row) {
@@ -87,9 +102,32 @@ export function memoryStore(): { store: McpStore; addToken(row: ServiceTokenRow)
         preview: row.preview,
         expiresAt: row.expiresAt,
         usedAt: null,
+        approvedAt: null,
+        approvedBy: null,
+        rejectedAt: null,
+        rejectedBy: null,
+        result: null,
       };
       confirmations.push(saved);
       return saved;
+    },
+    async decideConfirmation(id, decision) {
+      const row = confirmations.find((item) => item.id === id);
+      if (!row || row.usedAt || row.rejectedAt) return null;
+      if (Date.parse(row.expiresAt) <= decision.now.getTime()) return null;
+      if (!decision.userId) return null;
+      if (decision.kind === "reject") {
+        row.rejectedAt = decision.now.toISOString();
+        row.rejectedBy = decision.userId;
+      } else if (!row.approvedAt) {
+        row.approvedAt = decision.now.toISOString();
+        row.approvedBy = decision.userId;
+      }
+      return { ...row, args: { ...row.args } };
+    },
+    async saveConfirmationResult(id, result) {
+      const row = confirmations.find((item) => item.id === id);
+      if (row) row.result = result;
     },
     async getConfirmation(id) {
       const row = confirmations.find((item) => item.id === id);
@@ -101,13 +139,34 @@ export function memoryStore(): { store: McpStore; addToken(row: ServiceTokenRow)
       row.usedAt = now.toISOString();
       return { ...row, args: { ...row.args } };
     },
-    async getIdempotency(tokenId, key) {
-      return idem.get(`${tokenId}:${key}`) ?? null;
+    async reserveIdempotency(tokenId, key, toolName, argsHash, now, ttlMs) {
+      if (idempotencyKeyError(key)) return { kind: "invalid_key" };
+      const mapKey = `${tokenId}:${key}`;
+      const existing = idem.get(mapKey) ?? null;
+      const decision = decideIdempotency({
+        existing,
+        toolName,
+        argsHash,
+        now: now.getTime(),
+        ttlMs,
+      });
+      if (decision.kind === "owned") {
+        idem.set(mapKey, {
+          toolName,
+          argsHash,
+          response: null,
+          createdAt: now.toISOString(),
+          status: "running",
+        });
+      }
+      return decision;
     },
-    async saveIdempotency(tokenId, key, row, now) {
-      const existing = idem.get(`${tokenId}:${key}`);
-      if (existing) return;
-      idem.set(`${tokenId}:${key}`, { ...row, createdAt: now.toISOString() });
+    async finishIdempotency(tokenId, key, status, response) {
+      const mapKey = `${tokenId}:${key}`;
+      const existing = idem.get(mapKey);
+      if (!existing) return;
+      existing.status = status;
+      existing.response = response;
     },
   };
 

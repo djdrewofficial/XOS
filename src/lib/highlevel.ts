@@ -741,7 +741,8 @@ export async function sendDirectSms(opts: {
 /** Drains queued rows from sms_log through HighLevel.
     Pass a service-role client when running without a user session (cron, sign flow). */
 export async function processSmsOutbox(
-  client?: SupabaseClient
+  client?: SupabaseClient,
+  opts?: { onlyIds?: string[] },
 ): Promise<{ sent: number; failed: number; suppressed: number; skipped: string | null; error?: string }> {
   if (!isHighLevelConfigured()) {
     return {
@@ -759,9 +760,16 @@ export async function processSmsOutbox(
   // provider round-trip — two overlapping drains would text the same client
   // twice. claim_sms_outbox flips each row under FOR UPDATE SKIP LOCKED so a row
   // is only ever handed to the one caller that owns it.
-  const { data: claimed, error: queueError } = await supabase.rpc("claim_sms_outbox", {
-    p_limit: 50,
-  });
+  const onlyIds = opts?.onlyIds;
+  if (onlyIds && onlyIds.length === 0) return { sent: 0, failed: 0, suppressed: 0, skipped: null };
+  const { data: claimed, error: queueError } = onlyIds
+    ? await supabase
+        .from("sms_log")
+        .update({ status: "sending", claimed_at: new Date().toISOString() })
+        .in("id", onlyIds)
+        .eq("status", "queued")
+        .select("*")
+    : await supabase.rpc("claim_sms_outbox", { p_limit: 50 });
 
   // A failed claim must NOT masquerade as an empty queue ("sent 0, healthy") —
   // surface it so the cron reports failure instead of silently sending nothing.

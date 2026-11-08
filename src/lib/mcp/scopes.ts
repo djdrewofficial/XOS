@@ -30,6 +30,7 @@ export const MCP_SCOPES = [
   "comms.email",
   "comms.sms",
   "comms.contract",
+  "comms.webhook",
   "helpers.run",
 ] as const;
 

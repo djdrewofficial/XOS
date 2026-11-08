@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { getMe, requireMaster } from "@/lib/auth";
 import { generateServiceToken } from "@/lib/mcp/crypto";
+import { executeHumanApproved } from "@/lib/mcp/protocol";
+import { secretValuesFromEnv } from "@/lib/mcp/redact";
 import { assertScopes } from "@/lib/mcp/scopes";
+import { supabaseStore } from "@/lib/mcp/supabaseStore";
+import { officeTools } from "@/lib/mcp/tools/office";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type TokenFlash = { token: string; prefix: string; name: string } | { error: string } | null;
@@ -50,26 +54,74 @@ export async function rotateMcpToken(_prev: TokenFlash, formData: FormData): Pro
   const admin = createAdminClient();
   const { data: old } = await admin
     .from("mcp_service_tokens")
-    .select("id, name, scopes, note")
+    .select("id, name, scopes, note, expires_at")
     .eq("id", id)
     .is("revoked_at", null)
     .maybeSingle();
   if (!old) return { error: "That token is not active." };
   const minted = generateServiceToken();
   const me = await getMe();
-  const { error } = await admin.from("mcp_service_tokens").insert({
+  const { data: created, error } = await admin.from("mcp_service_tokens").insert({
     name: old.name,
     token_prefix: minted.prefix,
     token_hash: minted.hash,
     scopes: old.scopes,
+    expires_at: old.expires_at,
     rotated_from_id: old.id,
     note: old.note,
     created_by: me?.userId ?? null,
-  });
-  if (error) return { error: "Could not rotate the token." };
-  await admin.from("mcp_service_tokens").update({ overlap_until: new Date(Date.now() + hours * 3_600_000).toISOString() }).eq("id", old.id);
+  }).select("id").single();
+  if (error || !created) return { error: "Could not rotate the token." };
+  const { error: overlapError } = await admin
+    .from("mcp_service_tokens")
+    .update({ overlap_until: new Date(Date.now() + hours * 3_600_000).toISOString() })
+    .eq("id", old.id);
+  if (overlapError) {
+    await admin.from("mcp_service_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", created.id);
+    return { error: "Rotation did not finish. The new token was revoked and the old token is unchanged." };
+  }
   revalidatePath("/settings/mcp");
   return { token: minted.raw, prefix: minted.prefix, name: old.name as string };
+}
+
+/** The only path that runs a sensitive preview. Requires the signed-in master admin, not an agent token. */
+export async function approveMcpPreview(formData: FormData) {
+  await requireMaster();
+  const me = await getMe();
+  if (!me?.userId) throw new Error("Not signed in.");
+  const id = String(formData.get("confirmation_id") ?? "");
+  const admin = createAdminClient();
+  const { data: row, error } = await admin.from("mcp_confirmations").select("token_id").eq("id", id).maybeSingle();
+  if (error || !row) throw new Error("That preview is not available. Apply migration 00218 before approving.");
+  const { data: token, error: tokenError } = await admin
+    .from("mcp_service_tokens")
+    .select("id, name, scopes, revoked_at, expires_at, overlap_until")
+    .eq("id", row.token_id)
+    .maybeSingle();
+  if (tokenError || !token || token.revoked_at) throw new Error("The agent token is not active.");
+  await executeHumanApproved(supabaseStore(admin), officeTools, {
+    confirmationId: id,
+    userId: me.userId,
+    token: { id: token.id as string, name: token.name as string, scopes: (token.scopes as string[]) ?? [] },
+    now: new Date(),
+    admin,
+    secrets: secretValuesFromEnv(process.env),
+  });
+  revalidatePath("/settings/mcp");
+}
+
+export async function rejectMcpPreview(formData: FormData) {
+  await requireMaster();
+  const me = await getMe();
+  if (!me?.userId) throw new Error("Not signed in.");
+  const id = String(formData.get("confirmation_id") ?? "");
+  const decided = await supabaseStore(createAdminClient()).decideConfirmation(id, {
+    userId: me.userId,
+    now: new Date(),
+    kind: "reject",
+  });
+  if (!decided) throw new Error("That preview can no longer be rejected.");
+  revalidatePath("/settings/mcp");
 }
 
 export async function revokeMcpToken(formData: FormData) {

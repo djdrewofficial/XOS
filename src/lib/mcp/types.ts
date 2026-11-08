@@ -10,6 +10,8 @@ export type ToolContext = {
 
 export type ToolHandler = {
   preview?(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>;
+  /** Snapshot of mutable templates, helpers, recipients, and bodies. Re-checked at human approval. */
+  freeze?(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>;
   /** Extra scope check once arguments are known (a helper that texts needs comms.sms). */
   authorize?(args: Record<string, unknown>, ctx: ToolContext): Promise<void>;
   execute(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>;
@@ -20,6 +22,8 @@ export type ToolSpec = {
   description: string;
   scopes: readonly string[];
   confirm: boolean;
+  /** Mutating tools require an idempotency key. Confirm implies a write. */
+  writes?: boolean;
   inputSchema: JsonSchema;
 };
 

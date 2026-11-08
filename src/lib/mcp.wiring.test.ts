@@ -60,8 +60,9 @@ describe("mcp tool catalog", () => {
     assert.match(send, /agreementEmailHtml/);
     assert.match(send, /processOutbox/);
     assert.match(helper, /run_booking_helper/);
-    assert.match(helper, /processOutbox/);
-    assert.match(helper, /processSmsOutbox/);
+    assert.match(helper, /drainEventOutbox/);
+    assert.doesNotMatch(helper, /processOutbox\(/);
+    assert.doesNotMatch(helper, /processSmsOutbox\(/);
     assert.doesNotMatch(office, /SUPABASE_SERVICE_ROLE_KEY/);
     assert.doesNotMatch(send, /console\.log/);
   });

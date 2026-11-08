@@ -1,15 +1,18 @@
 const SENSITIVE_KEY =
   /password|secret|token|api[_-]?key|authorization|service[_-]?role|cookie|cvv|ssn|card|bearer|private[_-]?key|webhook/i;
 
-const MAX_STRING = 500;
+const AUDIT_DROP = /body|html|note|content|preview|message|subject/i;
+const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const PHONE = /\+?\d[\d\s().-]{8,}\d/g;
 
-/** Drop secret-shaped fields and any string that contains a known secret value.
-    Used for audit rows and for tool results before they leave the process. */
+/** Remove known secrets and secret-shaped fields. Does not shorten text or lists.
+    Approval receipts and tool results use this so a preview cannot silently
+    differ from what would run. */
 export function redact(value: unknown, secrets: readonly string[] = [], depth = 0): unknown {
-  if (depth > 8) return "[truncated]";
-  if (typeof value === "string") return redactString(value, secrets);
+  if (depth > 20) return "[depth limit]";
+  if (typeof value === "string") return stripSecrets(value, secrets);
   if (typeof value === "number" || typeof value === "boolean" || value == null) return value;
-  if (Array.isArray(value)) return value.slice(0, 50).map((item) => redact(item, secrets, depth + 1));
+  if (Array.isArray(value)) return value.map((item) => redact(item, secrets, depth + 1));
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
@@ -20,12 +23,37 @@ export function redact(value: unknown, secrets: readonly string[] = [], depth = 
   return "[unsupported]";
 }
 
-function redactString(value: string, secrets: readonly string[]): string {
+/** Audit rows keep identifiers and outcomes. Message bodies, subjects, and
+    contact details are not stored. */
+export function auditView(value: unknown, secrets: readonly string[] = [], depth = 0): unknown {
+  if (depth > 8) return "[omitted]";
+  if (typeof value === "string") {
+    const clean = stripSecrets(value, secrets).replace(EMAIL, "[email]").replace(PHONE, "[phone]");
+    return clean.length > 120 ? `[text ${clean.length} chars]` : clean;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value == null) return value;
+  if (Array.isArray(value)) {
+    return { count: value.length, sample: value.slice(0, 5).map((item) => auditView(item, secrets, depth + 1)) };
+  }
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (SENSITIVE_KEY.test(key) || AUDIT_DROP.test(key)) {
+        out[key] = "[omitted]";
+      } else {
+        out[key] = auditView(child, secrets, depth + 1);
+      }
+    }
+    return out;
+  }
+  return "[unsupported]";
+}
+
+function stripSecrets(value: string, secrets: readonly string[]): string {
   let out = value;
   for (const secret of secrets) {
     if (secret.length >= 8 && out.includes(secret)) out = out.split(secret).join("[redacted]");
   }
-  if (out.length > MAX_STRING) return `${out.slice(0, MAX_STRING)}…`;
   return out;
 }
 

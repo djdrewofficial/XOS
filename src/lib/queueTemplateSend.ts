@@ -1,12 +1,34 @@
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
+import { isPhoneOptedOut } from "@/lib/smsOptOut";
+import { assertSmsBody, classifyAgentSms } from "@/lib/mcp/smsPolicy";
 
 type Sender = { name?: string; email?: string; reply_to?: string };
 
 /** Preview a template send without queueing it. Recipient and rendered subject
     only — the body can contain client details, so the preview keeps a short note
     instead of the full HTML. */
+/** Version stamp for an email template. Approval refuses the send if this changes. */
+export async function freezeTemplateEmail(
+  admin: SupabaseClient,
+  input: { eventId: string; templateId: string; to: "primary_client" | "custom"; address?: string | null },
+) {
+  const template = await loadTemplate(admin, input.templateId, false);
+  const rendered = await previewTemplateEmail(admin, input);
+  return {
+    template_id: template.id,
+    template_updated_at: template.updated_at ?? null,
+    template_body_sha256: sha256(template.body_html ?? ""),
+    subject_template_sha256: sha256(template.subject ?? ""),
+    attach_template_id: template.attach_template_id,
+    rendered_to: rendered.to,
+    rendered_subject: rendered.subject,
+    rendered_body_sha256: sha256(rendered.body ?? ""),
+  };
+}
+
 export async function previewTemplateEmail(
   admin: SupabaseClient,
   input: { eventId: string; templateId: string; to: "primary_client" | "custom"; address?: string | null },
@@ -14,13 +36,17 @@ export async function previewTemplateEmail(
   const template = await loadTemplate(admin, input.templateId, false);
   const to = await resolveTo(admin, input);
   const subject = await renderTags(admin, input.eventId, template.subject ?? "");
+  const body = await renderTags(admin, input.eventId, template.body_html ?? "");
   return {
+    template_id: template.id,
     template: template.name,
+    template_updated_at: template.updated_at ?? null,
     to,
     subject,
+    body,
     attaches_document: Boolean(template.attach_template_id),
     is_sms: template.is_sms === true,
-    note: "Nothing has been sent. Confirming queues this through the booking-helper email path and then runs the outbox, which fills quote, payment-plan, and sign-link tags.",
+    send_time_tags: "quote_summary, payment_plan, and document_sign_link are filled when the outbox sends. A template that uses those tags is not byte-identical until that moment. The template version above is what approval locks.",
   };
 }
 
@@ -40,7 +66,7 @@ export async function sendTemplateEmail(
   const subject = await renderTags(admin, input.eventId, template.subject ?? "");
   const body = await renderTags(admin, input.eventId, template.body_html ?? "");
   const { data: event } = await admin.from("events").select("client_id").eq("id", input.eventId).maybeSingle();
-  const { error } = await admin.from("email_log").insert({
+  const { data: queued, error } = await admin.from("email_log").insert({
     event_id: input.eventId,
     client_id: event?.client_id ?? null,
     template_id: template.id,
@@ -52,10 +78,10 @@ export async function sendTemplateEmail(
     body_html: body,
     status: "queued",
     bypass_comms_pause: true,
-  });
+  }).select("id").single();
   if (error) throw new Error(error.message);
-  const drained = await processOutbox(admin);
-  return { to, subject, drained };
+  const drained = await processOutbox(admin, { onlyIds: [queued.id as string] });
+  return { to, subject, body, drained };
 }
 
 export async function previewSms(
@@ -63,11 +89,15 @@ export async function previewSms(
   input: { eventId: string; body?: string | null; templateId?: string | null; to: "primary_client" | "custom"; number?: string | null },
 ) {
   const to = await resolveSmsTo(admin, input);
-  const body = await smsBody(admin, input);
+  const body = assertSmsBody(await smsBody(admin, input));
+  const template = input.templateId ? await loadTemplate(admin, input.templateId, true) : null;
+  const classification = classifyAgentSms({ templateId: input.templateId ?? null, templateIsMarketing: template?.sms_marketing === true });
   return {
     to,
     body,
-    note: "Nothing has been sent. Confirming queues an SMS and sends it through the HighLevel outbox.",
+    classification,
+    stop_checked: true,
+    note: "Nothing has been sent. A person must approve this exact text. Freeform texts are marketing and still pass the consent gate. STOP is always honored.",
   };
 }
 
@@ -77,26 +107,23 @@ export async function sendSms(
 ) {
   const to = await resolveSmsTo(admin, input);
   if (!to) throw new Error("No mobile number to text.");
-  const body = await smsBody(admin, input);
-  if (!body.trim()) throw new Error("The text is empty.");
+  if (await isPhoneOptedOut(admin, to)) throw new Error("This number is opted out (STOP). Nothing was sent.");
+  const body = assertSmsBody(await smsBody(admin, input));
+  const template = input.templateId ? await loadTemplate(admin, input.templateId, true) : null;
+  const classification = classifyAgentSms({ templateId: input.templateId ?? null, templateIsMarketing: template?.sms_marketing === true });
   const { data: event } = await admin.from("events").select("client_id").eq("id", input.eventId).maybeSingle();
-  let isMarketing = false;
-  if (input.templateId) {
-    const template = await loadTemplate(admin, input.templateId, true);
-    isMarketing = template.sms_marketing === true;
-  }
-  const { error } = await admin.from("sms_log").insert({
+  const { data: queued, error } = await admin.from("sms_log").insert({
     event_id: input.eventId,
     client_id: event?.client_id ?? null,
     to_number: to,
     body,
     status: "queued",
-    is_marketing: isMarketing,
+    is_marketing: classification.isMarketing,
     bypass_comms_pause: true,
-  });
+  }).select("id").single();
   if (error) throw new Error(error.message);
-  const drained = await processSmsOutbox(admin);
-  return { to, drained };
+  const drained = await processSmsOutbox(admin, { onlyIds: [queued.id as string] });
+  return { to, body, classification, drained };
 }
 
 async function loadTemplate(admin: SupabaseClient, id: string, sms: boolean) {
@@ -109,10 +136,15 @@ async function loadTemplate(admin: SupabaseClient, id: string, sms: boolean) {
     name: string;
     subject: string | null;
     body_html: string | null;
+    updated_at: string | null;
     is_sms: boolean | null;
     sms_marketing: boolean | null;
     attach_template_id: string | null;
   };
+}
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 async function resolveTo(admin: SupabaseClient, input: { eventId: string; to: "primary_client" | "custom"; address?: string | null }) {

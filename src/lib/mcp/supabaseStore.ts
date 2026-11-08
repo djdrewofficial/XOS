@@ -1,8 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ServiceTokenRow } from "./auth";
+import { decideIdempotency, idempotencyKeyError, type IdempotencyStatus } from "./idempotency";
 import type { AuditRow, ConfirmationRow, IdempotencyRow, McpStore } from "./store";
 
-/** Service-role access to the MCP tables. The raw bearer token is never written. */
+const CONFIRMATION_COLUMNS =
+  "id, token_id, tool_name, args_hash, args, preview, expires_at, used_at, approved_at, approved_by, rejected_at, rejected_by, result";
+
+/** Service-role access to the MCP tables. The raw bearer token is never written.
+    Rate-limit and audit errors throw so the caller can fail closed. */
 export function supabaseStore(admin: SupabaseClient): McpStore {
   return {
     async findTokenByHash(hash) {
@@ -18,7 +23,7 @@ export function supabaseStore(admin: SupabaseClient): McpStore {
       await admin.from("mcp_service_tokens").update({ last_used_at: at.toISOString() }).eq("id", id);
     },
     async insertAudit(row: AuditRow) {
-      await admin.from("mcp_audit_log").insert({
+      const { error } = await admin.from("mcp_audit_log").insert({
         token_id: row.tokenId,
         token_name: row.tokenName,
         tool_name: row.toolName,
@@ -30,21 +35,20 @@ export function supabaseStore(admin: SupabaseClient): McpStore {
         idempotency_key: row.idempotencyKey,
         request_id: row.requestId,
       });
+      if (error) throw new Error("Audit log write failed.");
     },
     async audits() {
       return [];
     },
-    async hitRateLimit(bucket, key, max, windowMs, now) {
-      const since = new Date(now.getTime() - windowMs).toISOString();
-      const { count } = await admin
-        .from("rate_limit_hits")
-        .select("id", { count: "exact", head: true })
-        .eq("bucket", bucket)
-        .eq("key", key)
-        .gt("created_at", since);
-      if ((count ?? 0) >= max) return true;
-      await admin.from("rate_limit_hits").insert({ bucket, key });
-      return false;
+    async hitRateLimit(bucket, key, max, windowMs) {
+      const { data, error } = await admin.rpc("mcp_rate_hit", {
+        p_bucket: bucket,
+        p_key: key,
+        p_max: max,
+        p_window_ms: windowMs,
+      });
+      if (error) throw new Error("Rate limit unavailable.");
+      return data === true;
     },
     async createConfirmation(row) {
       const { data, error } = await admin
@@ -57,56 +61,124 @@ export function supabaseStore(admin: SupabaseClient): McpStore {
           preview: row.preview,
           expires_at: row.expiresAt,
         })
-        .select("id, token_id, tool_name, args_hash, args, preview, expires_at, used_at")
+        .select(CONFIRMATION_COLUMNS)
         .single();
       if (error || !data) throw new Error("Could not store the confirmation.");
       return mapConfirmation(data);
     },
     async getConfirmation(id) {
-      const { data } = await admin
-        .from("mcp_confirmations")
-        .select("id, token_id, tool_name, args_hash, args, preview, expires_at, used_at")
-        .eq("id", id)
-        .maybeSingle();
+      const { data, error } = await admin.from("mcp_confirmations").select(CONFIRMATION_COLUMNS).eq("id", id).maybeSingle();
+      if (error) throw new Error("Could not read the approval.");
       return data ? mapConfirmation(data) : null;
     },
+    async decideConfirmation(id, decision) {
+      const patch =
+        decision.kind === "reject"
+          ? { rejected_at: decision.now.toISOString(), rejected_by: decision.userId }
+          : { approved_at: decision.now.toISOString(), approved_by: decision.userId };
+      let query = admin
+        .from("mcp_confirmations")
+        .update(patch)
+        .eq("id", id)
+        .is("used_at", null)
+        .is("rejected_at", null)
+        .gt("expires_at", decision.now.toISOString());
+      if (decision.kind === "approve") query = query.is("approved_at", null);
+      const { data, error } = await query.select(CONFIRMATION_COLUMNS).maybeSingle();
+      if (error) throw new Error("Could not record the human decision.");
+      return data ? mapConfirmation(data) : null;
+    },
+    async saveConfirmationResult(id, result) {
+      const { error } = await admin.from("mcp_confirmations").update({ result }).eq("id", id);
+      if (error) throw new Error("Could not store the approval result.");
+    },
     async consumeConfirmation(id, now) {
-      const { data } = await admin
+      const { data, error } = await admin
         .from("mcp_confirmations")
         .update({ used_at: now.toISOString() })
         .eq("id", id)
         .is("used_at", null)
-        .select("id, token_id, tool_name, args_hash, args, preview, expires_at, used_at")
+        .select(CONFIRMATION_COLUMNS)
         .maybeSingle();
+      if (error) throw new Error("Could not consume the approval.");
       return data ? mapConfirmation(data) : null;
     },
-    async getIdempotency(tokenId, key) {
-      const { data } = await admin
+    async reserveIdempotency(tokenId, key, toolName, argsHash, now, ttlMs) {
+      if (idempotencyKeyError(key)) return { kind: "invalid_key" };
+      const { data: inserted, error: insertError } = await admin
         .from("mcp_idempotency_keys")
-        .select("tool_name, args_hash, response, created_at")
-        .eq("token_id", tokenId)
-        .eq("idempotency_key", key)
-        .maybeSingle();
-      if (!data) return null;
-      return {
-        toolName: data.tool_name as string,
-        argsHash: data.args_hash as string,
-        response: data.response,
-        createdAt: data.created_at as string,
-      } satisfies IdempotencyRow;
-    },
-    async saveIdempotency(tokenId, key, row) {
-      await admin.from("mcp_idempotency_keys").upsert(
-        {
+        .insert({
           token_id: tokenId,
           idempotency_key: key,
-          tool_name: row.toolName,
-          args_hash: row.argsHash,
-          response: row.response,
-        },
-        { onConflict: "token_id,idempotency_key", ignoreDuplicates: true },
-      );
+          tool_name: toolName,
+          args_hash: argsHash,
+          status: "running",
+          response: null,
+        })
+        .select("tool_name, args_hash, response, created_at, status")
+        .maybeSingle();
+      if (!insertError && inserted) return { kind: "owned" };
+      if (insertError && insertError.code !== "23505") throw new Error("Idempotency reserve failed.");
+      const existing = await readIdempotency(admin, tokenId, key);
+      if (!existing) throw new Error("Idempotency reserve failed.");
+      const decision = decideIdempotency({
+        existing,
+        toolName,
+        argsHash,
+        now: now.getTime(),
+        ttlMs,
+      });
+      if (decision.kind !== "owned") return decision;
+      const cutoff = new Date(now.getTime() - ttlMs).toISOString();
+      const { data: taken, error: takeError } = await admin
+        .from("mcp_idempotency_keys")
+        .update({
+          tool_name: toolName,
+          args_hash: argsHash,
+          status: "running",
+          response: null,
+          created_at: now.toISOString(),
+        })
+        .eq("token_id", tokenId)
+        .eq("idempotency_key", key)
+        .in("status", ["completed", "failed"])
+        .lt("created_at", cutoff)
+        .select("status")
+        .maybeSingle();
+      if (takeError) throw new Error("Idempotency reserve failed.");
+      if (!taken) {
+        const again = await readIdempotency(admin, tokenId, key);
+        if (!again) throw new Error("Idempotency reserve failed.");
+        const next = decideIdempotency({ existing: again, toolName, argsHash, now: now.getTime(), ttlMs });
+        return next.kind === "owned" ? { kind: "in_progress" } : next;
+      }
+      return { kind: "owned" };
     },
+    async finishIdempotency(tokenId, key, status, response) {
+      const { error } = await admin
+        .from("mcp_idempotency_keys")
+        .update({ status, response })
+        .eq("token_id", tokenId)
+        .eq("idempotency_key", key);
+      if (error) throw new Error("Idempotency result was not saved.");
+    },
+  };
+}
+
+async function readIdempotency(admin: SupabaseClient, tokenId: string, key: string): Promise<IdempotencyRow | null> {
+  const { data, error } = await admin
+    .from("mcp_idempotency_keys")
+    .select("tool_name, args_hash, response, created_at, status")
+    .eq("token_id", tokenId)
+    .eq("idempotency_key", key)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    toolName: data.tool_name as string,
+    argsHash: data.args_hash as string,
+    response: data.response,
+    createdAt: data.created_at as string,
+    status: (data.status as IdempotencyStatus) ?? "completed",
   };
 }
 
@@ -120,5 +192,10 @@ function mapConfirmation(data: Record<string, unknown>): ConfirmationRow {
     preview: data.preview,
     expiresAt: data.expires_at as string,
     usedAt: (data.used_at as string | null) ?? null,
+    approvedAt: (data.approved_at as string | null) ?? null,
+    approvedBy: (data.approved_by as string | null) ?? null,
+    rejectedAt: (data.rejected_at as string | null) ?? null,
+    rejectedBy: (data.rejected_by as string | null) ?? null,
+    result: data.result ?? null,
   };
 }

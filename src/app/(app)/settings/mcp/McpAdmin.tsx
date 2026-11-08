@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { MCP_SCOPES } from "@/lib/mcp/scopes";
-import { mintMcpToken, rotateMcpToken, revokeMcpToken, type TokenFlash } from "./actions";
+import { approveMcpPreview, mintMcpToken, rejectMcpPreview, rotateMcpToken, revokeMcpToken, type TokenFlash } from "./actions";
 
 export function MintForm() {
   const [state, action, pending] = useActionState(mintMcpToken, null as TokenFlash);
@@ -57,6 +57,28 @@ export function RotateForm({ tokens }: { tokens: { id: string; name: string; tok
       <button className="btn-primary" disabled={pending}>{pending ? "Rotating…" : "Rotate"}</button>
       <TokenOnce state={state} />
     </form>
+  );
+}
+
+export function ApprovalCard({ id, tool, receipt }: { id: string; tool: string; receipt: string }) {
+  return (
+    <article className="card space-y-3 p-5">
+      <h2 className="card-title">{tool}</h2>
+      <p className="text-sm text-zinc-600">
+        Approving runs this exact receipt. The agent cannot approve it. A chat draft card is still required in the host before the agent should even ask.
+      </p>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded bg-zinc-50 p-3 text-xs">{receipt}</pre>
+      <div className="flex gap-2">
+        <form action={approveMcpPreview}>
+          <input type="hidden" name="confirmation_id" value={id} />
+          <button className="btn-primary">Approve and run</button>
+        </form>
+        <form action={rejectMcpPreview}>
+          <input type="hidden" name="confirmation_id" value={id} />
+          <button className="btn-ghost">Reject</button>
+        </form>
+      </div>
+    </article>
   );
 }
 

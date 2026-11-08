@@ -15,6 +15,7 @@ export function assertPaymentAmount(amount: number) {
 export async function recordPayment(
   supabase: SupabaseClient,
   input: { eventId: string; amount: number; method: string; reason: string | null; paidAt: string | null; notes: string | null },
+  opts: { drain?: "all" | "event" } = {},
 ) {
   assertPaymentAmount(input.amount);
   const { error } = await supabase.from("payments").insert({
@@ -26,7 +27,7 @@ export async function recordPayment(
     notes: input.notes,
   });
   if (error) throw new Error(error.message);
-  await runAutomations(supabase, input.eventId, "payment_received");
+  await runAutomations(supabase, input.eventId, "payment_received", { drain: opts.drain ?? "all" });
 }
 
 export async function updatePaymentRecord(
@@ -58,6 +59,7 @@ export async function updatePaymentRecord(
 export async function confirmPaymentRecord(
   supabase: SupabaseClient,
   input: { paymentId: string; eventId: string; note: string | null },
+  opts: { drain?: "all" | "event" } = {},
 ) {
   const { data: pending } = await supabase
     .from("payments")
@@ -76,9 +78,17 @@ export async function confirmPaymentRecord(
   const scheduledId = (scheduled ?? []).find((s) => !taken.has(s.id))?.id ?? null;
   const patch: Record<string, unknown> = { status: "approved", scheduled_payment_id: scheduledId, paid_at: new Date().toISOString() };
   if (input.note) patch.notes = input.note;
-  const { error } = await supabase.from("payments").update(patch).eq("id", input.paymentId).eq("event_id", input.eventId);
+  const { data: updated, error } = await supabase
+    .from("payments")
+    .update(patch)
+    .eq("id", input.paymentId)
+    .eq("event_id", input.eventId)
+    .eq("status", "pending")
+    .is("deleted_at", null)
+    .select("id");
   if (error) throw new Error(error.message);
-  await runAutomations(supabase, input.eventId, "payment_received");
+  if (!updated?.length) throw new Error("This payment is not a pending claim anymore. Nothing else was run.");
+  await runAutomations(supabase, input.eventId, "payment_received", { drain: opts.drain ?? "all" });
 }
 
 export async function softRemovePayment(

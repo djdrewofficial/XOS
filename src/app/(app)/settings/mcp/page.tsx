@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getMe } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { MintForm, RevokeButton, RotateForm } from "./McpAdmin";
+import { ApprovalCard, MintForm, RevokeButton, RotateForm } from "./McpAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,20 @@ export default async function McpSettingsPage() {
   }
 
   const active = tokens.filter((token) => !token.revoked_at);
+  let pending: { id: string; tool_name: string; preview: unknown }[] = [];
+  let approvalReady = !setupNeeded;
+  if (!setupNeeded) {
+    const { data, error } = await createAdminClient()
+      .from("mcp_confirmations")
+      .select("id, tool_name, preview, expires_at, used_at, rejected_at")
+      .is("used_at", null)
+      .is("rejected_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) approvalReady = false;
+    else pending = (data ?? []) as { id: string; tool_name: string; preview: unknown }[];
+  }
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -83,6 +97,21 @@ export default async function McpSettingsPage() {
               </tbody>
             </table>
           </div>
+          {approvalReady ? pending.map((item) => {
+            const preview = item.preview as { receipt?: unknown } | null;
+            return (
+              <ApprovalCard
+                key={item.id}
+                id={item.id}
+                tool={item.tool_name}
+                receipt={JSON.stringify(preview?.receipt ?? item.preview, null, 2)}
+              />
+            );
+          }) : (
+            <div className="card p-5 text-sm">
+              Approvals need migration 00218 in the migration history. Until then, sensitive previews cannot be run.
+            </div>
+          )}
           <MintForm />
           <RotateForm tokens={active.map((token) => ({ id: token.id, name: token.name, token_prefix: token.token_prefix }))} />
         </>

@@ -14,11 +14,14 @@ import { loadEventPlanning } from "@/lib/planning";
 import { assignAddonSections } from "@/lib/planning";
 import { reseedEventPlanning } from "@/lib/planning";
 import { runAutomations } from "@/lib/automations";
-import { previewSms, previewTemplateEmail, sendSms, sendTemplateEmail } from "@/lib/queueTemplateSend";
-import { sendDocumentForSignature } from "@/lib/sendForSignature";
+import { freezeTemplateEmail, previewSms, previewTemplateEmail, sendSms, sendTemplateEmail } from "@/lib/queueTemplateSend";
+import { previewDocumentSend, sendDocumentForSignature } from "@/lib/sendForSignature";
+import { isPhoneOptedOut } from "@/lib/smsOptOut";
+import { assertSmsBody } from "../smsPolicy";
 import { getOrCreateShortLink } from "@/lib/shortLinks";
 import { buildOutstanding } from "@/lib/reports/build";
 import { staffCost, staffHours } from "@/lib/payroll";
+import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
 import { McpScopeError, type ToolContext } from "../types";
 import type { LiveTool } from "../protocol";
 import type { JsonSchema } from "../validate";
@@ -29,9 +32,47 @@ function obj(properties: Record<string, JsonSchema>, required: string[] = []): J
   return { type: "object", additionalProperties: false, properties, required };
 }
 
+async function queuedOutboxSnapshot(admin: SupabaseClient) {
+  const [email, sms] = await Promise.all([
+    query(admin.from("email_log").select("id, event_id, to_address, subject, body_html").eq("status", "queued")),
+    query(admin.from("sms_log").select("id, event_id, to_number, body").eq("status", "queued")),
+  ]);
+  const emailRows = (email ?? []) as { id: string; event_id: string | null; to_address: string | null; subject: string | null; body_html: string | null }[];
+  const smsRows = (sms ?? []) as { id: string; event_id: string | null; to_number: string | null; body: string | null }[];
+  const total = emailRows.length + smsRows.length;
+  if (total > 100) {
+    throw new Error(`Refused: ${total} messages are queued. This tool will not send a queue it cannot list in full.`);
+  }
+  return {
+    complete: true,
+    total,
+    email: emailRows.map((row) => ({ id: row.id, event_id: row.event_id, to: row.to_address, subject: row.subject, body: row.body_html })),
+    sms: smsRows.map((row) => ({ id: row.id, event_id: row.event_id, to: row.to_number, body: row.body })),
+  };
+}
+
+async function inboxReplySnapshot(admin: SupabaseClient, args: Record<string, unknown>) {
+  const channel = s(args, "channel") ?? "SMS";
+  const body = channel === "SMS" ? assertSmsBody(s(args, "body") ?? "") : (s(args, "body") ?? "");
+  const { data } = await admin.from("hl_conversations").select("contact_name, phone, email").eq("id", s(args, "conversation_id")).maybeSingle();
+  return {
+    to_name: data?.contact_name ?? null,
+    to: channel === "Email" ? data?.email ?? null : data?.phone ?? null,
+    channel,
+    body,
+    classification: channel === "SMS" ? "freeform_is_marketing" : channel,
+    complete: true,
+  };
+}
+
 function adminOf(ctx: ToolContext): SupabaseClient {
   if (!ctx.admin || typeof ctx.admin.from !== "function") throw new Error("Database client is not available.");
   return ctx.admin;
+}
+
+function pageMeta(rows: unknown, limit: number) {
+  const items = Array.isArray(rows) ? rows : [];
+  return { items, limit, returned: items.length, may_have_more: items.length >= limit };
 }
 
 async function query(q: PromiseLike<{ data: unknown; error: { message: string } | null }>) {
@@ -70,23 +111,9 @@ function actor(ctx: ToolContext) {
 }
 
 async function requireHelperScopes(ctx: ToolContext, helperId: string) {
-  const admin = adminOf(ctx);
-  const { data } = await admin.from("booking_helpers").select("actions").eq("id", helperId).maybeSingle();
-  const actions = Array.isArray(data?.actions) ? (data.actions as { type?: string; template_id?: string }[]) : [];
-  const need = new Set<string>();
-  for (const act of actions) {
-    const type = act.type ?? "";
-    if (type === "send_email" || type === "send_email_staff") {
-      need.add("comms.email");
-      if (act.template_id) {
-        const { data: tpl } = await admin.from("email_templates").select("attach_template_id").eq("id", act.template_id).maybeSingle();
-        if (tpl?.attach_template_id) need.add("comms.contract");
-      }
-    }
-    if (type === "send_sms" || type === "send_sms_staff") need.add("comms.sms");
-  }
-  const missing = [...need].filter((scope) => !ctx.token.scopes.includes(scope));
-  if (missing.length) throw new McpScopeError(`This helper sends client messages and needs: ${missing.join(", ")}`);
+  const report = await collectHelperEffects(adminOf(ctx), helperId);
+  assertEffectScopes(ctx.token.scopes, report);
+  return report;
 }
 
 const limitProp: JsonSchema = { type: "integer", minimum: 1, maximum: 100 };
@@ -136,7 +163,9 @@ export const officeTools: LiveTool[] = [
       if (s(args, "status_id")) q = q.eq("status_id", s(args, "status_id"));
       if (s(args, "client_id")) q = q.eq("client_id", s(args, "client_id"));
       if (s(args, "event_date")) q = q.eq("event_date", s(args, "event_date"));
-      return { events: await query(q) };
+      const limit = n(args, "limit") || 50;
+      const page = pageMeta(await query(q), limit);
+      return { events: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
     },
   },
   {
@@ -148,16 +177,23 @@ export const officeTools: LiveTool[] = [
     async execute(args, ctx) {
       const admin = adminOf(ctx);
       const id = s(args, "event_id");
+      const clientCols = ctx.token.scopes.includes("read.clients")
+        ? "id, first_name, last_name, email, cell_phone"
+        : "id, first_name, last_name";
+      const staffCols = ctx.token.scopes.includes("money.payroll")
+        ? "id, employee_id, role, flat_wage, confirmed_at, declined_at"
+        : "id, employee_id, role, confirmed_at, declined_at";
       const [event, addons, staff, payments, schedule, notes] = await Promise.all([
-        query(admin.from("events").select("*, client:clients(id, first_name, last_name, email, cell_phone), venue:venues(id, name, city), status:event_statuses(id, name), package:packages(id, name)").eq("id", id).maybeSingle()),
-        query(admin.from("event_addons").select("id, addon_id, quantity, price_override, price_locked").eq("event_id", id)),
-        query(admin.from("event_staff").select("id, employee_id, role, confirmed_at, declined_at").eq("event_id", id)),
+        query(admin.from("events").select(`id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name)`).eq("id", id).maybeSingle()),
+        ctx.token.scopes.includes("read.catalog") ? query(admin.from("event_addons").select("id, addon_id, quantity, price_override, price_locked").eq("event_id", id)) : [],
+        ctx.token.scopes.includes("read.staff") ? query(admin.from("event_staff").select(staffCols).eq("event_id", id)) : [],
         ctx.token.scopes.includes("money") ? query(admin.from("payments").select("id, amount, method, reason, status, paid_at, deleted_at").eq("event_id", id)) : [],
         ctx.token.scopes.includes("money") ? query(admin.from("scheduled_payments").select("id, seq, label, amount, due_date").eq("event_id", id).order("seq")) : [],
         query(admin.from("event_notes").select("id, kind, body, created_at").eq("event_id", id).order("created_at", { ascending: false }).limit(30)),
       ]);
       if (!event) throw new Error("Event not found.");
-      return { event, addons, staff, payments, schedule, notes };
+      const notePage = pageMeta(notes, 30);
+      return { event, addons, staff, payments, schedule, notes: notePage.items, notes_limit: notePage.limit, notes_returned: notePage.returned, notes_may_have_more: notePage.may_have_more };
     },
   },
   {
@@ -172,8 +208,8 @@ export const officeTools: LiveTool[] = [
         query(admin.from("event_types").select("id, name").eq("is_active", true).order("name")),
         query(admin.from("event_statuses").select("id, name").eq("is_active", true).order("sort_order")),
         query(admin.from("inquiry_sources").select("id, name").eq("is_active", true).order("name")),
-        query(admin.from("packages").select("id, name, default_price").eq("is_active", true).order("display_order")),
-        query(admin.from("addons").select("id, name, default_price").eq("is_active", true).order("display_order")),
+        query(admin.from("packages").select(ctx.token.scopes.includes("read.catalog") ? "id, name, default_price" : "id, name").eq("is_active", true).order("display_order")),
+        query(admin.from("addons").select(ctx.token.scopes.includes("read.catalog") ? "id, name, default_price" : "id, name").eq("is_active", true).order("display_order")),
         query(admin.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name")),
       ]);
       return { types, statuses, sources, packages, addons, employees };
@@ -244,10 +280,18 @@ export const officeTools: LiveTool[] = [
     scopes: ["write.events"],
     confirm: true,
     inputSchema: obj({ event_id: UUID, status_id: UUID }, ["event_id", "status_id"]),
+    async authorize(args, ctx) {
+      const report = await collectAutomationEffects(adminOf(ctx), s(args, "event_id")!, "status_changed", s(args, "status_id")!);
+      assertEffectScopes(ctx.token.scopes, report);
+    },
+    async freeze(args, ctx) {
+      return collectAutomationEffects(adminOf(ctx), s(args, "event_id")!, "status_changed", s(args, "status_id")!);
+    },
     async preview(args, ctx) {
       const admin = adminOf(ctx);
       const { data: status } = await admin.from("event_statuses").select("name").eq("id", s(args, "status_id")).maybeSingle();
-      return { will_set_status: status?.name ?? s(args, "status_id"), may_send: "Matching status automations run after the change and can queue client email and SMS." };
+      const effects = await collectAutomationEffects(admin, s(args, "event_id")!, "status_changed", s(args, "status_id")!);
+      return { will_set_status: status?.name ?? s(args, "status_id"), effects };
     },
     async execute(args, ctx) {
       const admin = adminOf(ctx);
@@ -255,7 +299,7 @@ export const officeTools: LiveTool[] = [
       const statusId = s(args, "status_id")!;
       const { error } = await admin.from("events").update({ status_id: statusId }).eq("id", id);
       if (error) throw new Error(error.message);
-      await runAutomations(admin, id, "status_changed", { statusId });
+      await runAutomations(admin, id, "status_changed", { statusId, drain: "event" });
       return { ok: true };
     },
   },
@@ -371,17 +415,15 @@ export const officeTools: LiveTool[] = [
       const admin = adminOf(ctx);
       const eventId = s(args, "event_id")!;
       const eventClientId = s(args, "event_client_id")!;
-      const { data: links } = await admin.from("event_clients").select("id, client_id, is_primary").eq("event_id", eventId);
-      if ((links ?? []).length <= 1) throw new Error("An event must always have at least one client.");
-      const removed = (links ?? []).find((l) => l.id === eventClientId);
-      const { error } = await admin.from("event_clients").delete().eq("id", eventClientId);
-      if (error) throw new Error(error.message);
-      if (removed?.is_primary) {
-        const next = (links ?? []).find((l) => l.id !== eventClientId);
-        if (next) {
-          await admin.from("event_clients").update({ is_primary: true }).eq("id", next.id);
-          await admin.from("events").update({ client_id: next.client_id }).eq("id", eventId);
+      const { error } = await admin.rpc("mcp_remove_event_client", {
+        p_event_id: eventId,
+        p_event_client_id: eventClientId,
+      });
+      if (error) {
+        if (/mcp_remove_event_client|schema cache|could not find/i.test(error.message)) {
+          throw new Error("Removing a client is unavailable until migration 00218 is applied. Nothing was deleted.");
         }
+        throw new Error(error.message);
       }
       return { ok: true };
     },
@@ -469,12 +511,16 @@ export const officeTools: LiveTool[] = [
     confirm: false,
     inputSchema: obj({ event_id: UUID, employee_id: UUID, role: { type: "string" }, flat_wage: { type: "number", minimum: 0 } }, ["event_id", "employee_id"]),
     async execute(args, ctx) {
-      const { error } = await adminOf(ctx).from("event_staff").insert({
+      if ("flat_wage" in args && !ctx.token.scopes.includes("money.payroll")) {
+        throw new McpScopeError("Setting a wage needs money.payroll.");
+      }
+      const row: Record<string, unknown> = {
         event_id: s(args, "event_id"),
         employee_id: s(args, "employee_id"),
         role: s(args, "role") ?? "DJ",
-        flat_wage: n(args, "flat_wage"),
-      });
+      };
+      if ("flat_wage" in args) row.flat_wage = n(args, "flat_wage");
+      const { error } = await adminOf(ctx).from("event_staff").insert(row);
       if (error) throw new Error(error.message);
       return { ok: true };
     },
@@ -529,7 +575,9 @@ export const officeTools: LiveTool[] = [
       let q = admin.from("clients").select("id, first_name, last_name, email, cell_phone, organization").order("first_name").limit(n(args, "limit") || 50);
       const term = s(args, "q");
       if (term) q = q.or(`first_name.ilike.%${term.replace(/[%,()]/g, "")}%,last_name.ilike.%${term.replace(/[%,()]/g, "")}%,email.ilike.%${term.replace(/[%,()]/g, "")}%`);
-      return { clients: await query(q) };
+      const limit = n(args, "limit") || 50;
+      const page = pageMeta(await query(q), limit);
+      return { clients: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
     },
   },
   {
@@ -664,7 +712,9 @@ export const officeTools: LiveTool[] = [
       if (args.archived !== true) q = q.is("archived_at", null);
       const term = s(args, "q");
       if (term) q = q.ilike("name", `%${term.replace(/[%]/g, "")}%`);
-      return { venues: await query(q) };
+      const limit = n(args, "limit") || 50;
+      const page = pageMeta(await query(q), limit);
+      return { venues: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
     },
   },
   {
@@ -719,7 +769,9 @@ export const officeTools: LiveTool[] = [
       let q = adminOf(ctx).from("vendors").select("id, company_name, category, email, phone").order("company_name").limit(n(args, "limit") || 50);
       const term = s(args, "q");
       if (term) q = q.ilike("company_name", `%${term.replace(/[%]/g, "")}%`);
-      return { vendors: await query(q) };
+      const limit = n(args, "limit") || 50;
+      const page = pageMeta(await query(q), limit);
+      return { vendors: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
     },
   },
   {
@@ -759,7 +811,9 @@ export const officeTools: LiveTool[] = [
     async execute(args, ctx) {
       let q = adminOf(ctx).from("employees").select("id, first_name, last_name, email, phone, permission_tier, is_active").order("first_name").limit(n(args, "limit") || 80);
       if (args.active_only === true) q = q.eq("is_active", true);
-      return { staff: await query(q) };
+      const limit = n(args, "limit") || 80;
+      const page = pageMeta(await query(q), limit);
+      return { staff: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
     },
   },
   {
@@ -885,7 +939,10 @@ export const officeTools: LiveTool[] = [
         query(admin.from("equipment_items").select("id, name, system_id").order("name").limit(n(args, "limit") || 80)),
         query(admin.from("equipment_systems").select("id, name").order("name").limit(40)),
       ]);
-      return { items, systems };
+      const itemLimit = n(args, "limit") || 80;
+      const itemPage = pageMeta(items, itemLimit);
+      const systemPage = pageMeta(systems, 40);
+      return { items: itemPage.items, items_limit: itemPage.limit, items_returned: itemPage.returned, items_may_have_more: itemPage.may_have_more, systems: systemPage.items, systems_limit: systemPage.limit, systems_returned: systemPage.returned, systems_may_have_more: systemPage.may_have_more };
     },
   },
   {
@@ -897,7 +954,9 @@ export const officeTools: LiveTool[] = [
     async execute(args, ctx) {
       let q = adminOf(ctx).from("documents").select("id, title, doc_type, status, event_id, signed_at, created_at").order("created_at", { ascending: false }).limit(n(args, "limit") || 30);
       if (s(args, "event_id")) q = q.eq("event_id", s(args, "event_id"));
-      return { documents: await query(q) };
+      const limit = n(args, "limit") || 30;
+      const page = pageMeta(await query(q), limit);
+      return { documents: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
     },
   },
   {
@@ -930,11 +989,11 @@ export const officeTools: LiveTool[] = [
     scopes: ["comms.contract"],
     confirm: true,
     inputSchema: obj({ document_id: UUID }, ["document_id"]),
+    async freeze(args, ctx) {
+      return previewDocumentSend(adminOf(ctx), s(args, "document_id")!);
+    },
     async preview(args, ctx) {
-      const { data } = await adminOf(ctx).from("documents").select("title, status, signed_at, event:events(name, client:clients(email, first_name))").eq("id", s(args, "document_id")).maybeSingle();
-      if (!data) throw new Error("Document not found.");
-      const event = data.event as { name?: string; client?: { email?: string; first_name?: string } } | null;
-      return { title: data.title, status: data.status, signed: Boolean(data.signed_at), event: event?.name ?? null, to: event?.client?.email ?? null };
+      return previewDocumentSend(adminOf(ctx), s(args, "document_id")!);
     },
     async execute(args, ctx) {
       const sent = await sendDocumentForSignature(adminOf(ctx), s(args, "document_id")!);
@@ -984,8 +1043,15 @@ export const officeTools: LiveTool[] = [
       paid_at: { type: "string" },
       notes: { type: "string" },
     }, ["event_id", "amount"]),
-    async preview(args) {
-      return { will_record: args.amount, method: s(args, "method") ?? "other", may_send: "payment_received automations may email or text the client." };
+    async authorize(args, ctx) {
+      assertEffectScopes(ctx.token.scopes, await collectAutomationEffects(adminOf(ctx), s(args, "event_id")!, "payment_received"));
+    },
+    async freeze(args, ctx) {
+      return collectAutomationEffects(adminOf(ctx), s(args, "event_id")!, "payment_received");
+    },
+    async preview(args, ctx) {
+      const effects = await collectAutomationEffects(adminOf(ctx), s(args, "event_id")!, "payment_received");
+      return { will_record: args.amount, method: s(args, "method") ?? "other", effects };
     },
     async execute(args, ctx) {
       await recordPayment(adminOf(ctx), {
@@ -995,7 +1061,7 @@ export const officeTools: LiveTool[] = [
         reason: s(args, "reason"),
         paidAt: s(args, "paid_at"),
         notes: s(args, "notes"),
-      });
+      }, { drain: "event" });
       return { ok: true };
     },
   },
@@ -1032,8 +1098,17 @@ export const officeTools: LiveTool[] = [
     scopes: ["money"],
     confirm: true,
     inputSchema: obj({ payment_id: UUID, event_id: UUID, note: { type: "string" } }, ["payment_id", "event_id"]),
+    async authorize(args, ctx) {
+      assertEffectScopes(ctx.token.scopes, await collectAutomationEffects(adminOf(ctx), s(args, "event_id")!, "payment_received"));
+    },
+    async freeze(args, ctx) {
+      return collectAutomationEffects(adminOf(ctx), s(args, "event_id")!, "payment_received");
+    },
+    async preview(args, ctx) {
+      return { payment_id: s(args, "payment_id"), effects: await collectAutomationEffects(adminOf(ctx), s(args, "event_id")!, "payment_received") };
+    },
     async execute(args, ctx) {
-      await confirmPaymentRecord(adminOf(ctx), { paymentId: s(args, "payment_id")!, eventId: s(args, "event_id")!, note: s(args, "note") });
+      await confirmPaymentRecord(adminOf(ctx), { paymentId: s(args, "payment_id")!, eventId: s(args, "event_id")!, note: s(args, "note") }, { drain: "event" });
       return { ok: true };
     },
   },
@@ -1213,14 +1288,21 @@ export const officeTools: LiveTool[] = [
     async authorize(args, ctx) {
       await requireHelperScopes(ctx, s(args, "helper_id")!);
     },
-    async preview(args, ctx) {
+    async freeze(args, ctx) {
       const admin = adminOf(ctx);
-      const [{ data: helper }, prompts] = await Promise.all([
-        admin.from("booking_helpers").select("title, actions").eq("id", s(args, "helper_id")).maybeSingle(),
+      const [effects, prompts] = await Promise.all([
+        collectHelperEffects(admin, s(args, "helper_id")!),
         previewHelperSms(admin, s(args, "event_id")!, s(args, "helper_id")!),
       ]);
-      const actions = Array.isArray(helper?.actions) ? (helper.actions as { type?: string }[]).map((act) => act.type) : [];
-      return { title: helper?.title ?? null, action_types: actions, sms_prompts: prompts };
+      return { effects, sms_prompts: prompts, sms_overrides: args.sms_overrides ?? null };
+    },
+    async preview(args, ctx) {
+      const admin = adminOf(ctx);
+      const [effects, prompts] = await Promise.all([
+        collectHelperEffects(admin, s(args, "helper_id")!),
+        previewHelperSms(admin, s(args, "event_id")!, s(args, "helper_id")!),
+      ]);
+      return { effects, sms_prompts: prompts, sms_overrides: args.sms_overrides ?? null };
     },
     async execute(args, ctx) {
       const overrides = args.sms_overrides && typeof args.sms_overrides === "object" ? args.sms_overrides as Record<string, { skip?: boolean; body?: string }> : null;
@@ -1261,6 +1343,14 @@ export const officeTools: LiveTool[] = [
         throw new McpScopeError("This template attaches a contract and needs comms.contract.");
       }
     },
+    async freeze(args, ctx) {
+      return freezeTemplateEmail(adminOf(ctx), {
+        eventId: s(args, "event_id")!,
+        templateId: s(args, "template_id")!,
+        to: (s(args, "to") as "primary_client" | "custom") ?? "primary_client",
+        address: s(args, "address"),
+      });
+    },
     async preview(args, ctx) {
       return previewTemplateEmail(adminOf(ctx), {
         eventId: s(args, "event_id")!,
@@ -1290,6 +1380,15 @@ export const officeTools: LiveTool[] = [
       to: { type: "string", enum: ["primary_client", "custom"] },
       number: { type: "string" },
     }, ["event_id"]),
+    async freeze(args, ctx) {
+      return previewSms(adminOf(ctx), {
+        eventId: s(args, "event_id")!,
+        body: s(args, "body"),
+        templateId: s(args, "template_id"),
+        to: (s(args, "to") as "primary_client" | "custom") ?? "primary_client",
+        number: s(args, "number"),
+      });
+    },
     async preview(args, ctx) {
       return previewSms(adminOf(ctx), {
         eventId: s(args, "event_id")!,
@@ -1315,8 +1414,11 @@ export const officeTools: LiveTool[] = [
     scopes: ["comms.email", "comms.sms"],
     confirm: true,
     inputSchema: obj({}),
-    async preview() {
-      return { effect: "Drains queued email and SMS now." };
+    async freeze(_args, ctx) {
+      return queuedOutboxSnapshot(adminOf(ctx));
+    },
+    async preview(_args, ctx) {
+      return queuedOutboxSnapshot(adminOf(ctx));
     },
     async execute(_args, ctx) {
       const admin = adminOf(ctx);
@@ -1332,15 +1434,10 @@ export const officeTools: LiveTool[] = [
     confirm: true,
     inputSchema: obj({}),
     async preview() {
-      return { effect: "Queues due scheduled emails and texts, then sends them." };
+      throw new Error("Scheduled sends stay on the cron. This connector cannot list the messages that run would create, so it will not start one.");
     },
-    async execute(_args, ctx) {
-      const admin = adminOf(ctx);
-      const { error } = await admin.rpc("run_scheduled_emails");
-      if (error) throw new Error(error.message);
-      const email = await processOutbox(admin);
-      const sms = await processSmsOutbox(admin);
-      return { email, sms };
+    async execute() {
+      throw new Error("Scheduled sends stay on the cron. Nothing was queued.");
     },
   },
   {
@@ -1350,9 +1447,9 @@ export const officeTools: LiveTool[] = [
     confirm: false,
     inputSchema: obj({ limit: limitProp }),
     async execute(args, ctx) {
-      return {
-        conversations: await query(adminOf(ctx).from("hl_conversations").select("id, contact_name, phone, email, last_message_at, last_message_body, unread_count").order("last_message_at", { ascending: false }).limit(n(args, "limit") || 40)),
-      };
+      const limit = n(args, "limit") || 40;
+      const page = pageMeta(await query(adminOf(ctx).from("hl_conversations").select("id, contact_name, phone, email, last_message_at, last_message_body, unread_count").order("last_message_at", { ascending: false }).limit(limit)), limit);
+      return { conversations: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
     },
   },
   {
@@ -1368,7 +1465,8 @@ export const officeTools: LiveTool[] = [
         query(admin.from("hl_conversations").select("id, contact_name, phone, email, client_id").eq("id", id).maybeSingle()),
         query(admin.from("hl_messages").select("id, direction, message_type, body, date_added").eq("conversation_id", id).order("date_added", { ascending: true }).limit(200)),
       ]);
-      return { conversation, messages };
+      const messagePage = pageMeta(messages, 200);
+      return { conversation, messages: messagePage.items, messages_limit: messagePage.limit, messages_returned: messagePage.returned, messages_may_have_more: messagePage.may_have_more };
     },
   },
   {
@@ -1386,29 +1484,37 @@ export const officeTools: LiveTool[] = [
       const channel = s(args, "channel") ?? "SMS";
       const need = channel === "Email" ? "comms.email" : "comms.sms";
       if (!ctx.token.scopes.includes(need)) throw new McpScopeError(`Replying by ${channel} needs ${need}.`);
+      if (channel === "SMS") assertSmsBody(s(args, "body") ?? "");
+    },
+    async freeze(args, ctx) {
+      return inboxReplySnapshot(adminOf(ctx), args);
     },
     async preview(args, ctx) {
-      const { data } = await adminOf(ctx).from("hl_conversations").select("contact_name, phone, email").eq("id", s(args, "conversation_id")).maybeSingle();
-      return { to_name: data?.contact_name ?? null, channel: s(args, "channel") ?? "SMS", body: s(args, "body") };
+      return inboxReplySnapshot(adminOf(ctx), args);
     },
     async execute(args, ctx) {
       const admin = adminOf(ctx);
       const id = s(args, "conversation_id")!;
       const channel = (s(args, "channel") ?? "SMS") as "SMS" | "Email" | "WhatsApp";
+      const body = channel === "SMS" ? assertSmsBody(s(args, "body") ?? "") : (s(args, "body") ?? "");
       const { data: conv } = await admin.from("hl_conversations").select("id, phone, email, client_id, hl_contact_id").eq("id", id).maybeSingle();
       if (!conv) throw new Error("Conversation not found.");
-      const { error } = await admin.from("sms_log").insert({
+      if (channel === "SMS" && conv.phone && await isPhoneOptedOut(admin, conv.phone)) {
+        throw new Error("This number is opted out (STOP). Nothing was sent.");
+      }
+      const { data: queued, error } = await admin.from("sms_log").insert({
         client_id: conv.client_id,
         to_number: conv.phone,
         to_address: conv.email,
         channel,
         subject: s(args, "subject"),
         hl_target_contact_id: conv.hl_contact_id,
-        body: s(args, "body"),
-      });
+        body,
+        is_marketing: channel === "SMS",
+      }).select("id").single();
       if (error) throw new Error(error.message);
-      await processSmsOutbox(admin);
-      return { ok: true };
+      await processSmsOutbox(admin, { onlyIds: [queued.id as string] });
+      return { ok: true, classification: channel === "SMS" ? "freeform_is_marketing" : channel };
     },
   },
   {
@@ -1423,3 +1529,36 @@ export const officeTools: LiveTool[] = [
     },
   },
 ];
+
+const READ_ONLY_TOOLS = new Set([
+  "search",
+  "events_list",
+  "events_get",
+  "events_form_options",
+  "planning_get",
+  "clients_list",
+  "clients_get",
+  "venues_list",
+  "venues_get",
+  "vendors_list",
+  "vendors_get",
+  "staff_list",
+  "staff_get",
+  "packages_list",
+  "equipment_list",
+  "documents_list",
+  "documents_get",
+  "payments_list",
+  "payments_proposal_link",
+  "reports_outstanding",
+  "helpers_list",
+  "helpers_preview",
+  "email_templates_list",
+  "inbox_list",
+  "inbox_get",
+  "settings_overview",
+]);
+
+for (const tool of officeTools) {
+  if (!READ_ONLY_TOOLS.has(tool.name)) tool.writes = true;
+}

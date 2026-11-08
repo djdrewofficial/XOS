@@ -21,8 +21,8 @@ The server is stateless streamable HTTP. Each POST is one JSON-RPC message and t
 1. The bearer token is hashed and looked up. Missing, unknown, revoked, expired, and rotated-past-overlap tokens are rejected. The raw token is not written to the audit log.
 2. The token must hold every scope the tool requires. Anything else is denied.
 3. Reads run immediately.
-4. Money, deletes, client email, client texts, contract sends, and helper runs do not run on the first call. The first call returns `status: "confirmation_required"`, a preview, and a `confirmation_id`. Nothing is sent or changed.
-5. `xos_confirm` with that id performs the action. The id is single-use, lasts 10 minutes, and is bound to the previewed arguments and the same token. Extra or different arguments are rejected. Replaying the id does nothing.
+4. Money, deletes, client email, client texts, contract sends, and helper runs do not run on the first call. The first call returns a receipt: who would be contacted, the exact text, and the version of any template or helper. Nothing is sent or changed.
+5. `xos_confirm` only reports that status. Calling it is not approval and does not run the action. A signed-in master admin opens Settings → Agent Access and approves that receipt. If a template or helper changed after the preview, approval stops and nothing runs. A chat host must still show its own draft card. The confirmation id is not that card.
 6. Every call is audited: token name, tool, redacted arguments, status, timing, confirmation id.
 7. A write can send `Idempotency-Key` (header or `idempotency_key` argument). The same key and the same arguments return the first result and do not run again. A different call with the same key is rejected.
 8. A token is limited to 120 requests a minute and 20 actual writes a minute. Failed logins are limited per IP.
@@ -59,12 +59,12 @@ A helper that emails also needs `comms.email`. If that email attaches a contract
 
 ## Tools
 
-`CONFIRM` means the first call only previews. `xos_confirm` performs it.
+`CONFIRM` means the first call only stores a receipt. A person approves it in XOS. `xos_confirm` does not run it.
 
 Built in, any valid token:
 
 - `xos_whoami` — what this token can do
-- `xos_confirm` — perform a previewed action
+- `xos_confirm` — read whether a person has approved a receipt. It does not approve and it does not run.
 
 | Tool | Scopes | Confirm |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ There are no Supabase Edge Functions in this repo. The Netlify scheduled functio
 
 Master admin only. Settings → Agent Access (`/settings/mcp`).
 
-1. Apply migration `supabase/migrations/00217_mcp_service_access.sql` in the Supabase SQL editor. The page shows "One-time setup needed" until that table exists. This repo does not apply it.
+1. After an explicit approval, apply `supabase/migrations/00217_mcp_service_access.sql` and `supabase/migrations/00218_mcp_approval_and_guards.sql` through the numbered migration history (the same process that records every other file in `supabase_migrations.schema_migrations`). Do not paste them as an untracked SQL editor script. The page shows "One-time setup needed" until those tables exist. This repo does not apply them.
 2. Create a token. Name it, pick scopes, optional expiry. The raw token is shown once on that screen. It is not saved, not logged, and not put in the address bar. Copy it into the agent's secret store.
 3. Rotate when you want a new secret. The new token works immediately. The old one keeps working for the overlap you set (default 24 hours, `0` turns it off now), then it stops. Both hashes stay in the table; the raw values do not.
 4. Revoke kills a token immediately, including during an overlap.
@@ -180,7 +180,7 @@ Audit rows are in `mcp_audit_log`. Confirmations are in `mcp_confirmations`. Ide
 Drew approves each of these. Nothing in this change deploys or applies the migration by itself.
 
 1. Review the pull request.
-2. Apply `supabase/migrations/00217_mcp_service_access.sql` to the XOS database.
+2. Apply `00217` and `00218` through the migration history after you approve them. Approving a receipt in the app does nothing useful until `00218` is in that history.
 3. Merge to `main`. Netlify builds from that push. Do not deploy with the local Netlify CLI.
 4. Open Settings → Agent Access and mint the token.
 
@@ -219,6 +219,12 @@ Cursor custom MCP server, or any client that speaks remote MCP:
 }
 ```
 
-After it connects, the agent should call `xos_whoami` and see only the scopes you granted. A risky tool returns a preview first. The agent then calls `xos_confirm` with the `confirmation_id` from that preview.
+This server has not been registered against a live agent. Do not treat a URL in this document as a connected connector.
+
+The deploy preview of `4d930541d82debe5d85ef3de498d48e611a63ab2` failed in about 23 seconds with no public error message, and the build-log API returned unauthorized. A local `next build` of that tree failed because `events/actions.ts` re-exported `HelperSmsOverride` and `HelperSmsPrompt` from a `"use server"` file. Turbopack treats those as server-action exports. The types now come from `src/lib/bookingHelperRun.ts`, and a later local production build completed. That local build is not a Netlify deploy, and this branch has not been deployed.
+
+The transport follows the 2025-06-18 streamable HTTP rules that were checked in the spec: one POST endpoint, JSON responses, `GET` returns 405 because there is no SSE stream, missing `MCP-Protocol-Version` is accepted as the older 2025-03-26 client, and any other version is rejected. That is a spec reading, not a completed client handshake.
+
+After a person connects it, `xos_whoami` should list only the granted scopes. A risky tool returns a receipt. A person approves that receipt in XOS. `xos_confirm` does not do that approval.
 
 A dropped response can be retried with the same `Idempotency-Key`. Do not reuse a key for a different action.

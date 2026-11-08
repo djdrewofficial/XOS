@@ -665,8 +665,6 @@ export async function updateBillingTerms(eventId: string, formData: FormData) {
   revalidatePath(`/events/${eventId}`);
 }
 
-export type { HelperSmsOverride, HelperSmsPrompt };
-
 /** What the prompted texts on this helper would say for this event. */
 export async function getHelperSmsPrompts(eventId: string, helperId: string): Promise<HelperSmsPrompt[]> {
   await requireModule("events", "edit", { mode: "throw" });
@@ -1087,14 +1085,21 @@ export async function removeEventClient(eventId: string, eventClientId: string) 
   if ((links ?? []).length <= 1) {
     throw new Error("An event must always have at least one client.");
   }
-  const removed = (links ?? []).find((l) => l.id === eventClientId);
-  const { error } = await supabase.from("event_clients").delete().eq("id", eventClientId);
+  const { data: removed, error } = await supabase
+    .from("event_clients")
+    .delete()
+    .eq("id", eventClientId)
+    .eq("event_id", eventId)
+    .select("id, client_id, is_primary");
   if (error) throw new Error(error.message);
-  if (removed?.is_primary) {
-    // promote the next client to primary / contract holder
-    const next = (links ?? []).find((l) => l.id !== eventClientId)!;
-    await supabase.from("event_clients").update({ is_primary: true }).eq("id", next.id);
-    await supabase.from("events").update({ client_id: next.client_id }).eq("id", eventId);
+  const gone = (removed ?? [])[0];
+  if (!gone) throw new Error("That person is not on this event.");
+  if (gone.is_primary) {
+    const next = (links ?? []).find((l) => l.id !== eventClientId);
+    if (next) {
+      await supabase.from("event_clients").update({ is_primary: true }).eq("id", next.id).eq("event_id", eventId);
+      await supabase.from("events").update({ client_id: next.client_id }).eq("id", eventId);
+    }
   }
   revalidatePath(`/events/${eventId}`);
 }

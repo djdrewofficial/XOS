@@ -1,8 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fireHelperWebhook } from "@/lib/automations";
 import { helperAllowedForEventType, helperAllowedForRole } from "@/lib/helperAccess";
-import { processSmsOutbox } from "@/lib/highlevel";
-import { processOutbox } from "@/lib/mailgun";
+import { drainEventOutbox } from "@/lib/scopedOutbox";
 
 export type HelperSmsPrompt = {
   index: number;
@@ -71,6 +70,7 @@ export async function executeBookingHelper(
   if (input.enforceRole && !helperAllowedForRole(scope, input.actorRole)) {
     throw new Error(`Your role can't run "${scope.title}".`);
   }
+  const queuedSince = new Date().toISOString();
   const { error } = await admin.rpc("run_booking_helper", {
     p_helper_id: input.helperId,
     p_event_id: input.eventId,
@@ -78,7 +78,6 @@ export async function executeBookingHelper(
   });
   if (error) throw new Error(error.message);
   await fireHelperWebhook(admin, input.helperId, input.eventId);
-  await processOutbox(admin);
-  await processSmsOutbox(admin);
+  await drainEventOutbox(admin, input.eventId, queuedSince);
   return { title: scope.title as string };
 }

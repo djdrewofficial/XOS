@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { generateServiceToken } from "./mcp/crypto.ts";
-import { handleMcp, toolText, CONFIRM_TTL_MS } from "./mcp/protocol.ts";
+import { executeHumanApproved, handleMcp, toolText, CONFIRM_TTL_MS } from "./mcp/protocol.ts";
 import { memoryStore } from "./mcp/store.ts";
 import type { LiveTool } from "./mcp/protocol.ts";
 import type { ServiceTokenRow } from "./mcp/auth.ts";
@@ -155,7 +155,7 @@ describe("mcp protocol", () => {
       confirmation_id: string;
       executed: boolean;
     };
-    assert.equal(previewBody.status, "confirmation_required");
+    assert.equal(previewBody.status, "pending_human");
     assert.equal(previewBody.executed, false);
     const id = previewBody.confirmation_id;
 
@@ -175,31 +175,38 @@ describe("mcp protocol", () => {
     assert.match(JSON.stringify(stranger.body), /not found/);
     assert.equal(ran.length, 0);
 
-    const ok = await handleMcp(store, [pay], {
+    const agentConfirm = await handleMcp(store, [pay], {
       body: callTool("xos_confirm", { confirmation_id: id }),
       authorization: `Bearer ${raw}`,
       now,
-      idempotencyKey: "pay-1",
+    });
+    const agentBody = toolText((agentConfirm.body as { result: unknown }).result) as { executed: boolean; approved: boolean };
+    assert.equal(agentBody.executed, false);
+    assert.equal(agentBody.approved, false);
+    assert.equal(ran.length, 0);
+
+    const approved = await executeHumanApproved(store, [pay], {
+      confirmationId: id,
+      userId: "11111111-1111-4111-8111-111111111111",
+      token: { id: row.id, name: row.name, scopes: row.scopes },
+      now,
+      admin: {} as never,
+      secrets: [SECRET],
     });
     assert.deepEqual(ran, [{ event_id: "evt", amount: 125 }]);
-    const done = toolText((ok.body as { result: unknown }).result) as { recorded: number };
-    assert.equal(done.recorded, 125);
+    assert.equal((approved.body as { structuredContent: { recorded: number } }).structuredContent.recorded, 125);
 
-    const replay = await handleMcp(store, [pay], {
-      body: callTool("xos_confirm", { confirmation_id: id }),
-      authorization: `Bearer ${raw}`,
-      now,
-    });
-    assert.match(JSON.stringify(replay.body), /already used/);
-    assert.equal(ran.length, 1);
-
-    const retry = await handleMcp(store, [pay], {
-      body: callTool("xos_confirm", { confirmation_id: id }),
-      authorization: `Bearer ${raw}`,
-      now,
-      idempotencyKey: "pay-1",
-    });
-    assert.equal(toolText((retry.body as { result: unknown }).result) && (toolText((retry.body as { result: unknown }).result) as { recorded: number }).recorded, 125);
+    await assert.rejects(
+      () => executeHumanApproved(store, [pay], {
+        confirmationId: id,
+        userId: "11111111-1111-4111-8111-111111111111",
+        token: { id: row.id, name: row.name, scopes: row.scopes },
+        now,
+        admin: {} as never,
+        secrets: [],
+      }),
+      /already performed/,
+    );
     assert.equal(ran.length, 1);
 
     const second = await handleMcp(store, [pay], {
@@ -256,6 +263,7 @@ describe("mcp protocol", () => {
       description: "Add a note",
       scopes: ["write.events"],
       confirm: false,
+      writes: true,
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -267,7 +275,7 @@ describe("mcp protocol", () => {
         return { ok: true, n: runs };
       },
     };
-    const args = { event_id: "evt", body: "hello", idempotency_key: "note-9" };
+    const args = { event_id: "evt", body: "hello", idempotency_key: "note-9-ok-key" };
     const first = await handleMcp(store, [note], {
       body: callTool("events_add_note", args),
       authorization: `Bearer ${raw}`,
@@ -291,5 +299,49 @@ describe("mcp protocol", () => {
     assert.equal((await handleMcp(limited, [], { body: ping, authorization: `Bearer ${again.raw}`, limits })).status, 200);
     const blocked = await handleMcp(limited, [], { body: ping, authorization: `Bearer ${again.raw}`, limits });
     assert.equal(blocked.status, 429);
+  });
+
+  it("does not run a write twice when two calls share an idempotency key", async () => {
+    const { store, addToken } = memoryStore();
+    const { raw, row } = issued(["write.events"], { id: "idem-token" });
+    addToken(row);
+    let started = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const note: LiveTool = {
+      name: "events_add_note",
+      description: "Add a note that must not double",
+      scopes: ["write.events"],
+      confirm: false,
+      writes: true,
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["event_id"],
+        properties: { event_id: { type: "string" } },
+      },
+      async execute() {
+        started += 1;
+        await gate;
+        return { ok: true };
+      },
+    };
+    const key = "same-key-1234";
+    const first = handleMcp(store, [note], {
+      body: callTool("events_add_note", { event_id: "evt", idempotency_key: key }),
+      authorization: `Bearer ${raw}`,
+    });
+    const second = handleMcp(store, [note], {
+      body: callTool("events_add_note", { event_id: "evt", idempotency_key: key }),
+      authorization: `Bearer ${raw}`,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(started, 1);
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    const statuses = [a.status, b.status].sort();
+    assert.deepEqual(statuses, [200, 409]);
   });
 });
