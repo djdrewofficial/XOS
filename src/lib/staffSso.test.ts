@@ -105,10 +105,7 @@ describe("sign-in files", () => {
   it("keeps production join-link applinks and no client webcredentials", () => {
     assert.match(aasa, /applinks/);
     assert.match(aasa, /\/j\/\*/);
-    assert.match(aasa, /\/auth\/reset/);
-    assert.match(aasa, /\/auth\/confirm/);
-    assert.match(aasa, /\/auth\/set-password/);
-    assert.doesNotMatch(aasa, /\/auth\/callback/);
+    assert.doesNotMatch(aasa, /\/auth\//);
     assert.match(aasa, /CLIENT_IOS_BUNDLE_ID/);
     assert.doesNotMatch(aasa, /webcredentials/);
     assert.equal(CLIENT_IOS_BUNDLE_ID, "com.xpressentertainment.client");

@@ -1,7 +1,6 @@
 /* Password-reset URL rules with no app-URL import, so tests can load them. */
 
 export const PASSWORD_RESET_PATH = "/auth/set-password";
-export const RECOVERY_RESET_PATH = "/auth/reset";
 
 const PRODUCTION_HOST = "xos.xpressdjs.com";
 
@@ -18,18 +17,22 @@ export function passwordResetHostAllowed(hostname: string, configuredHost: strin
 export function safeRecoveryToken(value: string | null | undefined): string | null {
   const token = (value ?? "").trim();
   if (!token || token.length > 2000) return null;
-  if (/[\s/?#\\&=]/.test(token)) return null;
+  if (/[\s/?#\\&=%]/.test(token)) return null;
   return token;
 }
 
-/** Where /auth/confirm sends a recovery link. The browser fallback is
-    /auth/reset, the same HTTPS path the couple app requests. Signup and
-    other types are not forwarded. next and redirect_to are dropped. */
-export function recoveryConfirmPath(params: URLSearchParams): string {
-  const token = params.get("type") === "recovery" ? safeRecoveryToken(params.get("token_hash")) : null;
-  if (!token) return RECOVERY_RESET_PATH;
-  const dest = new URLSearchParams();
-  dest.set("token_hash", token);
-  dest.set("type", "recovery");
-  return `${RECOVERY_RESET_PATH}?${dest.toString()}`;
+/** Supabase sends a rejected app redirect to the Site URL root, with the
+    token on the query. Rewrite only that exact case, on the same host, and
+    carry only token_hash and type. Any other root visit stays put. */
+export function sameHostRecoveryRedirect(current: URL): URL | null {
+  if (current.pathname !== "/") return null;
+  if (current.searchParams.get("type") !== "recovery") return null;
+  const token = safeRecoveryToken(current.searchParams.get("token_hash"));
+  if (!token) return null;
+  const dest = new URL(PASSWORD_RESET_PATH, current.origin);
+  dest.searchParams.set("token_hash", token);
+  dest.searchParams.set("type", "recovery");
+  if (dest.origin !== current.origin || dest.pathname !== PASSWORD_RESET_PATH) return null;
+  if (dest.searchParams.get("token_hash") !== token || dest.searchParams.get("type") !== "recovery") return null;
+  return dest;
 }

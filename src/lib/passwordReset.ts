@@ -2,10 +2,9 @@ import { appUrl } from "@/lib/signing";
 import { PASSWORD_RESET_PATH, passwordResetHostAllowed } from "./passwordResetPath";
 
 /* Staff forgot-password redirect. The shared Auth template appends
-   ?token_hash={{ .TokenHash }}&type=recovery to this URL. The couple app
-   passes https://xos.xpressdjs.com/auth/reset itself. Keep staff on
+   ?token_hash={{ .TokenHash }}&type=recovery to this URL. Staff stays on
    /auth/set-password. */
-export { PASSWORD_RESET_PATH, RECOVERY_RESET_PATH, recoveryConfirmPath, safeRecoveryToken } from "./passwordResetPath";
+export { PASSWORD_RESET_PATH, safeRecoveryToken } from "./passwordResetPath";
 
 function configuredHost(): string | null {
   try {

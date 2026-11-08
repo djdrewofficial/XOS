@@ -31,7 +31,7 @@ import { passwordMeetsPolicy } from "@/lib/passwordPolicy";
 const RECOVERY_KEY = "xos-pwreset";
 
 function cleanUrl() {
-  window.history.replaceState(null, "", window.location.pathname);
+  window.history.replaceState(null, "", "/auth/set-password");
 }
 
 function markRecovery() {
