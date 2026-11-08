@@ -104,9 +104,8 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
 
   const raw = bearer(call.authorization);
   if (!raw) {
-    if (call.ip) {
-      const limited = await store.hitRateLimit("mcp:authfail", call.ip, limits.authFailsPerIp, limits.windowMs, now);
-      if (limited) return finish(429, rpcError(null, -32029, "Too many authentication attempts"), { status: "rate_limited", errorCode: "rate_limited" });
+    if (call.ip && (await limited(store, "mcp:authfail", call.ip, limits.authFailsPerIp, limits.windowMs, now))) {
+      return finish(429, rpcError(null, -32029, "Too many authentication attempts"), { status: "rate_limited", errorCode: "rate_limited" });
     }
     return finish(401, rpcError(null, -32001, "Missing bearer token"), { status: "unauthorized", errorCode: "missing" });
   }

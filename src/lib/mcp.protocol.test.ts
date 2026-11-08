@@ -66,8 +66,17 @@ describe("mcp protocol", () => {
     const ov = await handleMcp(store, [], { body, authorization: `Bearer ${overlapped.raw}`, now });
     assert.match(JSON.stringify(ov.body), /overlap/);
 
+    const throwing = {
+      ...store,
+      async hitRateLimit() {
+        throw new Error("missing");
+      },
+    };
+    const closed = await handleMcp(throwing, [], { body, authorization: null, ip: "203.0.113.5", now });
+    assert.equal(closed.status, 429);
+
     const audits = await store.audits();
-    assert.equal(audits.length, 5);
+    assert.equal(audits.length, 6);
     assert.ok(audits.every((row) => !JSON.stringify(row).includes(revoked.raw)));
     assert.ok(audits.every((row) => row.argsRedacted == null || !JSON.stringify(row.argsRedacted).includes("xos_mcp_")));
   });
