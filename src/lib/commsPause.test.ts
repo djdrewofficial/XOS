@@ -43,7 +43,8 @@ describe("manual vs automated origin", () => {
     join(root, "supabase/migrations/00204_manual_helper_bypasses_comms_pause.sql"),
     "utf8",
   );
-  const helperClick = readFileSync(join(root, "src/app/(app)/events/actions.ts"), "utf8");
+  const helperClick = readFileSync(join(root, "src/lib/bookingHelperRun.ts"), "utf8");
+  const staffClick = readFileSync(join(root, "src/app/(app)/events/actions.ts"), "utf8");
   const automations = readFileSync(join(root, "src/lib/automations.ts"), "utf8");
   const afterSign = readFileSync(join(root, "src/app/sign/[token]/actions.ts"), "utf8");
 
@@ -67,7 +68,11 @@ describe("manual vs automated origin", () => {
     // A helper chained by a run_helper action keeps the parent's origin.
     assert.match(migration, /perform run_booking_helper\(v_child, p_event_id, null::jsonb, p_manual\)/);
 
-    assert.match(helperClick, /p_sms_overrides: cleanSmsOverrides\(smsOverrides\)/);
+    // The event-page button and the MCP connector share this function. The
+    // 3-arg RPC is the manual entry (p_manual = true). Staff pass enforceRole.
+    assert.match(helperClick, /p_sms_overrides: cleanSmsOverrides\(input\.smsOverrides\)/);
+    assert.match(staffClick, /executeBookingHelper\(/);
+    assert.match(staffClick, /enforceRole: true/);
     assert.match(automations, /rpc\("run_booking_helper", \{ p_helper_id: h\.id, p_event_id: eventId \}\)/);
     assert.doesNotMatch(automations, /p_sms_overrides/);
     assert.match(afterSign, /p_helper_id: t\.after_sign_helper_id/);

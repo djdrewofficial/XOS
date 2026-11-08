@@ -39,6 +39,7 @@ import {
   faBullseye,
   faTags,
   faLock,
+  faKey,
   faRobot,
   faPowerOff,
   faMusic,
@@ -106,6 +107,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
         items: [
           { href: "/settings/general", label: "General", icon: faGear, module: "settings" },
           { href: "/settings/permissions", label: "Permissions", icon: faLock, module: "settings" },
+          { href: "/settings/mcp", label: "Agent Access", icon: faKey, module: "settings" },
           { href: "/settings/staff", label: "Staff Settings", icon: faIdBadge, module: "settings" },
           { href: "/settings/custom-fields", label: "Custom Fields", icon: faPenToSquare, module: "settings" },
           { href: "/settings/dashboard", label: "Dashboard Layout", icon: faTableColumns, module: "settings" },
