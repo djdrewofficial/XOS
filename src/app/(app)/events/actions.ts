@@ -5,9 +5,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getOrCreateShortLink } from "@/lib/shortLinks";
-import { buildScheduleRows, parseSchedulePlan } from "@/lib/paymentSchedule";
+import { parseSchedulePlan } from "@/lib/paymentSchedule";
 import { loadEventBundle } from "@/lib/documentRender";
-import { buildEventName, autoNameEvent, type NamingClient } from "@/lib/eventName";
+import { autoNameEvent } from "@/lib/eventName";
+import { createEventOnboardingRecord } from "@/lib/eventOnboarding";
 import { runAutomations } from "@/lib/automations";
 import { applyPackageSelection, assignAddonEquipment } from "@/lib/packageSelection";
 import { executeBookingHelper, previewHelperSms, type HelperSmsOverride, type HelperSmsPrompt } from "@/lib/bookingHelperRun";
@@ -238,234 +239,39 @@ export async function createEventOnboarding(formData: FormData) {
   const supabase = await createClient();
 
   const clients = parseJson<NewClient[]>(formData.get("clients_json"), []);
-
-  // Required-field guard on the primary client (backstop for the form's own
-  // client-side validation): first name, last name, email, and cell must be set,
-  // whether the primary is a new or an existing client.
-  const primaryIn = clients.find((c) => c.is_primary) ?? clients[0];
-  if (!primaryIn) throw new Error("Add a primary client before creating the event.");
-  let pf = primaryIn.first_name, pl = primaryIn.last_name, pe = primaryIn.email, pc = primaryIn.cell_phone;
-  if (primaryIn.mode === "existing" && primaryIn.client_id) {
-    const { data: pc0 } = await supabase
-      .from("clients")
-      .select("first_name, last_name, email, cell_phone")
-      .eq("id", primaryIn.client_id)
-      .maybeSingle();
-    pf = pc0?.first_name ?? pf; pl = pc0?.last_name ?? pl; pe = pc0?.email ?? pe; pc = pc0?.cell_phone ?? pc;
-  }
-  const missingPrimary = [
-    !pf?.trim() && "first name",
-    !pl?.trim() && "last name",
-    !pe?.trim() && "email",
-    !pc?.trim() && "cell phone",
-  ].filter(Boolean);
-  if (missingPrimary.length) throw new Error(`Primary client is missing: ${missingPrimary.join(", ")}.`);
-
-  const discounts = parseJson<NewDiscount[]>(formData.get("discounts_json"), []);
-  const addons = parseJson<NewAddon[]>(formData.get("addons_json"), []);
-  const staff = parseJson<NewStaff[]>(formData.get("staff_json"), []);
-  const customDates = parseJson<NewDate[]>(formData.get("custom_dates_json"), []);
-  const newVenue = parseJson<NewVenue | null>(formData.get("new_venue_json"), null);
-
-  // 1) resolve clients (create the new ones) and figure out the primary
-  const resolved: { client_id: string; role: string | null; is_primary: boolean; is_contract_holder: boolean; naming: NamingClient }[] = [];
-  for (const c of clients) {
-    let id = c.client_id ?? null;
-    let first = c.first_name ?? "";
-    let last = c.last_name ?? "";
-    if (c.mode === "new" || !id) {
-      if (!first && !c.email && !c.cell_phone) continue; // skip empty rows
-      // dedupe by email — reuse an existing client instead of creating a twin
-      const found = await findOrCreateClient(supabase, {
-        first_name: first,
-        last_name: last,
-        email: c.email,
-        cell_phone: c.cell_phone,
-      });
-      id = found.id;
-      first = found.first_name;
-      last = found.last_name;
-    } else {
-      const { data: existing } = await supabase.from("clients").select("first_name, last_name").eq("id", id).maybeSingle();
-      first = existing?.first_name ?? first;
-      last = existing?.last_name ?? last;
-    }
-    resolved.push({
-      client_id: id!,
-      role: c.role ?? null,
-      is_primary: !!c.is_primary,
-      is_contract_holder: !!c.is_contract_holder,
-      naming: { first_name: first, last_name: last, role: c.role ?? null, is_primary: !!c.is_primary },
-    });
-  }
-  if (resolved.length && !resolved.some((r) => r.is_primary)) resolved[0].is_primary = true;
-  const primary = resolved.find((r) => r.is_primary) ?? resolved[0] ?? null;
-
-  // 2) resolve inquiry source (existing, or add new one-time/persisted)
-  let inquirySourceId = clean(formData.get("inquiry_source_id"));
-  const newSourceName = clean(formData.get("new_source_name"));
-  if (!inquirySourceId && newSourceName) {
-    const persist = formData.get("new_source_persist") === "true" || formData.get("new_source_persist") === "on";
-    const { data: src } = await supabase
-      .from("inquiry_sources")
-      .insert({ name: newSourceName, is_active: persist })
-      .select("id")
-      .single();
-    inquirySourceId = src?.id ?? null;
-  }
-
-  // 3) resolve venue (existing, newly-created-from-Google, or client address)
-  const useClientAddress = formData.get("use_client_address") === "true" || formData.get("use_client_address") === "on";
-  let venueId = clean(formData.get("venue_id"));
-  if (useClientAddress) {
-    venueId = null;
-    const addr = clean(formData.get("client_address"));
-    if (addr && primary) await supabase.from("clients").update({ mailing_address: addr }).eq("id", primary.client_id);
-  } else if (!venueId && newVenue?.name) {
-    const { data: v } = await supabase
-      .from("venues")
-      .insert({
-        name: newVenue.name,
-        address: newVenue.address ?? null,
-        city: newVenue.city ?? null,
-        state: newVenue.state ?? null,
-        zip: newVenue.zip ?? null,
-        lat: newVenue.lat ?? null,
-        lng: newVenue.lng ?? null,
-        google_place_id: newVenue.place_id ?? null,
-      })
-      .select("id")
-      .single();
-    venueId = v?.id ?? null;
-  }
-
-  // 4) event name — auto for unnamed weddings
-  const eventTypeId = clean(formData.get("event_type_id"));
-  let typeName: string | null = null;
-  if (eventTypeId) {
-    const { data: t } = await supabase.from("event_types").select("name").eq("id", eventTypeId).maybeSingle();
-    typeName = t?.name ?? null;
-  }
-  let name = clean(formData.get("name"));
-  if (!name) name = buildEventName(resolved.map((r) => r.naming), typeName) || "New Event";
-
-  // 5) insert the event
-  const depositInput = clean(formData.get("deposit_value"));
-  const priceOverride = clean(formData.get("package_price_override"));
-  const packageId = clean(formData.get("package_id"));
-  const { data: event, error: evErr } = await supabase
-    .from("events")
-    .insert({
-      name,
-      event_type_id: eventTypeId,
-      status_id: clean(formData.get("status_id")),
-      inquiry_source_id: inquirySourceId,
-      client_id: primary?.client_id ?? null,
-      event_date: clean(formData.get("event_date")),
-      setup_time: clean(formData.get("setup_time")),
-      start_time: clean(formData.get("start_time")),
-      end_time: clean(formData.get("end_time")),
-      guest_count: formData.get("guest_count") ? num(formData.get("guest_count")) : null,
-      venue_id: venueId,
-      venue_room_id: clean(formData.get("venue_room_id")),
-      use_client_address: useClientAddress,
-      package_id: packageId,
-      package_price_override: priceOverride ? num(formData.get("package_price_override")) : null,
-      deposit_value: depositInput ? num(formData.get("deposit_value")) : 0,
-      travel_fee: num(formData.get("travel_fee")),
-      discount1_label: clean(formData.get("d1l")) ?? (discounts[0]?.label ?? null),
-      discount1_amount: discounts[0]?.amount ?? 0,
-      discount2_label: discounts[1]?.label ?? null,
-      discount2_amount: discounts[1]?.amount ?? 0,
-      internal_notes: clean(formData.get("internal_notes")),
-    })
-    .select("id")
-    .single();
-  if (evErr) throw new Error(evErr.message);
-  const eventId = event.id as string;
-
-  // 6) event_clients
-  if (resolved.length) {
-    await supabase.from("event_clients").insert(
-      resolved.map((r) => ({ event_id: eventId, client_id: r.client_id, role: r.role ?? "Client", is_primary: r.is_primary, is_contract_holder: r.is_contract_holder }))
-    );
-  }
-
-  // 7) package selection (auto add-ons/equipment + price/deposit defaults)
-  if (packageId) {
-    await applyPackageSelection(supabase, eventId, packageId, clean(formData.get("event_date")), !!priceOverride);
-  }
-
-  // 8) explicit add-ons on top of package defaults
-  const addonRows = addons
-    .filter((a) => a.addon_id)
-    .map((a) => ({
-      event_id: eventId,
-      addon_id: a.addon_id,
-      quantity: a.quantity && a.quantity > 0 ? a.quantity : 1,
-      price_override: a.price_override ?? null,
-    }));
-  if (addonRows.length) await supabase.from("event_addons").insert(addonRows);
-
-  // 9) contract notes (internal notes already on the event row)
-  const contractNotes = clean(formData.get("contract_notes"));
-  if (contractNotes) {
-    await supabase.from("event_notes").insert({ event_id: eventId, body: contractNotes, kind: "contract" });
-  }
-
-  // 10) custom / important dates
-  const dateRows = customDates
-    .filter((d) => d.definition_id && d.value)
-    .map((d) => ({ event_id: eventId, definition_id: d.definition_id, value: d.value }));
-  if (dateRows.length) {
-    await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" });
-  }
-
-  // 11) payment schedule — full payment due OR deposit + split (legacy schedule_count still accepted)
-  const schedulePlan =
-    parseSchedulePlan(formData.get("schedule_plan")) ??
-    (formData.get("schedule_count") ? parseSchedulePlan(formData.get("schedule_count")) : null);
-  if (schedulePlan) {
-    const bundle = await loadEventBundle(supabase, eventId);
-    const total = bundle?.total ?? 0;
-    const { data: evDep } = await supabase.from("events").select("deposit_value, event_date").eq("id", eventId).single();
-    const deposit = Number(evDep?.deposit_value ?? 0);
-    let terms: "days_before" | "net_days_after" = "days_before";
-    let termsDays = 30;
-    if (packageId) {
-      const { data: pkg } = await supabase
-        .from("packages")
-        .select("payment_terms, payment_terms_days")
-        .eq("id", packageId)
-        .maybeSingle();
-      if (pkg) {
-        terms = (pkg.payment_terms as typeof terms) ?? "days_before";
-        termsDays = pkg.payment_terms_days ?? 30;
-      }
-    }
-    const rows = buildScheduleRows({
-      total,
-      deposit,
-      eventDate: evDep?.event_date ?? null,
-      terms,
-      termsDays,
-      plan: schedulePlan,
-      today: new Date().toISOString().slice(0, 10),
-    }).map((r) => ({ ...r, event_id: eventId }));
-    await supabase.from("scheduled_payments").insert(rows);
-  }
-
-  // 12) staff (optional — TBD by default)
-  const staffRows = staff
-    .filter((s) => s.employee_id)
-    .map((s) => ({ event_id: eventId, employee_id: s.employee_id, role: s.role || "DJ", flat_wage: s.flat_wage ?? 0 }));
-  if (staffRows.length) await supabase.from("event_staff").insert(staffRows);
-
-  // fire any "event created" automations (configured per event type)
-  await runAutomations(supabase, eventId, "event_created");
-
+  const created = await createEventOnboardingRecord(supabase, {
+    clients,
+    discounts: parseJson<NewDiscount[]>(formData.get("discounts_json"), []),
+    addons: parseJson<NewAddon[]>(formData.get("addons_json"), []),
+    staff: parseJson<NewStaff[]>(formData.get("staff_json"), []),
+    customDates: parseJson<NewDate[]>(formData.get("custom_dates_json"), []),
+    newVenue: parseJson<NewVenue | null>(formData.get("new_venue_json"), null),
+    inquirySourceId: clean(formData.get("inquiry_source_id")),
+    newSourceName: clean(formData.get("new_source_name")),
+    newSourcePersist: formData.get("new_source_persist") === "true" || formData.get("new_source_persist") === "on",
+    useClientAddress: formData.get("use_client_address") === "true" || formData.get("use_client_address") === "on",
+    clientAddress: clean(formData.get("client_address")),
+    venueId: clean(formData.get("venue_id")),
+    venueRoomId: clean(formData.get("venue_room_id")),
+    eventTypeId: clean(formData.get("event_type_id")),
+    name: clean(formData.get("name")),
+    statusId: clean(formData.get("status_id")),
+    eventDate: clean(formData.get("event_date")),
+    setupTime: clean(formData.get("setup_time")),
+    startTime: clean(formData.get("start_time")),
+    endTime: clean(formData.get("end_time")),
+    guestCount: formData.get("guest_count") ? num(formData.get("guest_count")) : null,
+    packageId: clean(formData.get("package_id")),
+    packagePriceOverride: clean(formData.get("package_price_override")) ? num(formData.get("package_price_override")) : null,
+    depositValue: clean(formData.get("deposit_value")) ? num(formData.get("deposit_value")) : 0,
+    travelFee: num(formData.get("travel_fee")),
+    internalNotes: clean(formData.get("internal_notes")),
+    contractNotes: clean(formData.get("contract_notes")),
+    schedulePlan: (clean(formData.get("schedule_plan")) ?? (formData.get("schedule_count") ? String(formData.get("schedule_count")) : null)),
+    drain: "all",
+  });
   revalidatePath("/events");
-  redirect(`/events/${eventId}`);
+  redirect(`/events/${created.id}`);
 }
 
 export async function updateEvent(id: string, formData: FormData) {
@@ -1077,29 +883,16 @@ export async function createClientAndAttach(eventId: string, formData: FormData)
 
 export async function removeEventClient(eventId: string, eventClientId: string) {
   await requireModule("events", "edit", { mode: "throw" });
-  const supabase = await createClient();
-  const { data: links } = await supabase
-    .from("event_clients")
-    .select("id, client_id, is_primary")
-    .eq("event_id", eventId);
-  if ((links ?? []).length <= 1) {
-    throw new Error("An event must always have at least one client.");
-  }
-  const { data: removed, error } = await supabase
-    .from("event_clients")
-    .delete()
-    .eq("id", eventClientId)
-    .eq("event_id", eventId)
-    .select("id, client_id, is_primary");
-  if (error) throw new Error(error.message);
-  const gone = (removed ?? [])[0];
-  if (!gone) throw new Error("That person is not on this event.");
-  if (gone.is_primary) {
-    const next = (links ?? []).find((l) => l.id !== eventClientId);
-    if (next) {
-      await supabase.from("event_clients").update({ is_primary: true }).eq("id", next.id).eq("event_id", eventId);
-      await supabase.from("events").update({ client_id: next.client_id }).eq("id", eventId);
+  const admin = createAdminClient();
+  const { error } = await admin.rpc("mcp_remove_event_client", {
+    p_event_id: eventId,
+    p_event_client_id: eventClientId,
+  });
+  if (error) {
+    if (/mcp_remove_event_client|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Removing a client needs migration 00218. Nothing was deleted.");
     }
+    throw new Error(error.message);
   }
   revalidatePath(`/events/${eventId}`);
 }

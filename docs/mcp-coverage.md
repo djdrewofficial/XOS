@@ -1,27 +1,21 @@
 # MCP coverage
 
-This is not a complete map of every XOS function, and the connector is not release-ready.
+The connector is not release-ready until migration `00218` is applied through the numbered history and a live handshake has been checked against a deploy preview.
 
-The office tools in `src/lib/mcp/tools/office.ts` cover event, client, venue, vendor, staff, document, payment, payroll, inbox, and helper reads and a subset of writes. Sensitive writes wait for a person in Settings → Agent Access.
+`src/lib/mcp/tools/office.ts` and `src/lib/mcp/tools/coverage.ts` cover the office screens that were still missing: the new-event wizard, package and add-on edits with versions and date prices, template and helper edits, scheduled-comm skip, undo, mark-sent, and override, expenses, trips, equipment damage and photos, Fireflies review, vendor-suggestion review, venue merge, status, source, and custom-field editors, timesheet approval, planner templates, notification audience channels, journeys, the dashboard layout, and venue, vendor, staff, and equipment edits.
 
-Still not tools, and not claimed as covered:
+Payments stay attached to their event in `00218`: the foreign key is `ON DELETE RESTRICT`. That file is not applied. The isolated test creates a payment with `ON DELETE SET NULL`, applies `00218`, and checks that deleting the event is refused and the payment still points at the event.
 
-- The full new-event wizard (`createEventOnboarding`)
-- Package and add-on editors, versions, and date prices
-- Email template and booking-helper editors
-- Scheduled-comm skip, override, and mark-sent
-- Expenses, trips, and equipment damage or photos
-- Fireflies review, Spotify export, vendor-suggestion review, and venue merge
-- Status, source, and custom-field editors beyond what a single tool already does
-- Most settings screens (permissions, dashboard layout, notifications, journeys, planner templates)
+Staff client removal and the agent tool both call `mcp_remove_event_client`. Until `00218` is applied, both fail closed and delete nothing.
 
-Security exclusions, which should stay off the connector:
+Security exclusions, which stay off the connector:
 
 - Client signing, proposal confirm, and the client portal acting as the couple
 - Passkeys, two-factor, password changes, and auth email templates
 - Minting agent tokens from an agent token
 - The permission grid
-- Spotify export, which uses the signed-in staff member's own Spotify login
+- Spotify export and playlist import, which use the signed-in staff member's own Spotify login
 - HighLevel OAuth connect, which is a browser redirect
+- Employee self check-in and self-filed timesheet requests, which are bound to the signed-in employee
 
-`docs/mcp.md` lists the tools that exist today.
+Signing URLs and other client secret links are stored for the admin approval screen and removed from agent responses and the audit log.

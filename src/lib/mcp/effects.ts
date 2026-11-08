@@ -13,6 +13,9 @@ export type HelperEffect = {
   template_body_sha256?: string | null;
   attaches_document?: boolean;
   webhook_host?: string | null;
+  rendered_title?: string | null;
+  rendered_body?: string | null;
+  recipient?: string | null;
 };
 
 export type EffectReport = {
@@ -186,7 +189,7 @@ export async function collectAutomationEffects(
     for (const scope of report.scopes) scopes.add(scope);
     cycle = cycle || report.cycle;
   }
-  const notice = await collectNotificationEffects(admin, trigger);
+  const notice = await collectNotificationEffects(admin, trigger, eventId);
   effects.push(...notice.effects);
   for (const scope of notice.scopes) scopes.add(scope);
   return { effects, scopes: [...scopes], cycle };
@@ -198,29 +201,45 @@ const NOTIFICATION_KEYS: Record<"status_changed" | "payment_received" | "event_c
   event_created: "event_created",
 };
 
-/** Staff notification settings can queue email and SMS beside the helper. */
+/** Staff notification settings can queue email and SMS beside the helper.
+    The preview is the rendered staff title and body, plus who would receive it. */
 export async function collectNotificationEffects(
   admin: SupabaseClient,
   trigger: "status_changed" | "payment_received" | "event_created",
+  eventId: string,
 ): Promise<EffectReport> {
   const key = NOTIFICATION_KEYS[trigger];
   const { data: type, error } = await admin
     .from("notification_types")
-    .select("key, is_active, email_template_id, sms_template_id")
+    .select("key, is_active, staff_title_tpl, staff_body_tpl, email_template_id, sms_template_id")
     .eq("key", key)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!type?.is_active) return { effects: [], scopes: [], cycle: false };
   const { data: settings, error: settingError } = await admin
     .from("notification_settings")
-    .select("audience, email, sms")
+    .select("audience, email, sms, is_enabled")
     .eq("type_key", key)
     .eq("is_enabled", true);
   if (settingError) throw new Error(settingError.message);
+  const title = await renderNotice(admin, eventId, (type.staff_title_tpl as string | null) ?? key);
+  const body = await renderNotice(admin, eventId, (type.staff_body_tpl as string | null) ?? "");
+  const recipients = await noticeRecipients(admin, eventId, settings ?? []);
   const effects: HelperEffect[] = [];
   const scopes = new Set<string>();
-  for (const row of settings ?? []) {
-    if (row.email) {
+  if (recipients.length === 0) {
+    effects.push({
+      helper_id: key,
+      helper_title: "notification",
+      helper_updated_at: null,
+      action: "notify",
+      rendered_title: title,
+      rendered_body: body,
+      recipient: null,
+    });
+  }
+  for (const person of recipients) {
+    if (person.email) {
       scopes.add("comms.email");
       effects.push({
         helper_id: key,
@@ -228,10 +247,13 @@ export async function collectNotificationEffects(
         helper_updated_at: null,
         action: "notify_email",
         template_id: (type.email_template_id as string | null) ?? null,
-        template_name: row.audience as string,
+        template_name: person.audience,
+        rendered_title: title,
+        rendered_body: body,
+        recipient: person.address,
       });
     }
-    if (row.sms) {
+    if (person.sms) {
       scopes.add("comms.sms");
       effects.push({
         helper_id: key,
@@ -239,9 +261,67 @@ export async function collectNotificationEffects(
         helper_updated_at: null,
         action: "notify_sms",
         template_id: (type.sms_template_id as string | null) ?? null,
-        template_name: row.audience as string,
+        template_name: person.audience,
+        rendered_title: title,
+        rendered_body: body,
+        recipient: person.phone,
+      });
+    }
+    if (!person.email && !person.sms) {
+      effects.push({
+        helper_id: key,
+        helper_title: "notification",
+        helper_updated_at: null,
+        action: "notify",
+        template_name: person.audience,
+        rendered_title: title,
+        rendered_body: body,
+        recipient: person.address ?? person.phone,
       });
     }
   }
   return { effects, scopes: [...scopes], cycle: false };
+}
+
+async function renderNotice(admin: SupabaseClient, eventId: string, template: string): Promise<string> {
+  if (!template) return "";
+  const { data, error } = await admin.rpc("render_merge_tags", { p_event_id: eventId, p_template: template });
+  if (error || typeof data !== "string") return template;
+  return data;
+}
+
+async function noticeRecipients(
+  admin: SupabaseClient,
+  eventId: string,
+  settings: { audience: string; email: boolean; sms: boolean }[],
+): Promise<{ audience: string; email: boolean; sms: boolean; address: string | null; phone: string | null }[]> {
+  const out: { audience: string; email: boolean; sms: boolean; address: string | null; phone: string | null }[] = [];
+  const roles = settings.filter((row) => ["master_admin", "admin", "salesperson", "employee", "marketing"].includes(row.audience));
+  if (roles.length) {
+    const { data } = await admin.from("employees").select("email, phone, permission_tier").in("permission_tier", roles.map((row) => row.audience)).eq("is_active", true);
+    for (const emp of data ?? []) {
+      const row = roles.find((item) => item.audience === emp.permission_tier);
+      if (!row) continue;
+      out.push({ audience: row.audience, email: row.email, sms: row.sms, address: emp.email ?? null, phone: emp.phone ?? null });
+    }
+  }
+  const salesperson = settings.find((row) => row.audience === "event_salesperson");
+  const assigned = settings.find((row) => row.audience === "event_assigned_staff");
+  if (salesperson || assigned) {
+    const { data: event } = await admin.from("events").select("salesperson_id").eq("id", eventId).maybeSingle();
+    if (salesperson && event?.salesperson_id) {
+      const { data: emp } = await admin.from("employees").select("email, phone").eq("id", event.salesperson_id).maybeSingle();
+      if (emp) out.push({ audience: "event_salesperson", email: salesperson.email, sms: salesperson.sms, address: emp.email ?? null, phone: emp.phone ?? null });
+    }
+    if (assigned) {
+      const { data: staff } = await admin.from("event_staff").select("employee:employees(email, phone)").eq("event_id", eventId);
+      for (const row of staff ?? []) {
+        const emp = row.employee as { email?: string | null; phone?: string | null } | { email?: string | null; phone?: string | null }[] | null;
+        const person = Array.isArray(emp) ? emp[0] : emp;
+        if (!person) continue;
+        out.push({ audience: "event_assigned_staff", email: assigned.email, sms: assigned.sms, address: person.email ?? null, phone: person.phone ?? null });
+      }
+    }
+  }
+  return out;
 }

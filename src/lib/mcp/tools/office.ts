@@ -18,9 +18,9 @@ import { freezeTemplateEmail, previewSms, previewTemplateEmail, sendSms, sendTem
 import { previewDocumentSend, sendDocumentForSignature } from "@/lib/sendForSignature";
 import { isPhoneOptedOut } from "@/lib/smsOptOut";
 import { assertSmsBody } from "../smsPolicy";
-import { getOrCreateShortLink } from "@/lib/shortLinks";
 import { buildOutstanding } from "@/lib/reports/build";
 import { staffCost, staffHours } from "@/lib/payroll";
+import { canonicalJson, sha256 } from "../crypto";
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
 import { McpScopeError, type ToolContext } from "../types";
 import type { LiveTool } from "../protocol";
@@ -996,6 +996,10 @@ export const officeTools: LiveTool[] = [
       return previewDocumentSend(adminOf(ctx), s(args, "document_id")!);
     },
     async execute(args, ctx) {
+      const fresh = await previewDocumentSend(adminOf(ctx), s(args, "document_id")!);
+      if (ctx.approvedEffectHash && sha256(canonicalJson(fresh)) !== ctx.approvedEffectHash) {
+        throw new Error("The rendered agreement email changed. Nothing was sent.");
+      }
       const sent = await sendDocumentForSignature(adminOf(ctx), s(args, "document_id")!);
       return { ok: true, to: sent.to };
     },
@@ -1180,16 +1184,15 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "payments_proposal_link",
-    description: "Get the short proposal link for an event. This does not email it.",
+    description: "Check whether an event has a proposal link. The link itself is not returned to the agent.",
     scopes: ["read.events"],
     confirm: false,
     inputSchema: obj({ event_id: UUID }, ["event_id"]),
     async execute(args, ctx) {
       const admin = adminOf(ctx);
-      const { data } = await admin.from("events").select("pay_token").eq("id", s(args, "event_id")).maybeSingle();
-      if (!data?.pay_token) throw new Error("This event has no proposal link yet.");
-      const url = await getOrCreateShortLink(admin, { eventId: s(args, "event_id")!, kind: "proposal", targetPath: `/offer/${data.pay_token}` });
-      return { url };
+      const { data } = await admin.from("events").select("id").eq("id", s(args, "event_id")).not("pay_token", "is", null).maybeSingle();
+      if (!data) throw new Error("This event has no proposal link yet.");
+      return { available: true };
     },
   },
   {
@@ -1365,6 +1368,7 @@ export const officeTools: LiveTool[] = [
         templateId: s(args, "template_id")!,
         to: (s(args, "to") as "primary_client" | "custom") ?? "primary_client",
         address: s(args, "address"),
+        expectedHash: ctx.approvedEffectHash,
       });
     },
   },

@@ -1,5 +1,5 @@
 import { canonicalJson, hashToken, hashesEqual, sha256 } from "./crypto";
-import { auditView, redact } from "./redact";
+import { auditView, hideClientLinks, redact } from "./redact";
 import { tokenDecision } from "./auth";
 import { missingScopes, scopesAllow } from "./scopes";
 import type { McpStore } from "./store";
@@ -99,7 +99,7 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
       idempotencyKey,
       requestId,
     });
-    return { status, body };
+    return { status, body: hideClientLinks(body) };
   };
 
   const raw = bearer(call.authorization);
@@ -165,7 +165,7 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "xos-mcp", version: "1.0.0" },
       instructions:
-        "XOS service connector. Risky tools (money, deletes, client email/text/contract) return a preview and a confirmation_id. Nothing is sent or changed until you call xos_confirm with that id. Call xos_whoami to see what this token can do.",
+        "XOS service connector. Risky tools return a preview and a confirmation_id. xos_confirm only reports status. A signed-in master admin approves the receipt in XOS before anything is sent or changed. Call xos_whoami to see what this token can do.",
     }), { status: "ok" });
   }
 
@@ -381,13 +381,13 @@ export async function executeHumanApproved(
   if (!tool?.confirm) throw new Error("This preview cannot be run.");
   if (sha256(canonicalJson(row.args)) !== row.argsHash) throw new Error("Stored arguments do not match the receipt.");
   if (!scopesAllow(input.token.scopes, tool.scopes)) throw new Error("The token no longer has the scopes for this action.");
-  const ctx: ToolContext = { now: input.now, token: input.token, admin: input.admin };
+  const ctx: ToolContext = { now: input.now, token: input.token, admin: input.admin, approvedEffectHash: storedHash(row.preview) };
   await tool.authorize?.(row.args, ctx);
   if (tool.freeze) {
     const fresh = await tool.freeze(row.args, ctx);
     const stored = (row.preview as { effect_hash?: string } | null)?.effect_hash;
     if (!stored || sha256(canonicalJson(fresh)) !== stored) {
-      throw new Error("A template or helper changed after the preview. Nothing was run. Ask for a new preview.");
+      throw new Error("The rendered message changed after the preview. Nothing was run. Ask for a new preview.");
     }
   }
   const begun = await beginAudit(store, {
@@ -419,6 +419,11 @@ async function runExecute(tool: LiveTool, args: Record<string, unknown>, ctx: To
     const safe = String(redact(message, secrets));
     return { ok: false, body: toolResult({ error: safe }, true) };
   }
+}
+
+function storedHash(preview: unknown): string | undefined {
+  const hash = (preview as { effect_hash?: string } | null)?.effect_hash;
+  return typeof hash === "string" ? hash : undefined;
 }
 
 function harmfulWrite(tool: LiveTool) {

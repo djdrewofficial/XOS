@@ -6,6 +6,8 @@ export type ToolContext = {
   token: { id: string; name: string; scopes: readonly string[] };
   /** Service-role client. Present when the server is handling a live request. */
   admin: SupabaseClient;
+  /** Set only while a person is running an approved preview. Sends must match it. */
+  approvedEffectHash?: string;
 };
 
 export type ToolHandler = {

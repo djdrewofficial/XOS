@@ -1,4 +1,4 @@
-import { officeTools } from "@/lib/mcp/tools/office";
+import { mcpTools } from "@/lib/mcp/tools";
 import { handleMcp } from "@/lib/mcp/protocol";
 import { secretValuesFromEnv } from "@/lib/mcp/redact";
 import { supabaseStore } from "@/lib/mcp/supabaseStore";
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
   let result: { status: number; body: unknown };
   try {
     const admin = createAdminClient();
-    result = await handleMcp(supabaseStore(admin), officeTools, {
+    result = await handleMcp(supabaseStore(admin), mcpTools, {
       body,
       authorization: req.headers.get("authorization"),
       ip: clientIp(req),

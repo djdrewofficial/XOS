@@ -29,8 +29,8 @@ function catalog(source: string) {
 
 describe("mcp tool catalog", () => {
   it("names every tool once, with a description and a closed schema", () => {
-    const tools = catalog(read("src/lib/mcp/tools/office.ts"));
-    assert.ok(tools.length >= 40);
+    const tools = catalog(read("src/lib/mcp/tools/office.ts") + "\n" + read("src/lib/mcp/tools/coverage.ts"));
+    assert.ok(tools.length >= 70);
     const names = tools.map((tool) => tool.name);
     assert.equal(new Set(names).size, names.length);
     for (const tool of tools) assert.ok(tool.description.length > 20, tool.name);
@@ -38,7 +38,7 @@ describe("mcp tool catalog", () => {
   });
 
   it("confirms money, deletes, outbound messages, and helper runs", () => {
-    const tools = catalog(read("src/lib/mcp/tools/office.ts"));
+    const tools = catalog(read("src/lib/mcp/tools/office.ts") + "\n" + read("src/lib/mcp/tools/coverage.ts"));
     for (const tool of tools) {
       const risky = tool.scopes.some((scope) => RISKY.test(scope));
       if (risky && !READ_ONLY_RISKY.has(tool.name)) assert.equal(tool.confirm, true, tool.name);
@@ -76,7 +76,7 @@ describe("mcp tool catalog", () => {
   it("documents every tool and stores tokens as hashes", () => {
     const docs = read("docs/mcp.md");
     const migration = read("supabase/migrations/00217_mcp_service_access.sql");
-    for (const tool of catalog(read("src/lib/mcp/tools/office.ts"))) assert.match(docs, new RegExp(`\\b${tool.name}\\b`));
+    for (const tool of catalog(read("src/lib/mcp/tools/office.ts") + "\n" + read("src/lib/mcp/tools/coverage.ts"))) assert.match(docs, new RegExp(`\\b${tool.name}\\b`));
     assert.match(docs, /xos_whoami/);
     assert.match(docs, /xos_confirm/);
     assert.match(migration, /token_hash/);

@@ -49,12 +49,33 @@ export function auditView(value: unknown, secrets: readonly string[] = [], depth
   return "[unsupported]";
 }
 
+const CLIENT_LINK =
+  /https?:\/\/[^\s"'<>]*\/(?:sign|pay|proposal|offer|welcome|vibo|unsubscribe|j|p)\/[A-Za-z0-9._~-]+/gi;
+
+const CLIENT_LINK_KEY = /^(signing_url|payment_url|proposal_url|join_url|guest_url|access_token|pay_token)$/i;
+
+/** Client-facing secret links stay in the admin approval record. Agent responses
+    and the audit log only see a placeholder. */
+export function hideClientLinks(value: unknown, depth = 0): unknown {
+  if (depth > 20) return value;
+  if (typeof value === "string") return value.replace(CLIENT_LINK, "[client link]");
+  if (Array.isArray(value)) return value.map((item) => hideClientLinks(item, depth + 1));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = CLIENT_LINK_KEY.test(key) ? "[client link]" : hideClientLinks(child, depth + 1);
+    }
+    return out;
+  }
+  return value;
+}
+
 function stripSecrets(value: string, secrets: readonly string[]): string {
   let out = value;
   for (const secret of secrets) {
     if (secret.length >= 8 && out.includes(secret)) out = out.split(secret).join("[redacted]");
   }
-  return out;
+  return out.replace(CLIENT_LINK, "[client link]");
 }
 
 /** Env values that must never appear in a tool result, audit row, or log line. */

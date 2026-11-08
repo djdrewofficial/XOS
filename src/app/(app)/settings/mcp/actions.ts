@@ -7,7 +7,7 @@ import { executeHumanApproved } from "@/lib/mcp/protocol";
 import { secretValuesFromEnv } from "@/lib/mcp/redact";
 import { assertScopes } from "@/lib/mcp/scopes";
 import { supabaseStore } from "@/lib/mcp/supabaseStore";
-import { officeTools } from "@/lib/mcp/tools/office";
+import { mcpTools } from "@/lib/mcp/tools";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type TokenFlash = { token: string; prefix: string; name: string } | { error: string } | null;
@@ -99,7 +99,7 @@ export async function approveMcpPreview(formData: FormData) {
     .eq("id", row.token_id)
     .maybeSingle();
   if (tokenError || !token || token.revoked_at) throw new Error("The agent token is not active.");
-  await executeHumanApproved(supabaseStore(admin), officeTools, {
+  await executeHumanApproved(supabaseStore(admin), mcpTools, {
     confirmationId: id,
     userId: me.userId,
     token: { id: token.id as string, name: token.name as string, scopes: (token.scopes as string[]) ?? [] },

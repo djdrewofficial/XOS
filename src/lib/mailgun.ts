@@ -136,6 +136,9 @@ async function enrichMessage(
     tmpl = data;
   }
   const branded = tmpl?.branded_shell ?? true;
+  if ((msg.body_html ?? "").includes('data-xos-rendered="agent"')) {
+    return { html, attachments, branded: false, isMarketing: tmpl?.is_marketing === true };
+  }
   // Commercial mail (proposal-reminder drips, promos) → CAN-SPAM unsubscribe +
   // suppression. Untemplated / transactional templates stay false.
   const isMarketing = tmpl?.is_marketing === true;

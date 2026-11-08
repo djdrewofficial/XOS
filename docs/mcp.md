@@ -227,4 +227,20 @@ The transport follows the 2025-06-18 streamable HTTP rules that were checked in 
 
 After a person connects it, `xos_whoami` should list only the granted scopes. A risky tool returns a receipt. A person approves that receipt in XOS. `xos_confirm` does not do that approval.
 
+## More office tools
+
+These call the same records as the office screens. A person still approves anything marked confirm in the tool.
+
+`events_create_onboarding` `events_add_expense` `events_delete_expense` `events_add_trip` `events_delete_trip` `events_add_equipment` `events_remove_equipment` `events_add_vendor` `events_remove_vendor` `events_set_primary_client` `scheduled_comms_skip` `scheduled_comms_override` `fireflies_review` `packages_update` `packages_add_date_price` `packages_delete_date_price` `addons_update` `venues_update` `venues_merge` `vendors_update` `vendor_suggestions_review` `staff_update` `timesheet_requests` `equipment_update` `equipment_report_damage` `equipment_resolve_damage` `email_templates_update` `helpers_update` `statuses_save` `statuses_delete` `sources_save` `custom_fields_save` `planner_templates_save` `notifications_update` `journeys_save` `dashboard_layout_save` `expense_categories_add` `settings_general_update`
+
+Still not tools, on purpose:
+
+- Client signing, proposal confirm, and the client portal acting as the couple. Those are the couple's own ceremony.
+- Passkeys, two-factor, password changes, and auth email templates.
+- Minting or rotating agent tokens from an agent token.
+- The permission grid and staff-settings permission checkboxes. An agent must not grant itself access.
+- Spotify export and playlist import. Those use the signed-in staff member's own Spotify login.
+- HighLevel and other OAuth connect buttons. Those are browser redirects.
+- Employee self check-in and an employee filing their own timesheet. Those actions are bound to the signed-in person, not to an office token. Approving a timesheet is `timesheet_requests`.
+
 A dropped response can be retried with the same `Idempotency-Key`. Do not reuse a key for a different action.

@@ -3,14 +3,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { isPhoneOptedOut } from "@/lib/smsOptOut";
+import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
+import { emailShell, paymentPlanHtml, quoteSummaryHtml, signButtonHtml } from "@/lib/signing";
+import { appUrl } from "@/lib/signing";
+import { canonicalJson, sha256 as sha256Text } from "@/lib/mcp/crypto";
 import { assertSmsBody, classifyAgentSms } from "@/lib/mcp/smsPolicy";
+import { docTypeClientLabel } from "@/lib/documentBlocks";
 
 type Sender = { name?: string; email?: string; reply_to?: string };
 
-/** Preview a template send without queueing it. Recipient and rendered subject
-    only — the body can contain client details, so the preview keeps a short note
-    instead of the full HTML. */
-/** Version stamp for an email template. Approval refuses the send if this changes. */
+/** Version stamp plus the fully rendered email. Secret links are placeholders. */
 export async function freezeTemplateEmail(
   admin: SupabaseClient,
   input: { eventId: string; templateId: string; to: "primary_client" | "custom"; address?: string | null },
@@ -36,7 +38,25 @@ export async function previewTemplateEmail(
   const template = await loadTemplate(admin, input.templateId, false);
   const to = await resolveTo(admin, input);
   const subject = await renderTags(admin, input.eventId, template.subject ?? "");
-  const body = await renderTags(admin, input.eventId, template.body_html ?? "");
+  let body = await renderTags(admin, input.eventId, template.body_html ?? "");
+  const bundle = await loadEventBundle(admin, input.eventId);
+  if (bundle) {
+    body = replaceTag(body, "quote_summary", quoteSummaryHtml(bundle));
+    body = replaceTag(body, "payment_plan", paymentPlanHtml(bundle));
+  }
+  body = replaceTag(body, "document_sign_link", "[signing link]");
+  body = replaceTag(body, "payment_link", "[payment link]");
+  body = replaceTag(body, "payment_button", "[payment link]");
+  body = replaceTag(body, "review_sign_link", "[proposal link]");
+  body = replaceTag(body, "review_sign_button", "[proposal link]");
+  body = replaceTag(body, "journey_start_link", "[journey link]");
+  body = replaceTag(body, "journey_start_button", "[journey link]");
+  if (template.branded_shell !== false) {
+    const { data: cs } = await admin.from("company_settings").select("company_name").eq("id", true).maybeSingle();
+    body = emailShell(cs?.company_name ?? "Xpress Entertainment", `<div data-xos-rendered="agent" style="padding:28px 30px;">${body}</div>`);
+  } else {
+    body = `<div data-xos-rendered="agent">${body}</div>`;
+  }
   return {
     template_id: template.id,
     template: template.name,
@@ -46,7 +66,7 @@ export async function previewTemplateEmail(
     body,
     attaches_document: Boolean(template.attach_template_id),
     is_sms: template.is_sms === true,
-    send_time_tags: "quote_summary, payment_plan, and document_sign_link are filled when the outbox sends. A template that uses those tags is not byte-identical until that moment. The template version above is what approval locks.",
+    link_policy: "Signing, payment, and proposal links are placeholders here. Approval is bound to this exact render. The real link is substituted only after the render still matches, and it is not returned to the agent.",
   };
 }
 
@@ -56,15 +76,20 @@ export async function previewTemplateEmail(
     is an explicit manual send, same as a staff helper click. */
 export async function sendTemplateEmail(
   admin: SupabaseClient,
-  input: { eventId: string; templateId: string; to: "primary_client" | "custom"; address?: string | null; from?: string | null },
+  input: { eventId: string; templateId: string; to: "primary_client" | "custom"; address?: string | null; from?: string | null; expectedHash?: string | null },
 ) {
+  const frozen = await freezeTemplateEmail(admin, input);
+  if (input.expectedHash && sha256Text(canonicalJson(frozen)) !== input.expectedHash) {
+    throw new Error("The rendered email changed. Nothing was sent.");
+  }
   const template = await loadTemplate(admin, input.templateId, false);
   if (template.is_sms) throw new Error("That template is a text, not an email.");
-  const to = await resolveTo(admin, input);
+  const rendered = await previewTemplateEmail(admin, input);
+  const to = rendered.to;
   if (!to) throw new Error("No recipient email address.");
   const sender = await resolveSender(admin, input.eventId, input.from ?? "company");
-  const subject = await renderTags(admin, input.eventId, template.subject ?? "");
-  const body = await renderTags(admin, input.eventId, template.body_html ?? "");
+  const subject = rendered.subject;
+  const body = await substituteClientLinks(admin, rendered.body ?? "", template, input.eventId);
   const { data: event } = await admin.from("events").select("client_id").eq("id", input.eventId).maybeSingle();
   const { data: queued, error } = await admin.from("email_log").insert({
     event_id: input.eventId,
@@ -81,7 +106,7 @@ export async function sendTemplateEmail(
   }).select("id").single();
   if (error) throw new Error(error.message);
   const drained = await processOutbox(admin, { onlyIds: [queued.id as string] });
-  return { to, subject, body, drained };
+  return { to, subject, drained, body_matched_approval: true };
 }
 
 export async function previewSms(
@@ -140,7 +165,47 @@ async function loadTemplate(admin: SupabaseClient, id: string, sms: boolean) {
     is_sms: boolean | null;
     sms_marketing: boolean | null;
     attach_template_id: string | null;
+    attach_mode: string | null;
+    branded_shell: boolean | null;
   };
+}
+
+function replaceTag(html: string, tag: string, value: string): string {
+  return html.split(`<${tag}>`).join(value).split(`&lt;${tag}&gt;`).join(value);
+}
+
+async function substituteClientLinks(
+  admin: SupabaseClient,
+  html: string,
+  template: { attach_template_id: string | null; attach_mode: string | null },
+  eventId: string,
+): Promise<string> {
+  const { data: event } = await admin.from("events").select("pay_token").eq("id", eventId).maybeSingle();
+  const payToken = (event?.pay_token as string | null) ?? "";
+  let out = html;
+  if (out.includes("[payment link]")) out = out.split("[payment link]").join(payToken ? `${appUrl()}/pay/${payToken}` : "");
+  if (out.includes("[proposal link]") || out.includes("[journey link]")) {
+    const proposal = payToken ? `${appUrl()}/proposal/${payToken}` : "";
+    out = out.split("[proposal link]").join(proposal).split("[journey link]").join(proposal);
+  }
+  if (out.includes("[signing link]") && template.attach_template_id && (template.attach_mode ?? "esign_link") === "esign_link") {
+    const { data: existing } = await admin
+      .from("documents")
+      .select("id, access_token, doc_type")
+      .eq("event_id", eventId)
+      .eq("template_id", template.attach_template_id)
+      .is("signed_at", null)
+      .neq("status", "void")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const doc = existing ?? (await generateDocumentRow(admin, template.attach_template_id, eventId, "sent"));
+    const link = doc?.access_token ? `${appUrl()}/sign/${doc.access_token}` : "";
+    out = out.split("[signing link]").join(link || signButtonHtml(link, `Review & Sign ${docTypeClientLabel(doc?.doc_type ?? "contract")}`));
+  } else {
+    out = out.split("[signing link]").join("");
+  }
+  return out;
 }
 
 function sha256(text: string): string {

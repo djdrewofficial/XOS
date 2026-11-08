@@ -73,6 +73,8 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     );
     const left = await db.query("select event_id from public.payments");
     assert.equal((left.rows[0] as { event_id: string }).event_id, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+    const def = await db.query("select pg_get_constraintdef(oid) as def from pg_constraint where conname = 'payments_event_id_fkey'");
+    assert.match(String((def.rows[0] as { def: string }).def), /on delete restrict/i);
   });
 
   it("does not delete a membership that belongs to another event", async () => {
