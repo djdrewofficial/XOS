@@ -899,16 +899,16 @@ export async function removeEventClient(eventId: string, eventClientId: string) 
 
 export async function setPrimaryEventClient(eventId: string, eventClientId: string) {
   await requireModule("events", "edit", { mode: "throw" });
-  const supabase = await createClient();
-  const { data: link } = await supabase
-    .from("event_clients")
-    .select("client_id")
-    .eq("id", eventClientId)
-    .single();
-  if (!link) return;
-  await supabase.from("event_clients").update({ is_primary: false }).eq("event_id", eventId);
-  await supabase.from("event_clients").update({ is_primary: true }).eq("id", eventClientId);
-  await supabase.from("events").update({ client_id: link.client_id }).eq("id", eventId);
+  const { error } = await createAdminClient().rpc("mcp_set_primary_client", {
+    p_event_id: eventId,
+    p_event_client_id: eventClientId,
+  });
+  if (error) {
+    if (/mcp_set_primary_client|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Choosing the primary client needs migration 00219. Nothing was changed.");
+    }
+    throw new Error(error.message);
+  }
   revalidatePath(`/events/${eventId}`);
 }
 

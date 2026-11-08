@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -136,9 +137,6 @@ async function enrichMessage(
     tmpl = data;
   }
   const branded = tmpl?.branded_shell ?? true;
-  if ((msg.body_html ?? "").includes('data-xos-rendered="agent"')) {
-    return { html, attachments, branded: false, isMarketing: tmpl?.is_marketing === true };
-  }
   // Commercial mail (proposal-reminder drips, promos) → CAN-SPAM unsubscribe +
   // suppression. Untemplated / transactional templates stay false.
   const isMarketing = tmpl?.is_marketing === true;
@@ -447,7 +445,7 @@ export async function cleanupOutboxTmp(
     Pass a service-role client when running without a user session (cron route). */
 export async function processOutbox(
   client?: SupabaseClient,
-  opts?: { onlyIds?: string[] },
+  opts?: { onlyIds?: string[]; bodySha256?: Record<string, string> },
 ): Promise<{ sent: number; failed: number; suppressed?: number; skipped: string | null; error?: string }> {
   const { domain } = mailgunConfig();
   const supabase = client ?? (await createClient());
@@ -515,6 +513,12 @@ export async function processOutbox(
   const pausedEvents = await pausedEventIdSet(supabase, (queued ?? []).map((m: { event_id?: string | null }) => m.event_id ?? null));
 
   for (const msg of queued ?? []) {
+    const expected = opts?.bodySha256?.[msg.id as string];
+    if (expected && createHash("sha256").update(msg.body_html ?? "", "utf8").digest("hex") !== expected) {
+      await supabase.from("email_log").update({ status: "queued", claimed_at: null }).eq("id", msg.id).eq("status", "sending");
+      failed++;
+      continue;
+    }
     if (isSuppressedByCommsPause(msg, pausedEvents)) {
       await supabase
         .from("email_log")

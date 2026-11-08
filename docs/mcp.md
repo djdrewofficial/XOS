@@ -179,10 +179,14 @@ Audit rows are in `mcp_audit_log`. Confirmations are in `mcp_confirmations`. Ide
 
 Drew approves each of these. Nothing in this change deploys or applies the migration by itself.
 
-1. Review the pull request.
-2. Apply `00217` and `00218` through the migration history after you approve them. Approving a receipt in the app does nothing useful until `00218` is in that history.
-3. Merge to `main`. Netlify builds from that push. Do not deploy with the local Netlify CLI.
-4. Open Settings → Agent Access and mint the token.
+Do these in order. Each step waits for your approval. Do not mint a token or register a connector before the code that reads these tables is deployed.
+
+1. Review the migration files `00217`, `00218`, and `00219` against the history already recorded in `supabase_migrations.schema_migrations`.
+2. Apply those exact files through that history. Do not paste them as an untracked script.
+3. Roll out the code (merge to `main` so Netlify builds it). Do not deploy with the local Netlify CLI.
+4. Only after that, mint a service token in Settings → Agent Access and register the connector.
+
+Deploying this code before `00218` makes Remove client on the event page fail closed, because that button calls `mcp_remove_event_client`. Deploying it before `00219` makes Choose primary client fail closed the same way, and agent approvals cannot be claimed. Those buttons are coupled to the migrations. The connector stays unregistered until you approve step 4.
 
 The connector URL is the Netlify hostname, not `https://xos.xpressdjs.com`.
 
@@ -231,7 +235,7 @@ After a person connects it, `xos_whoami` should list only the granted scopes. A 
 
 These call the same records as the office screens. A person still approves anything marked confirm in the tool.
 
-`events_create_onboarding` `events_add_expense` `events_delete_expense` `events_add_trip` `events_delete_trip` `events_add_equipment` `events_remove_equipment` `events_add_vendor` `events_remove_vendor` `events_set_primary_client` `scheduled_comms_skip` `scheduled_comms_override` `fireflies_review` `packages_update` `packages_add_date_price` `packages_delete_date_price` `addons_update` `venues_update` `venues_merge` `vendors_update` `vendor_suggestions_review` `staff_update` `timesheet_requests` `equipment_update` `equipment_report_damage` `equipment_resolve_damage` `email_templates_update` `helpers_update` `statuses_save` `statuses_delete` `sources_save` `custom_fields_save` `planner_templates_save` `notifications_update` `journeys_save` `dashboard_layout_save` `expense_categories_add` `settings_general_update`
+`planner_questions` `planner_event_edit` `venues_contact` `vendors_contact` `spotify_sync_event` `spotify_export` `events_create_onboarding` `events_add_expense` `events_delete_expense` `events_add_trip` `events_delete_trip` `events_add_equipment` `events_remove_equipment` `events_add_vendor` `events_remove_vendor` `events_set_primary_client` `scheduled_comms_skip` `scheduled_comms_override` `fireflies_review` `packages_update` `packages_add_date_price` `packages_delete_date_price` `addons_update` `venues_update` `venues_merge` `vendors_update` `vendor_suggestions_review` `staff_update` `timesheet_requests` `equipment_update` `equipment_report_damage` `equipment_resolve_damage` `email_templates_update` `helpers_update` `statuses_save` `statuses_delete` `sources_save` `custom_fields_save` `planner_templates_save` `notifications_update` `journeys_save` `dashboard_layout_save` `expense_categories_add` `settings_general_update`
 
 Still not tools, on purpose:
 

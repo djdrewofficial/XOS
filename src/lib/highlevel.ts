@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSuppressedByCommsPause, pausedEventIdSet } from "@/lib/commsPause";
 import { createClient } from "@/lib/supabase/server";
@@ -742,7 +743,7 @@ export async function sendDirectSms(opts: {
     Pass a service-role client when running without a user session (cron, sign flow). */
 export async function processSmsOutbox(
   client?: SupabaseClient,
-  opts?: { onlyIds?: string[] },
+  opts?: { onlyIds?: string[]; bodySha256?: Record<string, string> },
 ): Promise<{ sent: number; failed: number; suppressed: number; skipped: string | null; error?: string }> {
   if (!isHighLevelConfigured()) {
     return {
@@ -854,6 +855,12 @@ export async function processSmsOutbox(
   const pausedEvents = await pausedEventIdSet(supabase, (queued ?? []).map((m) => m.event_id as string | null));
 
   for (const msg of queued ?? []) {
+    const expected = opts?.bodySha256?.[msg.id as string];
+    if (expected && createHash("sha256").update(msg.body ?? "", "utf8").digest("hex") !== expected) {
+      await supabase.from("sms_log").update({ status: "queued", claimed_at: null }).eq("id", msg.id).eq("status", "sending");
+      failed++;
+      continue;
+    }
     const fail = async (error: string) => {
       await supabase.from("sms_log").update({ status: "failed", error }).eq("id", msg.id);
       failed++;

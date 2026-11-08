@@ -8,6 +8,8 @@ export type ToolContext = {
   admin: SupabaseClient;
   /** Set only while a person is running an approved preview. Sends must match it. */
   approvedEffectHash?: string;
+  /** The exact effect stored when the preview was created. */
+  approvedSnapshot?: unknown;
 };
 
 export type ToolHandler = {

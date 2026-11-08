@@ -4,7 +4,7 @@ import { decideIdempotency, idempotencyKeyError, type IdempotencyStatus } from "
 import type { AuditRow, ConfirmationRow, IdempotencyRow, McpStore } from "./store";
 
 const CONFIRMATION_COLUMNS =
-  "id, token_id, tool_name, args_hash, args, preview, expires_at, used_at, approved_at, approved_by, rejected_at, rejected_by, result";
+  "id, token_id, tool_name, args_hash, args, preview, expires_at, used_at, approved_at, approved_by, rejected_at, rejected_by, result, status, idempotency_key";
 
 /** Service-role access to the MCP tables. The raw bearer token is never written.
     Rate-limit and audit errors throw so the caller can fail closed. */
@@ -60,11 +60,42 @@ export function supabaseStore(admin: SupabaseClient): McpStore {
           args: row.args,
           preview: row.preview,
           expires_at: row.expiresAt,
+          status: "pending",
+          idempotency_key: row.idempotencyKey,
         })
         .select(CONFIRMATION_COLUMNS)
         .single();
       if (error || !data) throw new Error("Could not store the confirmation.");
       return mapConfirmation(data);
+    },
+    async findOperation(tokenId, idempotencyKey) {
+      const { data, error } = await admin
+        .from("mcp_confirmations")
+        .select(CONFIRMATION_COLUMNS)
+        .eq("token_id", tokenId)
+        .eq("idempotency_key", idempotencyKey)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error("Could not read the operation.");
+      return data ? mapConfirmation(data) : null;
+    },
+    async claimExecution(id, userId) {
+      const { data, error } = await admin.rpc("mcp_claim_operation", { p_id: id, p_user: userId });
+      if (error) {
+        if (/token inactive/i.test(error.message)) throw new Error("The agent token is not active.");
+        if (/not claimable|expired/i.test(error.message)) return null;
+        throw new Error(error.message);
+      }
+      return data ? mapConfirmation(data as Record<string, unknown>) : null;
+    },
+    async finishOperation(id, status, result, now) {
+      const { error } = await admin
+        .from("mcp_confirmations")
+        .update({ status, result, used_at: now.toISOString() })
+        .eq("id", id)
+        .eq("status", "executing");
+      if (error) throw new Error("Could not finish the operation.");
     },
     async getConfirmation(id) {
       const { data, error } = await admin.from("mcp_confirmations").select(CONFIRMATION_COLUMNS).eq("id", id).maybeSingle();
@@ -197,5 +228,7 @@ function mapConfirmation(data: Record<string, unknown>): ConfirmationRow {
     rejectedAt: (data.rejected_at as string | null) ?? null,
     rejectedBy: (data.rejected_by as string | null) ?? null,
     result: data.result ?? null,
+    status: (data.status as ConfirmationRow["status"]) ?? "pending",
+    idempotencyKey: (data.idempotency_key as string | null) ?? null,
   };
 }

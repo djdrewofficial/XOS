@@ -153,7 +153,7 @@ describe("mcp protocol", () => {
     };
     const now = new Date("2026-11-08T12:00:00Z");
     const preview = await handleMcp(store, [pay], {
-      body: callTool("payments_add", { event_id: "evt", amount: 125 }),
+      body: callTool("payments_add", { event_id: "evt", amount: 125, idempotency_key: "preview-key-1" }),
       authorization: `Bearer ${raw}`,
       now,
       secrets: [SECRET],
@@ -197,7 +197,7 @@ describe("mcp protocol", () => {
     const approved = await executeHumanApproved(store, [pay], {
       confirmationId: id,
       userId: "11111111-1111-4111-8111-111111111111",
-      token: { id: row.id, name: row.name, scopes: row.scopes },
+      token: { id: row.id, name: row.name, scopes: row.scopes, revoked_at: null, expires_at: null, overlap_until: null },
       now,
       admin: {} as never,
       secrets: [SECRET],
@@ -209,7 +209,7 @@ describe("mcp protocol", () => {
       () => executeHumanApproved(store, [pay], {
         confirmationId: id,
         userId: "11111111-1111-4111-8111-111111111111",
-        token: { id: row.id, name: row.name, scopes: row.scopes },
+        token: { id: row.id, name: row.name, scopes: row.scopes, revoked_at: null, expires_at: null, overlap_until: null },
         now,
         admin: {} as never,
         secrets: [],
@@ -219,7 +219,7 @@ describe("mcp protocol", () => {
     assert.equal(ran.length, 1);
 
     const second = await handleMcp(store, [pay], {
-      body: callTool("payments_add", { event_id: "evt", amount: 10 }),
+      body: callTool("payments_add", { event_id: "evt", amount: 10, idempotency_key: "preview-key-2" }),
       authorization: `Bearer ${raw}`,
       now,
     });
@@ -352,5 +352,57 @@ describe("mcp protocol", () => {
     const [a, b] = await Promise.all([first, second]);
     const statuses = [a.status, b.status].sort();
     assert.deepEqual(statuses, [200, 409]);
+  });
+
+  it("reuses one preview for the same idempotency key and refuses an expired token at approval", async () => {
+    const { store, addToken } = memoryStore();
+    const { raw, row } = issued(["money"], { id: "op-token" });
+    addToken(row);
+    let freezes = 0;
+    const pay: LiveTool = {
+      name: "payments_add",
+      description: "Record a payment once",
+      scopes: ["money"],
+      confirm: true,
+      inputSchema: { type: "object", additionalProperties: false, properties: { amount: { type: "number" } } },
+      async freeze() {
+        freezes += 1;
+        return { amount: 10, rendered: "record 10" };
+      },
+      async execute() {
+        return { ok: true };
+      },
+    };
+    const args = { amount: 10, idempotency_key: "same-preview-1" };
+    const first = await handleMcp(store, [pay], { body: callTool("payments_add", args), authorization: `Bearer ${raw}` });
+    const second = await handleMcp(store, [pay], { body: callTool("payments_add", args), authorization: `Bearer ${raw}` });
+    const a = toolText((first.body as { result: unknown }).result) as { confirmation_id: string };
+    const b = toolText((second.body as { result: unknown }).result) as { confirmation_id: string };
+    assert.equal(a.confirmation_id, b.confirmation_id);
+    assert.equal(freezes, 1);
+    await assert.rejects(
+      () => executeHumanApproved(store, [pay], {
+        confirmationId: a.confirmation_id,
+        userId: "11111111-1111-4111-8111-111111111111",
+        token: { ...row, scopes: row.scopes, expires_at: "2000-01-01T00:00:00Z" },
+        now: new Date(),
+        admin: {} as never,
+        secrets: [],
+      }),
+      /not active \(expired\)/,
+    );
+  });
+
+  it("publishes idempotency_key on every tool schema", async () => {
+    const { store, addToken } = memoryStore();
+    const { raw, row } = issued(["read.events"]);
+    addToken(row);
+    const listed = await handleMcp(store, [readTool], {
+      body: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      authorization: `Bearer ${raw}`,
+    });
+    const tools = (listed.body as { result: { tools: { name: string; inputSchema: { properties: Record<string, unknown> } }[] } }).result.tools;
+    const events = tools.find((tool) => tool.name === "events_list");
+    assert.ok(events?.inputSchema.properties.idempotency_key);
   });
 });

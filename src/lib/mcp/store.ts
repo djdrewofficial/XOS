@@ -35,6 +35,9 @@ export type ConfirmationRow = {
   rejectedAt: string | null;
   rejectedBy: string | null;
   result: unknown;
+  /** pending until a person claims it, then executing, then a terminal state. */
+  status: "pending" | "executing" | "completed" | "failed" | "uncertain";
+  idempotencyKey: string | null;
 };
 
 export type IdempotencyRow = IdempotencySnapshot;
@@ -46,8 +49,13 @@ export interface McpStore {
   audits(): Promise<AuditRow[]>;
   /** True when the key is already at `max` inside the window. Records a hit only when allowed. */
   hitRateLimit(bucket: string, key: string, max: number, windowMs: number, now: Date): Promise<boolean>;
-  createConfirmation(row: Omit<ConfirmationRow, "id" | "usedAt" | "approvedAt" | "approvedBy" | "rejectedAt" | "rejectedBy" | "result"> & { id?: string }): Promise<ConfirmationRow>;
+  createConfirmation(row: Omit<ConfirmationRow, "id" | "usedAt" | "approvedAt" | "approvedBy" | "rejectedAt" | "rejectedBy" | "result" | "status"> & { id?: string; status?: ConfirmationRow["status"] }): Promise<ConfirmationRow>;
   getConfirmation(id: string): Promise<ConfirmationRow | null>;
+  /** The preview created for this token and key, if the arguments still match. */
+  findOperation(tokenId: string, idempotencyKey: string): Promise<ConfirmationRow | null>;
+  /** Atomically moves pending -> executing. Null when it is not claimable. */
+  claimExecution(id: string, userId: string, now: Date): Promise<ConfirmationRow | null>;
+  finishOperation(id: string, status: "completed" | "failed" | "uncertain", result: unknown, now: Date): Promise<void>;
   /** Staff session only. Does not run the tool. */
   decideConfirmation(id: string, decision: { userId: string; now: Date; kind: "approve" | "reject" }): Promise<ConfirmationRow | null>;
   saveConfirmationResult(id: string, result: unknown): Promise<void>;
@@ -107,6 +115,8 @@ export function memoryStore(): { store: McpStore; addToken(row: ServiceTokenRow)
         rejectedAt: null,
         rejectedBy: null,
         result: null,
+        status: row.status ?? "pending",
+        idempotencyKey: row.idempotencyKey ?? null,
       };
       confirmations.push(saved);
       return saved;
@@ -128,6 +138,27 @@ export function memoryStore(): { store: McpStore; addToken(row: ServiceTokenRow)
     async saveConfirmationResult(id, result) {
       const row = confirmations.find((item) => item.id === id);
       if (row) row.result = result;
+    },
+    async findOperation(tokenId, idempotencyKey) {
+      const row = confirmations.find((item) => item.tokenId === tokenId && item.idempotencyKey === idempotencyKey);
+      return row ? { ...row, args: { ...row.args } } : null;
+    },
+    async claimExecution(id, userId, now) {
+      const row = confirmations.find((item) => item.id === id);
+      if (!row || row.status !== "pending" || row.rejectedAt || row.usedAt) return null;
+      if (Date.parse(row.expiresAt) <= now.getTime()) return null;
+      if (!userId) return null;
+      row.status = "executing";
+      row.approvedAt = now.toISOString();
+      row.approvedBy = userId;
+      return { ...row, args: { ...row.args } };
+    },
+    async finishOperation(id, status, result, now) {
+      const row = confirmations.find((item) => item.id === id);
+      if (!row) return;
+      row.status = status;
+      row.result = result;
+      row.usedAt = now.toISOString();
     },
     async getConfirmation(id) {
       const row = confirmations.find((item) => item.id === id);

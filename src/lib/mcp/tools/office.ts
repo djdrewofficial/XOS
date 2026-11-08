@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { inviteClientToXos, sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
-import { executeBookingHelper, previewHelperSms } from "@/lib/bookingHelperRun";
+import { previewHelperSms } from "@/lib/bookingHelperRun";
 import { findOrCreateClient } from "@/lib/clients";
-import { generateDocumentRow } from "@/lib/documentRender";
+import { generateDocumentRow, loadEventBundle } from "@/lib/documentRender";
 import { anonymizeClientRecord } from "@/lib/anonymizeClient";
 import { updateEventFinancialsRecord } from "@/lib/eventFinancials";
 import { archiveEventRecord, assertEventDeletable, unarchiveEventRecord } from "@/lib/eventLifecycle";
@@ -15,6 +15,7 @@ import { assignAddonSections } from "@/lib/planning";
 import { reseedEventPlanning } from "@/lib/planning";
 import { runAutomations } from "@/lib/automations";
 import { freezeTemplateEmail, previewSms, previewTemplateEmail, sendSms, sendTemplateEmail } from "@/lib/queueTemplateSend";
+import { SCHEDULE_TEMPLATE_COLUMNS, mapTemplate, targetDateFor, templateMatchesEvent, zonedParts, type ScheduleEventFacts, type TemplateRow } from "@/lib/scheduledComms";
 import { previewDocumentSend, sendDocumentForSignature } from "@/lib/sendForSignature";
 import { isPhoneOptedOut } from "@/lib/smsOptOut";
 import { assertSmsBody } from "../smsPolicy";
@@ -63,6 +64,54 @@ async function inboxReplySnapshot(admin: SupabaseClient, args: Record<string, un
     classification: channel === "SMS" ? "freeform_is_marketing" : channel,
     complete: true,
   };
+}
+
+async function dueScheduledMessages(admin: SupabaseClient, eventId: string) {
+  const [{ data: event, error: eventError }, { data: templates, error: templateError }, { data: settings }, { data: addons }, { data: staff }, { data: payments }] = await Promise.all([
+    admin.from("events").select("name, event_date, booked_date, initial_contact_date, contract_sent_date, contract_due_date, contract_signed_date, quote_sent_date, status_id, event_type_id, package_id, salesperson_id").eq("id", eventId).maybeSingle(),
+    admin.from("email_templates").select(`${SCHEDULE_TEMPLATE_COLUMNS}, schedule_enabled`).eq("is_active", true).eq("schedule_enabled", true),
+    admin.from("company_settings").select("timezone").eq("id", true).maybeSingle(),
+    admin.from("event_addons").select("addon_id").eq("event_id", eventId),
+    admin.from("event_staff").select("employee_id").eq("event_id", eventId),
+    admin.from("payments").select("amount").eq("event_id", eventId).is("deleted_at", null),
+  ]);
+  if (eventError) throw new Error(eventError.message);
+  if (templateError) throw new Error(templateError.message);
+  if (!event) throw new Error("Event not found.");
+  const bundle = await loadEventBundle(admin, eventId);
+  const today = zonedParts(new Date(), settings?.timezone || "America/New_York").date;
+  const facts: ScheduleEventFacts = {
+    eventDate: event.event_date,
+    bookedDate: event.booked_date,
+    initialContactDate: event.initial_contact_date,
+    contractSentDate: event.contract_sent_date,
+    contractDueDate: event.contract_due_date,
+    contractSignedDate: event.contract_signed_date,
+    quoteSentDate: event.quote_sent_date,
+    statusId: event.status_id,
+    eventTypeId: event.event_type_id,
+    packageId: event.package_id,
+    salespersonId: event.salesperson_id,
+    addonIds: (addons ?? []).map((row) => row.addon_id as string),
+    staffEmployeeIds: (staff ?? []).map((row) => row.employee_id as string),
+    schedulerTotal: bundle?.total ?? 0,
+    paymentsSum: (payments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0),
+  };
+  const messages = [];
+  for (const raw of templates ?? []) {
+    const template = mapTemplate(raw as TemplateRow);
+    if (!template || !templateMatchesEvent(template, facts)) continue;
+    const target = targetDateFor(template, facts);
+    if (target !== today) continue;
+    if (template.isSms) {
+      const sms = await previewSms(admin, { eventId, templateId: template.id, to: "primary_client" });
+      messages.push({ template_id: template.id, is_sms: true, to: sms.to, subject: null, body: sms.body, target_date: target });
+    } else {
+      const email = await previewTemplateEmail(admin, { eventId, templateId: template.id, to: "primary_client" });
+      messages.push({ template_id: template.id, is_sms: false, to: email.to, subject: email.subject, body: email.body, target_date: target });
+    }
+  }
+  return messages;
 }
 
 function adminOf(ctx: ToolContext): SupabaseClient {
@@ -1309,14 +1358,24 @@ export const officeTools: LiveTool[] = [
     },
     async execute(args, ctx) {
       const overrides = args.sms_overrides && typeof args.sms_overrides === "object" ? args.sms_overrides as Record<string, { skip?: boolean; body?: string }> : null;
-      const result = await executeBookingHelper(adminOf(ctx), {
-        eventId: s(args, "event_id")!,
-        helperId: s(args, "helper_id")!,
-        smsOverrides: overrides,
-        actorRole: null,
-        enforceRole: false,
+      const admin = adminOf(ctx);
+      const { data, error } = await admin.rpc("mcp_run_helper_claim", {
+        p_helper_id: s(args, "helper_id"),
+        p_event_id: s(args, "event_id"),
+        p_sms: overrides,
       });
-      return { ok: true, title: result.title };
+      if (error) {
+        if (/mcp_run_helper_claim|schema cache|could not find/i.test(error.message)) {
+          throw new Error("Running a helper from the agent needs migration 00219. Nothing was sent.");
+        }
+        throw new Error(error.message);
+      }
+      const rows = (data ?? []) as { channel: string; id: string; body_sha: string }[];
+      const emailIds = rows.filter((row) => row.channel === "email").map((row) => row.id);
+      const smsIds = rows.filter((row) => row.channel === "sms").map((row) => row.id);
+      const email = await processOutbox(admin, { onlyIds: emailIds, bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "email").map((row) => [row.id, row.body_sha])) });
+      const sms = await processSmsOutbox(admin, { onlyIds: smsIds, bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "sms").map((row) => [row.id, row.body_sha])) });
+      return { ok: true, email_ids: emailIds, sms_ids: smsIds, email, sms };
     },
   },
   {
@@ -1425,23 +1484,67 @@ export const officeTools: LiveTool[] = [
       return queuedOutboxSnapshot(adminOf(ctx));
     },
     async execute(_args, ctx) {
-      const admin = adminOf(ctx);
-      const email = await processOutbox(admin);
-      const sms = await processSmsOutbox(admin);
-      return { email, sms };
+      const snapshot = ctx.approvedSnapshot as { email?: { id: string; body?: string | null }[]; sms?: { id: string; body?: string | null }[] } | undefined;
+      if (!snapshot) throw new Error("This drain has no approved message list. Nothing was sent.");
+      const emailIds = (snapshot.email ?? []).map((row) => row.id);
+      const smsIds = (snapshot.sms ?? []).map((row) => row.id);
+      const email = await processOutbox(adminOf(ctx), {
+        onlyIds: emailIds,
+        bodySha256: Object.fromEntries((snapshot.email ?? []).map((row) => [row.id, sha256(row.body ?? "")])),
+      });
+      const sms = await processSmsOutbox(adminOf(ctx), {
+        onlyIds: smsIds,
+        bodySha256: Object.fromEntries((snapshot.sms ?? []).map((row) => [row.id, sha256(row.body ?? "")])),
+      });
+      return { email, sms, claimed_email_ids: emailIds, claimed_sms_ids: smsIds };
     },
   },
   {
     name: "comms_run_scheduled",
-    description: "Run the scheduled-email engine, then drain the outbox so quote and contract tags are filled in the app before anything is delivered.",
-    scopes: ["comms.email", "comms.sms"],
+    description: "Send the scheduled email and text templates that are due today for one event. The approval lists each rendered message. It does not run the global cron or send other events.",
+    scopes: ["write.events"],
     confirm: true,
-    inputSchema: obj({}),
-    async preview() {
-      throw new Error("Scheduled sends stay on the cron. This connector cannot list the messages that run would create, so it will not start one.");
+    inputSchema: obj({ event_id: UUID }, ["event_id"]),
+    async authorize(args, ctx) {
+      const due = await dueScheduledMessages(adminOf(ctx), s(args, "event_id")!);
+      const needsEmail = due.some((item) => !item.is_sms);
+      const needsSms = due.some((item) => item.is_sms);
+      if (needsEmail && !ctx.token.scopes.includes("comms.email")) throw new McpScopeError("A due email needs comms.email.");
+      if (needsSms && !ctx.token.scopes.includes("comms.sms")) throw new McpScopeError("A due text needs comms.sms.");
     },
-    async execute() {
-      throw new Error("Scheduled sends stay on the cron. Nothing was queued.");
+    async freeze(args, ctx) {
+      return { messages: await dueScheduledMessages(adminOf(ctx), s(args, "event_id")!) };
+    },
+    async preview(args, ctx) {
+      return { messages: await dueScheduledMessages(adminOf(ctx), s(args, "event_id")!) };
+    },
+    async execute(args, ctx) {
+      const approved = (ctx.approvedSnapshot as { messages?: { template_id: string; is_sms: boolean; to: string | null; subject: string | null; body: string }[] } | undefined)?.messages;
+      if (!approved) throw new Error("This scheduled send has no approved message list. Nothing was sent.");
+      const fresh = await dueScheduledMessages(adminOf(ctx), s(args, "event_id")!);
+      if (sha256(canonicalJson(fresh)) !== sha256(canonicalJson(approved))) {
+        throw new Error("A scheduled message changed after approval. Nothing was sent.");
+      }
+      const admin = adminOf(ctx);
+      const emailIds: string[] = [];
+      const smsIds: string[] = [];
+      for (const message of approved) {
+        if (!message.to || !message.body) continue;
+        if (message.is_sms) {
+          const row = await query(admin.from("sms_log").insert({
+            event_id: s(args, "event_id"), to_number: message.to, body: message.body, status: "queued", is_marketing: true, bypass_comms_pause: true,
+          }).select("id").single()) as { id: string };
+          smsIds.push(row.id);
+        } else {
+          const row = await query(admin.from("email_log").insert({
+            event_id: s(args, "event_id"), to_address: message.to, subject: message.subject ?? "", body_html: message.body, status: "queued", bypass_comms_pause: true,
+          }).select("id").single()) as { id: string };
+          emailIds.push(row.id);
+        }
+      }
+      const email = await processOutbox(admin, { onlyIds: emailIds });
+      const sms = await processSmsOutbox(admin, { onlyIds: smsIds });
+      return { email, sms, email_ids: emailIds, sms_ids: smsIds };
     },
   },
   {

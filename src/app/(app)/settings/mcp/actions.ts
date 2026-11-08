@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getMe, requireMaster } from "@/lib/auth";
+import { tokenDecision } from "@/lib/mcp/auth";
 import { generateServiceToken } from "@/lib/mcp/crypto";
 import { executeHumanApproved } from "@/lib/mcp/protocol";
 import { secretValuesFromEnv } from "@/lib/mcp/redact";
@@ -98,11 +99,24 @@ export async function approveMcpPreview(formData: FormData) {
     .select("id, name, scopes, revoked_at, expires_at, overlap_until")
     .eq("id", row.token_id)
     .maybeSingle();
-  if (tokenError || !token || token.revoked_at) throw new Error("The agent token is not active.");
+  if (tokenError || !token) throw new Error("The agent token is not active.");
+  const decision = tokenDecision({
+    revoked_at: token.revoked_at as string | null,
+    expires_at: token.expires_at as string | null,
+    overlap_until: token.overlap_until as string | null,
+  }, new Date());
+  if (!decision.ok) throw new Error(`The agent token is not active (${decision.reason}).`);
   await executeHumanApproved(supabaseStore(admin), mcpTools, {
     confirmationId: id,
     userId: me.userId,
-    token: { id: token.id as string, name: token.name as string, scopes: (token.scopes as string[]) ?? [] },
+    token: {
+      id: token.id as string,
+      name: token.name as string,
+      scopes: (token.scopes as string[]) ?? [],
+      revoked_at: token.revoked_at as string | null,
+      expires_at: token.expires_at as string | null,
+      overlap_until: token.overlap_until as string | null,
+    },
     now: new Date(),
     admin,
     secrets: secretValuesFromEnv(process.env),

@@ -98,13 +98,13 @@ export default async function McpSettingsPage() {
             </table>
           </div>
           {approvalReady ? pending.map((item) => {
-            const preview = item.preview as { receipt?: unknown } | null;
+            const preview = item.preview as { receipt?: unknown; effect_snapshot?: unknown; effect_hash?: string } | null;
             return (
               <ApprovalCard
                 key={item.id}
                 id={item.id}
                 tool={item.tool_name}
-                receipt={JSON.stringify(preview?.receipt ?? item.preview, null, 2)}
+                receipt={JSON.stringify(preview?.effect_snapshot ?? preview?.receipt ?? item.preview, null, 2)}
               />
             );
           }) : (

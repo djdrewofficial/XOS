@@ -42,6 +42,7 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     `);
     await db.exec(read("supabase/migrations/00217_mcp_service_access.sql"));
     await db.exec(read("supabase/migrations/00218_mcp_approval_and_guards.sql"));
+    await db.exec(read("supabase/migrations/00219_mcp_operations.sql"));
   });
 
   it("rejects an idempotency key shorter than 8 characters", async () => {
@@ -94,5 +95,28 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     );
     const still = await db.query("select count(*)::int as n from public.event_clients where id = '55555555-5555-4555-8555-555555555555'");
     assert.equal((still.rows[0] as { n: number }).n, 1);
+  });
+
+  it("claims an operation once and refuses an inactive token", async () => {
+    const token = "88888888-8888-4888-8888-888888888888";
+    const user = "77777777-7777-4777-8777-777777777777";
+    await db.exec(`
+      insert into public.mcp_service_tokens (id, name, token_prefix, token_hash, scopes, expires_at)
+      values ('${token}', 'bot', 'xos_mcp_test', repeat('cd', 32), '{}', now() - interval '1 day');
+      insert into public.mcp_confirmations (id, token_id, tool_name, args_hash, args, preview, expires_at, idempotency_key)
+      values ('${user}', '${token}', 'payments_add', repeat('e', 64), '{}', '{}', now() + interval '1 hour', 'op-key-1234');
+    `);
+    await assert.rejects(() => db.query(`select public.mcp_claim_operation('${user}', '${user}')`), /token inactive/i);
+  });
+
+  it("does not select a booking helper updated_at column the migrations never added", () => {
+    const initial = read("supabase/migrations/00001_initial_schema.sql");
+    const helper = initial.slice(initial.indexOf("create table booking_helpers"), initial.indexOf("create table booking_helper_runs"));
+    const template = initial.slice(initial.indexOf("create table email_templates"), initial.indexOf("create table email_log"));
+    assert.equal(helper.includes("updated_at"), false);
+    assert.equal(template.includes("updated_at"), false);
+    const effects = read("src/lib/mcp/effects.ts");
+    assert.equal(effects.includes('select("id, title, updated_at'), false);
+    assert.equal(effects.includes('select("id, name, updated_at'), false);
   });
 });

@@ -13,6 +13,7 @@ export type HelperEffect = {
   template_body_sha256?: string | null;
   attaches_document?: boolean;
   webhook_host?: string | null;
+  webhook_url?: string | null;
   rendered_title?: string | null;
   rendered_body?: string | null;
   recipient?: string | null;
@@ -27,7 +28,7 @@ export type EffectReport = {
 type HelperRow = {
   id: string;
   title: string | null;
-  updated_at: string | null;
+  created_at: string | null;
   webhook_url: string | null;
   actions: unknown;
 };
@@ -35,7 +36,7 @@ type HelperRow = {
 type TemplateRow = {
   id: string;
   name: string | null;
-  updated_at: string | null;
+  created_at: string | null;
   body_html: string | null;
   attach_template_id: string | null;
   is_sms: boolean | null;
@@ -74,7 +75,7 @@ export async function collectHelperEffects(
     seen.add(id);
     const { data, error } = await admin
       .from("booking_helpers")
-      .select("id, title, updated_at, webhook_url, actions")
+      .select("id, title, created_at, webhook_url, actions")
       .eq("id", id)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -86,9 +87,10 @@ export async function collectHelperEffects(
       effects.push({
         helper_id: helper.id,
         helper_title: helper.title,
-        helper_updated_at: helper.updated_at,
+        helper_updated_at: helper.created_at,
         action: "webhook",
         webhook_host: webhook,
+        webhook_url: helper.webhook_url,
       });
     }
     const actions = Array.isArray(helper.actions) ? (helper.actions as { type?: string; template_id?: string; helper_id?: string }[]) : [];
@@ -98,7 +100,7 @@ export async function collectHelperEffects(
         effects.push({
           helper_id: helper.id,
           helper_title: helper.title,
-          helper_updated_at: helper.updated_at,
+          helper_updated_at: helper.created_at,
           action: "run_helper",
           template_id: act.helper_id,
         });
@@ -108,20 +110,20 @@ export async function collectHelperEffects(
       const effect: HelperEffect = {
         helper_id: helper.id,
         helper_title: helper.title,
-        helper_updated_at: helper.updated_at,
+        helper_updated_at: helper.created_at,
         action: type,
         template_id: act.template_id ?? null,
       };
       if ((type === "send_email" || type === "send_email_staff" || type === "send_sms" || type === "send_sms_staff") && act.template_id) {
         const { data: tpl, error: tplError } = await admin
           .from("email_templates")
-          .select("id, name, updated_at, body_html, attach_template_id, is_sms, sms_marketing")
+          .select("id, name, created_at, body_html, attach_template_id, is_sms, sms_marketing")
           .eq("id", act.template_id)
           .maybeSingle();
         if (tplError) throw new Error(tplError.message);
         const template = tpl as TemplateRow | null;
         effect.template_name = template?.name ?? null;
-        effect.template_updated_at = template?.updated_at ?? null;
+        effect.template_updated_at = template?.created_at ?? null;
         effect.template_body_sha256 = sha256(template?.body_html ?? "");
         effect.attaches_document = Boolean(template?.attach_template_id);
         if (type.startsWith("send_email")) scopes.add("comms.email");

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createEventOnboardingRecord, type OnboardingClient } from "@/lib/eventOnboarding";
+import { onboardingEffects } from "@/lib/officeEdits";
 import { sanitizeLayout, type Role } from "@/lib/dashboardWidgets";
 import { syncRecent, firefliesConfigured } from "@/lib/fireflies";
 import {
@@ -11,6 +12,22 @@ import {
   type TemplateRow,
 } from "@/lib/scheduledComms";
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
+import {
+  addContact,
+  addEventQuestion,
+  addEventSection,
+  addTemplateQuestion,
+  addTemplateSection,
+  deleteTemplateQuestion,
+  removeContact,
+  saveHelperVisibility,
+  saveTemplateSchedule,
+  spotifyExistingConnection,
+  updateEventQuestion,
+  updateEventSection,
+  updateTemplateQuestion,
+  type EditorDb,
+} from "@/lib/officeEdits";
 import type { LiveTool } from "../protocol";
 import { McpScopeError, type ToolContext } from "../types";
 import type { JsonSchema } from "../validate";
@@ -121,10 +138,16 @@ export const coverageTools: LiveTool[] = [
       contract_notes: STR,
     }, ["clients_json"]),
     async authorize(args, ctx) {
-      const staff = json<{ flat_wage?: number }[]>(args, "staff_json", []);
-      if (staff.some((row) => typeof row.flat_wage === "number") && !ctx.token.scopes.includes("money.payroll")) {
-        throw new McpScopeError("Setting a wage on the wizard needs money.payroll.");
-      }
+      const normalized = onboardingEffects({
+        staff: json(args, "staff_json", []),
+        newVenue: json(args, "new_venue_json", null),
+        newSourceName: s(args, "new_source_name"),
+        packagePriceOverride: args.package_price_override,
+        depositValue: args.deposit_value,
+        travelFee: args.travel_fee,
+      });
+      const missing = normalized.scopes.filter((scope) => !ctx.token.scopes.includes(scope));
+      if (missing.length) throw new McpScopeError(`This wizard needs ${missing.join(", ")}.`);
       const { data, error } = await adminOf(ctx).from("booking_helpers").select("id, event_type_ids").eq("is_active", true).eq("auto_on_create", true);
       if (error) throw new Error(error.message);
       const eventType = s(args, "event_type_id");
@@ -142,18 +165,35 @@ export const coverageTools: LiveTool[] = [
         throw new McpScopeError("Creating this event texts staff and needs comms.sms.");
       }
     },
-    async freeze(args) {
-      return { clients: json(args, "clients_json", []), effects: "event_created automations are checked again when a person approves, against the event that will exist." };
+    async freeze(args, ctx) {
+      const normalized = onboardingEffects({
+        staff: json(args, "staff_json", []),
+        newVenue: json(args, "new_venue_json", null),
+        newSourceName: s(args, "new_source_name"),
+        packagePriceOverride: args.package_price_override,
+        depositValue: args.deposit_value,
+        travelFee: args.travel_fee,
+      });
+      const effects = [];
+      const { data } = await adminOf(ctx).from("booking_helpers").select("id, event_type_ids").eq("is_active", true).eq("auto_on_create", true);
+      const eventType = s(args, "event_type_id");
+      for (const helper of data ?? []) {
+        const types = (helper.event_type_ids as string[] | null) ?? [];
+        if (types.length && eventType && !types.includes(eventType)) continue;
+        effects.push(await collectHelperEffects(adminOf(ctx), helper.id as string));
+      }
+      return { normalized, clients: json<OnboardingClient[]>(args, "clients_json", []), automations: effects };
     },
-    async preview(args) {
-      return { will_create: s(args, "name") ?? "New Event", clients: json<OnboardingClient[]>(args, "clients_json", []).length };
+    async preview(args, ctx) {
+      const frozen = await (coverageTools.find((tool) => tool.name === "events_create_onboarding")!.freeze!(args, ctx));
+      return frozen;
     },
     async execute(args, ctx) {
       const created = await createEventOnboardingRecord(adminOf(ctx), {
         clients: json<OnboardingClient[]>(args, "clients_json", []),
         discounts: json(args, "discounts_json", []),
         addons: json(args, "addons_json", []),
-        staff: json(args, "staff_json", []),
+        staff: onboardingEffects({ staff: json(args, "staff_json", []) }).staff,
         customDates: json(args, "custom_dates_json", []),
         newVenue: json(args, "new_venue_json", null),
         inquirySourceId: s(args, "inquiry_source_id"),
@@ -311,14 +351,16 @@ export const coverageTools: LiveTool[] = [
     confirm: false,
     inputSchema: obj({ event_id: UUID, event_client_id: UUID }, ["event_id", "event_client_id"]),
     async execute(args, ctx) {
-      const admin = adminOf(ctx);
-      const eventId = s(args, "event_id")!;
-      const link = await query(admin.from("event_clients").select("client_id").eq("id", s(args, "event_client_id")).eq("event_id", eventId).maybeSingle()) as { client_id: string } | null;
-      if (!link) throw new Error("That person is not on this event.");
-      await admin.from("event_clients").update({ is_primary: false }).eq("event_id", eventId);
-      const { error } = await admin.from("event_clients").update({ is_primary: true }).eq("id", s(args, "event_client_id")).eq("event_id", eventId);
-      if (error) throw new Error(error.message);
-      await admin.from("events").update({ client_id: link.client_id }).eq("id", eventId);
+      const { error } = await adminOf(ctx).rpc("mcp_set_primary_client", {
+        p_event_id: s(args, "event_id"),
+        p_event_client_id: s(args, "event_client_id"),
+      });
+      if (error) {
+        if (/mcp_set_primary_client|schema cache|could not find/i.test(error.message)) {
+          throw new Error("Choosing the primary client needs migration 00219. Nothing was changed.");
+        }
+        throw new Error(error.message);
+      }
       return { ok: true };
     },
   },
@@ -334,10 +376,16 @@ export const coverageTools: LiveTool[] = [
   },
   {
     name: "scheduled_comms_override",
-    description: "Replace the subject and body of one scheduled send for one event. The shared template is not changed.",
-    scopes: ["comms.email"],
+    description: "Replace the subject and body of one scheduled send for one event. The shared template is not changed. An email template needs comms.email. A text template needs comms.sms.",
+    scopes: ["write.events"],
     confirm: true,
-    inputSchema: obj({ event_id: UUID, template_id: UUID, target_date: STR, subject: STR, body_html: { type: "string", minLength: 1 } }, ["event_id", "template_id", "target_date", "body_html"]),
+    inputSchema: obj({ event_id: UUID, template_id: UUID, target_date: STR, subject: STR, body_html: { type: "string", minLength: 1 }     }, ["event_id", "template_id", "target_date", "body_html"]),
+    async authorize(args, ctx) {
+      const { data, error } = await adminOf(ctx).from("email_templates").select("is_sms").eq("id", s(args, "template_id")).maybeSingle();
+      if (error) throw new Error(error.message);
+      const need = data?.is_sms ? "comms.sms" : "comms.email";
+      if (!ctx.token.scopes.includes(need)) throw new McpScopeError(`This scheduled ${data?.is_sms ? "text" : "email"} needs ${need}.`);
+    },
     async preview(args) {
       return { target_date: s(args, "target_date"), subject: s(args, "subject"), body: s(args, "body_html") };
     },
@@ -631,24 +679,30 @@ export const coverageTools: LiveTool[] = [
       sms_marketing: { type: "boolean" },
       attach_template_id: UUID,
       attach_mode: { type: "string", enum: ["esign_link", "pdf"] },
+      schedule_json: { type: "string", description: "Full schedule and visibility block. Omitting it leaves the schedule unchanged." },
     }, ["template_id"]),
     async execute(args, ctx) {
-      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      const admin = adminOf(ctx);
+      const patch: Record<string, unknown> = {};
       for (const key of ["name", "subject", "body_html", "is_active", "is_sms", "sms_marketing", "attach_template_id", "attach_mode"]) {
         if (key in args) patch[key] = args[key];
       }
-      const { error } = await adminOf(ctx).from("email_templates").update(patch).eq("id", s(args, "template_id"));
+      const { error } = await admin.from("email_templates").update(patch).eq("id", s(args, "template_id"));
       if (error) throw new Error(error.message);
-      return { ok: true };
+      if (s(args, "schedule_json")) {
+        await saveTemplateSchedule(admin as unknown as EditorDb, s(args, "template_id")!, json(args, "schedule_json", {}));
+      }
+      return { ok: true, schedule_replaced: Boolean(s(args, "schedule_json")) };
     },
   },
   {
     name: "helpers_update",
-    description: "Update a booking helper title, active flag, webhook, and actions JSON. Nested sends are authorized when the helper is run, not when it is saved.",
+    description: "Update a booking helper title, active flag, webhook, actions JSON, and the full visibility block. Omitting visibility_json leaves visibility unchanged. Nested sends are authorized when the helper is run, not when it is saved.",
     scopes: ["write.settings"],
     confirm: true,
-    inputSchema: obj({ helper_id: UUID, title: STR, is_active: { type: "boolean" }, webhook_url: STR, actions_json: STR }, ["helper_id"]),
+    inputSchema: obj({ helper_id: UUID, title: STR, is_active: { type: "boolean" }, webhook_url: STR, actions_json: STR, visibility_json: STR }, ["helper_id"]),
     async execute(args, ctx) {
+      const admin = adminOf(ctx);
       const patch: Record<string, unknown> = {};
       if ("title" in args) patch.title = s(args, "title");
       if ("is_active" in args) patch.is_active = args.is_active === true;
@@ -658,9 +712,14 @@ export const coverageTools: LiveTool[] = [
         if (!Array.isArray(actions)) throw new Error("actions_json must be an array.");
         patch.actions = actions;
       }
-      const { error } = await adminOf(ctx).from("booking_helpers").update(patch).eq("id", s(args, "helper_id"));
-      if (error) throw new Error(error.message);
-      return { ok: true };
+      if (Object.keys(patch).length) {
+        const { error } = await admin.from("booking_helpers").update(patch).eq("id", s(args, "helper_id"));
+        if (error) throw new Error(error.message);
+      }
+      if (s(args, "visibility_json")) {
+        await saveHelperVisibility(admin as unknown as EditorDb, s(args, "helper_id")!, json(args, "visibility_json", {}));
+      }
+      return { ok: true, visibility_replaced: Boolean(s(args, "visibility_json")) };
     },
   },
   {
@@ -748,7 +807,7 @@ export const coverageTools: LiveTool[] = [
     description: "Create or rename a planner template, or add a section with a title.",
     scopes: ["write.settings"],
     confirm: false,
-    inputSchema: obj({ template_id: UUID, name: STR, event_type_id: UUID, section_title: STR, is_default: { type: "boolean" } }),
+    inputSchema: obj({ template_id: UUID, name: STR, event_type_id: UUID, section_title: STR, section_type: { type: "string", enum: ["info", "timeline", "headline"] }, is_default: { type: "boolean" } }),
     async execute(args, ctx) {
       const admin = adminOf(ctx);
       let templateId = s(args, "template_id");
@@ -764,10 +823,142 @@ export const coverageTools: LiveTool[] = [
         const { error } = await admin.from("planning_templates").update(patch).eq("id", templateId);
         if (error) throw new Error(error.message);
       }
-      if (s(args, "section_title")) {
-        await query(admin.from("planning_template_sections").insert({ template_id: templateId, title: s(args, "section_title") }).select("id").single());
+      if (s(args, "section_title") || s(args, "section_type")) {
+        await addTemplateSection(admin as unknown as EditorDb, templateId, { title: s(args, "section_title"), section_type: s(args, "section_type") });
       }
       return { id: templateId };
+    },
+  },
+  {
+    name: "planner_questions",
+    description: "Add, update, or delete a question on a planner template section. The section must belong to that template. Short answers store no options. Photo options are kept when an update omits them.",
+    scopes: ["write.settings"],
+    confirm: false,
+    inputSchema: obj({
+      action: { type: "string", enum: ["add", "update", "delete"] },
+      template_id: UUID,
+      section_id: UUID,
+      question_id: UUID,
+      prompt: STR,
+      answer_type: { type: "string" },
+      options_json: STR,
+      help_text: STR,
+      required: { type: "boolean" },
+    }, ["action", "template_id"]),
+    async execute(args, ctx) {
+      const db = adminOf(ctx) as unknown as EditorDb;
+      const input = {
+        prompt: s(args, "prompt"),
+        answer_type: s(args, "answer_type") ?? undefined,
+        options: s(args, "options_json") ? json(args, "options_json", []) : undefined,
+        help_text: s(args, "help_text"),
+        required: args.required === true,
+      };
+      if (s(args, "action") === "add") return addTemplateQuestion(db, s(args, "template_id")!, s(args, "section_id")!, input);
+      if (s(args, "action") === "delete") return deleteTemplateQuestion(db, s(args, "template_id")!, s(args, "question_id")!);
+      return updateTemplateQuestion(db, s(args, "template_id")!, s(args, "question_id")!, input);
+    },
+  },
+  {
+    name: "planner_event_edit",
+    description: "Edit the planner on an event: add or update a section, or add or update a question. This is the event plan, not the template library.",
+    scopes: ["write.planning"],
+    confirm: false,
+    inputSchema: obj({
+      action: { type: "string", enum: ["add_section", "update_section", "add_question", "update_question"] },
+      event_id: UUID,
+      section_id: UUID,
+      question_id: UUID,
+      title: STR,
+      section_type: { type: "string" },
+      after_sort_order: { type: "integer" },
+      settings_json: STR,
+      prompt: STR,
+      answer_type: STR,
+      options_json: STR,
+      required: { type: "boolean" },
+    }, ["action", "event_id"]),
+    async execute(args, ctx) {
+      const db = adminOf(ctx) as unknown as EditorDb;
+      const action = s(args, "action");
+      if (action === "add_section") {
+        return addEventSection(db, s(args, "event_id")!, { title: s(args, "title"), section_type: s(args, "section_type"), after_sort_order: n(args, "after_sort_order") });
+      }
+      if (action === "update_section") return updateEventSection(db, s(args, "event_id")!, s(args, "section_id")!, json(args, "settings_json", {}));
+      const input = { prompt: s(args, "prompt"), answer_type: s(args, "answer_type") ?? undefined, options: s(args, "options_json") ? json(args, "options_json", []) : undefined, required: args.required === true };
+      if (action === "add_question") return addEventQuestion(db, s(args, "event_id")!, s(args, "section_id")!, input);
+      return updateEventQuestion(db, s(args, "event_id")!, s(args, "question_id")!, input);
+    },
+  },
+  {
+    name: "venues_contact",
+    description: "Add or remove a contact on a venue. Removal only deletes a contact that belongs to that venue.",
+    scopes: ["write.venues"],
+    confirm: false,
+    inputSchema: obj({ action: { type: "string", enum: ["add", "remove"] }, venue_id: UUID, contact_id: UUID, name: STR, role: STR, phone: STR, email: STR }, ["action", "venue_id"]),
+    async execute(args, ctx) {
+      const db = adminOf(ctx) as unknown as EditorDb;
+      if (s(args, "action") === "remove") return removeContact(db, "venue_contacts", "venue_id", s(args, "venue_id")!, s(args, "contact_id")!);
+      return addContact(db, "venue_contacts", "venue_id", s(args, "venue_id")!, { name: s(args, "name"), role: s(args, "role"), phone: s(args, "phone"), email: s(args, "email") });
+    },
+  },
+  {
+    name: "vendors_contact",
+    description: "Add or remove a contact on a vendor. Removal only deletes a contact that belongs to that vendor.",
+    scopes: ["write.vendors"],
+    confirm: false,
+    inputSchema: obj({ action: { type: "string", enum: ["add", "remove"] }, vendor_id: UUID, contact_id: UUID, name: STR, role: STR, phone: STR, email: STR }, ["action", "vendor_id"]),
+    async execute(args, ctx) {
+      const db = adminOf(ctx) as unknown as EditorDb;
+      if (s(args, "action") === "remove") return removeContact(db, "vendor_contacts", "vendor_id", s(args, "vendor_id")!, s(args, "contact_id")!);
+      return addContact(db, "vendor_contacts", "vendor_id", s(args, "vendor_id")!, { name: s(args, "name"), role: s(args, "role"), phone: s(args, "phone"), email: s(args, "email") });
+    },
+  },
+  {
+    name: "spotify_sync_event",
+    description: "Reconcile planner sections that already store a Spotify user and playlist. This does not start an OAuth login. Sections with no stored connection are skipped.",
+    scopes: ["write.events"],
+    confirm: true,
+    inputSchema: obj({ event_id: UUID }, ["event_id"]),
+    async execute(args, ctx) {
+      const { syncEventSections } = await import("@/lib/spotifySync");
+      await syncEventSections(adminOf(ctx) as never, s(args, "event_id")!);
+      return { ok: true, oauth_started: false };
+    },
+  },
+  {
+    name: "spotify_export",
+    description: "Create playlists on a staff Spotify account that is already connected. Pass that account user id. If it is not connected or cannot write, nothing is created and no login is started.",
+    scopes: ["write.events"],
+    confirm: true,
+    inputSchema: obj({
+      event_id: UUID,
+      staff_auth_user_id: UUID,
+      picks_json: { type: "string", minLength: 2 },
+    }, ["event_id", "staff_auth_user_id", "picks_json"]),
+    async execute(args, ctx) {
+      const { getSpotifyConnection, createSpotifyPlaylist, addTracksToSpotifyPlaylist } = await import("@/lib/spotifyAuth");
+      const userId = s(args, "staff_auth_user_id")!;
+      const gate = spotifyExistingConnection(await getSpotifyConnection(userId));
+      if (!gate.ok) return { ok: false, reason: gate.reason, oauth_started: false };
+      const picks = json<{ sectionId: string; trackIds: string[] }[]>(args, "picks_json", []);
+      const admin = adminOf(ctx);
+      const event = await query(admin.from("events").select("name, event_date").eq("id", s(args, "event_id")).maybeSingle()) as { name?: string; event_date?: string | null } | null;
+      if (!event) throw new Error("Event not found.");
+      const results = [];
+      for (const pick of picks.filter((item) => item.trackIds?.length)) {
+        const section = await query(admin.from("planning_sections").select("title").eq("id", pick.sectionId).eq("event_id", s(args, "event_id")).maybeSingle()) as { title?: string } | null;
+        if (!section) continue;
+        const title = section.title ?? "Moment";
+        const created = await createSpotifyPlaylist(userId, `${event.name ?? "Event"} - ${title}`, `Exported from XOS`);
+        if ("error" in created) {
+          results.push({ section: title, error: created.error });
+          continue;
+        }
+        const added = await addTracksToSpotifyPlaylist(userId, created.id, pick.trackIds.map((id) => `spotify:track:${id}`));
+        results.push({ section: title, added: added ? pick.trackIds.length : 0 });
+      }
+      return { ok: true, oauth_started: false, results };
     },
   },
   {

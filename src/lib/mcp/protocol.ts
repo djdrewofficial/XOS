@@ -1,6 +1,7 @@
 import { canonicalJson, hashToken, hashesEqual, sha256 } from "./crypto";
 import { auditView, hideClientLinks, redact } from "./redact";
-import { tokenDecision } from "./auth";
+import { tokenDecision, type ServiceTokenRow } from "./auth";
+import { idempotencyKeyError } from "./idempotency";
 import { missingScopes, scopesAllow } from "./scopes";
 import type { McpStore } from "./store";
 import { McpAuthError, McpScopeError, type ToolContext, type ToolHandler, type ToolSpec } from "./types";
@@ -262,7 +263,27 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
     });
   }
 
+  const write = harmfulWrite(tool);
+  if ((tool.confirm || write) && !idempotencyKey) {
+    return finish(200, rpcError(rpc.id, -32602, "This write requires idempotency_key of 8 to 200 characters in the tool arguments."), { status: "error", errorCode: "idempotency" });
+  }
+  if (idempotencyKey && idempotencyKeyError(idempotencyKey)) {
+    return finish(200, rpcError(rpc.id, -32602, idempotencyKeyError(idempotencyKey) ?? "Invalid idempotency key"), { status: "error", errorCode: "idempotency" });
+  }
+
   if (tool.confirm) {
+    const argsHash = sha256(canonicalJson(argsIn));
+    const existing = await store.findOperation(token.id, idempotencyKey!);
+    if (existing) {
+      if (existing.toolName !== tool.name || existing.argsHash !== argsHash) {
+        return finish(200, rpcError(rpc.id, -32009, "This idempotency_key was already used for a different operation."), { status: "error", errorCode: "idempotency" });
+      }
+      confirmationId = existing.id;
+      return finish(200, rpcOk(rpc.id, toolResult(operationPayload(existing), false)), { status: existing.status === "pending" ? "confirmation_required" : "idempotent_replay" });
+    }
+    if (await limited(store, "mcp:execute", token.id, limits.perExecute, limits.windowMs, now)) {
+      return finish(429, rpcError(rpc.id, -32029, "Rate limit exceeded for writes"), { status: "rate_limited", errorCode: "rate_limited" });
+    }
     let snapshot: unknown = { arguments: argsIn };
     let shown: unknown = snapshot;
     try {
@@ -273,38 +294,18 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
       return finish(200, rpcError(rpc.id, -32000, String(redact(message, secrets))), { status: "error", errorCode: "preview" });
     }
     const effectHash = sha256(canonicalJson(snapshot));
-    const receipt = redact({ receipt: shown, effect_snapshot: snapshot, effect_hash: effectHash }, secrets);
+    const receipt = { receipt: shown, effect_snapshot: snapshot, effect_hash: effectHash };
     const row = await store.createConfirmation({
       tokenId: token.id,
       toolName: tool.name,
-      argsHash: sha256(canonicalJson(argsIn)),
+      argsHash,
       args: argsIn,
       preview: receipt,
       expiresAt: new Date(now.getTime() + CONFIRM_TTL_MS).toISOString(),
+      idempotencyKey,
     });
     confirmationId = row.id;
-    const payload = redact({
-      status: "pending_human",
-      executed: false,
-      approved: false,
-      confirmation_id: row.id,
-      expires_at: row.expiresAt,
-      tool: tool.name,
-      receipt: shown,
-      next: "A signed-in XOS master admin must approve this receipt in Settings → Agent Access. xos_confirm only reports status. It does not approve and it does not run the action. A chat draft card is still required before a host asks for that approval.",
-    }, secrets);
-    return finish(200, rpcOk(rpc.id, toolResult(payload, false)), { status: "confirmation_required" });
-  }
-
-  const write = harmfulWrite(tool);
-  if (write && !idempotencyKey) {
-    return finish(200, rpcError(rpc.id, -32602, "This write requires an Idempotency-Key of 8 to 200 characters."), { status: "error", errorCode: "idempotency" });
-  }
-  if (idempotencyKey && write) {
-    const reserved = await store.reserveIdempotency(token.id, idempotencyKey, tool.name, sha256(canonicalJson(argsIn)), now, IDEMPOTENCY_TTL_MS);
-    const blocked = idempotencyBlock(rpc.id, reserved);
-    if (blocked) return finish(blocked.status, blocked.body, blocked.audit);
-    if (reserved.kind === "replay") return finish(200, rpcOk(rpc.id, reserved.response), { status: "idempotent_replay" });
+    return finish(200, rpcOk(rpc.id, toolResult(operationPayload(row), false)), { status: "confirmation_required" });
   }
 
   if (write && (await limited(store, "mcp:execute", token.id, limits.perExecute, limits.windowMs, now))) {
@@ -313,6 +314,13 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
 
   if (write && !(await beginAudit(store, { tokenId, tokenName, toolName, argsRedacted, confirmationId, idempotencyKey, requestId }))) {
     return finish(503, rpcError(rpc.id, -32010, "Audit log unavailable. Nothing was changed."), { status: "error", errorCode: "audit" });
+  }
+
+  if (idempotencyKey && write) {
+    const reserved = await store.reserveIdempotency(token.id, idempotencyKey, tool.name, sha256(canonicalJson(argsIn)), now, IDEMPOTENCY_TTL_MS);
+    const blocked = idempotencyBlock(rpc.id, reserved);
+    if (blocked) return finish(blocked.status, blocked.body, blocked.audit);
+    if (reserved.kind === "replay") return finish(200, rpcOk(rpc.id, reserved.response), { status: "idempotent_replay" });
   }
 
   const outcome = await runExecute(tool, argsIn, ctx, secrets);
@@ -368,7 +376,7 @@ export async function executeHumanApproved(
   input: {
     confirmationId: string;
     userId: string;
-    token: { id: string; name: string; scopes: readonly string[] };
+    token: Pick<ServiceTokenRow, "id" | "name" | "scopes" | "revoked_at" | "expires_at" | "overlap_until">;
     now: Date;
     admin: SupabaseClient;
     secrets: readonly string[];
@@ -384,15 +392,23 @@ export async function executeHumanApproved(
   const tool = tools.find((item) => item.name === row.toolName);
   if (!tool?.confirm) throw new Error("This preview cannot be run.");
   if (sha256(canonicalJson(row.args)) !== row.argsHash) throw new Error("Stored arguments do not match the receipt.");
+  const tokenState = tokenDecision(input.token, input.now);
+  if (!tokenState.ok) throw new Error(`The agent token is not active (${tokenState.reason}).`);
   if (!scopesAllow(input.token.scopes, tool.scopes)) throw new Error("The token no longer has the scopes for this action.");
-  const ctx: ToolContext = { now: input.now, token: input.token, admin: input.admin, approvedEffectHash: storedHash(row.preview) };
+  if (await limited(store, "mcp:execute", input.token.id, DEFAULT_LIMITS.perExecute, DEFAULT_LIMITS.windowMs, input.now)) {
+    throw new Error("Rate limit exceeded for writes. Nothing was run.");
+  }
+  const ctx: ToolContext = {
+    now: input.now,
+    token: input.token,
+    admin: input.admin,
+    approvedEffectHash: storedHash(row.preview),
+    approvedSnapshot: (row.preview as { effect_snapshot?: unknown } | null)?.effect_snapshot,
+  };
   await tool.authorize?.(row.args, ctx);
-  if (tool.freeze) {
-    const fresh = await tool.freeze(row.args, ctx);
-    const stored = (row.preview as { effect_hash?: string } | null)?.effect_hash;
-    if (!stored || sha256(canonicalJson(fresh)) !== stored) {
-      throw new Error("The rendered message changed after the preview. Nothing was run. Ask for a new preview.");
-    }
+  if (row.status === "executing") throw new Error("This operation is already executing. It was not run again.");
+  if (row.status === "completed" || row.status === "failed" || row.status === "uncertain") {
+    throw new Error("This preview was already performed.");
   }
   const begun = await beginAudit(store, {
     tokenId: row.tokenId,
@@ -404,12 +420,30 @@ export async function executeHumanApproved(
     requestId: null,
   });
   if (!begun) throw new Error("Audit log unavailable. Nothing was changed.");
-  const decided = await store.decideConfirmation(row.id, { userId: input.userId, now: input.now, kind: "approve" });
-  if (!decided?.approvedBy) throw new Error("Could not record the approval. Nothing was run.");
-  const consumed = await store.consumeConfirmation(row.id, input.now);
-  if (!consumed) throw new Error("This preview was already performed.");
-  const outcome = await runExecute(tool, consumed.args, ctx, input.secrets);
-  await store.saveConfirmationResult(row.id, outcome.body);
+  const claimed = await store.claimExecution(row.id, input.userId, input.now);
+  if (!claimed) throw new Error("This preview was already performed or can no longer be approved.");
+  if (tool.freeze) {
+    const fresh = await tool.freeze(claimed.args, ctx);
+    const stored = (claimed.preview as { effect_hash?: string } | null)?.effect_hash;
+    if (!stored || sha256(canonicalJson(fresh)) !== stored) {
+      await store.finishOperation(row.id, "failed", { error: "rendered effect changed" }, input.now);
+      throw new Error("The rendered message changed after the preview. Nothing was run. Ask for a new preview.");
+    }
+  }
+  const outcome = await runExecute(tool, claimed.args, ctx, input.secrets);
+  await store.finishOperation(row.id, outcome.ok ? "completed" : "failed", outcome.body, input.now);
+  await store.insertAudit({
+    tokenId: row.tokenId,
+    tokenName: input.token.name,
+    toolName: row.toolName,
+    argsRedacted: auditView(outcome.ok ? { completed: true } : { failed: true }, input.secrets),
+    status: outcome.ok ? "completed" : "failed",
+    errorCode: outcome.ok ? null : "tool",
+    durationMs: null,
+    confirmationId: row.id,
+    idempotencyKey: claimed.idempotencyKey,
+    requestId: null,
+  });
   return outcome;
 }
 
@@ -423,6 +457,21 @@ async function runExecute(tool: LiveTool, args: Record<string, unknown>, ctx: To
     const safe = String(redact(message, secrets));
     return { ok: false, body: toolResult({ error: safe }, true) };
   }
+}
+
+function operationPayload(row: { status: string; approvedAt: string | null; id: string; expiresAt: string; toolName: string; preview: unknown }) {
+  const preview = (row.preview ?? {}) as { receipt?: unknown; effect_hash?: string };
+  return {
+    status: row.status === "pending" ? "pending_human" : row.status,
+    executed: row.status === "completed",
+    approved: Boolean(row.approvedAt),
+    confirmation_id: row.id,
+    expires_at: row.expiresAt,
+    tool: row.toolName,
+    receipt: preview.receipt ?? null,
+    effect_hash: preview.effect_hash ?? null,
+    next: "A signed-in XOS master admin must approve this exact rendered effect in Settings → Agent Access. xos_confirm only reports status. It does not approve and it does not run the action.",
+  };
 }
 
 function storedHash(preview: unknown): string | undefined {
@@ -485,7 +534,18 @@ function publicTool(tool: LiveTool) {
   return {
     name: tool.name,
     description: `${tool.description}${human}${draft}`,
-    inputSchema: tool.inputSchema,
+    inputSchema: {
+      ...tool.inputSchema,
+      properties: {
+        ...(tool.inputSchema.properties ?? {}),
+        idempotency_key: {
+          type: "string",
+          minLength: 8,
+          maxLength: 200,
+          description: "Required for writes and approvals. The same key and arguments return the same operation.",
+        },
+      },
+    },
     annotations: tool.confirm ? { destructiveHint: true, readOnlyHint: false } : undefined,
   };
 }
