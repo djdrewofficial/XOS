@@ -109,6 +109,26 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     await assert.rejects(() => db.query(`select public.mcp_claim_operation('${user}', '${user}')`), /token inactive/i);
   });
 
+  it("merges venues in one function while the survivor is locked", async () => {
+    await db.exec(`
+      create table if not exists public.venues (id uuid primary key, name text, city text);
+      alter table public.events add column if not exists venue_id uuid;
+      create table if not exists public.inquiry_sources (id uuid primary key, venue_id uuid, name text);
+      create table if not exists public.venue_contacts (id uuid primary key, venue_id uuid, name text);
+      create table if not exists public.venue_rooms (id uuid primary key, venue_id uuid, name text);
+      create table if not exists public.venue_djep_map (id uuid primary key, venue_id uuid);
+      insert into public.venues (id, name) values
+        ('12121212-1212-4121-8121-121212121212', 'Keep'),
+        ('13131313-1313-4131-8131-131313131313', 'Drop');
+      update public.events set venue_id = '13131313-1313-4131-8131-131313131313' where id = '11111111-1111-4111-8111-111111111111';
+    `);
+    await db.exec(`select public.mcp_merge_venues('12121212-1212-4121-8121-121212121212', array['13131313-1313-4131-8131-131313131313']::uuid[], '{}'::jsonb)`);
+    const left = await db.query("select venue_id from public.events where id = '11111111-1111-4111-8111-111111111111'");
+    assert.equal((left.rows[0] as { venue_id: string }).venue_id, "12121212-1212-4121-8121-121212121212");
+    const dropped = await db.query("select count(*)::int as n from public.venues where id = '13131313-1313-4131-8131-131313131313'");
+    assert.equal((dropped.rows[0] as { n: number }).n, 0);
+  });
+
   it("does not select a booking helper updated_at column the migrations never added", () => {
     const initial = read("supabase/migrations/00001_initial_schema.sql");
     const helper = initial.slice(initial.indexOf("create table booking_helpers"), initial.indexOf("create table booking_helper_runs"));

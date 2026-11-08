@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { inviteClientToXos, sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
 import { previewHelperSms } from "@/lib/bookingHelperRun";
+import { inviteEffect } from "@/lib/officeEdits";
 import { findOrCreateClient } from "@/lib/clients";
 import { generateDocumentRow, loadEventBundle } from "@/lib/documentRender";
 import { anonymizeClientRecord } from "@/lib/anonymizeClient";
@@ -112,6 +113,21 @@ async function dueScheduledMessages(admin: SupabaseClient, eventId: string) {
     }
   }
   return messages;
+}
+
+async function clientInviteSnapshot(admin: SupabaseClient, clientId: string) {
+  const { data } = await admin.from("clients").select("email").eq("id", clientId).maybeSingle();
+  const { data: settings } = await admin.from("company_settings").select("invite_template_id").eq("id", true).maybeSingle();
+  const templateId = (settings?.invite_template_id as string | null) ?? null;
+  const { data: template } = templateId
+    ? await admin.from("email_templates").select("subject, body_html").eq("id", templateId).maybeSingle()
+    : { data: null };
+  return inviteEffect({ email: data?.email, templateSubject: template?.subject, templateBody: template?.body_html });
+}
+
+async function clientResetSnapshot(admin: SupabaseClient, clientId: string) {
+  const { data } = await admin.from("clients").select("email").eq("id", clientId).maybeSingle();
+  return inviteEffect({ email: data?.email, templateSubject: "Reset your password", templateBody: "Reset your password: [set password link]" });
 }
 
 function adminOf(ctx: ToolContext): SupabaseClient {
@@ -716,9 +732,11 @@ export const officeTools: LiveTool[] = [
     scopes: ["comms.email"],
     confirm: true,
     inputSchema: obj({ client_id: UUID, event_id: UUID }, ["client_id", "event_id"]),
+    async freeze(args, ctx) {
+      return clientInviteSnapshot(adminOf(ctx), s(args, "client_id")!);
+    },
     async preview(args, ctx) {
-      const { data } = await adminOf(ctx).from("clients").select("first_name, email").eq("id", s(args, "client_id")).maybeSingle();
-      return { to: data?.email ?? null, name: data?.first_name ?? null, note: "Confirm to send the invite email." };
+      return clientInviteSnapshot(adminOf(ctx), s(args, "client_id")!);
     },
     async execute(args, ctx) {
       const admin = adminOf(ctx);
@@ -739,9 +757,11 @@ export const officeTools: LiveTool[] = [
     scopes: ["comms.email"],
     confirm: true,
     inputSchema: obj({ client_id: UUID }, ["client_id"]),
+    async freeze(args, ctx) {
+      return clientResetSnapshot(adminOf(ctx), s(args, "client_id")!);
+    },
     async preview(args, ctx) {
-      const { data } = await adminOf(ctx).from("clients").select("email").eq("id", s(args, "client_id")).maybeSingle();
-      return { to: data?.email ?? null };
+      return clientResetSnapshot(adminOf(ctx), s(args, "client_id")!);
     },
     async execute(args, ctx) {
       const { data } = await adminOf(ctx).from("clients").select("email").eq("id", s(args, "client_id")).maybeSingle();

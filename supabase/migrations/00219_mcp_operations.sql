@@ -75,6 +75,53 @@ $$;
 revoke all on function public.mcp_set_primary_client(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.mcp_set_primary_client(uuid, uuid) to service_role;
 
+-- Move every reference from the losers onto the survivor, then delete the losers,
+-- while the survivor row is locked.
+create or replace function public.mcp_merge_venues(
+  p_survivor uuid,
+  p_losers uuid[],
+  p_fields jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  loser uuid;
+  allowed text[] := array['name','address','city','state','zip','category_id','travel_fee','setup_fee','distance_miles','driving_notes','load_in_details','notes','is_one_time','auto_mileage','contact_name','phone','email','website'];
+  key text;
+begin
+  if p_survivor is null or p_losers is null or cardinality(p_losers) = 0 then
+    raise exception 'Name at least one venue to merge away.';
+  end if;
+  perform 1 from public.venues where id = p_survivor for update;
+  if not found then
+    raise exception 'Survivor venue was not found.';
+  end if;
+  foreach loser in array p_losers loop
+    if loser = p_survivor then continue; end if;
+    perform 1 from public.venues where id = loser for update;
+    update public.events set venue_id = p_survivor where venue_id = loser;
+    update public.inquiry_sources set venue_id = p_survivor where venue_id = loser;
+    update public.venue_contacts set venue_id = p_survivor where venue_id = loser;
+    update public.venue_rooms set venue_id = p_survivor where venue_id = loser;
+    update public.venue_djep_map set venue_id = p_survivor where venue_id = loser;
+    delete from public.venues where id = loser;
+  end loop;
+  if p_fields is not null then
+    foreach key in array allowed loop
+      if p_fields ? key then
+        execute format('update public.venues set %I = $1 where id = $2', key) using p_fields ->> key, p_survivor;
+      end if;
+    end loop;
+  end if;
+end;
+$$;
+
+revoke all on function public.mcp_merge_venues(uuid, uuid[], jsonb) from public, anon, authenticated;
+grant execute on function public.mcp_merge_venues(uuid, uuid[], jsonb) to service_role;
+
 -- Run a helper and return only the outbox rows this transaction inserted.
 create or replace function public.mcp_run_helper_claim(
   p_helper_id uuid,

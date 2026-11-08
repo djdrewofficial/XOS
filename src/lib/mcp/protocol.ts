@@ -431,19 +431,24 @@ export async function executeHumanApproved(
     }
   }
   const outcome = await runExecute(tool, claimed.args, ctx, input.secrets);
+  try {
+    await store.insertAudit({
+      tokenId: row.tokenId,
+      tokenName: input.token.name,
+      toolName: row.toolName,
+      argsRedacted: auditView(outcome.body, input.secrets),
+      status: outcome.ok ? "completed" : "failed",
+      errorCode: outcome.ok ? null : "tool",
+      durationMs: null,
+      confirmationId: row.id,
+      idempotencyKey: claimed.idempotencyKey,
+      requestId: null,
+    });
+  } catch {
+    await store.finishOperation(row.id, "uncertain", outcome.body, input.now);
+    throw new Error("Audit log unavailable after the effect. The result is uncertain.");
+  }
   await store.finishOperation(row.id, outcome.ok ? "completed" : "failed", outcome.body, input.now);
-  await store.insertAudit({
-    tokenId: row.tokenId,
-    tokenName: input.token.name,
-    toolName: row.toolName,
-    argsRedacted: auditView(outcome.ok ? { completed: true } : { failed: true }, input.secrets),
-    status: outcome.ok ? "completed" : "failed",
-    errorCode: outcome.ok ? null : "tool",
-    durationMs: null,
-    confirmationId: row.id,
-    idempotencyKey: claimed.idempotencyKey,
-    requestId: null,
-  });
   return outcome;
 }
 

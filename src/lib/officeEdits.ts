@@ -381,6 +381,137 @@ export function onboardingEffects(input: { staff?: { flat_wage?: unknown }[]; ne
   return { staff, scopes: [...needs] };
 }
 
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const BLOCK_TYPES = ["text", "section", "fee_table", "payment_schedule", "event_details", "signature", "divider"] as const;
+
+export function weekdayPrices(input: Record<string, unknown>): Record<string, number> {
+  const prices: Record<string, number> = {};
+  for (let day = 0; day <= 6; day++) {
+    const value = input[String(day)] ?? input[`weekday_${day}`];
+    if (value == null || value === "") continue;
+    const amount = coerceMoney(value, `Weekday ${day}`);
+    if (amount == null) continue;
+    if (amount < 0) throw new Error(`Weekday ${day} cannot be negative.`);
+    prices[String(day)] = amount;
+  }
+  return prices;
+}
+
+export async function saveWeekdayPrices(db: EditorDb, packageId: string, input: Record<string, unknown>) {
+  const weekday_prices = weekdayPrices(input);
+  await done(db.from("packages").update({ weekday_prices }).eq("id", packageId));
+  return { weekday_prices };
+}
+
+export function helperButtonPatch(input: Record<string, unknown>): Row {
+  const fontSize = Number(input.button_font_size ?? 16);
+  const fontWeight = Number(input.button_font_weight ?? 900);
+  if (!Number.isInteger(fontSize) || fontSize < 10 || fontSize > 32) throw new Error("Button font size must be a whole number from 10 to 32.");
+  if (![400, 500, 600, 700, 800, 900].includes(fontWeight)) throw new Error("Button font weight must be 400, 500, 600, 700, 800, or 900.");
+  const background = String(input.button_bg ?? "#97CC9A");
+  const foreground = String(input.button_fg ?? "#000000");
+  if (!HEX.test(background) || !HEX.test(foreground)) throw new Error("Button colors must be #RRGGBB.");
+  const text = String(input.button_text ?? "").trim();
+  if (!text) throw new Error("A helper button needs text.");
+  return { button_text: text, button_bg: background, button_fg: foreground, button_font_size: fontSize, button_font_weight: fontWeight };
+}
+
+export async function saveHelperButton(db: EditorDb, helperId: string, input: Record<string, unknown>) {
+  const patch = helperButtonPatch(input);
+  await done(db.from("booking_helpers").update(patch).eq("id", helperId));
+  return patch;
+}
+
+export function documentBlocks(value: unknown): { id: string; type: string; title?: string; html?: string }[] {
+  if (!Array.isArray(value) || value.length === 0) throw new Error("A document template needs at least one block.");
+  return value.map((block, index) => {
+    if (!block || typeof block !== "object") throw new Error(`Block ${index + 1} is invalid.`);
+    const row = block as { id?: string; type?: string; title?: string; html?: string };
+    if (!row.type || !(BLOCK_TYPES as readonly string[]).includes(row.type)) throw new Error(`Block ${index + 1} has an unknown type.`);
+    const id = row.id && UUID.test(row.id) ? row.id : crypto.randomUUID();
+    const next: { id: string; type: string; title?: string; html?: string } = { id, type: row.type };
+    if (row.type === "section") {
+      const title = String(row.title ?? "").trim();
+      if (!title) throw new Error(`Section block ${index + 1} needs a title.`);
+      next.title = title;
+      next.html = String(row.html ?? "");
+    }
+    if (row.type === "text") next.html = String(row.html ?? "");
+    return next;
+  });
+}
+
+export async function saveDocumentBlocks(db: EditorDb, templateId: string, blocks: unknown, name?: string | null) {
+  const next = documentBlocks(blocks);
+  const patch: Row = { blocks: next };
+  if (name != null) patch.name = name.trim() || "Untitled";
+  await done(db.from("document_templates").update(patch).eq("id", templateId));
+  return { blocks: next };
+}
+
+export function backdropPatch(input: Record<string, unknown>): Row {
+  const name = String(input.name ?? "").trim();
+  if (!name) throw new Error("A backdrop needs a name.");
+  return { name, category: input.category == null ? null : String(input.category).trim() || null, is_active: input.is_active !== false };
+}
+
+export async function saveBackdrop(db: EditorDb, id: string | null, input: Record<string, unknown>) {
+  const patch = backdropPatch(input);
+  if (id) {
+    await done(db.from("photobooth_backdrops").update(patch).eq("id", id));
+    return { id, ...patch };
+  }
+  const created = await row(db.from("photobooth_backdrops").insert(patch).select("id").single());
+  return { id: created?.id ?? null, ...patch };
+}
+
+export function briefingPref(input: Record<string, unknown>): Row {
+  const frequency = input.frequency == null ? undefined : String(input.frequency);
+  if (frequency != null && !["daily", "weekdays", "weekly"].includes(frequency)) throw new Error("Briefing frequency must be daily, weekdays, or weekly.");
+  const patch: Row = {};
+  if ("enabled" in input) patch.enabled = input.enabled === true;
+  if (frequency != null) patch.frequency = frequency;
+  if (Object.keys(patch).length === 0) throw new Error("No briefing preference was provided.");
+  return patch;
+}
+
+export async function saveBriefingPref(db: EditorDb, employeeId: string, input: Record<string, unknown>) {
+  const patch = { ...briefingPref(input), employee_id: employeeId };
+  await done(db.from("staff_briefing_prefs").update(patch).eq("employee_id", employeeId));
+  return patch;
+}
+
+export function articlePatch(input: Record<string, unknown>, creating: boolean): Row {
+  const title = String(input.title ?? "").trim();
+  if (!title) throw new Error("An article needs a title.");
+  const content = String(input.content ?? "");
+  if (creating && !content.trim()) throw new Error("An article needs content.");
+  return { title, content, category: input.category == null ? null : String(input.category).trim() || null };
+}
+
+export async function saveArticle(db: EditorDb, id: string | null, input: Record<string, unknown>) {
+  const patch = articlePatch(input, !id);
+  if (id) {
+    await done(db.from("kb_articles").update(patch).eq("id", id));
+    return { id, ...patch };
+  }
+  const created = await row(db.from("kb_articles").insert(patch).select("id").single());
+  return { id: created?.id ?? null, ...patch };
+}
+
+export function inviteEffect(input: { email?: string | null; templateSubject?: string | null; templateBody?: string | null }) {
+  const email = String(input.email ?? "").trim().toLowerCase();
+  if (!email || !email.includes("@")) throw new Error("Invite needs a client email.");
+  const body = (input.templateBody ?? "Set your password: [set password link]").split("<set_password_link>").join("[set password link]").split("<set_password_button>").join("[set password link]");
+  return {
+    to: email,
+    subject: input.templateSubject ?? "Set your password",
+    body,
+    link: "[set password link]",
+    effect: "Sends one set-password email to this address. The live link is minted at send time and is not included here.",
+  };
+}
+
 export function spotifyExistingConnection(connection: { connected?: boolean; canWrite?: boolean }) {
   if (!connection.connected) return { ok: false as const, reason: "needs_connect" as const };
   if (connection.canWrite === false) return { ok: false as const, reason: "needs_reconnect" as const };

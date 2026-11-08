@@ -34,4 +34,11 @@ Signing URLs and other client secret links are stored for the admin approval scr
 | Per-event scheduled send that is due today | `comms_run_scheduled`. It sends the rendered messages it listed. It does not call the global cron. |
 | Spotify playlist sync and export | `spotify_sync_event` and `spotify_export`, only when a Spotify account is already connected. |
 | Spotify or HighLevel OAuth login, passkeys, the permission grid, client signing, and employee self check-in | Excluded. They are a browser login or a specific signed-in person, not an office record. |
-| Package weekday prices, helper button styling, document-template block editor, photobooth, briefings, and assistant articles | Not tools yet. They are missing editor functionality, not auth exclusions. |
+| Package weekday prices | `packages_weekday_prices` replaces the Sunday–Saturday map. |
+| Helper button styling | `helpers_button`. |
+| Document template blocks | `document_template_blocks`. |
+| Photo booth backdrop name and category | `photobooth_backdrops`. The image file upload stays a staff browser action. |
+| Staff briefing preference | `briefing_prefs`. Sending the briefing now is not this tool. |
+| Assistant articles | `assistant_articles`. Running a task that emails people is not this tool. |
+
+These office actions are still not tools and are not auth exclusions. They are named so they are not dropped quietly: event file upload and labels, equipment packed/notes, staff time off, package and addon category editors, addon equipment defaults, venue rooms and categories, payment reminder rules, merge tags, expense mileage settings, daily status actions, email signature and blackout dates, app-access invites, and content moderation. File upload from a browser stays a staff action. OAuth login, passkeys, the permission grid, client signing, and employee self check-in stay excluded.

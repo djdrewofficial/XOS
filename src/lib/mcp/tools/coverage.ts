@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createEventOnboardingRecord, type OnboardingClient } from "@/lib/eventOnboarding";
-import { onboardingEffects } from "@/lib/officeEdits";
+import { onboardingEffects, saveArticle, saveBackdrop, saveBriefingPref, saveDocumentBlocks, saveHelperButton, saveWeekdayPrices } from "@/lib/officeEdits";
 import { sanitizeLayout, type Role } from "@/lib/dashboardWidgets";
 import { syncRecent, firefliesConfigured } from "@/lib/fireflies";
 import {
@@ -519,23 +519,22 @@ export const coverageTools: LiveTool[] = [
     confirm: true,
     inputSchema: obj({ survivor_id: UUID, loser_ids_json: STR, fields_json: STR }, ["survivor_id", "loser_ids_json"]),
     async execute(args, ctx) {
-      const admin = adminOf(ctx);
-      const survivorId = s(args, "survivor_id")!;
-      const losers = json<string[]>(args, "loser_ids_json", []).filter((id) => id && id !== survivorId);
+      const losers = json<string[]>(args, "loser_ids_json", []).filter((id) => id && id !== s(args, "survivor_id"));
       if (!losers.length) throw new Error("Name at least one venue to merge away.");
-      for (const table of ["events", "inquiry_sources", "venue_contacts", "venue_rooms", "venue_djep_map"]) {
-        const { error } = await admin.from(table).update({ venue_id: survivorId }).in("venue_id", losers);
-        if (error) throw new Error(`${table}: ${error.message}`);
-      }
       const fields = json<Record<string, unknown>>(args, "fields_json", {});
       const patch: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(fields)) if (MERGE_FIELDS.has(key)) patch[key] = value;
-      if (Object.keys(patch).length) {
-        const { error } = await admin.from("venues").update(patch).eq("id", survivorId);
-        if (error) throw new Error(error.message);
+      const { error } = await adminOf(ctx).rpc("mcp_merge_venues", {
+        p_survivor: s(args, "survivor_id"),
+        p_losers: losers,
+        p_fields: patch,
+      });
+      if (error) {
+        if (/mcp_merge_venues|schema cache|could not find/i.test(error.message)) {
+          throw new Error("Merging venues needs migration 00219. Nothing was changed.");
+        }
+        throw new Error(error.message);
       }
-      const { error } = await admin.from("venues").delete().in("id", losers);
-      if (error) throw new Error(error.message);
       return { merged: losers.length };
     },
   },
@@ -1014,6 +1013,66 @@ export const coverageTools: LiveTool[] = [
     async execute(args, ctx) {
       const row = await query(adminOf(ctx).from("expense_categories").upsert({ name: s(args, "name") }, { onConflict: "name" }).select("id").single()) as { id: string };
       return { id: row.id };
+    },
+  },
+  {
+    name: "packages_weekday_prices",
+    description: "Set a package weekday price for Sunday through Saturday. A blank day clears that override. This replaces the weekday price map.",
+    scopes: ["write.catalog"],
+    confirm: true,
+    inputSchema: obj({ package_id: UUID, prices_json: STR }, ["package_id", "prices_json"]),
+    async execute(args, ctx) {
+      return saveWeekdayPrices(adminOf(ctx) as unknown as EditorDb, s(args, "package_id")!, json(args, "prices_json", {}));
+    },
+  },
+  {
+    name: "helpers_button",
+    description: "Set a booking helper button label, colors, font size, and font weight.",
+    scopes: ["write.settings"],
+    confirm: false,
+    inputSchema: obj({ helper_id: UUID, button_text: STR, button_bg: STR, button_fg: STR, button_font_size: { type: "integer" }, button_font_weight: { type: "integer" } }, ["helper_id", "button_text"]),
+    async execute(args, ctx) {
+      return saveHelperButton(adminOf(ctx) as unknown as EditorDb, s(args, "helper_id")!, args);
+    },
+  },
+  {
+    name: "document_template_blocks",
+    description: "Replace the blocks on a document template. Text and section blocks keep their html. Smart blocks are fee table, payment schedule, event details, signature, and divider.",
+    scopes: ["write.documents"],
+    confirm: true,
+    inputSchema: obj({ template_id: UUID, name: STR, blocks_json: STR }, ["template_id", "blocks_json"]),
+    async execute(args, ctx) {
+      return saveDocumentBlocks(adminOf(ctx) as unknown as EditorDb, s(args, "template_id")!, json(args, "blocks_json", []), s(args, "name"));
+    },
+  },
+  {
+    name: "photobooth_backdrops",
+    description: "Create or rename a photo booth backdrop. Image upload stays a staff browser action because it needs the file bytes from that browser.",
+    scopes: ["write.settings"],
+    confirm: false,
+    inputSchema: obj({ backdrop_id: UUID, name: STR, category: STR, is_active: { type: "boolean" } }, ["name"]),
+    async execute(args, ctx) {
+      return saveBackdrop(adminOf(ctx) as unknown as EditorDb, s(args, "backdrop_id"), args);
+    },
+  },
+  {
+    name: "briefing_prefs",
+    description: "Set whether one employee gets the staff briefing and how often. This does not send the briefing.",
+    scopes: ["write.settings"],
+    confirm: false,
+    inputSchema: obj({ employee_id: UUID, enabled: { type: "boolean" }, frequency: { type: "string", enum: ["daily", "weekdays", "weekly"] } }, ["employee_id"]),
+    async execute(args, ctx) {
+      return saveBriefingPref(adminOf(ctx) as unknown as EditorDb, s(args, "employee_id")!, args);
+    },
+  },
+  {
+    name: "assistant_articles",
+    description: "Create or update an assistant knowledge article. Running an AI task that emails people is not this tool.",
+    scopes: ["write.settings"],
+    confirm: false,
+    inputSchema: obj({ article_id: UUID, title: STR, content: STR, category: STR }, ["title"]),
+    async execute(args, ctx) {
+      return saveArticle(adminOf(ctx) as unknown as EditorDb, s(args, "article_id"), args);
     },
   },
   {

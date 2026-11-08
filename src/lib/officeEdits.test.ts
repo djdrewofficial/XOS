@@ -9,8 +9,17 @@ import {
   addTemplateQuestion,
   addTemplateSection,
   helperVisibilityPatch,
+  inviteEffect,
   removeContact,
+  documentBlocks,
+  helperButtonPatch,
+  saveArticle,
+  saveBackdrop,
+  saveBriefingPref,
+  saveDocumentBlocks,
+  saveHelperButton,
   saveHelperVisibility,
+  saveWeekdayPrices,
   saveTemplateSchedule,
   spotifyExistingConnection,
   templateSchedulePatch,
@@ -220,6 +229,34 @@ describe("venue and vendor contacts", () => {
   });
 });
 
+describe("remaining editors", () => {
+  it("saves weekday prices, helper buttons, document blocks, backdrops, briefings, and articles", async () => {
+    const { db, tables } = memoryDb({
+      packages: [{ id: "p1" }],
+      booking_helpers: [{ id: "h1" }],
+      document_templates: [{ id: "d1" }],
+      photobooth_backdrops: [],
+      staff_briefing_prefs: [{ employee_id: "e1", enabled: false }],
+      kb_articles: [],
+    });
+    await saveWeekdayPrices(db, "p1", { weekday_0: "100", weekday_5: 250, weekday_1: "" });
+    assert.deepEqual(tables.packages[0].weekday_prices, { "0": 100, "5": 250 });
+    await saveHelperButton(db, "h1", { button_text: "Book", button_bg: "#112233", button_fg: "#abcdef", button_font_size: 18, button_font_weight: 700 });
+    assert.equal(tables.booking_helpers[0].button_font_weight, 700);
+    const blockId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    await saveDocumentBlocks(db, "d1", [{ id: blockId, type: "section", title: "Terms", html: "<p>Hi</p>" }, { type: "fee_table" }]);
+    assert.equal((tables.document_templates[0].blocks as { type: string }[])[1].type, "fee_table");
+    await saveBackdrop(db, null, { name: "Gold", category: "Wedding" });
+    assert.equal(tables.photobooth_backdrops[0].name, "Gold");
+    await saveBriefingPref(db, "e1", { enabled: true, frequency: "weekdays" });
+    assert.equal(tables.staff_briefing_prefs[0].frequency, "weekdays");
+    await saveArticle(db, null, { title: "Payments", content: "How to record one." });
+    assert.equal(tables.kb_articles[0].title, "Payments");
+    assert.throws(() => helperButtonPatch({ button_text: "X", button_bg: "red", button_fg: "#000000" }), /#RRGGBB/);
+    assert.throws(() => documentBlocks([{ type: "video" }]), /unknown type/);
+  });
+});
+
 describe("onboarding money normalization", () => {
   it("treats a numeric string wage as payroll and a new venue as a venue write", () => {
     const effect = onboardingEffects({
@@ -232,6 +269,15 @@ describe("onboarding money normalization", () => {
     assert.ok(effect.scopes.includes("write.venues"));
     assert.ok(effect.scopes.includes("money"));
     assert.throws(() => coerceMoney("nope", "Wage"), /number/);
+  });
+});
+
+describe("invite effect", () => {
+  it("freezes the address and hides the set-password link", () => {
+    const effect = inviteEffect({ email: "Ada@Example.com", templateBody: "Go <set_password_link> now" });
+    assert.equal(effect.to, "ada@example.com");
+    assert.equal(effect.body.includes("set_password_link"), false);
+    assert.match(effect.body, /\[set password link\]/);
   });
 });
 

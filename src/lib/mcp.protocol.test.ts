@@ -405,4 +405,78 @@ describe("mcp protocol", () => {
     const events = tools.find((tool) => tool.name === "events_list");
     assert.ok(events?.inputSchema.properties.idempotency_key);
   });
+
+  it("stops a second human approval when the write limit is already used", async () => {
+    const { store, addToken } = memoryStore();
+    const { raw, row } = issued(["money"], { id: "limit-approve" });
+    addToken(row);
+    const pay: LiveTool = {
+      name: "payments_add",
+      description: "Record a payment under a limit",
+      scopes: ["money"],
+      confirm: true,
+      inputSchema: { type: "object", additionalProperties: false, properties: { amount: { type: "number" } } },
+      async execute() {
+        return { ok: true };
+      },
+    };
+    const first = await handleMcp(store, [pay], {
+      body: callTool("payments_add", { amount: 1, idempotency_key: "limit-preview-1" }),
+      authorization: `Bearer ${raw}`,
+    });
+    const id = (toolText((first.body as { result: unknown }).result) as { confirmation_id: string }).confirmation_id;
+    const blocking = { ...store, async hitRateLimit() { return true; } };
+    await assert.rejects(
+      () => executeHumanApproved(blocking, [pay], {
+        confirmationId: id,
+        userId: "11111111-1111-4111-8111-111111111111",
+        token: { ...row, scopes: row.scopes },
+        now: new Date(),
+        admin: {} as never,
+        secrets: [],
+      }),
+      /Rate limit exceeded/,
+    );
+  });
+
+  it("marks the operation uncertain when the final audit cannot be stored", async () => {
+    const { store, addToken } = memoryStore();
+    const { raw, row } = issued(["money"], { id: "audit-approve" });
+    addToken(row);
+    const flaky = {
+      ...store,
+      async insertAudit(entry: Parameters<typeof store.insertAudit>[0]) {
+        if (entry.status === "completed" || entry.status === "failed") throw new Error("audit down");
+        return store.insertAudit(entry);
+      },
+    };
+    const pay: LiveTool = {
+      name: "payments_add",
+      description: "Record a payment with a durable audit",
+      scopes: ["money"],
+      confirm: true,
+      inputSchema: { type: "object", additionalProperties: false, properties: {} },
+      async execute() {
+        return { ok: true };
+      },
+    };
+    const preview = await handleMcp(flaky, [pay], {
+      body: callTool("payments_add", { idempotency_key: "audit-preview-1" }),
+      authorization: `Bearer ${raw}`,
+    });
+    const id = (toolText((preview.body as { result: unknown }).result) as { confirmation_id: string }).confirmation_id;
+    await assert.rejects(
+      () => executeHumanApproved(flaky, [pay], {
+        confirmationId: id,
+        userId: "11111111-1111-4111-8111-111111111111",
+        token: { ...row, scopes: row.scopes },
+        now: new Date(),
+        admin: {} as never,
+        secrets: [],
+      }),
+      /audit/i,
+    );
+    const saved = await store.getConfirmation(id);
+    assert.equal(saved?.status, "uncertain");
+  });
 });

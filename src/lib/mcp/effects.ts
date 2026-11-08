@@ -125,6 +125,7 @@ export async function collectHelperEffects(
         effect.template_name = template?.name ?? null;
         effect.template_updated_at = template?.created_at ?? null;
         effect.template_body_sha256 = sha256(template?.body_html ?? "");
+        effect.rendered_body = template?.body_html ?? "";
         effect.attaches_document = Boolean(template?.attach_template_id);
         if (type.startsWith("send_email")) scopes.add("comms.email");
         if (type.startsWith("send_sms")) scopes.add("comms.sms");

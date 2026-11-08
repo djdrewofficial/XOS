@@ -13,6 +13,7 @@ import { htmlToPdf } from "@/lib/pdf";
 import { isHighLevelConfigured, sendEmailViaHighLevel, recordXosEmailInComms } from "@/lib/highlevel";
 import { isThreadingConfigured, threadOutboundEmailViaOAuth } from "@/lib/highlevelOAuth";
 import { sanitizeHrefAttributes } from "@/lib/mergeHref";
+import { finalizeOutbound } from "@/lib/outboundPlan";
 
 /* ============ Mailgun config ============
    Set in .env.local:
@@ -141,7 +142,11 @@ async function enrichMessage(
   // suppression. Untemplated / transactional templates stay false.
   const isMarketing = tmpl?.is_marketing === true;
 
-  if (!msg.event_id) return { html, attachments, branded, isMarketing };
+  const finish = (nextHtml: string, files = attachments) => {
+    const planned = finalizeOutbound(nextHtml, files);
+    return { html: planned.html, attachments: planned.attachments, branded, isMarketing };
+  };
+  if (!msg.event_id) return finish(html);
 
   // shared: this event's public pay token + whether the new proposal/confirm flow
   // is on. When on, the e-sign CTA points to /proposal (couple confirms details +
@@ -261,7 +266,7 @@ async function enrichMessage(
   // document attached to the email template?
   if (!tmpl?.attach_template_id) {
     // no attachment configured — still clean up a dangling sign-link tag
-    return { html: replaceTag(html, "document_sign_link", ""), attachments, branded, isMarketing };
+    return finish(replaceTag(html, "document_sign_link", ""));
   }
 
   // A booking-agreement email attaches ONE fixed contract, but each event must get
@@ -290,7 +295,7 @@ async function enrichMessage(
       } else {
         html += signButtonHtml(url, `Review & Sign ${docTypeClientLabel("contract")}`);
       }
-      return { html: replaceTag(html, "document_sign_link", ""), attachments, branded, isMarketing };
+      return finish(replaceTag(html, "document_sign_link", ""));
     }
     // reuse the latest unsigned document for this event+template, else generate fresh
     const { data: existing } = await supabase
@@ -357,7 +362,7 @@ async function enrichMessage(
     }
   }
 
-  return { html: replaceTag(html, "document_sign_link", ""), attachments, branded, isMarketing };
+  return finish(replaceTag(html, "document_sign_link", ""));
 }
 
 /** Wraps editor-authored bodies in the branded shell (logo header + white card).
