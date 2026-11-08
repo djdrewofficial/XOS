@@ -76,7 +76,8 @@ describe("recovery wiring", () => {
     assert.equal(middleware.slice(0, call).includes("supabase.auth.getUser"), false);
     assert.doesNotMatch(middleware, /xpressclient:/);
     assert.equal(existsSync(join(root, "src/app/auth/confirm/route.ts")), false);
-    assert.equal(existsSync(join(root, "src/app/auth/reset/page.tsx")), false);
+    const bridge = readFileSync(join(root, "src/app/auth/reset/page.tsx"), "utf8");
+    assert.doesNotMatch(bridge, /verifyOtp|exchangeCodeForSession/);
   });
 
   it("keeps Apple links on join paths and the staff reset page on its MFA step", () => {

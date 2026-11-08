@@ -21,7 +21,7 @@ import {
 import { decideMfaGate } from "@/lib/mfaGate";
 import { MFA_EMAIL_COOKIE, readMfaEmailStepUp, sessionIdFromAccessToken } from "@/lib/mfaStepUpCookie";
 import { MFA_PASSKEY_COOKIE, readMfaPasskeyStepUp } from "@/lib/passkeyStepUpCookie";
-import { sameHostRecoveryRedirect } from "@/lib/passwordResetPath";
+import { mobileResetResponseHeaders, sameHostRecoveryRedirect } from "@/lib/passwordResetPath";
 
 /** Supabase Auth "Send SMS" hook. Supabase's servers POST the phone OTP here
     with no staff session and no Cloudflare `x-origin-verify` header (the call
@@ -212,6 +212,13 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/comms-delivery") ||
     pathname === "/api/passkey/authenticate/options" ||
     pathname === "/api/passkey/authenticate/verify";
+  // The mobile reset bridge is public for a signed-out visit. These headers
+  // keep the token out of caches, indexes, and the Referer on any later request.
+  if (pathname === "/auth/reset") {
+    for (const [name, value] of Object.entries(mobileResetResponseHeaders())) {
+      response.headers.set(name, value);
+    }
+  }
   if (isPublic) return finish(response);
 
   const isLoginPage = pathname.startsWith("/login");
