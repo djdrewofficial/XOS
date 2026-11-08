@@ -21,6 +21,7 @@ import {
 import { decideMfaGate } from "@/lib/mfaGate";
 import { MFA_EMAIL_COOKIE, readMfaEmailStepUp, sessionIdFromAccessToken } from "@/lib/mfaStepUpCookie";
 import { MFA_PASSKEY_COOKIE, readMfaPasskeyStepUp } from "@/lib/passkeyStepUpCookie";
+import { sameHostRecoveryRedirect } from "@/lib/passwordResetPath";
 
 /** Supabase Auth "Send SMS" hook. Supabase's servers POST the phone OTP here
     with no staff session and no Cloudflare `x-origin-verify` header (the call
@@ -97,6 +98,13 @@ export async function middleware(request: NextRequest) {
       return new NextResponse("Forbidden", { status: 403 });
     }
   }
+
+  // A rejected app recovery redirect lands on the Site URL root. Send that
+  // token to the staff set-password page before the login wall, for a signed-in
+  // or signed-out visit. The page still requires the staff MFA step. Nothing
+  // else on the query is kept, and the token is not logged.
+  const recovery = sameHostRecoveryRedirect(request.nextUrl);
+  if (recovery) return NextResponse.redirect(recovery);
 
   let response = NextResponse.next({ request });
   // Session refreshes write cookies onto whichever response we actually return.
