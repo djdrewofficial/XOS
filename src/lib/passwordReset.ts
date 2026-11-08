@@ -1,12 +1,11 @@
 import { appUrl } from "@/lib/signing";
+import { PASSWORD_RESET_PATH, passwordResetHostAllowed } from "./passwordResetPath";
 
 /* Where a Supabase password-reset email sends the person. Must be on the
    project's Auth redirect allowlist. The page accepts both a PKCE `code`
    (default email template, same browser) and `token_hash` (custom template,
    any device). */
-export const PASSWORD_RESET_PATH = "/auth/set-password";
-
-const PRODUCTION_HOST = "xos.xpressdjs.com";
+export { PASSWORD_RESET_PATH, RECOVERY_CONFIRM_PATH, recoveryConfirmPath, safeRecoveryToken } from "./passwordResetPath";
 
 function configuredHost(): string | null {
   try {
@@ -17,11 +16,7 @@ function configuredHost(): string | null {
 }
 
 function isAllowedHost(hostname: string): boolean {
-  if (hostname === "localhost" || hostname === "127.0.0.1") return true;
-  if (hostname === PRODUCTION_HOST) return true;
-  if (hostname.endsWith(".netlify.app")) return true;
-  const configured = configuredHost();
-  return Boolean(configured && hostname === configured);
+  return passwordResetHostAllowed(hostname, configuredHost());
 }
 
 /** Absolute redirect for resetPasswordForEmail. Prefers the request host when
