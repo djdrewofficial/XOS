@@ -1,38 +1,52 @@
-# Password reset email: what sends it, and what not to change yet
+# Password reset email
 
 Production main checked: `50375db65b62484aec1317c4c82f613e62fb7e4d`.
 
-Drew's screenshot is not an email this repository sends.
+No live Auth setting, template, allow list, database row, or password was changed. No reset email was sent. A tapped link was not reproduced on a device.
 
-The Mailgun reset in `src/lib/accounts.ts` (`resetHtml`) says "Password reset", "Click below to choose a new one", and the button "Reset My Password". The screenshot says "Reset your password", "Follow the link below to choose a new one", and the anchor "Reset password". That second wording is the Supabase password-reset example, with "XOS" added. It is not in this repo. Supabase Auth has one Reset password template per project. Staff "Forgot password" (`deliverPasswordReset` → `resetPasswordForEmail`) and a client app that calls Supabase directly both receive that same template. Custom SMTP can still show `Xpress Entertainment <xos@xpressdjs.com>`.
+## What the live template is
 
-Do not paste an "Xpress DJs" template into that shared slot. It would replace the staff XOS wording. Do not create a second Supabase project from this change.
+Inspected in the dashboard, not guessed from the screenshot wording alone:
 
-## Why the link does nothing
+- Subject: `Reset your password`
+- Button href, exact: `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery`
+- It is not `{{ .ConfirmationURL }}`
+- The template does not contain `/auth/confirm`
+- Site URL: `https://xos.xpressdjs.com`
 
-`/auth/set-password` is public and accepts `token_hash` plus `type=recovery` on any device. There was no `/auth/confirm` route. Supabase's current password guide tells the template to link to `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery`. That URL 404s here, so the button does nothing useful.
+The href is the caller's `redirectTo`, plus the token hash. Staff forgot-password in this repo passes `https://xos.xpressdjs.com/auth/set-password` (`passwordResetRedirect`). Client app PR 29 (`715820247b8e1257d527f2ecc318db5140412c68`) passes `https://xos.xpressdjs.com/auth/reset`. The same template then builds a different URL for each caller. Cosmetic replacement of the "XOS password" sentence can keep this href exactly.
 
-The older `{{ .ConfirmationURL }}` link verifies on `*.supabase.co` and then redirects. If `redirect_to` is not on the allow list, Supabase sends the person to the Site URL. The site home does not open the password form. A PKCE `code` also works only in the browser that requested the email.
+This is one shared Supabase template. Do not paste the Xpress DJs file into it. That would change the staff email. The Xpress DJs file is only for a later split where XOS sends the client mail itself.
 
-This repo now adds `/auth/confirm`. It forwards only `token_hash` and `type=recovery` to `/auth/set-password` on the same host. `next`, `redirect_to`, and every other parameter are dropped. The route does not verify the token, log the query, or choose a host from the query string. `/auth/set-password` still performs the one-time `verifyOtp`. Staff MFA on that page is unchanged. AASA still lists only `/j/*`, so the link opens in the browser when the app is not installed, and it does not depend on the app being installed.
+## Allow list already present
 
-## Dashboard steps, after approval
-
-Do not change the live template or allow list until that approval. Inspect first:
-
-1. Authentication → Emails → Reset password. Record the subject and whether the anchor is `{{ .ConfirmationURL }}`, `{{ .TokenHash }}`, or `/auth/confirm`.
-2. Authentication → URL Configuration. Record Site URL and the Redirect URLs list. Do not add `*` or a custom scheme.
-
-Allow list to add, exact strings, no wildcards:
+Recorded from the dashboard. Do not edit it until Drew says so.
 
 - `https://xos.xpressdjs.com/auth/set-password`
-- `https://xos.xpressdjs.com/auth/confirm`
+- `https://xos.xpressdjs.com/**`
+- `xpressclient://auth/set-password`
+- `http://localhost:3000/auth/set-password`
+- `http://127.0.0.1:3000/auth/set-password`
+- `https://**--xos-xpressdjs.netlify.app/auth/set-password`
+- `https://xos.xpressdjs.netlify.app/auth/set-password`
+- `xpressclient://auth/confirm`
+- `xpressclient://auth/reset`
 
-Site URL should be `https://xos.xpressdjs.com`.
+`https://xos.xpressdjs.com/**` already matches `https://xos.xpressdjs.com/auth/reset` on that host. Adding the exact reset URL is optional and is not done here. Do not add `*` or another scheme.
 
-Two template files are in `docs/auth-email-templates/`. Neither is installed.
+## What this repo now serves
 
-- `reset-password.staff-link-fix.html` keeps the XOS sentence and points the button at `/auth/confirm`. Subject: `Reset your password`. This is the shared-slot candidate if the goal is to fix the dead link without renaming staff mail.
-- `reset-password.client.html` says Xpress DJs. Subject: `Reset your Xpress DJs password`. Do not put it in the shared slot. Use it only if client resets are later sent by XOS (Mailgun) instead of the shared Auth template. The app's 6-digit code endpoint, `POST /api/mobile/forgot-password`, is a different email and is unchanged.
+`/auth/reset` shows the same password form as `/auth/set-password`, including the staff MFA step. A normal signed-in visit still does not open the form. The page reads `token_hash`, `type=recovery`, a PKCE `code`, or a hash token, then removes them from the address bar. It does not log them.
 
-Staff admin reset (`sendPasswordReset` in `accounts.ts`) and the client code email stay on Mailgun and still say XOS.
+`/auth/confirm` only forwards a recovery `token_hash` to `/auth/reset` on the same host. Signup and other types are not turned into a password reset. `next` and `redirect_to` are dropped.
+
+Apple app links still include `/j/*`. They also include the exact paths `/auth/reset`, `/auth/confirm`, and `/auth/set-password`. The staff sign-in callback is not included, so that login stays on the website. There are no webcredentials. The team id still comes from `APPLE_TEAM_ID`. The couple app id in the client repo is `VH9Z63JB8L.com.xpressentertainment.client`.
+
+Staff mail still uses `/auth/set-password`. Claiming that path means an installed couple app can open a staff reset link. If the link stays in the browser, the form still requires the staff MFA step. This site never redirects the browser to `xpressclient://`.
+
+Staff Mailgun resets and `POST /api/mobile/forgot-password` are unchanged and still say XOS.
+
+## Template files, not installed
+
+- `docs/auth-email-templates/reset-password.staff-link-fix.html` — subject `Reset your password`. Href is the live `{{ .RedirectTo }}` pattern.
+- `docs/auth-email-templates/reset-password.client.html` — subject `Reset your Xpress DJs password`. Same href. Do not install it in the shared template.

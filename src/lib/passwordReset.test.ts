@@ -12,19 +12,19 @@ describe("recovery confirm path", () => {
     });
     assert.equal(
       recoveryConfirmPath(params),
-      "/auth/set-password?token_hash=abcDEF_123-token&type=recovery",
+      "/auth/reset?token_hash=abcDEF_123-token&type=recovery",
     );
   });
 
   it("drops signup tokens, empty tokens, and tokens that can change the path", () => {
-    assert.equal(recoveryConfirmPath(new URLSearchParams({ token_hash: "abc", type: "signup" })), "/auth/set-password");
-    assert.equal(recoveryConfirmPath(new URLSearchParams({ token_hash: "abc", type: "magiclink" })), "/auth/set-password");
-    assert.equal(recoveryConfirmPath(new URLSearchParams({ type: "recovery" })), "/auth/set-password");
+    assert.equal(recoveryConfirmPath(new URLSearchParams({ token_hash: "abc", type: "signup" })), "/auth/reset");
+    assert.equal(recoveryConfirmPath(new URLSearchParams({ token_hash: "abc", type: "magiclink" })), "/auth/reset");
+    assert.equal(recoveryConfirmPath(new URLSearchParams({ type: "recovery" })), "/auth/reset");
     assert.equal(safeRecoveryToken("abc/../admin"), null);
     assert.equal(safeRecoveryToken("abc?x=1"), null);
     assert.equal(safeRecoveryToken("abc#hash"), null);
     assert.equal(safeRecoveryToken("abc def"), null);
-    assert.equal(recoveryConfirmPath(new URLSearchParams({ token_hash: "abc/../x", type: "recovery" })), "/auth/set-password");
+    assert.equal(recoveryConfirmPath(new URLSearchParams({ token_hash: "abc/../x", type: "recovery" })), "/auth/reset");
   });
 });
 

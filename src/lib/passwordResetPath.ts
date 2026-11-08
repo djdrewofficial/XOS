@@ -1,7 +1,7 @@
 /* Password-reset URL rules with no app-URL import, so tests can load them. */
 
 export const PASSWORD_RESET_PATH = "/auth/set-password";
-export const RECOVERY_CONFIRM_PATH = "/auth/confirm";
+export const RECOVERY_RESET_PATH = "/auth/reset";
 
 const PRODUCTION_HOST = "xos.xpressdjs.com";
 
@@ -22,14 +22,14 @@ export function safeRecoveryToken(value: string | null | undefined): string | nu
   return token;
 }
 
-/** Where /auth/confirm sends the browser. Only a recovery token_hash is
-    forwarded, and only to this site's set-password page. Every other
-    parameter, including next and redirect_to, is dropped. */
+/** Where /auth/confirm sends a recovery link. The browser fallback is
+    /auth/reset, the same HTTPS path the couple app requests. Signup and
+    other types are not forwarded. next and redirect_to are dropped. */
 export function recoveryConfirmPath(params: URLSearchParams): string {
   const token = params.get("type") === "recovery" ? safeRecoveryToken(params.get("token_hash")) : null;
-  if (!token) return PASSWORD_RESET_PATH;
+  if (!token) return RECOVERY_RESET_PATH;
   const dest = new URLSearchParams();
   dest.set("token_hash", token);
   dest.set("type", "recovery");
-  return `${PASSWORD_RESET_PATH}?${dest.toString()}`;
+  return `${RECOVERY_RESET_PATH}?${dest.toString()}`;
 }

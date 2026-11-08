@@ -1,9 +1,9 @@
 import { CLIENT_IOS_BUNDLE_ID } from "@/lib/clientApp";
 
-/* Universal Links for https://xos.xpressdjs.com/j/*
-   Apple fetches this with no cookies. Team id is APPLE_TEAM_ID (not in the
-   xpress-client repo). Until that env var is set, details is empty and iOS
-   will not open the app from these links. */
+/* Universal Links for join links and password recovery.
+   Apple fetches this with no cookies. Team id is APPLE_TEAM_ID. Until that
+   env var is set, details is empty and iOS will not open the app.
+   Recovery paths are exact. The staff sign-in callback is not a universal link. */
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,12 @@ export function GET() {
         ? [
             {
               appIDs: [appId],
-              components: [{ "/": "/j/*", comment: "Event join links" }],
+              components: [
+                { "/": "/j/*", comment: "Event join links" },
+                { "/": "/auth/reset", comment: "Password recovery" },
+                { "/": "/auth/confirm", comment: "Email confirmation" },
+                { "/": "/auth/set-password", comment: "Password recovery" },
+              ],
             },
           ]
         : [],

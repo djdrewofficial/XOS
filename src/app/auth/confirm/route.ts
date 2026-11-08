@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { recoveryConfirmPath } from "@/lib/passwordResetPath";
 
-/* Public landing for a Supabase recovery email that uses the documented
-   /auth/confirm?token_hash=&type=recovery shape. This route does not verify
-   the token and does not log the query. The set-password page does the
-   one-time verify. Any next or redirect_to value is ignored. */
+/* Public landing when a recovery link uses /auth/confirm. Forwards only a
+   recovery token_hash to /auth/reset on this host. Does not verify or log
+   the token. Signup and other types are not turned into a password reset. */
 
 export const dynamic = "force-dynamic";
 

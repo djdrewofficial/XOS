@@ -1,11 +1,11 @@
 import { appUrl } from "@/lib/signing";
 import { PASSWORD_RESET_PATH, passwordResetHostAllowed } from "./passwordResetPath";
 
-/* Where a Supabase password-reset email sends the person. Must be on the
-   project's Auth redirect allowlist. The page accepts both a PKCE `code`
-   (default email template, same browser) and `token_hash` (custom template,
-   any device). */
-export { PASSWORD_RESET_PATH, RECOVERY_CONFIRM_PATH, recoveryConfirmPath, safeRecoveryToken } from "./passwordResetPath";
+/* Staff forgot-password redirect. The shared Auth template appends
+   ?token_hash={{ .TokenHash }}&type=recovery to this URL. The couple app
+   passes https://xos.xpressdjs.com/auth/reset itself. Keep staff on
+   /auth/set-password. */
+export { PASSWORD_RESET_PATH, RECOVERY_RESET_PATH, recoveryConfirmPath, safeRecoveryToken } from "./passwordResetPath";
 
 function configuredHost(): string | null {
   try {
