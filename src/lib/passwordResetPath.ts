@@ -36,3 +36,63 @@ export function sameHostRecoveryRedirect(current: URL): URL | null {
   if (dest.searchParams.get("token_hash") !== token || dest.searchParams.get("type") !== "recovery") return null;
   return dest;
 }
+
+/** App redirect the couple-app reset email requests. Go's HTML template will
+    not put this scheme in an href, so the message uses the HTTPS bridge. */
+export const MOBILE_RESET_REDIRECT = "xpressclient://auth/reset";
+export const MOBILE_RESET_BRIDGE = "https://xos.xpressdjs.com/auth/reset";
+
+export type MobileResetView =
+  | { state: "ready"; href: string }
+  | { state: "missing" }
+  | { state: "invalid" }
+  | { state: "expired" };
+
+export function mobileResetResponseHeaders(): Record<string, string> {
+  return {
+    "Cache-Control": "private, no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Robots-Tag": "noindex, nofollow",
+  };
+}
+
+function queryValues(query: URLSearchParams, key: string): string[] {
+  return query.getAll(key).filter((value) => value !== "");
+}
+
+/** Button target for the installed app. It accepts token_hash on this exact
+    URL and does not adopt an access-token fragment. */
+function mobileResetButton(token: string): string | null {
+  const dest = new URL(MOBILE_RESET_REDIRECT);
+  dest.searchParams.set("token_hash", token);
+  dest.searchParams.set("type", "recovery");
+  dest.hash = "";
+  if (dest.protocol !== "xpressclient:") return null;
+  if (dest.hostname !== "auth" || dest.pathname !== "/reset") return null;
+  if (dest.username || dest.password) return null;
+  const keys = [...dest.searchParams.keys()];
+  if (keys.length !== 2 || keys[0] !== "token_hash" || keys[1] !== "type") return null;
+  if (dest.searchParams.get("token_hash") !== token || dest.searchParams.get("type") !== "recovery") return null;
+  if (!dest.href.startsWith(`${MOBILE_RESET_REDIRECT}?`)) return null;
+  if (dest.href.includes("#") || dest.href.includes("@") || dest.href.includes("\\")) return null;
+  return dest.href;
+}
+
+export function mobileResetView(query: URLSearchParams): MobileResetView {
+  if (
+    queryValues(query, "error").length ||
+    queryValues(query, "error_code").length ||
+    queryValues(query, "error_description").length
+  ) {
+    return { state: "expired" };
+  }
+  const types = queryValues(query, "type");
+  const hashes = queryValues(query, "token_hash");
+  if (types.length === 0 || hashes.length === 0) return { state: "missing" };
+  if (types.length !== 1 || hashes.length !== 1 || types[0] !== "recovery") return { state: "invalid" };
+  const token = safeRecoveryToken(hashes[0]);
+  if (!token) return { state: "invalid" };
+  const href = mobileResetButton(token);
+  if (!href) return { state: "invalid" };
+  return { state: "ready", href };
+}
