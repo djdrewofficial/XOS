@@ -87,18 +87,23 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
   let idempotencyKey: string | null = null;
 
   const finish = async (status: number, body: unknown, audit: { status: string; errorCode?: string | null }) => {
-    await store.insertAudit({
-      tokenId,
-      tokenName,
-      toolName,
-      argsRedacted,
-      status: audit.status,
-      errorCode: audit.errorCode ?? null,
-      durationMs: Math.max(0, Date.now() - started),
-      confirmationId,
-      idempotencyKey,
-      requestId,
-    });
+    try {
+      await store.insertAudit({
+        tokenId,
+        tokenName,
+        toolName,
+        argsRedacted,
+        status: audit.status,
+        errorCode: audit.errorCode ?? null,
+        durationMs: Math.max(0, Date.now() - started),
+        confirmationId,
+        idempotencyKey,
+        requestId,
+      });
+    } catch {
+      // Auth failures still return their own status when the audit table is not there yet.
+      // Harmful writes already stop in beginAudit before any effect.
+    }
     return { status, body: hideClientLinks(body) };
   };
 
