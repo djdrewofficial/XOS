@@ -35,6 +35,7 @@ export async function freezeTemplateEmail(
     attach_template_id: template.attach_template_id,
     rendered_to: rendered.to,
     rendered_subject: rendered.subject,
+    rendered_body: rendered.body,
     rendered_body_sha256: sha256(rendered.body ?? ""),
     document_html_sha256: planned.documentHtmlSha256,
     file_sha256: planned.fileSha256,
@@ -115,12 +116,14 @@ export async function sendTemplateEmail(
     reply_to: sender.reply_to ?? null,
     subject,
     body_html: body,
-    status: "queued",
+    status: "sending",
+    claimed_at: new Date().toISOString(),
     bypass_comms_pause: true,
   }).select("id").single();
   if (error) throw new Error(error.message);
   const drained = await processOutbox(admin, {
     onlyIds: [queued.id as string],
+    fromStatus: "sending",
     attachmentStamp: {
       [queued.id as string]: { documentHtmlSha256: frozen.document_html_sha256, fileSha256: frozen.file_sha256 },
     },

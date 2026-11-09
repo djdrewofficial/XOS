@@ -49,8 +49,17 @@ export function auditView(value: unknown, secrets: readonly string[] = [], depth
   return "[unsupported]";
 }
 
-const CLIENT_LINK =
-  /https?:\/\/[^\s"'<>]*\/(?:sign|pay|proposal|offer|welcome|vibo|unsubscribe|j|p)\/[A-Za-z0-9._~-]+/gi;
+const URL_IN_TEXT = /https?:\/\/[^\s"'<>]+/gi;
+
+function capabilityUrl(url: string): boolean {
+  return /\/(?:sign|pay|proposal|offer|welcome|vibo|unsubscribe|j|p)\//i.test(url)
+    || /[?&#]token=/i.test(url)
+    || /\/object\/sign\//i.test(url);
+}
+
+function redactCapabilityUrls(value: string): string {
+  return value.replace(URL_IN_TEXT, (url) => (capabilityUrl(url) ? "[client link]" : url));
+}
 
 const CLIENT_LINK_KEY = /^(signing_url|payment_url|proposal_url|join_url|guest_url|access_token|pay_token)$/i;
 
@@ -58,7 +67,7 @@ const CLIENT_LINK_KEY = /^(signing_url|payment_url|proposal_url|join_url|guest_u
     and the audit log only see a placeholder. */
 export function hideClientLinks(value: unknown, depth = 0): unknown {
   if (depth > 20) return value;
-  if (typeof value === "string") return value.replace(CLIENT_LINK, "[client link]");
+  if (typeof value === "string") return redactCapabilityUrls(value);
   if (Array.isArray(value)) return value.map((item) => hideClientLinks(item, depth + 1));
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -75,7 +84,7 @@ function stripSecrets(value: string, secrets: readonly string[]): string {
   for (const secret of secrets) {
     if (secret.length >= 8 && out.includes(secret)) out = out.split(secret).join("[redacted]");
   }
-  return out.replace(CLIENT_LINK, "[client link]");
+  return redactCapabilityUrls(out);
 }
 
 /** Env values that must never appear in a tool result, audit row, or log line. */

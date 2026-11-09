@@ -35,6 +35,7 @@ export type EditorQuery = PromiseLike<Result> & {
   in(column: string, values: unknown[]): EditorQuery;
   gte(column: string, value: unknown): EditorQuery;
   neq(column: string, value: unknown): EditorQuery;
+  is(column: string, value: unknown): EditorQuery;
   order(column: string, opts?: { ascending?: boolean }): EditorQuery;
   limit(n: number): EditorQuery;
   select(cols: string): EditorQuery;
@@ -369,7 +370,7 @@ export function coerceMoney(value: unknown, label: string): number | null {
   return number;
 }
 
-export function onboardingEffects(input: { staff?: { flat_wage?: unknown }[]; newVenue?: { name?: string | null } | null; newSourceName?: string | null; packagePriceOverride?: unknown; depositValue?: unknown; travelFee?: unknown }) {
+export function onboardingEffects(input: { staff?: { flat_wage?: unknown }[]; newVenue?: { name?: string | null } | null; newSourceName?: string | null; packagePriceOverride?: unknown; depositValue?: unknown; travelFee?: unknown; discounts?: { amount?: unknown }[]; addons?: { price_override?: unknown }[] }) {
   const staff = (input.staff ?? []).map((row) => ({ ...row, flat_wage: coerceMoney(row.flat_wage, "Wage") }));
   const needs = new Set<string>();
   if (staff.some((row) => row.flat_wage != null && row.flat_wage !== 0)) needs.add("money.payroll");
@@ -378,6 +379,11 @@ export function onboardingEffects(input: { staff?: { flat_wage?: unknown }[]; ne
   if (coerceMoney(input.packagePriceOverride, "Price override") != null) needs.add("money");
   if (coerceMoney(input.depositValue, "Deposit") != null) needs.add("money");
   if (coerceMoney(input.travelFee, "Travel fee") != null && coerceMoney(input.travelFee, "Travel fee") !== 0) needs.add("money");
+  if ((input.discounts ?? []).some((row) => {
+    const amount = coerceMoney(row.amount, "Discount");
+    return amount != null && amount !== 0;
+  })) needs.add("money");
+  if ((input.addons ?? []).some((row) => coerceMoney(row.price_override, "Add-on price") != null)) needs.add("money");
   return { staff, scopes: [...needs] };
 }
 

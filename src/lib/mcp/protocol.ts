@@ -353,16 +353,22 @@ async function confirm(
     return input.finish(200, rpcError(input.rpcId, -32004, "Confirmation not found"), { status: "error", errorCode: "confirmation_missing" });
   }
   const payload = redact({
-    executed: Boolean(row.usedAt),
+    status: row.status,
+    executed: row.status === "completed",
+    uncertain: row.status === "uncertain",
     approved: Boolean(row.approvedAt),
     rejected: Boolean(row.rejectedAt),
     expired: Date.parse(row.expiresAt) <= input.now.getTime(),
     tool: row.toolName,
     receipt: (row.preview as { receipt?: unknown } | null)?.receipt ?? row.preview,
     result: row.result,
-    message: row.usedAt
-      ? "A person already approved this in XOS and it has run. This call did not run it again."
-      : "This call does not approve and does not run the action. A signed-in person has to approve the receipt in XOS.",
+    message: row.status === "uncertain"
+      ? "The result is uncertain. This call did not run it again and did not report success."
+      : row.status === "completed"
+        ? "A person already approved this in XOS and it has run. This call did not run it again."
+        : row.status === "failed"
+          ? "This preview failed. This call did not run it again."
+          : "This call does not approve and does not run the action. A signed-in person has to approve the receipt in XOS.",
   }, input.secrets);
   return input.finish(200, rpcOk(input.rpcId, toolResult(payload, false)), { status: "ok" });
 }
@@ -423,11 +429,17 @@ export async function executeHumanApproved(
   const claimed = await store.claimExecution(row.id, input.userId, input.now);
   if (!claimed) throw new Error("This preview was already performed or can no longer be approved.");
   if (tool.freeze) {
-    const fresh = await tool.freeze(claimed.args, ctx);
-    const stored = (claimed.preview as { effect_hash?: string } | null)?.effect_hash;
-    if (!stored || sha256(canonicalJson(fresh)) !== stored) {
-      await store.finishOperation(row.id, "failed", { error: "rendered effect changed" }, input.now);
-      throw new Error("The rendered message changed after the preview. Nothing was run. Ask for a new preview.");
+    try {
+      const fresh = await tool.freeze(claimed.args, ctx);
+      const stored = (claimed.preview as { effect_hash?: string } | null)?.effect_hash;
+      if (!stored || sha256(canonicalJson(fresh)) !== stored) {
+        await store.finishOperation(row.id, "failed", { error: "rendered effect changed" }, input.now);
+        throw new Error("The rendered message changed after the preview. Nothing was run. Ask for a new preview.");
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("The rendered message changed")) throw err;
+      await store.finishOperation(row.id, "failed", { error: "approval could not be rechecked" }, input.now);
+      throw err;
     }
   }
   const outcome = await runExecute(tool, claimed.args, ctx, input.secrets);

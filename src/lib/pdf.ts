@@ -11,6 +11,20 @@ const WINDOWS_CHROME_PATHS = [
   "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
 ];
 
+const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.0\.0\.0|172\.(?:1[6-9]|2\d|3[0-1])\.)/i;
+
+export function pdfRequestAllowed(url: string, allowedHosts: readonly string[]): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  if (PRIVATE_HOST.test(parsed.hostname)) return false;
+  return allowedHosts.includes(parsed.host);
+}
+
 export async function htmlToPdf(html: string): Promise<Buffer> {
   const puppeteer = (await import("puppeteer-core")).default;
 
@@ -34,6 +48,15 @@ export async function htmlToPdf(html: string): Promise<Buffer> {
   });
   try {
     const page = await browser.newPage();
+    await page.setJavaScriptEnabled(false);
+    const appHost = (() => {
+      try { return new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://xos.xpressdjs.com").host; } catch { return "xos.xpressdjs.com"; }
+    })();
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      if (pdfRequestAllowed(request.url(), [appHost])) void request.continue();
+      else void request.abort();
+    });
     await page.setContent(html, { waitUntil: "load", timeout: 30_000 });
     // give remote images (logo) a beat to finish
     await page.evaluate(

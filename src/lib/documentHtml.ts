@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { XDOC_CSS } from "@/components/DocumentShell";
-import { sanitizeBlocks, docTypeClientLabel } from "@/lib/documentBlocks";
+import { sanitizeBlocks, docTypeClientLabel, sanitizeDocumentHtml } from "@/lib/documentBlocks";
 import { renderBlocks } from "@/lib/documentRender";
 import { appUrl } from "@/lib/signing";
 
@@ -61,7 +61,7 @@ function wrapDocHtml(opts: {
   blocks: { html?: string | null }[];
 }): string {
   const body = opts.blocks
-    .map((b) => `<div class="xdoc-block">${(b.html ?? "").replace(/<details class="xdoc-sec">/g, '<details class="xdoc-sec" open>')}</div>`)
+    .map((b) => `<div class="xdoc-block">${sanitizeDocumentHtml(b.html ?? "").replace(/<details class="xdoc-sec">/g, '<details class="xdoc-sec" open>')}</div>`)
     .join("");
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><style>${XDOC_CSS}
   .xdoc { box-shadow: none; border-radius: 0; max-width: 820px; margin: 24px auto; }

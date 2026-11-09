@@ -78,7 +78,10 @@ export async function rotateMcpToken(_prev: TokenFlash, formData: FormData): Pro
     .update({ overlap_until: new Date(Date.now() + hours * 3_600_000).toISOString() })
     .eq("id", old.id);
   if (overlapError) {
-    await admin.from("mcp_service_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", created.id);
+    const { error: revokeError } = await admin.from("mcp_service_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", created.id);
+    if (revokeError) {
+      throw new Error("Rotation failed and the new token could not be revoked. Revoke that token before using either one.");
+    }
     return { error: "Rotation did not finish. The new token was revoked and the old token is unchanged." };
   }
   revalidatePath("/settings/mcp");
@@ -142,6 +145,7 @@ export async function revokeMcpToken(formData: FormData) {
   await requireMaster();
   const id = String(formData.get("token_id") ?? "");
   const now = new Date().toISOString();
-  await createAdminClient().from("mcp_service_tokens").update({ revoked_at: now, overlap_until: now }).eq("id", id);
+  const { error } = await createAdminClient().from("mcp_service_tokens").update({ revoked_at: now, overlap_until: now }).eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/settings/mcp");
 }

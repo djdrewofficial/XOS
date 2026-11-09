@@ -9,7 +9,7 @@ function sha(value: string): string {
 /** The approved send is this exact recipient list and these exact bodies. */
 export function bindMessages(messages: PlannedMessage[]) {
   return messages
-    .map((message) => ({ to: message.to.trim().toLowerCase(), subject: message.subject, body_sha256: sha(message.body) }))
+    .map((message) => ({ to: message.to.trim().toLowerCase(), subject: message.subject, body: message.body, body_sha256: sha(message.body) }))
     .sort((a, b) => a.to.localeCompare(b.to) || a.body_sha256.localeCompare(b.body_sha256));
 }
 

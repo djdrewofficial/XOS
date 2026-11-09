@@ -47,6 +47,7 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     await db.exec(read("supabase/migrations/00219_mcp_operations.sql"));
     await db.exec(read("supabase/migrations/00220_mcp_held_outbox.sql"));
     await db.exec(read("supabase/migrations/00221_mcp_held_effects.sql"));
+    await db.exec(read("supabase/migrations/00222_mcp_runtime_guards.sql"));
   });
 
   it("rejects an idempotency key shorter than 8 characters", async () => {

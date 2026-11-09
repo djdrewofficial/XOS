@@ -75,6 +75,7 @@ function memoryDb(seed: Record<string, Row[]> = {}): { db: EditorDb; tables: Rec
       if (filter.op === "gte") return Number(row[filter.column]) >= Number(filter.value);
       if (filter.op === "in") return (filter.value as unknown[]).includes(row[filter.column]);
       if (filter.op === "neq") return row[filter.column] !== filter.value;
+      if (filter.op === "is") return (row[filter.column] ?? null) === filter.value;
       return true;
     });
     const run = (): { data: unknown; error: { message: string } | null } => {
@@ -108,6 +109,7 @@ function memoryDb(seed: Record<string, Row[]> = {}): { db: EditorDb; tables: Rec
       in(column: string, value: unknown[]) { filters.push({ op: "in", column, value }); return api; },
       gte(column: string, value: unknown) { filters.push({ op: "gte", column, value }); return api; },
       neq(column: string, value: unknown) { filters.push({ op: "neq", column, value }); return api; },
+      is(column: string, value: unknown) { filters.push({ op: "is", column, value }); return api; },
       order(column: string, opts?: { ascending?: boolean }) { orderBy = { column, ascending: opts?.ascending !== false }; return api; },
       limit(n: number) { max = n; return api; },
       select() { return api; },
@@ -325,8 +327,9 @@ describe("office parity handlers", () => {
       packages: [{ id: "88888888-8888-4888-8888-888888888888", category_id: "77777777-7777-4777-8777-777777777777" }],
       event_app_invites: [{ id: "44444444-4444-4444-8444-444444444444", event_id: eventId, status: "pending" }],
     });
-    const upload = acceptEventUpload({ eventId, filename: "timeline.pdf", contentType: "application/pdf", contentBase64: Buffer.from("pdf").toString("base64") });
-    assert.equal(upload.bytes?.toString(), "pdf");
+    const upload = acceptEventUpload({ eventId, filename: "timeline.pdf", contentType: "application/pdf", contentBase64: Buffer.from("%PDF-1.4").toString("base64") });
+    assert.equal(upload.bytes?.subarray(0, 5).toString(), "%PDF-");
+    assert.throws(() => acceptEventUpload({ eventId, filename: "x.png", contentType: "image/png", contentBase64: Buffer.from("<script>alert(1)</script>").toString("base64") }), /do not match/);
     assert.equal(upload.path.startsWith(`${eventId}/`), true);
     assert.throws(() => acceptEventUpload({ eventId, filename: "x.html", contentType: "text/html", contentBase64: "YQ==" }), /not allowed/);
     assert.throws(() => acceptEventUpload({ eventId, filename: "x.pdf", contentType: "application/pdf", stagedPath: "https://evil.example/x.pdf" }), /already live/);

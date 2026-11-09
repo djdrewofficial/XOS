@@ -860,7 +860,7 @@ export async function processSmsOutbox(
   for (const msg of queued ?? []) {
     const expected = opts?.bodySha256?.[msg.id as string];
     if (expected && createHash("sha256").update(msg.body ?? "", "utf8").digest("hex") !== expected) {
-      await supabase.from("sms_log").update({ status: "queued", claimed_at: null }).eq("id", msg.id).eq("status", "sending");
+      await supabase.from("sms_log").update({ status: "blocked", claimed_at: null, error: "Approval hash mismatch. Not returned to the outbox." }).eq("id", msg.id).eq("status", "sending");
       failed++;
       continue;
     }

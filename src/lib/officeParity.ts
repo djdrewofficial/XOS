@@ -2,6 +2,7 @@
     Every database result is checked. A ignored error is not a success. */
 
 import { createHash } from "node:crypto";
+import { sanitizeDocumentHtml } from "./documentBlocks";
 import type { EditorDb } from "./officeEdits";
 
 type Row = Record<string, unknown>;
@@ -37,7 +38,18 @@ function nameOf(value: unknown, label: string): string {
   return text;
 }
 
-export function acceptEventUpload(input: { eventId: string; filename: string; contentType: string; contentBase64?: string | null; stagedPath?: string | null }): { filename: string; contentType: string; bytes: Buffer | null; path: string } {
+export function sniffUpload(bytes: Buffer): string | null {
+  const head = bytes.subarray(0, 64).toString("utf8").toLowerCase();
+  if (head.includes("<script") || head.includes("<html") || head.includes("<?php") || head.includes("javascript:")) return null;
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.subarray(0, 5).toString("utf8") === "%PDF-") return "application/pdf";
+  if (bytes.subarray(0, 6).toString("utf8") === "GIF87a" || bytes.subarray(0, 6).toString("utf8") === "GIF89a") return "image/gif";
+  if (bytes.subarray(0, 4).toString("utf8") === "RIFF" && bytes.subarray(8, 12).toString("utf8") === "WEBP") return "image/webp";
+  return null;
+}
+
+export function acceptEventUpload(input: { eventId: string; filename: string; contentType: string; contentBase64?: string | null; stagedPath?: string | null }): { filename: string; contentType: string; bytes: Buffer | null; sha256: string | null; path: string } {
   const eventId = id(input.eventId, "Event");
   const filename = nameOf(input.filename, "File name").replace(/[^\w.\- ]+/g, "").slice(0, 120);
   if (!filename || filename.includes("..")) throw new Error("File name is not allowed.");
@@ -50,13 +62,15 @@ export function acceptEventUpload(input: { eventId: string; filename: string; co
     const path = String(input.stagedPath);
     if (path.includes("://") || path.includes("..") || !path.startsWith(`${eventId}/`)) throw new Error("Staged files must already live under this event.");
     if (!new RegExp(`^${eventId}/[0-9a-f-]{36}\\.${ext}$`, "i").test(path)) throw new Error("Staged path is not an event file path.");
-    return { filename, contentType, bytes: null, path };
+    return { filename, contentType, bytes: null, sha256: null, path };
   }
   const raw = String(input.contentBase64 ?? "");
   if (!raw) throw new Error("Choose a file first.");
   const bytes = Buffer.from(raw, "base64");
   if (bytes.length === 0 || bytes.length > MAX_UPLOAD_BYTES) throw new Error("File must be between 1 byte and 192 KB for an agent upload.");
-  return { filename, contentType, bytes, path: `${eventId}/${crypto.randomUUID()}.${ext}` };
+  const sniffed = sniffUpload(bytes);
+  if (!sniffed || sniffed !== contentType) throw new Error("The file contents do not match the declared type.");
+  return { filename, contentType: sniffed, bytes, sha256: createHash("sha256").update(bytes).digest("hex"), path: `${eventId}/${crypto.randomUUID()}.${ext}` };
 }
 
 export async function saveEventFileRow(db: EditorDb, row: Row) {
@@ -294,14 +308,14 @@ export async function revokeAppInvite(db: EditorDb, eventId: string, inviteId: s
   return { ok: true };
 }
 
-export function heldDeliveryPlan(rows: { id: string; channel: "email" | "sms"; to: string; body: string; status: string }[]) {
+export function heldDeliveryPlan(rows: { id: string; channel: "email" | "sms"; to: string; body: string; status: string; bodySha?: string }[]) {
   const held = rows.filter((row) => row.status === "held");
   const escaped = rows.filter((row) => row.status === "queued");
   if (escaped.length) throw new Error("A queued message is outside the approval hold. Nothing was released.");
   return {
     pending: true,
     delivery: "A second approval is required before these messages are delivered. The outbox cron claims queued rows only, so held rows stay put.",
-    messages: held.map((row) => ({ id: row.id, channel: row.channel, to: row.to, body_sha256: sha(row.body) })),
+    messages: held.map((row) => ({ id: row.id, channel: row.channel, to: row.to, body: row.body, subject: row.to, body_sha256: row.bodySha ?? sha(row.body) })),
   };
 }
 
@@ -395,7 +409,7 @@ export async function saveEventRecord(db: EditorDb, eventId: string, section: st
   return { package_description_override: override };
 }
 
-export async function saveEventNote(db: EditorDb, eventId: string, input: { kind: string; body?: string; noteId?: string | null; clientId?: string | null }) {
+export async function saveEventNote(db: EditorDb, eventId: string, input: { kind: string; body?: string; noteId?: string | null; clientId?: string | null; memberIds?: string[] }) {
   const idValue = id(eventId, "Event");
   const body = nameOf(input.body, "Note");
   if (input.kind === "update") {
@@ -404,7 +418,9 @@ export async function saveEventNote(db: EditorDb, eventId: string, input: { kind
   }
   if (!["logistics", "contract", "client"].includes(input.kind)) throw new Error("Note kind must be logistics, contract, client, or update.");
   if (input.kind === "client") {
-    await must(db.from("client_notes").insert({ client_id: id(input.clientId, "Client"), body }), "Saving the client note");
+    const clientId = id(input.clientId, "Client");
+    if (!input.memberIds?.includes(clientId)) throw new Error("That client is not on this event.");
+    await must(db.from("client_notes").insert({ client_id: clientId, body }), "Saving the client note");
     return { ok: true };
   }
   await must(db.from("event_notes").insert({ event_id: idValue, body, kind: input.kind }), "Saving the note");
@@ -412,16 +428,19 @@ export async function saveEventNote(db: EditorDb, eventId: string, input: { kind
 }
 
 export async function saveEventAddonWording(db: EditorDb, eventId: string, eventAddonId: string, input: { quantity?: number; price?: number | null; basePrice?: number; description?: string; baseDescription?: string }) {
-  const quantity = Math.max(1, Math.round(Number(input.quantity ?? 1)));
-  const price = input.price == null ? null : Number(input.price);
-  if (price != null && !Number.isFinite(price)) throw new Error("Price must be a number.");
-  const text = String(input.description ?? "").replace(/\r\n/g, "\n").trim();
-  const base = String(input.baseDescription ?? "").replace(/\r\n/g, "\n").trim();
-  const patch = {
-    quantity,
-    price_override: price != null && price !== Number(input.basePrice) ? price : null,
-    description_override: text && text !== base ? text : null,
-  };
+  const patch: Row = {};
+  if (input.quantity !== undefined) patch.quantity = Math.max(1, Math.round(Number(input.quantity)));
+  if (input.price !== undefined) {
+    const price = input.price == null ? null : Number(input.price);
+    if (price != null && !Number.isFinite(price)) throw new Error("Price must be a number.");
+    patch.price_override = price != null && price !== Number(input.basePrice) ? price : null;
+  }
+  if (input.description !== undefined) {
+    const text = String(input.description).replace(/\r\n/g, "\n").trim();
+    const base = String(input.baseDescription ?? "").replace(/\r\n/g, "\n").trim();
+    patch.description_override = text && text !== base ? text : null;
+  }
+  if (!Object.keys(patch).length) throw new Error("Nothing to update.");
   await must(db.from("event_addons").update(patch).eq("id", id(eventAddonId, "Add-on")).eq("event_id", id(eventId, "Event")), "Saving the add-on");
   return patch;
 }
@@ -439,9 +458,17 @@ export async function saveStaffLog(db: EditorDb, eventId: string, staffId: strin
     return { portal_visible: input.portalVisible === true };
   }
   if (input.action !== "details") throw new Error("Staff action must be mark, details, or portal.");
-  const wage = input.flatWage == null ? 0 : Number(input.flatWage);
-  if (!Number.isFinite(wage) || wage < 0) throw new Error("Wage must be a number.");
-  const patch = { role: input.role || "DJ", flat_wage: wage, start_time: input.startTime ?? null, end_time: input.endTime ?? null, notes: input.notes ?? null };
+  const patch: Row = {};
+  if (input.role !== undefined) patch.role = input.role || "DJ";
+  if (input.flatWage !== undefined && input.flatWage !== null) {
+    const wage = Number(input.flatWage);
+    if (!Number.isFinite(wage) || wage < 0) throw new Error("Wage must be a number.");
+    patch.flat_wage = wage;
+  }
+  if (input.startTime !== undefined) patch.start_time = input.startTime;
+  if (input.endTime !== undefined) patch.end_time = input.endTime;
+  if (input.notes !== undefined) patch.notes = input.notes;
+  if (!Object.keys(patch).length) throw new Error("Nothing to update.");
   await must(db.from("event_staff").update(patch).eq("id", rowId).eq("event_id", eventId), "Saving staff details");
   return patch;
 }
@@ -472,27 +499,31 @@ export async function saveDocumentOperation(db: EditorDb, input: { action: strin
     const rows = await must(db.from("documents").select("signed_at").eq("id", id(input.documentId, "Document")), "Loading the document");
     const row = (Array.isArray(rows) ? rows[0] : rows) as Row | undefined;
     if (!row) throw new Error("Document not found.");
-    if (row.signed_at) throw new Error("Signed documents can't be deleted. Void them instead.");
-    await must(db.from("documents").delete().eq("id", input.documentId), "Deleting the document");
+    const removed = await must(db.from("documents").delete().eq("id", input.documentId).is("signed_at", null), "Deleting the document");
+    if (!Array.isArray(removed) || removed.length === 0) throw new Error("Signed documents can't be deleted. Void them instead.");
     return { ok: true };
   }
   if (input.action === "blocks") {
     const rows = await must(db.from("documents").select("signed_at").eq("id", id(input.documentId, "Document")), "Loading the document");
     const row = (Array.isArray(rows) ? rows[0] : rows) as Row | undefined;
     if (!row) throw new Error("Document not found.");
-    if (row.signed_at) throw new Error("Signed documents are locked.");
     if (!Array.isArray(input.blocks) || input.blocks.length === 0) throw new Error("A document needs at least one block.");
-    await must(db.from("documents").update({ blocks: input.blocks }).eq("id", input.documentId), "Saving document blocks");
+    const updated = await must(db.from("documents").update({ blocks: input.blocks.map((block) => {
+      const row = block as { html?: string };
+      return typeof row.html === "string" ? { ...(block as Row), html: sanitizeDocumentHtml(row.html) } : block;
+    }) }).eq("id", input.documentId).is("signed_at", null), "Saving document blocks");
+    if (!Array.isArray(updated) || updated.length === 0) throw new Error("Signed documents are locked.");
     return { ok: true };
   }
   throw new Error("That document action is not recognized.");
 }
 
-export function releaseHeld(plan: { messages: { id: string; body_sha256: string }[] }, current: { id: string; body: string; status: string }[]) {
+export function releaseHeld(plan: { messages: { id: string; body_sha256: string }[] }, current: { id: string; body: string; status: string; bodySha?: string }[]) {
   if (plan.messages.length !== current.length) throw new Error("The held messages changed. Nothing was released.");
   for (const message of plan.messages) {
     const row = current.find((item) => item.id === message.id);
-    if (!row || row.status !== "held" || sha(row.body) !== message.body_sha256) throw new Error("The held messages changed. Nothing was released.");
+    const hash = row?.bodySha ?? (row ? sha(row.body) : "");
+    if (!row || row.status !== "held" || hash !== message.body_sha256) throw new Error("The held messages changed. Nothing was released.");
   }
   return { ids: plan.messages.map((message) => message.id), nextStatus: "sending" as const };
 }

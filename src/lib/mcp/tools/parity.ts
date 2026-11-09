@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { postFrozenWebhook } from "@/lib/automations";
+import { postApprovedWebhook } from "@/lib/automations";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { processOutbox } from "@/lib/mailgun";
 import {
   acceptEventUpload,
+  sniffUpload,
   categoryIsEmpty,
   deleteEventFileRow,
   deleteTimeOff,
@@ -83,15 +85,23 @@ export const parityTools: LiveTool[] = [
       const eventId = s(args, "event_id")!;
       const planned = acceptEventUpload({ eventId, filename: s(args, "filename")!, contentType: s(args, "content_type")!, contentBase64: s(args, "content_base64"), stagedPath: s(args, "staged_path") });
       const admin = ctx.admin;
+      let sha = planned.sha256;
+      let size = planned.bytes?.length ?? 0;
       if (planned.bytes) {
         const { error } = await admin.storage.from("event-files").upload(planned.path, planned.bytes, { contentType: planned.contentType, upsert: false });
         if (error) throw new Error(error.message);
       } else {
         const { data, error } = await admin.storage.from("event-files").download(planned.path);
         if (error || !data) throw new Error(error?.message ?? "That staged file is not in event storage.");
+        const bytes = Buffer.from(await data.arrayBuffer());
+        if (bytes.length === 0 || bytes.length > 192_000) throw new Error("Staged file must be between 1 byte and 192 KB.");
+        const sniffed = sniffUpload(bytes);
+        if (!sniffed || sniffed !== planned.contentType) throw new Error("The staged file contents do not match the declared type.");
+        sha = createHash("sha256").update(bytes).digest("hex");
+        size = bytes.length;
       }
-      await saveEventFileRow(db(ctx), { event_id: eventId, name: planned.filename, path: planned.path, content_type: planned.contentType, size_bytes: planned.bytes?.length ?? null, source: planned.bytes ? "agent" : "staged", label_id: s(args, "label_id") });
-      return { ok: true, path: planned.path };
+      await saveEventFileRow(db(ctx), { event_id: eventId, name: planned.filename, path: planned.path, content_type: planned.contentType, size_bytes: size, sha256: sha, source: planned.bytes ? "agent" : "staged", label_id: s(args, "label_id") });
+      return { ok: true, path: planned.path, sha256: sha };
     },
   },
   {
@@ -329,6 +339,14 @@ export const parityTools: LiveTool[] = [
       for (const message of approved) {
         const sent = await sendBrandedEmail({ to: message.to, subject: message.subject, contentHtml: message.body, supabase: ctx.admin });
         if (!sent.ok) throw new Error(sent.error ?? "The approved message was not sent.");
+        if (plan.key === "staff_briefings") {
+          const person = fresh.find((item) => "employeeId" in item && item.to === message.to) as { employeeId?: string } | undefined;
+          if (person?.employeeId) {
+            const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+            const { error } = await ctx.admin.from("staff_briefing_prefs").update({ last_sent_on: today }).eq("employee_id", person.employeeId);
+            if (error) throw new Error(error.message);
+          }
+        }
       }
       return { ok: true, sent: approved.length };
     },
@@ -354,19 +372,24 @@ export const parityTools: LiveTool[] = [
       const [email, sms] = await Promise.all([rows(ctx.admin, "email_log", eventId), rows(ctx.admin, "sms_log", eventId)]);
       if (email.some((row) => row.status === "held") && !ctx.token.scopes.includes("comms.email")) throw new McpScopeError("Releasing held email needs comms.email.");
       if (sms.some((row) => row.status === "held") && !ctx.token.scopes.includes("comms.sms")) throw new McpScopeError("Releasing held texts needs comms.sms.");
+      const effects = await ctx.admin.from("mcp_held_effects").select("kind").eq("event_id", eventId).eq("status", "held");
+      if (effects.error) throw new Error(effects.error.message);
+      if ((effects.data ?? []).some((row) => (row as { kind?: string }).kind === "webhook") && !ctx.token.scopes.includes("comms.webhook")) {
+        throw new McpScopeError("Releasing a held webhook needs comms.webhook.");
+      }
     },
     async freeze(args, ctx) {
       const eventId = s(args, "event_id")!;
       const [email, sms, effects] = await Promise.all([
         rows(ctx.admin, "email_log", eventId),
         rows(ctx.admin, "sms_log", eventId),
-        ctx.admin.from("mcp_held_effects").select("id, kind, payload, status").eq("event_id", eventId).in("status", ["held", "queued"]),
+        ctx.admin.from("mcp_held_effects").select("id, kind, payload, payload_sha, status").eq("event_id", eventId).in("status", ["held", "queued"]),
       ]);
       if (effects.error) throw new Error(effects.error.message);
       const plan = heldDeliveryPlan([
         ...email.map((row) => ({ id: row.id, channel: "email" as const, to: row.to_address ?? "", body: row.body_html ?? "", status: row.status })),
         ...sms.map((row) => ({ id: row.id, channel: "sms" as const, to: row.to_number ?? "", body: row.body ?? "", status: row.status })),
-        ...((effects.data ?? []) as { id: string; kind: string; payload: unknown; status: string }[]).map((row) => ({ id: row.id, channel: "email" as const, to: row.kind, body: JSON.stringify(row.payload), status: row.status })),
+        ...((effects.data ?? []) as { id: string; kind: string; payload: unknown; payload_sha?: string | null; status: string }[]).map((row) => ({ id: row.id, channel: "email" as const, to: row.kind, body: JSON.stringify(row.payload), bodySha: row.payload_sha ?? undefined, status: row.status })),
       ]);
       return {
         ...plan,
@@ -385,22 +408,45 @@ export const parityTools: LiveTool[] = [
       const [email, sms, effects] = await Promise.all([
         rows(ctx.admin, "email_log", eventId),
         rows(ctx.admin, "sms_log", eventId),
-        ctx.admin.from("mcp_held_effects").select("id, kind, payload, status").eq("event_id", eventId).in("status", ["held"]),
+        ctx.admin.from("mcp_held_effects").select("id, kind, payload, payload_sha, status").eq("event_id", eventId).in("status", ["held"]),
       ]);
       if (effects.error) throw new Error(effects.error.message);
-      const effectRows = (effects.data ?? []) as { id: string; kind: string; payload: { webhook_url?: string; trigger?: string; employeeId?: string; title?: string; body?: string | null; href?: string | null; typeKey?: string; employeeIds?: string[]; tiers?: string[] }; status: string }[];
+      const effectRows = (effects.data ?? []) as { id: string; kind: string; payload: { webhook_url?: string; trigger?: string; event_id?: string; helper_id?: string; employeeId?: string; title?: string; body?: string | null; href?: string | null; typeKey?: string }; payload_sha?: string | null; status: string }[];
       const current = [
         ...email.map((row) => ({ id: row.id, body: row.body_html ?? "", status: row.status })),
         ...sms.map((row) => ({ id: row.id, body: row.body ?? "", status: row.status })),
-        ...effectRows.map((row) => ({ id: row.id, body: JSON.stringify(row.payload), status: row.status })),
+        ...effectRows.map((row) => ({ id: row.id, body: JSON.stringify(row.payload), bodySha: row.payload_sha ?? undefined, status: row.status })),
       ];
       releaseHeld({ messages: snap.messages }, current.filter((row) => snap.messages!.some((message) => message.id === row.id)));
-      const { error: claimError } = await ctx.admin.rpc("mcp_claim_held", { p_email: snap.email_ids, p_sms: snap.sms_ids, p_effects: snap.effect_ids });
+      const shaFor = (ids: string[]) => ids.map((id) => snap.messages!.find((message) => message.id === id)?.body_sha256 ?? "");
+      const { error: claimError } = await ctx.admin.rpc("mcp_claim_held", {
+        p_email: snap.email_ids,
+        p_sms: snap.sms_ids,
+        p_effects: snap.effect_ids,
+        p_email_sha: shaFor(snap.email_ids),
+        p_sms_sha: shaFor(snap.sms_ids),
+        p_effect_sha: shaFor(snap.effect_ids),
+      });
       if (claimError) throw new Error(claimError.message.includes("held rows changed") ? "The held rows changed. Nothing was released." : claimError.message);
-      if (snap.email_ids.length) await processOutbox(ctx.admin, { onlyIds: snap.email_ids, fromStatus: "sending" });
-      if (snap.sms_ids.length) await processSmsOutbox(ctx.admin, { onlyIds: snap.sms_ids, fromStatus: "sending" });
-      for (const effect of effectRows.filter((row) => snap.effect_ids!.includes(row.id))) {
-        if (effect.kind === "webhook" && effect.payload.webhook_url) await postFrozenWebhook(ctx.admin, effect.payload.webhook_url, eventId, effect.payload.trigger ?? "event_created");
+      if (snap.email_ids.length) {
+        const drained = await processOutbox(ctx.admin, { onlyIds: snap.email_ids, fromStatus: "sending" });
+        if (drained.error || drained.failed) throw new Error(drained.error ?? "A held email was not sent. It was not marked released.");
+      }
+      if (snap.sms_ids.length) {
+        const drained = await processSmsOutbox(ctx.admin, { onlyIds: snap.sms_ids, fromStatus: "sending" });
+        if (drained.error || drained.failed) throw new Error(drained.error ?? "A held text was not sent. It was not marked released.");
+      }
+      const pushIds = effectRows.filter((row) => snap.effect_ids!.includes(row.id) && row.kind === "push").map((row) => row.id);
+      if (pushIds.length) {
+        const { error } = await ctx.admin.from("mcp_held_effects").update({ status: "blocked" }).in("id", pushIds).eq("status", "sending");
+        if (error) throw new Error(error.message);
+        throw new Error("Held push notifications were not delivered and were not marked released.");
+      }
+      for (const effect of effectRows.filter((row) => snap.effect_ids!.includes(row.id) && row.kind !== "push")) {
+        if (effect.kind === "webhook" && effect.payload.webhook_url) {
+          const { webhook_url: webhookUrl, ...rest } = effect.payload;
+          await postApprovedWebhook(webhookUrl, rest);
+        }
         if (effect.kind === "bell") {
           const { error } = await ctx.admin.rpc("create_targeted_notification", {
             p_type: effect.payload.typeKey ?? "event_created",
@@ -413,8 +459,9 @@ export const parityTools: LiveTool[] = [
           if (error) throw new Error(error.message);
         }
       }
-      if (snap.effect_ids.length) {
-        const { error } = await ctx.admin.from("mcp_held_effects").update({ status: "released" }).in("id", snap.effect_ids).eq("status", "sending");
+      const delivered = effectRows.filter((row) => snap.effect_ids!.includes(row.id) && row.kind !== "push").map((row) => row.id);
+      if (delivered.length) {
+        const { error } = await ctx.admin.from("mcp_held_effects").update({ status: "released" }).in("id", delivered).eq("status", "sending");
         if (error) throw new Error(error.message);
       }
       return { ok: true, released: snap.email_ids.length + snap.sms_ids.length + snap.effect_ids.length };
@@ -426,6 +473,16 @@ export const parityTools: LiveTool[] = [
     scopes: ["write.events"],
     confirm: true,
     inputSchema: obj({ event_id: UUID, section: { type: "string", enum: ["details", "venue", "links", "booking", "dates", "billing", "acknowledge", "package_wording"] }, fields_json: STR }, ["event_id", "section", "fields_json"]),
+    async authorize(args, ctx) {
+      const fields = JSON.parse(s(args, "fields_json") || "{}") as Record<string, unknown>;
+      const section = s(args, "section");
+      if ((section === "billing" || section === "acknowledge") && !ctx.token.scopes.includes("money")) {
+        throw new McpScopeError("Billing and schedule acknowledgement need money.");
+      }
+      if (section === "booking" && fields.status_id && !ctx.token.scopes.includes("comms.email") && !ctx.token.scopes.includes("comms.sms")) {
+        throw new McpScopeError("Changing status can send mail or texts and needs a comms scope.");
+      }
+    },
     async execute(args, ctx) {
       const fields = JSON.parse(s(args, "fields_json") || "{}") as Record<string, unknown>;
       const saved = await saveEventRecord(db(ctx), s(args, "event_id")!, s(args, "section")!, fields);
@@ -442,8 +499,19 @@ export const parityTools: LiveTool[] = [
     scopes: ["write.events"],
     confirm: false,
     inputSchema: obj({ event_id: UUID, kind: { type: "string", enum: ["logistics", "contract", "client", "update"] }, body: STR, note_id: UUID, client_id: UUID }, ["event_id", "kind", "body"]),
+    async authorize(args, ctx) {
+      if (s(args, "kind") === "client" && !ctx.token.scopes.includes("write.clients")) throw new McpScopeError("A client note needs write.clients.");
+    },
     async execute(args, ctx) {
-      return saveEventNote(db(ctx), s(args, "event_id")!, { kind: s(args, "kind")!, body: s(args, "body") ?? undefined, noteId: s(args, "note_id"), clientId: s(args, "client_id") });
+      const members = await ctx.admin.from("event_clients").select("client_id").eq("event_id", s(args, "event_id"));
+      if (members.error) throw new Error(members.error.message);
+      return saveEventNote(db(ctx), s(args, "event_id")!, {
+        kind: s(args, "kind")!,
+        body: s(args, "body") ?? undefined,
+        noteId: s(args, "note_id"),
+        clientId: s(args, "client_id"),
+        memberIds: ((members.data ?? []) as { client_id: string }[]).map((row) => row.client_id),
+      });
     },
   },
   {
@@ -453,7 +521,7 @@ export const parityTools: LiveTool[] = [
     confirm: true,
     inputSchema: obj({ event_id: UUID, staff_id: UUID, action: { type: "string", enum: ["mark", "details", "portal"] }, field: STR, role: STR, flat_wage: { type: "number" }, start_time: STR, end_time: STR, notes: STR, portal_visible: { type: "boolean" } }, ["event_id", "staff_id", "action"]),
     async authorize(args, ctx) {
-      if (s(args, "action") === "details" && args.flat_wage != null && Number(args.flat_wage) !== 0 && !ctx.token.scopes.includes("money.payroll")) {
+      if (s(args, "action") === "details" && "flat_wage" in args && !ctx.token.scopes.includes("money.payroll")) {
         throw new McpScopeError("Saving a wage needs money.payroll.");
       }
     },
@@ -462,7 +530,7 @@ export const parityTools: LiveTool[] = [
         action: s(args, "action")!,
         field: s(args, "field") ?? undefined,
         role: s(args, "role") ?? undefined,
-        flatWage: typeof args.flat_wage === "number" ? args.flat_wage : null,
+        flatWage: typeof args.flat_wage === "number" ? args.flat_wage : undefined,
         startTime: s(args, "start_time"),
         endTime: s(args, "end_time"),
         notes: s(args, "notes"),
@@ -487,12 +555,12 @@ export const parityTools: LiveTool[] = [
     confirm: true,
     inputSchema: obj({ event_id: UUID, event_addon_id: UUID, quantity: { type: "integer" }, price: { type: "number" }, base_price: { type: "number" }, description: STR, base_description: STR }, ["event_id", "event_addon_id"]),
     async authorize(args, ctx) {
-      if (args.price != null && !ctx.token.scopes.includes("money")) throw new McpScopeError("Changing an add-on price needs money.");
+      if ("price" in args && !ctx.token.scopes.includes("money")) throw new McpScopeError("Changing an add-on price needs money.");
     },
     async execute(args, ctx) {
       return saveEventAddonWording(db(ctx), s(args, "event_id")!, s(args, "event_addon_id")!, {
         quantity: typeof args.quantity === "number" ? args.quantity : 1,
-        price: typeof args.price === "number" ? args.price : null,
+        price: typeof args.price === "number" ? args.price : undefined,
         basePrice: typeof args.base_price === "number" ? args.base_price : undefined,
         description: s(args, "description") ?? undefined,
         baseDescription: s(args, "base_description") ?? undefined,

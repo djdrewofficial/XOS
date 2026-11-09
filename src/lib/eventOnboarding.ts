@@ -163,19 +163,25 @@ export async function createEventOnboardingRecord(supabase: SupabaseClient, inpu
   if (evErr) throw new Error(evErr.message);
   const eventId = event.id as string;
 
+  const fail = async (label: string, error: { message: string } | null) => {
+    if (!error) return;
+    await supabase.from("events").delete().eq("id", eventId);
+    throw new Error(`${label}: ${error.message}`);
+  };
   if (resolved.length) {
-    await supabase.from("event_clients").insert(resolved.map((r) => ({
+    const inserted = await supabase.from("event_clients").insert(resolved.map((r) => ({
       event_id: eventId, client_id: r.client_id, role: r.role ?? "Client", is_primary: r.is_primary, is_contract_holder: r.is_contract_holder,
     })));
+    await fail("Saving the clients", inserted.error);
   }
   if (input.packageId) await applyPackageSelection(supabase, eventId, input.packageId, input.eventDate ?? null, input.packagePriceOverride != null);
   const addonRows = (input.addons ?? []).filter((a) => a.addon_id).map((a) => ({
     event_id: eventId, addon_id: a.addon_id, quantity: a.quantity && a.quantity > 0 ? a.quantity : 1, price_override: a.price_override ?? null,
   }));
-  if (addonRows.length) await supabase.from("event_addons").insert(addonRows);
-  if (input.contractNotes) await supabase.from("event_notes").insert({ event_id: eventId, body: input.contractNotes, kind: "contract" });
+  if (addonRows.length) await fail("Saving the add-ons", (await supabase.from("event_addons").insert(addonRows)).error);
+  if (input.contractNotes) await fail("Saving the note", (await supabase.from("event_notes").insert({ event_id: eventId, body: input.contractNotes, kind: "contract" })).error);
   const dateRows = (input.customDates ?? []).filter((d) => d.definition_id && d.value).map((d) => ({ event_id: eventId, definition_id: d.definition_id, value: d.value }));
-  if (dateRows.length) await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" });
+  if (dateRows.length) await fail("Saving the dates", (await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" })).error);
 
   const schedulePlan = parseSchedulePlan(input.schedulePlan ?? null);
   if (schedulePlan) {
@@ -199,13 +205,13 @@ export async function createEventOnboardingRecord(supabase: SupabaseClient, inpu
       plan: schedulePlan,
       today: new Date().toISOString().slice(0, 10),
     }).map((r) => ({ ...r, event_id: eventId }));
-    await supabase.from("scheduled_payments").insert(rows);
+    await fail("Saving the schedule", (await supabase.from("scheduled_payments").insert(rows)).error);
   }
 
   const staffRows = (input.staff ?? []).filter((s) => s.employee_id).map((s) => ({
     event_id: eventId, employee_id: s.employee_id, role: s.role || "DJ", flat_wage: s.flat_wage ?? 0,
   }));
-  if (staffRows.length) await supabase.from("event_staff").insert(staffRows);
+  if (staffRows.length) await fail("Saving the staff", (await supabase.from("event_staff").insert(staffRows)).error);
   await runAutomations(supabase, eventId, "event_created", { drain: input.drain ?? "all" });
   return { id: eventId };
 }

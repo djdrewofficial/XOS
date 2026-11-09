@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processOutbox } from "@/lib/mailgun";
@@ -60,8 +61,8 @@ export async function runAutomations(
   if (notifType && opts.drain === "hold") {
     const notice = await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId, hold: true });
     const effects = [
-      ...notice.bells.map((bell) => ({ event_id: eventId, kind: "bell", payload: bell, status: "held" })),
-      ...notice.pushes.map((push) => ({ event_id: eventId, kind: "push", payload: push, status: "held" })),
+      ...notice.bells.map((bell) => ({ event_id: eventId, kind: "bell", payload: bell, payload_sha: createHash("sha256").update(JSON.stringify(bell)).digest("hex"), status: "held" })),
+      ...notice.pushes.map((push) => ({ event_id: eventId, kind: "push", payload: push, payload_sha: createHash("sha256").update(JSON.stringify(push)).digest("hex"), status: "held" })),
     ];
     if (effects.length) {
       const { error } = await holdAdmin!.from("mcp_held_effects").insert(effects);
@@ -129,6 +130,7 @@ export async function runAutomations(
         if (opts.drain === "hold" && /schema cache|could not find|does not exist/i.test(error.message)) {
           throw new Error("Holding onboarding mail needs migration 00220. Nothing was sent.");
         }
+        if (!/already|visibility|one-shot|should not/i.test(error.message)) throw new Error(error.message);
         continue;
       }
     } catch (err) {
@@ -138,10 +140,12 @@ export async function runAutomations(
     }
     ran = true;
     if (opts.drain === "hold" && h.webhook_url) {
+      const webhookPayload = { helper_id: h.id, webhook_url: h.webhook_url, trigger, event_id: eventId };
       const { error: effectError } = await admin.from("mcp_held_effects").insert({
         event_id: eventId,
         kind: "webhook",
-        payload: { helper_id: h.id, webhook_url: h.webhook_url, trigger },
+        payload: webhookPayload,
+        payload_sha: createHash("sha256").update(JSON.stringify(webhookPayload)).digest("hex"),
         status: "held",
       });
       if (effectError) throw new Error(`Holding the webhook needs migration 00221. Nothing was sent. ${effectError.message}`);
@@ -175,8 +179,19 @@ type ClientLite = { first_name?: string; last_name?: string; email?: string | nu
 
 /** Fire a single helper's webhook (used when a helper is run manually — handy
     for testing a Zap from the event page without signing a contract). */
-export async function postFrozenWebhook(supabase: SupabaseClient, url: string, eventId: string, trigger: string): Promise<void> {
-  await fireWebhook(supabase, url, eventId, trigger);
+export async function postApprovedWebhook(url: string, payload: Record<string, unknown>): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("The approved webhook is not a URL.");
+  }
+  if (parsed.protocol !== "https:") throw new Error("The approved webhook must be https.");
+  if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.0\.0\.0)/.test(parsed.hostname)) throw new Error("The approved webhook host is not public.");
+  const body = JSON.stringify(payload);
+  if (body.includes("pay_token")) throw new Error("The approved webhook payload must not include a pay token.");
+  const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body, redirect: "error" });
+  if (!response.ok) throw new Error(`Webhook delivery failed (${response.status}).`);
 }
 
 export async function fireHelperWebhook(supabase: SupabaseClient, helperId: string, eventId: string): Promise<void> {

@@ -145,6 +145,8 @@ export const coverageTools: LiveTool[] = [
         packagePriceOverride: args.package_price_override,
         depositValue: args.deposit_value,
         travelFee: args.travel_fee,
+        discounts: json(args, "discounts_json", []),
+        addons: json(args, "addons_json", []),
       });
       const missing = normalized.scopes.filter((scope) => !ctx.token.scopes.includes(scope));
       if (missing.length) throw new McpScopeError(`This wizard needs ${missing.join(", ")}.`);
@@ -173,6 +175,8 @@ export const coverageTools: LiveTool[] = [
         packagePriceOverride: args.package_price_override,
         depositValue: args.deposit_value,
         travelFee: args.travel_fee,
+        discounts: json(args, "discounts_json", []),
+        addons: json(args, "addons_json", []),
       });
       const effects = [];
       const { data } = await adminOf(ctx).from("booking_helpers").select("id, event_type_ids").eq("is_active", true).eq("auto_on_create", true);

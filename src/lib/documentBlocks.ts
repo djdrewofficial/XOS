@@ -46,6 +46,15 @@ export function docTypeClientLabel(t: string | null | undefined): string {
   return DOC_TYPE_CLIENT_LABELS[t ?? "other"] ?? "Document";
 }
 
+export function sanitizeDocumentHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/javascript:/gi, "")
+    .replace(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d+|192\.168\.\d+|169\.254\.\d+|172\.(?:1[6-9]|2\d|3[0-1])\.\d+)[^\s"'<>]*/gi, "");
+}
+
 export function sanitizeBlocks(value: unknown): DocBlock[] {
   if (!Array.isArray(value)) return [];
   const valid = new Set(["text", "section", "fee_table", "payment_schedule", "event_details", "signature", "divider"]);
@@ -55,6 +64,6 @@ export function sanitizeBlocks(value: unknown): DocBlock[] {
       id: b.id,
       type: b.type,
       title: typeof b.title === "string" ? b.title : undefined,
-      html: typeof b.html === "string" ? b.html : undefined,
+      html: typeof b.html === "string" ? sanitizeDocumentHtml(b.html) : undefined,
     }));
 }

@@ -15,8 +15,10 @@ export type HelperEffect = {
   webhook_host?: string | null;
   webhook_url?: string | null;
   rendered_title?: string | null;
+  rendered_subject?: string | null;
   rendered_body?: string | null;
   recipient?: string | null;
+  parameters?: unknown;
 };
 
 export type EffectReport = {
@@ -117,7 +119,7 @@ export async function collectHelperEffects(
       if ((type === "send_email" || type === "send_email_staff" || type === "send_sms" || type === "send_sms_staff") && act.template_id) {
         const { data: tpl, error: tplError } = await admin
           .from("email_templates")
-          .select("id, name, created_at, body_html, attach_template_id, is_sms, sms_marketing")
+          .select("id, name, subject, created_at, body_html, attach_template_id, is_sms, sms_marketing")
           .eq("id", act.template_id)
           .maybeSingle();
         if (tplError) throw new Error(tplError.message);
@@ -125,7 +127,9 @@ export async function collectHelperEffects(
         effect.template_name = template?.name ?? null;
         effect.template_updated_at = template?.created_at ?? null;
         effect.template_body_sha256 = sha256(template?.body_html ?? "");
+        effect.rendered_subject = (template as { subject?: string | null } | null)?.subject ?? "";
         effect.rendered_body = template?.body_html ?? "";
+        effect.parameters = act;
         effect.attaches_document = Boolean(template?.attach_template_id);
         if (type.startsWith("send_email")) scopes.add("comms.email");
         if (type.startsWith("send_sms")) scopes.add("comms.sms");

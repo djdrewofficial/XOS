@@ -1397,8 +1397,20 @@ export const officeTools: LiveTool[] = [
         throw new Error(error.message);
       }
       const rows = (data ?? []) as { channel: string; id: string; body_sha: string }[];
-      const emailIds = rows.filter((row) => row.channel === "email").map((row) => row.id);
-      const smsIds = rows.filter((row) => row.channel === "sms").map((row) => row.id);
+      const approved = ctx.approvedSnapshot as { effects?: { template_body_sha256?: string | null }[] } | null;
+      const approvedHashes = new Set((approved?.effects ?? []).map((effect) => effect.template_body_sha256).filter((hash): hash is string => Boolean(hash)));
+      const accepted = [];
+      for (const row of rows) {
+        if (approvedHashes.size > 0 && !approvedHashes.has(row.body_sha)) {
+          const table = row.channel === "sms" ? "sms_log" : "email_log";
+          const { error: blockError } = await admin.from(table).update({ status: "blocked", error: "Body is not the approved template. Not returned to the outbox." }).eq("id", row.id);
+          if (blockError) throw new Error(blockError.message);
+          continue;
+        }
+        accepted.push(row);
+      }
+      const emailIds = accepted.filter((row) => row.channel === "email").map((row) => row.id);
+      const smsIds = accepted.filter((row) => row.channel === "sms").map((row) => row.id);
       const email = await processOutbox(admin, { onlyIds: emailIds, bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "email").map((row) => [row.id, row.body_sha])) });
       const sms = await processSmsOutbox(admin, { onlyIds: smsIds, bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "sms").map((row) => [row.id, row.body_sha])) });
       return { ok: true, email_ids: emailIds, sms_ids: smsIds, email, sms };

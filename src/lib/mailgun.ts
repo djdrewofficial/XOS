@@ -296,7 +296,7 @@ export async function processOutbox(
   for (const msg of queued ?? []) {
     const expected = opts?.bodySha256?.[msg.id as string];
     if (expected && createHash("sha256").update(msg.body_html ?? "", "utf8").digest("hex") !== expected) {
-      await supabase.from("email_log").update({ status: "queued", claimed_at: null }).eq("id", msg.id).eq("status", "sending");
+      await supabase.from("email_log").update({ status: "blocked", claimed_at: null, error: "Approval hash mismatch. Not returned to the outbox." }).eq("id", msg.id).eq("status", "sending");
       failed++;
       continue;
     }
@@ -321,7 +321,7 @@ export async function processOutbox(
       const enriched = await enrichMessage(supabase, msg);
       const decision = decideDelivery(enriched, opts?.attachmentStamp?.[msg.id as string] ?? null);
       if (!decision.deliver) {
-        await supabase.from("email_log").update({ status: "queued", claimed_at: null }).eq("id", msg.id).eq("status", "sending");
+        await supabase.from("email_log").update({ status: "blocked", claimed_at: null, error: "Attachment approval mismatch. Not returned to the outbox." }).eq("id", msg.id).eq("status", "sending");
         failed++;
         continue;
       }
