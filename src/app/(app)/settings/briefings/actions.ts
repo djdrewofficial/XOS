@@ -18,7 +18,8 @@ export async function setBriefingPref(employeeId: string, patch: { enabled?: boo
   const row: Record<string, unknown> = { employee_id: employeeId, updated_at: new Date().toISOString() };
   if (patch.enabled !== undefined) row.enabled = patch.enabled;
   if (patch.frequency !== undefined && ["daily", "weekdays", "weekly"].includes(patch.frequency)) row.frequency = patch.frequency;
-  await supabase.from("staff_briefing_prefs").upsert(row, { onConflict: "employee_id" });
+  const { error } = await supabase.from("staff_briefing_prefs").upsert(row, { onConflict: "employee_id" });
+  if (error) throw new Error(error.message);
   revalidatePath("/settings/briefings");
 }
 
@@ -30,7 +31,8 @@ export async function setBriefingGlobal(patch: { enabled?: boolean; hour?: numbe
   if (patch.hour !== undefined && patch.hour >= 0 && patch.hour <= 23) config.hour = patch.hour;
   const upd: Record<string, unknown> = { config };
   if (patch.enabled !== undefined) upd.enabled = patch.enabled;
-  await supabase.from("ai_tasks").update(upd).eq("key", "staff_briefings");
+  const { error } = await supabase.from("ai_tasks").update(upd).eq("key", "staff_briefings");
+  if (error) throw new Error(error.message);
   revalidatePath("/settings/briefings");
 }
 
@@ -39,7 +41,8 @@ export async function setBriefingGlobal(patch: { enabled?: boolean; hour?: numbe
 export async function setCompanySummary(patch: { enabled?: boolean }) {
   const supabase = await guard();
   if (patch.enabled !== undefined) {
-    await supabase.from("ai_tasks").update({ enabled: patch.enabled }).eq("key", "morning_briefing");
+    const { error } = await supabase.from("ai_tasks").update({ enabled: patch.enabled }).eq("key", "morning_briefing");
+    if (error) throw new Error(error.message);
   }
   revalidatePath("/settings/briefings");
 }

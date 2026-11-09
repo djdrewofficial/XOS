@@ -218,9 +218,14 @@ export const coverageTools: LiveTool[] = [
         internalNotes: s(args, "internal_notes"),
         contractNotes: s(args, "contract_notes"),
         schedulePlan: s(args, "schedule_plan"),
-        drain: "event",
+        drain: "hold",
       });
-      return { id: created.id, effects: await collectAutomationEffects(adminOf(ctx), created.id, "event_created") };
+      return {
+        id: created.id,
+        delivery: "pending_second_approval",
+        detail: "The event exists. Helper mail is held. Notifications and webhooks wait for events_release_held_sends. The outbox cron does not claim held rows.",
+        effects: await collectAutomationEffects(adminOf(ctx), created.id, "event_created"),
+      };
     },
   },
   {
@@ -1047,7 +1052,7 @@ export const coverageTools: LiveTool[] = [
   },
   {
     name: "photobooth_backdrops",
-    description: "Create or rename a photo booth backdrop. Image upload stays a staff browser action because it needs the file bytes from that browser.",
+    description: "Create or rename a photo booth backdrop. The image itself is uploaded with events_file_upload as bounded base64 or a staged event path.",
     scopes: ["write.settings"],
     confirm: false,
     inputSchema: obj({ backdrop_id: UUID, name: STR, category: STR, is_active: { type: "boolean" } }, ["name"]),

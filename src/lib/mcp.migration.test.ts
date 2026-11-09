@@ -33,6 +33,8 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
         client_id uuid,
         is_primary boolean not null default false
       );
+      create table public.email_log (id uuid primary key, status text, body_html text, event_id uuid);
+      create table public.sms_log (id uuid primary key, status text, body text, event_id uuid);
       create table public.rate_limit_hits (
         id bigint generated always as identity primary key,
         bucket text not null,
@@ -43,6 +45,7 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     await db.exec(read("supabase/migrations/00217_mcp_service_access.sql"));
     await db.exec(read("supabase/migrations/00218_mcp_approval_and_guards.sql"));
     await db.exec(read("supabase/migrations/00219_mcp_operations.sql"));
+    await db.exec(read("supabase/migrations/00220_mcp_held_outbox.sql"));
   });
 
   it("rejects an idempotency key shorter than 8 characters", async () => {
@@ -156,6 +159,19 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
       () => db.exec(`select public.mcp_toggle_contract_holder('abababab-abab-4bab-8bab-abababababab', '55555555-5555-4555-8555-555555555555', true)`),
       /not on this event/i,
     );
+  });
+
+  it("holds new outbox rows only while the approval flag is on", async () => {
+    await db.exec(`select set_config('xos.approval_hold', 'on', false)`);
+    await db.exec(`insert into public.email_log (id, status, body_html) values ('abababab-abab-4bab-8bab-ababababab11', 'queued', 'held body')`);
+    await db.exec(`select set_config('xos.approval_hold', 'off', false)`);
+    await db.exec(`insert into public.email_log (id, status, body_html) values ('abababab-abab-4bab-8bab-ababababab22', 'queued', 'normal body')`);
+    const held = await db.query(`select status from public.email_log where id = 'abababab-abab-4bab-8bab-ababababab11'`);
+    const normal = await db.query(`select status from public.email_log where id = 'abababab-abab-4bab-8bab-ababababab22'`);
+    assert.equal((held.rows[0] as { status: string }).status, "held");
+    assert.equal((normal.rows[0] as { status: string }).status, "queued");
+    const claimable = await db.query(`select count(*)::int as n from public.email_log where status = 'queued'`);
+    assert.equal((claimable.rows[0] as { n: number }).n, 1);
   });
 
   it("does not select a booking helper updated_at column the migrations never added", () => {

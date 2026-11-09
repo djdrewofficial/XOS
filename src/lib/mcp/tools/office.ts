@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { inviteClientToXos, sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
 import { previewHelperSms } from "@/lib/bookingHelperRun";
 import { inviteEffect } from "@/lib/officeEdits";
+import { RESET_APPROVAL_BODY } from "@/lib/oneTimeLink";
 import { findOrCreateClient } from "@/lib/clients";
 import { generateDocumentRow, loadEventBundle } from "@/lib/documentRender";
 import { anonymizeClientRecord } from "@/lib/anonymizeClient";
@@ -127,7 +128,7 @@ async function clientInviteSnapshot(admin: SupabaseClient, clientId: string) {
 
 async function clientResetSnapshot(admin: SupabaseClient, clientId: string) {
   const { data } = await admin.from("clients").select("email").eq("id", clientId).maybeSingle();
-  return inviteEffect({ email: data?.email, templateSubject: "Reset your password", templateBody: "Reset your password: [set password link]" });
+  return inviteEffect({ email: data?.email, templateSubject: "Reset your XOS password", templateBody: RESET_APPROVAL_BODY });
 }
 
 function adminOf(ctx: ToolContext): SupabaseClient {
@@ -741,11 +742,14 @@ export const officeTools: LiveTool[] = [
     async execute(args, ctx) {
       const admin = adminOf(ctx);
       const { data } = await admin.from("clients").select("first_name, last_name, email").eq("id", s(args, "client_id")).maybeSingle();
+      const approved = ctx.approvedSnapshot as { to?: string; body?: string } | null;
+      if (!approved?.to || !approved.body) throw new Error("The invite approval is missing. Nothing was sent.");
       const result = await inviteClientToXos({
         clientId: s(args, "client_id")!,
         eventId: s(args, "event_id")!,
         email: data?.email,
         name: `${data?.first_name ?? ""} ${data?.last_name ?? ""}`.trim(),
+        approved: approved?.to && approved.body ? { to: approved.to, body: approved.body } : null,
       });
       if (!result.ok) throw new Error(result.error ?? "Invite failed.");
       return { ok: true };
@@ -765,7 +769,9 @@ export const officeTools: LiveTool[] = [
     },
     async execute(args, ctx) {
       const { data } = await adminOf(ctx).from("clients").select("email").eq("id", s(args, "client_id")).maybeSingle();
-      const result = await sendPasswordReset(data?.email);
+      const approved = ctx.approvedSnapshot as { to?: string; body?: string } | null;
+      if (!approved?.to || !approved.body) throw new Error("The reset approval is missing. Nothing was sent.");
+      const result = await sendPasswordReset(data?.email, undefined, { to: approved.to, body: approved.body });
       if (!result.ok) throw new Error(result.error ?? "Could not send the reset.");
       return { ok: true };
     },

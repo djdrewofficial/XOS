@@ -743,7 +743,7 @@ export async function sendDirectSms(opts: {
     Pass a service-role client when running without a user session (cron, sign flow). */
 export async function processSmsOutbox(
   client?: SupabaseClient,
-  opts?: { onlyIds?: string[]; bodySha256?: Record<string, string> },
+  opts?: { onlyIds?: string[]; fromStatus?: "queued" | "sending"; bodySha256?: Record<string, string> },
 ): Promise<{ sent: number; failed: number; suppressed: number; skipped: string | null; error?: string }> {
   if (!isHighLevelConfigured()) {
     return {
@@ -763,8 +763,11 @@ export async function processSmsOutbox(
   // is only ever handed to the one caller that owns it.
   const onlyIds = opts?.onlyIds;
   if (onlyIds && onlyIds.length === 0) return { sent: 0, failed: 0, suppressed: 0, skipped: null };
+  const fromStatus = opts?.fromStatus ?? "queued";
   const { data: claimed, error: queueError } = onlyIds
-    ? await supabase
+    ? fromStatus === "sending"
+      ? await supabase.from("sms_log").select("*").in("id", onlyIds).eq("status", "sending")
+      : await supabase
         .from("sms_log")
         .update({ status: "sending", claimed_at: new Date().toISOString() })
         .in("id", onlyIds)

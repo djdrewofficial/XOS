@@ -47,12 +47,22 @@ export type OnboardingInput = {
   internalNotes?: string | null;
   contractNotes?: string | null;
   schedulePlan?: string | null;
-  /** Staff clicks keep the existing global drain. Agent calls pass "event". */
-  drain?: "all" | "event";
+  /** Staff clicks keep the existing global drain. Agent calls pass "hold" so mail is born held. */
+  drain?: "all" | "event" | "hold";
 };
 
 /** The new-event wizard, without the form or the redirect. */
 export async function createEventOnboardingRecord(supabase: SupabaseClient, input: OnboardingInput): Promise<{ id: string }> {
+  if (input.drain === "hold") {
+    const probe = await supabase.rpc("mcp_run_helper_held", {
+      p_helper_id: "00000000-0000-4000-8000-000000000000",
+      p_event_id: "00000000-0000-4000-8000-000000000000",
+    });
+    const message = probe.error?.message ?? "";
+    if (probe.error && /schema cache|could not find|does not exist/i.test(message)) {
+      throw new Error("Holding onboarding mail needs migration 00220. Nothing was created.");
+    }
+  }
   const clients = input.clients ?? [];
   const primaryIn = clients.find((c) => c.is_primary) ?? clients[0];
   if (!primaryIn) throw new Error("Add a primary client before creating the event.");

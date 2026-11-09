@@ -502,13 +502,15 @@ export async function saveArticle(db: EditorDb, id: string | null, input: Record
 export function inviteEffect(input: { email?: string | null; templateSubject?: string | null; templateBody?: string | null }) {
   const email = String(input.email ?? "").trim().toLowerCase();
   if (!email || !email.includes("@")) throw new Error("Invite needs a client email.");
-  const body = (input.templateBody ?? "Set your password: [set password link]").split("<set_password_link>").join("[set password link]").split("<set_password_button>").join("[set password link]");
+  const placeholder = "[one-time-link:set-password]";
+  const body = (input.templateBody ?? `Set your password: ${placeholder}`).split("<set_password_link>").join(placeholder).split("<set_password_button>").join(placeholder);
   return {
     to: email,
     subject: input.templateSubject ?? "Set your password",
     body,
-    link: "[set password link]",
-    effect: "Sends one set-password email to this address. The live link is minted at send time and is not included here.",
+    link: placeholder,
+    link_kind: "set-password" as const,
+    invariant: "Recipient, subject, and body stay as approved. Only the recovery token inside the set-password redirect may differ at send time.",
   };
 }
 

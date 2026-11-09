@@ -7,6 +7,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendBrandedEmail } from "@/lib/mailgun";
 import { appUrl } from "@/lib/signing";
+import { applyOneTimeLink, ONE_TIME_PLACEHOLDER, RESET_APPROVAL_BODY } from "@/lib/oneTimeLink";
 import { toE164 } from "@/lib/phone";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { syncSubjectLoginPhone } from "@/lib/loginPhoneAdmin";
@@ -172,10 +173,7 @@ function inviteHtml(greeting: string, link: string, type: AccountType, appLinks:
 }
 
 function resetHtml(link: string): string {
-  return `<p style="font-size:15px;color:#1d1d22;margin:0 0 10px;">Password reset</p>
-    <p style="font-size:14px;color:#4a4a52;line-height:1.6;margin:0 0 6px;">We received a request to reset your XOS password. Click below to choose a new one.</p>
-    ${button(link, "Reset My Password")}
-    <p style="font-size:12px;color:#8a8a94;line-height:1.6;margin:8px 0 0;">This link expires in 24 hours. If you didn't request this, you can safely ignore this email.</p>`;
+  return applyOneTimeLink(RESET_APPROVAL_BODY, link, "set-password");
 }
 
 /* Code (OTP) reset — used by the mobile app so the whole reset stays in-app:
@@ -286,6 +284,7 @@ export async function inviteClientToXos(args: {
   eventId: string;
   email: string | null | undefined;
   name?: string | null;
+  approved?: { to: string; body: string } | null;
 }): Promise<{ ok: boolean; error?: string; notice?: string }> {
   const email = (args.email ?? "").trim().toLowerCase();
   if (!email) return { ok: false, error: "No email on file — add one first." };
@@ -337,6 +336,11 @@ export async function inviteClientToXos(args: {
     const loggedBody = joinCode ? placeAppJoinCode(body, joinCode.logged) : links ? body : undefined;
     if (joinCode) body = placeAppJoinCode(body, joinCode.delivered);
 
+    if (args.approved) {
+      if (email !== args.approved.to) throw new Error("The recipient changed. Nothing was sent.");
+      const frozen = body.split(link).join(ONE_TIME_PLACEHOLDER["set-password"]);
+      if (frozen !== args.approved.body) throw new Error("The invite body changed. Nothing was sent.");
+    }
     const mailed = await sendBrandedEmail({ to: email, subject, contentHtml: body, loggedBodyHtml: loggedBody, supabase: admin });
     return mailed.ok && phoneNotice ? { ...mailed, notice: phoneNotice } : mailed;
   } catch (e) {
@@ -349,6 +353,7 @@ export async function sendPasswordReset(
   email: string | null | undefined,
   /** The person this reset is for — keeps their linked login on their current email. */
   subject?: Subject,
+  approved?: { to: string; body: string } | null,
 ): Promise<{ ok: boolean; error?: string; notice?: string }> {
   const addr = (email ?? "").trim().toLowerCase();
   if (!addr) return { ok: false, error: "No email on file." };
@@ -376,10 +381,17 @@ export async function sendPasswordReset(
     }
     const { data: acct } = await admin.from("accounts").select("account_type").eq("auth_user_id", userId).maybeSingle();
     const link = await recoveryActionLink(admin, addr, setPasswordUrlFor((acct?.account_type as AccountType) ?? "staff"));
+    const contentHtml = resetHtml(link);
+    if (approved) {
+      if (addr !== approved.to) throw new Error("The recipient changed. Nothing was sent.");
+      if (contentHtml.split(link).join(ONE_TIME_PLACEHOLDER["set-password"]) !== approved.body) {
+        throw new Error("The reset body changed. Nothing was sent.");
+      }
+    }
     const mailed = await sendBrandedEmail({
       to: addr,
       subject: "Reset your XOS password",
-      contentHtml: resetHtml(link),
+      contentHtml,
     });
     return mailed.ok && phoneNotice ? { ...mailed, notice: phoneNotice } : mailed;
   } catch (e) {

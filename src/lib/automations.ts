@@ -35,7 +35,7 @@ export async function runAutomations(
   supabase: SupabaseClient,
   eventId: string,
   trigger: AutomationTrigger,
-  opts: { statusId?: string; drain?: "all" | "event" } = {}
+  opts: { statusId?: string; drain?: "all" | "event" | "hold" } = {}
 ): Promise<void> {
   const { data: ev } = await supabase
     .from("events")
@@ -56,7 +56,7 @@ export async function runAutomations(
     status_changed: "event_status_changed",
   };
   const notifType = NOTIF_FOR_TRIGGER[trigger];
-  if (notifType) {
+  if (notifType && opts.drain !== "hold") {
     await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId });
   }
 
@@ -111,12 +111,22 @@ export async function runAutomations(
       // 2-arg form: this is an automation, so queued mail stays subject to
       // events.comms_paused. run_booking_helper enforces its own visibility +
       // one-shot guards (raises if it shouldn't run) — skip those quietly.
-      await admin.rpc("run_booking_helper", { p_helper_id: h.id, p_event_id: eventId });
-    } catch {
+      const { error } = opts.drain === "hold"
+        ? await admin.rpc("mcp_run_helper_held", { p_helper_id: h.id, p_event_id: eventId })
+        : await admin.rpc("run_booking_helper", { p_helper_id: h.id, p_event_id: eventId });
+      if (error) {
+        if (opts.drain === "hold" && /schema cache|could not find|does not exist/i.test(error.message)) {
+          throw new Error("Holding onboarding mail needs migration 00220. Nothing was sent.");
+        }
+        continue;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (opts.drain === "hold" && /schema cache|could not find|does not exist|00220/i.test(message)) throw err;
       continue;
     }
     ran = true;
-    if (h.webhook_url) {
+    if (opts.drain !== "hold" && h.webhook_url) {
       try {
         await fireWebhook(supabase, h.webhook_url, eventId, trigger);
       } catch {
@@ -127,7 +137,7 @@ export async function runAutomations(
 
   // deliver anything the helpers queued (emails/SMS). "event" sends only rows
   // queued for this event after this call started, not the whole outbox.
-  if (ran) {
+  if (ran && opts.drain !== "hold") {
     try {
       if (opts.drain === "event") {
         const { drainEventOutbox } = await import("@/lib/scopedOutbox");

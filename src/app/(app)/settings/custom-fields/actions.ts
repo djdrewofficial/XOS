@@ -79,7 +79,7 @@ export async function createFileLabel(formData: FormData) {
   const { error } = await supabase.from("file_label_definitions").insert({ name, slug, sort_order: sort });
   if (error) throw new Error(error.code === "23505" ? "A label with a similar name already exists." : error.message);
 
-  await supabase.from("merge_tags").upsert(
+  const { error: tagError } = await supabase.from("merge_tags").upsert(
     {
       tag_key: `document_${slug}`,
       label: `Attach: ${name} files`,
@@ -91,6 +91,7 @@ export async function createFileLabel(formData: FormData) {
     },
     { onConflict: "tag_key" },
   );
+  if (tagError) throw new Error(tagError.message);
   revalidatePath("/settings/custom-fields");
 }
 
@@ -113,10 +114,11 @@ export async function updateFileLabel(id: string, formData: FormData) {
 
   // keep the merge tag's display + active state in sync (tag_key/slug unchanged)
   if (before?.slug) {
-    await supabase
+    const { error: tagError } = await supabase
       .from("merge_tags")
       .update({ label: `Attach: ${name} files`, description: `Attaches all files labeled "${name}" to the email (large files become download links).`, is_active: isActive })
       .eq("tag_key", `document_${before.slug}`);
+    if (tagError) throw new Error(tagError.message);
   }
   revalidatePath("/settings/custom-fields");
 }

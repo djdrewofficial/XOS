@@ -1,6 +1,31 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  acceptEventUpload,
+  categoryIsEmpty,
+  deleteEventFileRow,
+  deleteTimeOff,
+  heldDeliveryPlan,
+  planJobLaunch,
+  releaseHeld,
+  reminderRule,
+  revokeAppInvite,
+  saveAddonEquipmentDefaults,
+  saveBlackout,
+  saveCustomTag,
+  saveDailyStatusAction,
+  saveEmailSignature,
+  saveEquipmentFlags,
+  saveFileLabel,
+  saveMileageSettings,
+  savePackageCategory,
+  saveReminderRule,
+  saveTimeOff,
+  saveVenueRoom,
+  setEventFileLabel,
+  setTimeOffStatus,
+} from "./officeParity.ts";
+import {
   addContact,
   coerceMoney,
   onboardingEffects,
@@ -277,7 +302,61 @@ describe("invite effect", () => {
     const effect = inviteEffect({ email: "Ada@Example.com", templateBody: "Go <set_password_link> now" });
     assert.equal(effect.to, "ada@example.com");
     assert.equal(effect.body.includes("set_password_link"), false);
-    assert.match(effect.body, /\[set password link\]/);
+    assert.match(effect.body, /\[one-time-link:set-password\]/);
+  });
+});
+
+describe("office parity handlers", () => {
+  it("rejects a bad upload, a used category, a held-queue escape, and an ignored database error", async () => {
+    const eventId = "11111111-1111-4111-8111-111111111111";
+    const fileId = "22222222-2222-4222-8222-222222222222";
+    const employeeId = "33333333-3333-4333-8333-333333333333";
+    const { db, tables } = memoryDb({
+      event_files: [{ id: fileId, event_id: eventId, path: `${eventId}/file.pdf` }],
+      packages: [{ id: "88888888-8888-4888-8888-888888888888", category_id: "77777777-7777-4777-8777-777777777777" }],
+      event_app_invites: [{ id: "44444444-4444-4444-8444-444444444444", event_id: eventId, status: "pending" }],
+    });
+    const upload = acceptEventUpload({ eventId, filename: "timeline.pdf", contentType: "application/pdf", contentBase64: Buffer.from("pdf").toString("base64") });
+    assert.equal(upload.bytes?.toString(), "pdf");
+    assert.equal(upload.path.startsWith(`${eventId}/`), true);
+    assert.throws(() => acceptEventUpload({ eventId, filename: "x.html", contentType: "text/html", contentBase64: "YQ==" }), /not allowed/);
+    assert.throws(() => acceptEventUpload({ eventId, filename: "x.pdf", contentType: "application/pdf", stagedPath: "https://evil.example/x.pdf" }), /already live/);
+    await setEventFileLabel(db, eventId, fileId, null);
+    assert.equal(tables.event_files[0].label_id, null);
+    const removed = await deleteEventFileRow(db, eventId, fileId);
+    assert.equal(removed.path, `${eventId}/file.pdf`);
+    await saveTimeOff(db, employeeId, { startDate: "2026-12-01", status: "pending" });
+    const timeOffId = tables.employee_time_off[0].id as string;
+    await setTimeOffStatus(db, employeeId, timeOffId, "approved");
+    await deleteTimeOff(db, employeeId, timeOffId);
+    assert.equal(tables.employee_time_off.length, 0);
+    await savePackageCategory(db, { name: "Wedding" });
+    await assert.rejects(() => categoryIsEmpty(db, "packages", "category_id", "77777777-7777-4777-8777-777777777777"), /still in use/);
+    const addonId = "55555555-5555-4555-8555-555555555555";
+    const itemId = "66666666-6666-4666-8666-666666666666";
+    await saveAddonEquipmentDefaults(db, addonId, [{ itemId, quantity: 2 }]);
+    assert.equal(tables.addon_equipment_defaults[0].quantity, 2);
+    await saveVenueRoom(db, eventId, "Ballroom");
+    assert.equal(reminderRule({ when: "before", days: 3, sendEmail: true }).offset_days, -3);
+    await saveReminderRule(db, null, { when: "on", sendSms: true });
+    await saveCustomTag(db, { tagKey: "Song List", label: "Songs" });
+    assert.equal(tables.merge_tags[0].tag_key, "song_list");
+    await saveMileageSettings(db, { enabled: true, rate: 0.7, roundTrip: true });
+    await saveDailyStatusAction(db, { fromStatusId: eventId, toStatusId: employeeId, trigger: "event_date_passed" });
+    await saveEmailSignature(db, "<p>Thanks</p>");
+    await saveBlackout(db, { day: "2026-12-25", label: "Christmas" });
+    await saveEquipmentFlags(db, eventId, fileId, { packed: true, notes: "in the van" });
+    await saveFileLabel(db, { name: "Timeline" });
+    assert.equal(tables.merge_tags.some((row) => row.tag_key === "document_timeline"), true);
+    await revokeAppInvite(db, eventId, "44444444-4444-4444-8444-444444444444");
+    assert.equal(tables.event_app_invites[0].status, "revoked");
+    assert.equal(planJobLaunch("morning_briefing").sends, true);
+    const plan = heldDeliveryPlan([{ id: "m1", channel: "email", to: "a@b.co", body: "Hello", status: "held" }]);
+    assert.equal(plan.pending, true);
+    assert.deepEqual(releaseHeld(plan, [{ id: "m1", body: "Hello", status: "held" }]).nextStatus, "sending");
+    assert.throws(() => heldDeliveryPlan([{ id: "m1", channel: "email", to: "a@b.co", body: "Hello", status: "queued" }]), /outside the approval hold/);
+    const broken = { ...db, from: () => ({ select: () => ({ eq: () => ({ then: (ok: (v: unknown) => void) => ok({ data: null, error: { message: "boom" } }) }) }), insert: () => ({ then: (ok: (v: unknown) => void) => ok({ data: null, error: { message: "boom" } }) }), update: () => ({ eq: () => ({ then: (ok: (v: unknown) => void) => ok({ data: null, error: { message: "boom" } }) }) }), delete: () => ({ eq: () => ({ then: (ok: (v: unknown) => void) => ok({ data: null, error: { message: "boom" } }) }) }) }) };
+    await assert.rejects(() => saveMileageSettings(broken as unknown as EditorDb, { rate: 1 }), /boom/);
   });
 });
 

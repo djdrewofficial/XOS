@@ -223,7 +223,7 @@ export async function cleanupOutboxTmp(
     Pass a service-role client when running without a user session (cron route). */
 export async function processOutbox(
   client?: SupabaseClient,
-  opts?: { onlyIds?: string[]; bodySha256?: Record<string, string>; attachmentStamp?: Record<string, { documentHtmlSha256: string | null; fileSha256: string[] }> },
+  opts?: { onlyIds?: string[]; fromStatus?: "queued" | "sending"; bodySha256?: Record<string, string>; attachmentStamp?: Record<string, { documentHtmlSha256: string | null; fileSha256: string[] }> },
 ): Promise<{ sent: number; failed: number; suppressed?: number; skipped: string | null; error?: string }> {
   const { domain } = mailgunConfig();
   const supabase = client ?? (await createClient());
@@ -265,8 +265,11 @@ export async function processOutbox(
   // only ever handed to the one caller that owns it.
   const onlyIds = opts?.onlyIds;
   if (onlyIds && onlyIds.length === 0) return { sent: 0, failed: 0, skipped: null };
+  const fromStatus = opts?.fromStatus ?? "queued";
   const { data: queued, error: queueError } = onlyIds
-    ? await supabase
+    ? fromStatus === "sending"
+      ? await supabase.from("email_log").select("*").in("id", onlyIds).eq("status", "sending")
+      : await supabase
         .from("email_log")
         .update({ status: "sending", claimed_at: new Date().toISOString() })
         .in("id", onlyIds)

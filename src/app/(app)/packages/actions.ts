@@ -225,7 +225,8 @@ export async function deleteAddon(id: string) {
 export async function saveAddonEquipmentDefaults(addonId: string, formData: FormData) {
   await requireModule("packages", "edit", { mode: "throw" });
   const supabase = await createClient();
-  await supabase.from("addon_equipment_defaults").delete().eq("addon_id", addonId);
+  const { error: clearError } = await supabase.from("addon_equipment_defaults").delete().eq("addon_id", addonId);
+  if (clearError) throw new Error(clearError.message);
   const rows: { addon_id: string; item_id: string | null; system_id: string | null; quantity: number }[] = [];
   for (const [key, raw] of formData.entries()) {
     if (key.startsWith("system_") && raw === "on") {
