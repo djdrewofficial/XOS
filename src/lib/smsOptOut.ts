@@ -53,7 +53,7 @@ export async function recordSmsOptSignal(
   if (existing && new Date(existing.signal_at as string).getTime() >= signalAt.getTime()) {
     return { ok: true, phone }; // stale signal — a newer decision already stands
   }
-  await admin.from("sms_opt_outs").upsert(
+  const { error } = await admin.from("sms_opt_outs").upsert(
     {
       phone,
       opted_out: opts.optedOut,
@@ -64,6 +64,7 @@ export async function recordSmsOptSignal(
     },
     { onConflict: "phone" },
   );
+  if (error) return { ok: false };
   return { ok: true, phone };
 }
 

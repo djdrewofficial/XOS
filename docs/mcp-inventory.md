@@ -52,37 +52,53 @@ These stay excluded because the actor is not the office token:
 
 A status change made through `events_record` holds the resulting helper mail, staff notification, and webhook the same way onboarding does. `mcp_claim_held` moves the exact approved ids from `held` to `sending` or moves none of them. The cron selects `queued` only.
 
-## Outstanding distinct operations
+## Closed in the following batch
 
-These are still office work. They are not exclusions.
+| Operation | Tool |
+| --- | --- |
+| Employee name and contact, without tier, login, or send-as-self | `employees_profile` |
+| Employee photo, PNG JPEG or WebP, 192 KB | `employees_photo` |
+| Vendor category | `vendors_category` |
+| SMS STOP and marketing consent | `clients_sms_consent` |
+| Delete a reminder rule | `payment_reminders_delete` |
+| Article active flag and delete | `assistant_article_status` |
+| Restore hidden client content | `content_restore` |
+| Remove a non-holder app member | `app_members_remove` |
+| Resend, reset link, or email join code, without returning the secret | `app_invites_send` |
+| Global signing field list | `signing_requirements` |
+| Staff feature, payroll display, notification, and sort settings | `staff_settings_save` |
+| Payment methods, reasons, and fee percent | `payment_settings_save` |
+| Social links and send window | `company_mail_settings` |
+| Venue mileage | `venues_mileage` |
+| Package and add-on create, price, delete | `catalog_items` |
+| Equipment item, system, assignment, storage location | `equipment_catalog` |
+| Custom date field definition | `custom_date_fields` |
+| Mark a conversation read | `inbox_mark_read` |
+| Attach or unlink a Fireflies meeting | `fireflies_link` |
+| Revert an unsent scheduled override | `scheduled_comms_revert` |
+| Helper create, copy, move, delete | `helpers_lifecycle` |
+| Notification audience | `notification_audiences` |
+| Expense category list | `expense_lists` |
+| Client role and event type labels | `directory_labels` |
+| Payroll frequency and manual payables | `payroll_settings_save` |
+| Email template create, copy, hide | `email_template_lifecycle` |
+| Planner template create, default, delete | `planner_template_admin` |
+| Backdrop active flag, order, delete | `photobooth_admin` |
 
-1. Employee profile: general, contact, and photo.
-2. App access: resend invite, remove member, reset join link, and email the join code. Each send needs its own rendered snapshot.
-3. Fireflies: attach, unlink, and sync.
-4. Revert a scheduled-message override.
-5. Restore hidden client content.
-6. Vendor categories.
-7. Client SMS opt-out and consent.
-8. Payroll settings, manual payable, and remove payable.
-9. Inquiry sources, where `sources_save` does not already cover the field.
-10. Helper create, duplicate, delete, move, and active toggle.
-11. Signing requirements.
-12. Journey types.
-13. Article active flag and delete.
-14. Delete a reminder rule, and run the reminder pass.
-15. Photo-booth image, active flag, delete, and order.
-16. Staff settings for features, payroll defaults, notification defaults, sort, and the employee row. Not the permission grid.
-17. Client roles and event types.
-18. Remaining company general settings.
-19. Notification audiences and their templates.
-20. Event status create, edit, and delete, where `statuses_save` does not already cover them.
-21. Payment method and reason settings.
-22. Email template create, duplicate, and delete; company mail settings, social links, send window, and a test send.
-23. Expense option lists, per-venue mileage, and apply mileage to existing events.
-24. Planner template create, default, duplicate, delete, and option-image upload. Questions and sections already have tools.
-25. Inbox sync and mark-read. Reply and start are already tools.
-26. Package and add-on create, delete, and their default equipment or sections.
-27. Equipment catalog create, edit, storage locations, and photos. Damage report and resolve already have tools.
-28. A custom date-field definition (`addCustomDateField`).
+Inquiry sources, event statuses, journey create and rename, dashboard layout, and equipment damage were already tools: `sources_save`, `statuses_save`, `statuses_delete`, `journeys_save`, `dashboard_layout_save`, `equipment_report_damage`, `equipment_resolve_damage`.
 
-The next batch is employee profile, vendor categories, SMS consent, reminder delete, article active/delete, and restore-hidden content.
+Permission tier, login id, send-as-self, and the permission grid stay excluded.
+
+## Not a tool, and why
+
+These are the remaining distinct operations. They are not identity exclusions. They are blocked because launching them would send or import without a frozen row set.
+
+| Operation | Decision |
+| --- | --- |
+| Run the payment reminder pass | `run_payment_reminders` inserts `queued` mail. The cron would send it before a person could approve the bodies. It needs the same held-at-birth path as onboarding. |
+| Run scheduled mail for every event, send a test email | Same queued-mail problem. A test send also has no frozen body yet. |
+| Apply mileage to existing events, run daily status changes | These rewrite many rows. The agent does not yet freeze the exact expense or status rows that would change. |
+| Sync Fireflies, sync the inbox | Both pull a live vendor account. There is no approved set of meetings or conversations to limit the pull. |
+| Backdrop image bytes and equipment photos | The bytes follow `events_file_upload` once those buckets accept the same 192 KB check. The metadata tools do not fetch a URL. |
+| Per-type signing layout and notification template text | The global signing list and the audience row are tools. The per-type proposal layout and the staff title template text are still the settings forms. |
+| Add-on planning section defaults | Equipment defaults are `addons_equipment_defaults`. The section checklist is not a tool yet. |
