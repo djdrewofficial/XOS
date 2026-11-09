@@ -144,6 +144,11 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     assert.equal((rows.rows[1] as { is_primary: boolean }).is_primary, false);
     const event = await db.query(`select client_id from public.events where id = 'abababab-abab-4bab-8bab-abababababab'`);
     assert.equal((event.rows[0] as { client_id: string }).client_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1");
+    await db.exec(`select public.mcp_set_primary_client('abababab-abab-4bab-8bab-abababababab', '${(second.rows[0] as { id: string }).id}')`);
+    const primary = await db.query(`select client_id from public.events where id = 'abababab-abab-4bab-8bab-abababababab'`);
+    assert.equal((primary.rows[0] as { client_id: string }).client_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2");
+    const flags = await db.query(`select is_primary from public.event_clients where event_id = 'abababab-abab-4bab-8bab-abababababab' and client_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'`);
+    assert.equal((flags.rows[0] as { is_primary: boolean }).is_primary, false);
     await db.exec(`select public.mcp_toggle_contract_holder('abababab-abab-4bab-8bab-abababababab', '${(second.rows[0] as { id: string }).id}', true)`);
     const holder = await db.query(`select is_contract_holder from public.event_clients where id = '${(second.rows[0] as { id: string }).id}'`);
     assert.equal((holder.rows[0] as { is_contract_holder: boolean }).is_contract_holder, true);
