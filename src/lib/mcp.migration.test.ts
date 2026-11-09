@@ -46,6 +46,7 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     await db.exec(read("supabase/migrations/00218_mcp_approval_and_guards.sql"));
     await db.exec(read("supabase/migrations/00219_mcp_operations.sql"));
     await db.exec(read("supabase/migrations/00220_mcp_held_outbox.sql"));
+    await db.exec(read("supabase/migrations/00221_mcp_held_effects.sql"));
   });
 
   it("rejects an idempotency key shorter than 8 characters", async () => {
@@ -172,6 +173,29 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     assert.equal((normal.rows[0] as { status: string }).status, "queued");
     const claimable = await db.query(`select count(*)::int as n from public.email_log where status = 'queued'`);
     assert.equal((claimable.rows[0] as { n: number }).n, 1);
+  });
+
+  it("claims the exact held rows or none of them", async () => {
+    const email = "12121212-1212-4121-8121-121212121221";
+    const sms = "12121212-1212-4121-8121-121212121222";
+    const effect = "12121212-1212-4121-8121-121212121223";
+    await db.exec(`
+      insert into public.email_log (id, status, body_html) values ('${email}', 'held', 'notice');
+      insert into public.sms_log (id, status, body) values ('${sms}', 'held', 'text');
+      insert into public.mcp_held_effects (id, event_id, kind, payload, status)
+      values ('${effect}', '11111111-1111-4111-8111-111111111111', 'webhook', '{"webhook_url":"https://hooks.example/x"}', 'held');
+    `);
+    await assert.rejects(
+      () => db.exec(`select public.mcp_claim_held(array['${email}','12121212-1212-4121-8121-121212121299']::uuid[], array['${sms}']::uuid[], array['${effect}']::uuid[])`),
+      /held rows changed/i,
+    );
+    const still = await db.query(`select status from public.email_log where id = '${email}'`);
+    assert.equal((still.rows[0] as { status: string }).status, "held");
+    await db.exec(`select public.mcp_claim_held(array['${email}']::uuid[], array['${sms}']::uuid[], array['${effect}']::uuid[])`);
+    const after = await db.query(`select status from public.email_log where id = '${email}'`);
+    assert.equal((after.rows[0] as { status: string }).status, "sending");
+    const hook = await db.query(`select status from public.mcp_held_effects where id = '${effect}'`);
+    assert.equal((hook.rows[0] as { status: string }).status, "sending");
   });
 
   it("does not select a booking helper updated_at column the migrations never added", () => {

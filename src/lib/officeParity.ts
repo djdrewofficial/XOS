@@ -309,6 +309,185 @@ function sha(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+const EVENT_SECTIONS = ["details", "venue", "links", "booking", "dates", "billing", "acknowledge", "package_wording"] as const;
+const STAFF_MARKS = ["notified_at", "confirmed_at", "checked_in_at", "checked_out_at"] as const;
+const EQUIPMENT_MARKS = ["checked_out_at", "checked_in_at"] as const;
+const LINK_KEYS = ["vibo_link", "gdrive_timeline", "gdrive_folder", "photobooth_gallery"] as const;
+
+function dateOrNull(value: unknown, label: string): string | null {
+  if (value == null || value === "") return null;
+  const text = String(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error(`${label} must be YYYY-MM-DD.`);
+  return text;
+}
+
+export async function saveEventRecord(db: EditorDb, eventId: string, section: string, input: Record<string, unknown>) {
+  const idValue = id(eventId, "Event");
+  if (!(EVENT_SECTIONS as readonly string[]).includes(section)) throw new Error("That event section is not recognized.");
+  if (section === "details") {
+    const patch = {
+      name: nameOf(input.name, "Event name"),
+      event_type_id: input.event_type_id ? id(input.event_type_id, "Event type") : null,
+      event_date: dateOrNull(input.event_date, "Event date"),
+      setup_time: input.setup_time ? String(input.setup_time) : null,
+      start_time: input.start_time ? String(input.start_time) : null,
+      end_time: input.end_time ? String(input.end_time) : null,
+      guest_count: input.guest_count == null || input.guest_count === "" ? null : Number(input.guest_count),
+    };
+    if (patch.guest_count != null && (!Number.isFinite(patch.guest_count) || patch.guest_count < 0)) throw new Error("Guest count must be a number.");
+    await must(db.from("events").update(patch).eq("id", idValue), "Saving event details");
+    return patch;
+  }
+  if (section === "venue") {
+    const patch = { venue_id: input.venue_id ? id(input.venue_id, "Venue") : null, venue_room_id: input.venue_room_id ? id(input.venue_room_id, "Room") : null };
+    await must(db.from("events").update(patch).eq("id", idValue), "Saving the venue");
+    return patch;
+  }
+  if (section === "links") {
+    const current = await must(db.from("events").select("custom_fields").eq("id", idValue), "Loading event links");
+    const row = Array.isArray(current) ? (current[0] as Row | undefined) : (current as Row | null);
+    const fields = { ...((row?.custom_fields as Record<string, string> | null) ?? {}) };
+    for (const key of LINK_KEYS) fields[key] = input[key] == null ? "" : String(input[key]);
+    await must(db.from("events").update({ custom_fields: fields }).eq("id", idValue), "Saving event links");
+    return fields;
+  }
+  if (section === "booking") {
+    const patch = {
+      status_id: input.status_id ? id(input.status_id, "Status") : null,
+      inquiry_source_id: input.inquiry_source_id ? id(input.inquiry_source_id, "Source") : null,
+      salesperson_id: input.salesperson_id ? id(input.salesperson_id, "Salesperson") : null,
+      point_of_contact_employee_id: input.point_of_contact_employee_id ? id(input.point_of_contact_employee_id, "Point of contact") : null,
+    };
+    await must(db.from("events").update(patch).eq("id", idValue), "Saving booking info");
+    return { ...patch, status_changed: input.previous_status_id != null && input.previous_status_id !== patch.status_id };
+  }
+  if (section === "dates") {
+    const patch = {
+      initial_contact_date: dateOrNull(input.initial_contact_date, "Initial contact"),
+      contract_sent_date: dateOrNull(input.contract_sent_date, "Agreement sent"),
+      contract_due_date: dateOrNull(input.contract_due_date, "Agreement due"),
+      booked_date: dateOrNull(input.booked_date, "Booked"),
+    };
+    await must(db.from("events").update(patch).eq("id", idValue), "Saving booking dates");
+    const custom = Array.isArray(input.custom_dates) ? input.custom_dates as { definition_id?: string; value?: string }[] : [];
+    for (const row of custom) {
+      const definition = id(row.definition_id, "Date field");
+      if (!row.value) await must(db.from("event_custom_dates").delete().eq("event_id", idValue).eq("definition_id", definition), "Clearing a date");
+      else await must(db.from("event_custom_dates").insert({ event_id: idValue, definition_id: definition, value: dateOrNull(row.value, "Custom date") }), "Saving a date");
+    }
+    return patch;
+  }
+  if (section === "billing") {
+    const count = Math.max(1, Math.round(Number(input.billing_terms_count ?? 2)));
+    const patch = { billing_terms: input.billing_terms ? String(input.billing_terms) : null, billing_terms_count: count };
+    await must(db.from("events").update(patch).eq("id", idValue), "Saving billing terms");
+    return patch;
+  }
+  if (section === "acknowledge") {
+    if (input.total == null || !Number.isFinite(Number(input.total))) throw new Error("The acknowledged investment is missing.");
+    await must(db.from("events").update({ schedule_ack_total: Number(input.total) }).eq("id", idValue), "Acknowledging the schedule");
+    return { schedule_ack_total: Number(input.total) };
+  }
+  const text = String(input.description ?? "").replace(/\r\n/g, "\n").trim();
+  const base = String(input.base_description ?? "").replace(/\r\n/g, "\n").trim();
+  const override = text && text !== base ? text : null;
+  await must(db.from("events").update({ package_description_override: override }).eq("id", idValue), "Saving the package wording");
+  return { package_description_override: override };
+}
+
+export async function saveEventNote(db: EditorDb, eventId: string, input: { kind: string; body?: string; noteId?: string | null; clientId?: string | null }) {
+  const idValue = id(eventId, "Event");
+  const body = nameOf(input.body, "Note");
+  if (input.kind === "update") {
+    await must(db.from("event_notes").update({ body }).eq("id", id(input.noteId, "Note")).eq("event_id", idValue), "Updating the note");
+    return { ok: true };
+  }
+  if (!["logistics", "contract", "client"].includes(input.kind)) throw new Error("Note kind must be logistics, contract, client, or update.");
+  if (input.kind === "client") {
+    await must(db.from("client_notes").insert({ client_id: id(input.clientId, "Client"), body }), "Saving the client note");
+    return { ok: true };
+  }
+  await must(db.from("event_notes").insert({ event_id: idValue, body, kind: input.kind }), "Saving the note");
+  return { ok: true };
+}
+
+export async function saveEventAddonWording(db: EditorDb, eventId: string, eventAddonId: string, input: { quantity?: number; price?: number | null; basePrice?: number; description?: string; baseDescription?: string }) {
+  const quantity = Math.max(1, Math.round(Number(input.quantity ?? 1)));
+  const price = input.price == null ? null : Number(input.price);
+  if (price != null && !Number.isFinite(price)) throw new Error("Price must be a number.");
+  const text = String(input.description ?? "").replace(/\r\n/g, "\n").trim();
+  const base = String(input.baseDescription ?? "").replace(/\r\n/g, "\n").trim();
+  const patch = {
+    quantity,
+    price_override: price != null && price !== Number(input.basePrice) ? price : null,
+    description_override: text && text !== base ? text : null,
+  };
+  await must(db.from("event_addons").update(patch).eq("id", id(eventAddonId, "Add-on")).eq("event_id", id(eventId, "Event")), "Saving the add-on");
+  return patch;
+}
+
+export async function saveStaffLog(db: EditorDb, eventId: string, staffId: string, input: { action: string; field?: string; role?: string; flatWage?: number | null; startTime?: string | null; endTime?: string | null; notes?: string | null; portalVisible?: boolean }) {
+  const rowId = id(staffId, "Staff");
+  id(eventId, "Event");
+  if (input.action === "mark") {
+    if (!(STAFF_MARKS as readonly string[]).includes(String(input.field))) throw new Error("That staff stamp is not recognized.");
+    await must(db.from("event_staff").update({ [String(input.field)]: new Date().toISOString() }).eq("id", rowId).eq("event_id", eventId), "Stamping staff");
+    return { field: input.field, notifies: input.field === "confirmed_at" };
+  }
+  if (input.action === "portal") {
+    await must(db.from("event_staff").update({ portal_visible: input.portalVisible === true }).eq("id", rowId).eq("event_id", eventId), "Updating the staff portal");
+    return { portal_visible: input.portalVisible === true };
+  }
+  if (input.action !== "details") throw new Error("Staff action must be mark, details, or portal.");
+  const wage = input.flatWage == null ? 0 : Number(input.flatWage);
+  if (!Number.isFinite(wage) || wage < 0) throw new Error("Wage must be a number.");
+  const patch = { role: input.role || "DJ", flat_wage: wage, start_time: input.startTime ?? null, end_time: input.endTime ?? null, notes: input.notes ?? null };
+  await must(db.from("event_staff").update(patch).eq("id", rowId).eq("event_id", eventId), "Saving staff details");
+  return patch;
+}
+
+export async function markEventEquipment(db: EditorDb, eventId: string, rowId: string, field: string) {
+  if (!(EQUIPMENT_MARKS as readonly string[]).includes(field)) throw new Error("That equipment stamp is not recognized.");
+  await must(db.from("event_equipment").update({ [field]: new Date().toISOString() }).eq("id", id(rowId, "Equipment")).eq("event_id", id(eventId, "Event")), "Stamping equipment");
+  return { field };
+}
+
+export async function saveDocumentOperation(db: EditorDb, input: { action: string; templateId?: string | null; documentId?: string | null; name?: string; docType?: string; visible?: boolean; blocks?: unknown }) {
+  if (input.action === "archive_template") {
+    await must(db.from("document_templates").update({ is_active: false }).eq("id", id(input.templateId, "Template")), "Archiving the template");
+    return { ok: true };
+  }
+  if (input.action === "duplicate_template") {
+    const rows = await must(db.from("document_templates").select("name, doc_type, blocks").eq("id", id(input.templateId, "Template")), "Loading the template");
+    const row = (Array.isArray(rows) ? rows[0] : rows) as Row | undefined;
+    if (!row) throw new Error("Template not found.");
+    await must(db.from("document_templates").insert({ name: `${row.name} (copy)`, doc_type: row.doc_type, blocks: row.blocks }), "Copying the template");
+    return { ok: true };
+  }
+  if (input.action === "visibility") {
+    await must(db.from("documents").update({ visible_to_client: input.visible === true }).eq("id", id(input.documentId, "Document")), "Updating visibility");
+    return { visible_to_client: input.visible === true };
+  }
+  if (input.action === "delete") {
+    const rows = await must(db.from("documents").select("signed_at").eq("id", id(input.documentId, "Document")), "Loading the document");
+    const row = (Array.isArray(rows) ? rows[0] : rows) as Row | undefined;
+    if (!row) throw new Error("Document not found.");
+    if (row.signed_at) throw new Error("Signed documents can't be deleted. Void them instead.");
+    await must(db.from("documents").delete().eq("id", input.documentId), "Deleting the document");
+    return { ok: true };
+  }
+  if (input.action === "blocks") {
+    const rows = await must(db.from("documents").select("signed_at").eq("id", id(input.documentId, "Document")), "Loading the document");
+    const row = (Array.isArray(rows) ? rows[0] : rows) as Row | undefined;
+    if (!row) throw new Error("Document not found.");
+    if (row.signed_at) throw new Error("Signed documents are locked.");
+    if (!Array.isArray(input.blocks) || input.blocks.length === 0) throw new Error("A document needs at least one block.");
+    await must(db.from("documents").update({ blocks: input.blocks }).eq("id", input.documentId), "Saving document blocks");
+    return { ok: true };
+  }
+  throw new Error("That document action is not recognized.");
+}
+
 export function releaseHeld(plan: { messages: { id: string; body_sha256: string }[] }, current: { id: string; body: string; status: string }[]) {
   if (plan.messages.length !== current.length) throw new Error("The held messages changed. Nothing was released.");
   for (const message of plan.messages) {

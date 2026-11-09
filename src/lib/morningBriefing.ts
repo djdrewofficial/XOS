@@ -11,6 +11,13 @@ import { consentedEventIds, rowsForAi } from "@/lib/aiConsent";
 const DAY = 86400000;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
+export async function previewMorningDigest(admin: SupabaseClient, to = "events@xpressdjs.com"): Promise<{ to: string; subject: string; body: string }> {
+  const todayStr = iso(new Date());
+  const { data: events } = await admin.from("events").select("name, event_date").gte("event_date", todayStr).is("archived_at", null).order("event_date", { ascending: true }).limit(30);
+  const lines = (events ?? []).map((event) => `${event.event_date}: ${event.name ?? "Event"}`).join("\n");
+  return { to, subject: `Morning briefing ${todayStr}`, body: `<p>Morning briefing</p><pre>${lines}</pre>` };
+}
+
 export async function sendMorningBriefing(admin: SupabaseClient, to = "events@xpressdjs.com") {
   const today = new Date();
   const todayStr = iso(today);

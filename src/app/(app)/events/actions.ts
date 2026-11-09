@@ -372,7 +372,8 @@ export async function acknowledgeScheduleTotal(eventId: string) {
   const supabase = await createClient();
   const bundle = await loadEventBundle(supabase, eventId);
   if (!bundle) return;
-  await supabase.from("events").update({ schedule_ack_total: bundle.total }).eq("id", eventId);
+  const { error } = await supabase.from("events").update({ schedule_ack_total: bundle.total }).eq("id", eventId);
+  if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
 }
 

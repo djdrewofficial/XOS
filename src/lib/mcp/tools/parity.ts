@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fireHelperWebhook } from "@/lib/automations";
+import { postFrozenWebhook } from "@/lib/automations";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { processOutbox } from "@/lib/mailgun";
 import {
@@ -17,7 +17,13 @@ import {
   saveBlackout,
   saveBriefingGlobal,
   saveCustomTag,
+  markEventEquipment,
   saveDailyStatusAction,
+  saveDocumentOperation,
+  saveEventAddonWording,
+  saveEventNote,
+  saveEventRecord,
+  saveStaffLog,
   saveEmailSignature,
   saveEquipmentFlags,
   saveEventFileRow,
@@ -33,8 +39,10 @@ import {
   setTimeOffStatus,
 } from "@/lib/officeParity";
 import type { EditorDb } from "@/lib/officeEdits";
-import { sendMorningBriefing } from "@/lib/morningBriefing";
-import { sendStaffBriefings } from "@/lib/staffBriefing";
+import { bindMessages, messagesMatch, sameIdSet } from "@/lib/jobApproval";
+import { previewMorningDigest } from "@/lib/morningBriefing";
+import { previewStaffBriefings } from "@/lib/staffBriefing";
+import { sendBrandedEmail } from "@/lib/mailgun";
 import { runVendorMatching } from "@/lib/vendorMatch";
 import type { LiveTool } from "../protocol";
 import { McpScopeError, type ToolContext } from "../types";
@@ -279,7 +287,7 @@ export const parityTools: LiveTool[] = [
   },
   {
     name: "jobs_launch",
-    description: "Launch the staff briefing, the company morning briefing, or vendor matching after the plan is approved.",
+    description: "Launch one approved job. Staff and morning mail are sent only when the rendered recipient list still matches. Vendor matching writes suggestions for the approved rows and does not send mail.",
     scopes: [],
     confirm: true,
     inputSchema: obj({ key: { type: "string", enum: ["staff_briefings", "morning_briefing", "vendor_matching"] } }, ["key"]),
@@ -288,17 +296,41 @@ export const parityTools: LiveTool[] = [
       const need = plan.sends ? "comms.email" : "write.settings";
       if (!ctx.token.scopes.includes(need)) throw new McpScopeError(`This job needs ${need}.`);
     },
-    async freeze(args) {
-      return planJobLaunch(s(args, "key")!);
+    async freeze(args, ctx) {
+      const plan = planJobLaunch(s(args, "key")!);
+      if (plan.key === "staff_briefings") {
+        const messages = await previewStaffBriefings(ctx.admin);
+        return { ...plan, messages: bindMessages(messages) };
+      }
+      if (plan.key === "morning_briefing") {
+        const message = await previewMorningDigest(ctx.admin);
+        return { ...plan, messages: bindMessages([message]) };
+      }
+      const { data, error } = await ctx.admin.from("event_vendors").select("id").is("match_checked_at", null).limit(50);
+      if (error) throw new Error(error.message);
+      return { ...plan, vendor_ids: ((data ?? []) as { id: string }[]).map((row) => row.id) };
     },
-    async preview(args) {
-      return planJobLaunch(s(args, "key")!);
+    async preview(args, ctx) {
+      return parityTools.find((tool) => tool.name === "jobs_launch")!.freeze!(args, ctx);
     },
     async execute(args, ctx) {
+      const snap = ctx.approvedSnapshot as { messages?: { to: string; body_sha256: string }[]; vendor_ids?: string[]; key?: string } | null;
       const plan = planJobLaunch(s(args, "key")!);
-      if (plan.key === "staff_briefings") return sendStaffBriefings(ctx.admin);
-      if (plan.key === "morning_briefing") return sendMorningBriefing(ctx.admin);
-      return runVendorMatching(ctx.admin);
+      if (plan.key === "vendor_matching") {
+        if (!snap?.vendor_ids) throw new Error("The vendor-matching approval is missing. Nothing was changed.");
+        const { data, error } = await ctx.admin.from("event_vendors").select("id").is("match_checked_at", null).limit(50);
+        if (error) throw new Error(error.message);
+        sameIdSet(snap.vendor_ids, ((data ?? []) as { id: string }[]).map((row) => row.id));
+        return runVendorMatching(ctx.admin, 50, snap.vendor_ids);
+      }
+      if (!snap?.messages) throw new Error("The job approval is missing. Nothing was sent.");
+      const fresh = plan.key === "staff_briefings" ? await previewStaffBriefings(ctx.admin) : [await previewMorningDigest(ctx.admin)];
+      const approved = messagesMatch(snap.messages, fresh);
+      for (const message of approved) {
+        const sent = await sendBrandedEmail({ to: message.to, subject: message.subject, contentHtml: message.body, supabase: ctx.admin });
+        if (!sent.ok) throw new Error(sent.error ?? "The approved message was not sent.");
+      }
+      return { ok: true, sent: approved.length };
     },
   },
   {
@@ -313,7 +345,7 @@ export const parityTools: LiveTool[] = [
   },
   {
     name: "events_release_held_sends",
-    description: "Release held onboarding messages after their rendered bodies still match. The cron cannot claim held rows.",
+    description: "Release the exact held email, text, staff notification, and webhook rows after their bodies still match. The cron cannot claim held rows.",
     scopes: ["write.events"],
     confirm: true,
     inputSchema: obj({ event_id: UUID }, ["event_id"]),
@@ -325,47 +357,165 @@ export const parityTools: LiveTool[] = [
     },
     async freeze(args, ctx) {
       const eventId = s(args, "event_id")!;
-      const [email, sms, helpers] = await Promise.all([
+      const [email, sms, effects] = await Promise.all([
         rows(ctx.admin, "email_log", eventId),
         rows(ctx.admin, "sms_log", eventId),
-        ctx.admin.from("booking_helpers").select("id, webhook_url").eq("is_active", true).eq("auto_on_create", true),
+        ctx.admin.from("mcp_held_effects").select("id, kind, payload, status").eq("event_id", eventId).in("status", ["held", "queued"]),
       ]);
-      if (helpers.error) throw new Error(helpers.error.message);
+      if (effects.error) throw new Error(effects.error.message);
       const plan = heldDeliveryPlan([
         ...email.map((row) => ({ id: row.id, channel: "email" as const, to: row.to_address ?? "", body: row.body_html ?? "", status: row.status })),
         ...sms.map((row) => ({ id: row.id, channel: "sms" as const, to: row.to_number ?? "", body: row.body ?? "", status: row.status })),
+        ...((effects.data ?? []) as { id: string; kind: string; payload: unknown; status: string }[]).map((row) => ({ id: row.id, channel: "email" as const, to: row.kind, body: JSON.stringify(row.payload), status: row.status })),
       ]);
-      return { ...plan, webhooks: (helpers.data ?? []).map((row) => ({ helper_id: (row as { id: string }).id, webhook_url: (row as { webhook_url: string | null }).webhook_url })) };
+      return {
+        ...plan,
+        email_ids: email.filter((row) => row.status === "held").map((row) => row.id),
+        sms_ids: sms.filter((row) => row.status === "held").map((row) => row.id),
+        effect_ids: ((effects.data ?? []) as { id: string; status: string }[]).filter((row) => row.status === "held").map((row) => row.id),
+      };
     },
     async preview(args, ctx) {
       return parityTools.find((tool) => tool.name === "events_release_held_sends")!.freeze!(args, ctx);
     },
     async execute(args, ctx) {
       const eventId = s(args, "event_id")!;
-      const snap = ctx.approvedSnapshot as { messages?: { id: string; body_sha256: string; channel: string }[]; webhooks?: { helper_id: string; webhook_url: string | null }[] } | null;
-      if (!snap?.messages) throw new Error("The held-send approval is missing. Nothing was released.");
-      const [email, sms] = await Promise.all([rows(ctx.admin, "email_log", eventId), rows(ctx.admin, "sms_log", eventId)]);
+      const snap = ctx.approvedSnapshot as { messages?: { id: string; body_sha256: string }[]; email_ids?: string[]; sms_ids?: string[]; effect_ids?: string[] } | null;
+      if (!snap?.messages || !snap.email_ids || !snap.sms_ids || !snap.effect_ids) throw new Error("The held-send approval is missing. Nothing was released.");
+      const [email, sms, effects] = await Promise.all([
+        rows(ctx.admin, "email_log", eventId),
+        rows(ctx.admin, "sms_log", eventId),
+        ctx.admin.from("mcp_held_effects").select("id, kind, payload, status").eq("event_id", eventId).in("status", ["held"]),
+      ]);
+      if (effects.error) throw new Error(effects.error.message);
+      const effectRows = (effects.data ?? []) as { id: string; kind: string; payload: { webhook_url?: string; trigger?: string; employeeId?: string; title?: string; body?: string | null; href?: string | null; typeKey?: string; employeeIds?: string[]; tiers?: string[] }; status: string }[];
       const current = [
-        ...email.map((row) => ({ id: row.id, body: row.body_html ?? "", status: row.status, channel: "email" })),
-        ...sms.map((row) => ({ id: row.id, body: row.body ?? "", status: row.status, channel: "sms" })),
+        ...email.map((row) => ({ id: row.id, body: row.body_html ?? "", status: row.status })),
+        ...sms.map((row) => ({ id: row.id, body: row.body ?? "", status: row.status })),
+        ...effectRows.map((row) => ({ id: row.id, body: JSON.stringify(row.payload), status: row.status })),
       ];
-      const released = releaseHeld({ messages: snap.messages ?? [] }, current.filter((row) => (snap.messages ?? []).some((message) => message.id === row.id)));
-      const emailIds = released.ids.filter((id) => current.find((row) => row.id === id)?.channel === "email");
-      const smsIds = released.ids.filter((id) => current.find((row) => row.id === id)?.channel === "sms");
-      if (emailIds.length) {
-        const { error } = await ctx.admin.from("email_log").update({ status: "sending" }).in("id", emailIds).eq("status", "held");
+      releaseHeld({ messages: snap.messages }, current.filter((row) => snap.messages!.some((message) => message.id === row.id)));
+      const { error: claimError } = await ctx.admin.rpc("mcp_claim_held", { p_email: snap.email_ids, p_sms: snap.sms_ids, p_effects: snap.effect_ids });
+      if (claimError) throw new Error(claimError.message.includes("held rows changed") ? "The held rows changed. Nothing was released." : claimError.message);
+      if (snap.email_ids.length) await processOutbox(ctx.admin, { onlyIds: snap.email_ids, fromStatus: "sending" });
+      if (snap.sms_ids.length) await processSmsOutbox(ctx.admin, { onlyIds: snap.sms_ids, fromStatus: "sending" });
+      for (const effect of effectRows.filter((row) => snap.effect_ids!.includes(row.id))) {
+        if (effect.kind === "webhook" && effect.payload.webhook_url) await postFrozenWebhook(ctx.admin, effect.payload.webhook_url, eventId, effect.payload.trigger ?? "event_created");
+        if (effect.kind === "bell") {
+          const { error } = await ctx.admin.rpc("create_targeted_notification", {
+            p_type: effect.payload.typeKey ?? "event_created",
+            p_title: effect.payload.title ?? "Update",
+            p_body: effect.payload.body ?? null,
+            p_href: effect.payload.href ?? null,
+            p_target_employee: effect.payload.employeeId,
+            p_target_roles: [],
+          });
+          if (error) throw new Error(error.message);
+        }
+      }
+      if (snap.effect_ids.length) {
+        const { error } = await ctx.admin.from("mcp_held_effects").update({ status: "released" }).in("id", snap.effect_ids).eq("status", "sending");
         if (error) throw new Error(error.message);
-        await processOutbox(ctx.admin, { onlyIds: emailIds, fromStatus: "sending" });
       }
-      if (smsIds.length) {
-        const { error } = await ctx.admin.from("sms_log").update({ status: "sending" }).in("id", smsIds).eq("status", "held");
-        if (error) throw new Error(error.message);
-        await processSmsOutbox(ctx.admin, { onlyIds: smsIds, fromStatus: "sending" });
+      return { ok: true, released: snap.email_ids.length + snap.sms_ids.length + snap.effect_ids.length };
+    },
+  },
+  {
+    name: "events_record",
+    description: "Update one event section: details, venue, links, booking, dates, billing terms, schedule acknowledgement, or package wording.",
+    scopes: ["write.events"],
+    confirm: true,
+    inputSchema: obj({ event_id: UUID, section: { type: "string", enum: ["details", "venue", "links", "booking", "dates", "billing", "acknowledge", "package_wording"] }, fields_json: STR }, ["event_id", "section", "fields_json"]),
+    async execute(args, ctx) {
+      const fields = JSON.parse(s(args, "fields_json") || "{}") as Record<string, unknown>;
+      const saved = await saveEventRecord(db(ctx), s(args, "event_id")!, s(args, "section")!, fields);
+      if (s(args, "section") === "booking" && (saved as { status_changed?: boolean }).status_changed) {
+        const { runAutomations } = await import("@/lib/automations");
+        await runAutomations(ctx.admin, s(args, "event_id")!, "status_changed", { statusId: String(fields.status_id), drain: "hold" });
       }
-      for (const hook of snap.webhooks ?? []) {
-        if (hook.webhook_url) await fireHelperWebhook(ctx.admin, hook.helper_id, eventId);
+      return saved;
+    },
+  },
+  {
+    name: "events_notes",
+    description: "Add a logistics note, a Booking Agreement note, or a client note, or update an existing event note.",
+    scopes: ["write.events"],
+    confirm: false,
+    inputSchema: obj({ event_id: UUID, kind: { type: "string", enum: ["logistics", "contract", "client", "update"] }, body: STR, note_id: UUID, client_id: UUID }, ["event_id", "kind", "body"]),
+    async execute(args, ctx) {
+      return saveEventNote(db(ctx), s(args, "event_id")!, { kind: s(args, "kind")!, body: s(args, "body") ?? undefined, noteId: s(args, "note_id"), clientId: s(args, "client_id") });
+    },
+  },
+  {
+    name: "events_staff_log",
+    description: "Stamp staff notified, confirmed, or checked in, edit their assignment, or set portal visibility. A wage requires payroll scope.",
+    scopes: ["write.events"],
+    confirm: true,
+    inputSchema: obj({ event_id: UUID, staff_id: UUID, action: { type: "string", enum: ["mark", "details", "portal"] }, field: STR, role: STR, flat_wage: { type: "number" }, start_time: STR, end_time: STR, notes: STR, portal_visible: { type: "boolean" } }, ["event_id", "staff_id", "action"]),
+    async authorize(args, ctx) {
+      if (s(args, "action") === "details" && args.flat_wage != null && Number(args.flat_wage) !== 0 && !ctx.token.scopes.includes("money.payroll")) {
+        throw new McpScopeError("Saving a wage needs money.payroll.");
       }
-      return { ok: true, released: released.ids.length };
+    },
+    async execute(args, ctx) {
+      return saveStaffLog(db(ctx), s(args, "event_id")!, s(args, "staff_id")!, {
+        action: s(args, "action")!,
+        field: s(args, "field") ?? undefined,
+        role: s(args, "role") ?? undefined,
+        flatWage: typeof args.flat_wage === "number" ? args.flat_wage : null,
+        startTime: s(args, "start_time"),
+        endTime: s(args, "end_time"),
+        notes: s(args, "notes"),
+        portalVisible: args.portal_visible === true,
+      });
+    },
+  },
+  {
+    name: "events_equipment_mark",
+    description: "Stamp event equipment checked out or checked back in.",
+    scopes: ["write.events"],
+    confirm: false,
+    inputSchema: obj({ event_id: UUID, row_id: UUID, field: { type: "string", enum: ["checked_out_at", "checked_in_at"] } }, ["event_id", "row_id", "field"]),
+    async execute(args, ctx) {
+      return markEventEquipment(db(ctx), s(args, "event_id")!, s(args, "row_id")!, s(args, "field")!);
+    },
+  },
+  {
+    name: "events_addon_wording",
+    description: "Change the quantity, price override, and wording of an add-on already on an event.",
+    scopes: ["write.events"],
+    confirm: true,
+    inputSchema: obj({ event_id: UUID, event_addon_id: UUID, quantity: { type: "integer" }, price: { type: "number" }, base_price: { type: "number" }, description: STR, base_description: STR }, ["event_id", "event_addon_id"]),
+    async authorize(args, ctx) {
+      if (args.price != null && !ctx.token.scopes.includes("money")) throw new McpScopeError("Changing an add-on price needs money.");
+    },
+    async execute(args, ctx) {
+      return saveEventAddonWording(db(ctx), s(args, "event_id")!, s(args, "event_addon_id")!, {
+        quantity: typeof args.quantity === "number" ? args.quantity : 1,
+        price: typeof args.price === "number" ? args.price : null,
+        basePrice: typeof args.base_price === "number" ? args.base_price : undefined,
+        description: s(args, "description") ?? undefined,
+        baseDescription: s(args, "base_description") ?? undefined,
+      });
+    },
+  },
+  {
+    name: "documents_manage",
+    description: "Archive or copy a document template, or change visibility, blocks, or delete an unsigned generated document.",
+    scopes: ["write.documents"],
+    confirm: true,
+    inputSchema: obj({ action: { type: "string", enum: ["archive_template", "duplicate_template", "visibility", "delete", "blocks"] }, template_id: UUID, document_id: UUID, visible: { type: "boolean" }, blocks_json: STR }, ["action"]),
+    async authorize(args, ctx) {
+      if (s(args, "action") === "delete" && !ctx.token.scopes.includes("delete")) throw new McpScopeError("Deleting a document needs delete.");
+    },
+    async execute(args, ctx) {
+      return saveDocumentOperation(db(ctx), {
+        action: s(args, "action")!,
+        templateId: s(args, "template_id"),
+        documentId: s(args, "document_id"),
+        visible: args.visible === true,
+        blocks: s(args, "blocks_json") ? JSON.parse(s(args, "blocks_json")!) : undefined,
+      });
     },
   },
 ];

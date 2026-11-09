@@ -56,7 +56,18 @@ export async function runAutomations(
     status_changed: "event_status_changed",
   };
   const notifType = NOTIF_FOR_TRIGGER[trigger];
-  if (notifType && opts.drain !== "hold") {
+  const holdAdmin = opts.drain === "hold" ? createAdminClient() : null;
+  if (notifType && opts.drain === "hold") {
+    const notice = await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId, hold: true });
+    const effects = [
+      ...notice.bells.map((bell) => ({ event_id: eventId, kind: "bell", payload: bell, status: "held" })),
+      ...notice.pushes.map((push) => ({ event_id: eventId, kind: "push", payload: push, status: "held" })),
+    ];
+    if (effects.length) {
+      const { error } = await holdAdmin!.from("mcp_held_effects").insert(effects);
+      if (error) throw new Error(`Holding the staff notification needs migration 00221. Nothing was sent. ${error.message}`);
+    }
+  } else if (notifType) {
     await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId });
   }
 
@@ -126,7 +137,15 @@ export async function runAutomations(
       continue;
     }
     ran = true;
-    if (opts.drain !== "hold" && h.webhook_url) {
+    if (opts.drain === "hold" && h.webhook_url) {
+      const { error: effectError } = await admin.from("mcp_held_effects").insert({
+        event_id: eventId,
+        kind: "webhook",
+        payload: { helper_id: h.id, webhook_url: h.webhook_url, trigger },
+        status: "held",
+      });
+      if (effectError) throw new Error(`Holding the webhook needs migration 00221. Nothing was sent. ${effectError.message}`);
+    } else if (h.webhook_url) {
       try {
         await fireWebhook(supabase, h.webhook_url, eventId, trigger);
       } catch {
@@ -156,6 +175,10 @@ type ClientLite = { first_name?: string; last_name?: string; email?: string | nu
 
 /** Fire a single helper's webhook (used when a helper is run manually — handy
     for testing a Zap from the event page without signing a contract). */
+export async function postFrozenWebhook(supabase: SupabaseClient, url: string, eventId: string, trigger: string): Promise<void> {
+  await fireWebhook(supabase, url, eventId, trigger);
+}
+
 export async function fireHelperWebhook(supabase: SupabaseClient, helperId: string, eventId: string): Promise<void> {
   const { data: h } = await supabase.from("booking_helpers").select("webhook_url").eq("id", helperId).maybeSingle();
   const url = (h?.webhook_url as string | null) ?? null;

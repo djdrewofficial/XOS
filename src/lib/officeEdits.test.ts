@@ -21,6 +21,11 @@ import {
   savePackageCategory,
   saveReminderRule,
   saveTimeOff,
+  markEventEquipment,
+  saveDocumentOperation,
+  saveEventNote,
+  saveEventRecord,
+  saveStaffLog,
   saveVenueRoom,
   setEventFileLabel,
   setTimeOffStatus,
@@ -313,6 +318,10 @@ describe("office parity handlers", () => {
     const employeeId = "33333333-3333-4333-8333-333333333333";
     const { db, tables } = memoryDb({
       event_files: [{ id: fileId, event_id: eventId, path: `${eventId}/file.pdf` }],
+      documents: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", signed_at: null }],
+      events: [{ id: "99999999-9999-4999-8999-999999999999", custom_fields: {} }],
+      event_staff: [{ id: fileId, event_id: "99999999-9999-4999-8999-999999999999" }],
+      event_equipment: [{ id: fileId, event_id: "99999999-9999-4999-8999-999999999999" }],
       packages: [{ id: "88888888-8888-4888-8888-888888888888", category_id: "77777777-7777-4777-8777-777777777777" }],
       event_app_invites: [{ id: "44444444-4444-4444-8444-444444444444", event_id: eventId, status: "pending" }],
     });
@@ -354,6 +363,15 @@ describe("office parity handlers", () => {
     const plan = heldDeliveryPlan([{ id: "m1", channel: "email", to: "a@b.co", body: "Hello", status: "held" }]);
     assert.equal(plan.pending, true);
     assert.deepEqual(releaseHeld(plan, [{ id: "m1", body: "Hello", status: "held" }]).nextStatus, "sending");
+    const eventId2 = "99999999-9999-4999-8999-999999999999";
+    await saveEventRecord(db, eventId2, "details", { name: "Wedding", event_date: "2026-12-01", guest_count: 100 });
+    assert.equal(tables.events.find((row) => row.id === eventId2)?.name, "Wedding");
+    await saveEventNote(db, eventId2, { kind: "logistics", body: "Load in at the side door" });
+    assert.equal(tables.event_notes[0].kind, "logistics");
+    await saveDocumentOperation(db, { action: "delete", documentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+    await markEventEquipment(db, eventId2, fileId, "checked_out_at");
+    await saveStaffLog(db, eventId2, fileId, { action: "portal", portalVisible: true });
+    assert.equal(tables.event_staff[0].portal_visible, true);
     assert.throws(() => heldDeliveryPlan([{ id: "m1", channel: "email", to: "a@b.co", body: "Hello", status: "queued" }]), /outside the approval hold/);
     const broken = { ...db, from: () => ({ select: () => ({ eq: () => ({ then: (ok: (v: unknown) => void) => ok({ data: null, error: { message: "boom" } }) }) }), insert: () => ({ then: (ok: (v: unknown) => void) => ok({ data: null, error: { message: "boom" } }) }), update: () => ({ eq: () => ({ then: (ok: (v: unknown) => void) => ok({ data: null, error: { message: "boom" } }) }) }), delete: () => ({ eq: () => ({ then: (ok: (v: unknown) => void) => ok({ data: null, error: { message: "boom" } }) }) }) }) };
     await assert.rejects(() => saveMileageSettings(broken as unknown as EditorDb, { rate: 1 }), /boom/);
