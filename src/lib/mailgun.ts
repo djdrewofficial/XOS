@@ -3,7 +3,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
-import { docTypeClientLabel } from "@/lib/documentBlocks";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell, withComplianceFooter, type EmailFooter } from "@/lib/signing";
 import { htmlHasJoinLink, placeJoinLinkTags } from "@/lib/eventAccess";
 import { isEmailOptedOut, unsubscribeToken } from "@/lib/emailOptOut";
@@ -13,7 +12,7 @@ import { htmlToPdf } from "@/lib/pdf";
 import { isHighLevelConfigured, sendEmailViaHighLevel, recordXosEmailInComms } from "@/lib/highlevel";
 import { isThreadingConfigured, threadOutboundEmailViaOAuth } from "@/lib/highlevelOAuth";
 import { sanitizeHrefAttributes } from "@/lib/mergeHref";
-import { finalizeOutbound } from "@/lib/outboundPlan";
+import { enrichOutbound, decideDelivery, type EnrichDeps } from "@/lib/outboundEnrich";
 
 /* ============ Mailgun config ============
    Set in .env.local:
@@ -110,12 +109,19 @@ async function fillJoinLinks(eventId: string | null, html: string): Promise<stri
   return placeJoinLinkTags(html, links);
 }
 
-function tagPresent(html: string, tag: string): boolean {
-  return html.includes(`<${tag}>`) || html.includes(`&lt;${tag}&gt;`);
-}
-
-function replaceTag(html: string, tag: string, value: string): string {
-  return html.split(`<${tag}>`).join(value).split(`&lt;${tag}&gt;`).join(value);
+export function liveEnrichDeps(): EnrichDeps {
+  return {
+    fillJoinLinks,
+    loadEventBundle,
+    quoteSummaryHtml: quoteSummaryHtml as EnrichDeps["quoteSummaryHtml"],
+    paymentPlanHtml: paymentPlanHtml as EnrichDeps["paymentPlanHtml"],
+    signButtonHtml,
+    appUrl,
+    createAdminClient,
+    generateDocumentRow: generateDocumentRow as EnrichDeps["generateDocumentRow"],
+    buildDocumentHtml,
+    htmlToPdf,
+  };
 }
 
 async function enrichMessage(
@@ -126,244 +132,11 @@ async function enrichMessage(
     template_id: string | null;
     body_html: string;
     attached_document_id: string | null;
-  }
-): Promise<{ html: string; attachments: EmailAttachment[]; branded: boolean; isMarketing: boolean }> {
-  let html = await fillJoinLinks(msg.event_id, msg.body_html ?? "");
-  const attachments: EmailAttachment[] = [];
-
-  // template settings drive branding + attachments
-  let tmpl: { attach_template_id?: string | null; attach_mode?: string | null; branded_shell?: boolean; attach_file_label_ids?: string[] | null; is_marketing?: boolean } | null = null;
-  if (msg.template_id) {
-    const { data } = await supabase.from("email_templates").select("*").eq("id", msg.template_id).maybeSingle();
-    tmpl = data;
-  }
-  const branded = tmpl?.branded_shell ?? true;
-  // Commercial mail (proposal-reminder drips, promos) → CAN-SPAM unsubscribe +
-  // suppression. Untemplated / transactional templates stay false.
-  const isMarketing = tmpl?.is_marketing === true;
-
-  const finish = (nextHtml: string, files = attachments) => {
-    const planned = finalizeOutbound(nextHtml, files);
-    return { html: planned.html, attachments: planned.attachments, branded, isMarketing };
-  };
-  if (!msg.event_id) return finish(html);
-
-  // shared: this event's public pay token + whether the new proposal/confirm flow
-  // is on. When on, the e-sign CTA points to /proposal (couple confirms details +
-  // picks a plan first) instead of generating the doc and going straight to /sign.
-  const { data: ev } = await supabase
-    .from("events")
-    .select("pay_token, event_type_id")
-    .eq("id", msg.event_id)
-    .maybeSingle();
-  const payToken = (ev?.pay_token as string | null) ?? null;
-  const { data: js } = await supabase
-    .from("journey_settings")
-    .select("proposal_flow_enabled, proposal_doc_template_id")
-    .eq("id", true)
-    .maybeSingle();
-  const proposalFlow = js?.proposal_flow_enabled === true;
-  // resolve THIS event's proposal contract (per-type override → global) so the
-  // reroute guard only fires for the proposal contract, not other e-sign docs
-  let typeProposalTpl: string | null = null;
-  if (ev?.event_type_id) {
-    const { data: et } = await supabase
-      .from("event_types")
-      .select("proposal_doc_template_id")
-      .eq("id", ev.event_type_id)
-      .maybeSingle();
-    typeProposalTpl = (et?.proposal_doc_template_id as string | null) ?? null;
-  }
-  const proposalDocId = typeProposalTpl ?? (js?.proposal_doc_template_id as string | null) ?? null;
-
-  // quote-style merge tags
-  if (tagPresent(html, "quote_summary") || tagPresent(html, "payment_plan")) {
-    const bundle = await loadEventBundle(supabase, msg.event_id);
-    if (bundle) {
-      html = replaceTag(html, "quote_summary", quoteSummaryHtml(bundle));
-      html = replaceTag(html, "payment_plan", paymentPlanHtml(bundle));
-    }
-  }
-
-  // online payment link/button → the event's dedicated public /pay page
-  if (tagPresent(html, "payment_link") || tagPresent(html, "payment_button")) {
-    const payUrl = payToken ? `${appUrl()}/pay/${payToken}` : "";
-    html = replaceTag(html, "payment_link", payUrl);
-    html = replaceTag(html, "payment_button", payUrl ? signButtonHtml(payUrl, "Pay Online") : "");
-  }
-
-  // review & sign → the public /proposal confirm page (new journey)
-  if (tagPresent(html, "review_sign_link") || tagPresent(html, "review_sign_button")) {
-    const url = payToken ? `${appUrl()}/proposal/${payToken}` : "";
-    html = replaceTag(html, "review_sign_link", url);
-    html = replaceTag(html, "review_sign_button", url ? signButtonHtml(url, "Review & Sign") : "");
-  }
-
-  // start journey → the same /proposal entry, but a friendlier button for a
-  // welcome email that kicks off the client journey (confirm → sign → …).
-  if (tagPresent(html, "journey_start_link") || tagPresent(html, "journey_start_button")) {
-    const url = payToken ? `${appUrl()}/proposal/${payToken}` : "";
-    html = replaceTag(html, "journey_start_link", url);
-    html = replaceTag(html, "journey_start_button", url ? signButtonHtml(url, "Get Started") : "");
-  }
-
-  // Attach the event's labeled files — from a <document_LABEL> body tag AND/OR
-  // labels picked in the template's Attach Document settings. Small files are
-  // attached; anything over the per-email budget becomes a secure download link
-  // so the message doesn't blow past provider size limits.
-  const configuredLabelIds = tmpl?.attach_file_label_ids ?? [];
-  if (html.includes("document_") || configuredLabelIds.length > 0) {
-    const admin = createAdminClient();
-    const { data: labels } = await admin
-      .from("file_label_definitions")
-      .select("id, slug, name")
-      .eq("is_active", true);
-    const ATTACH_BUDGET = 10 * 1024 * 1024; // ~10 MB attached per email
-    let attachedBytes = attachments.reduce((n, a) => n + a.data.length, 0);
-    const seenPaths = new Set<string>();
-    for (const lbl of labels ?? []) {
-      const tag = `document_${lbl.slug}`;
-      const inBody = tagPresent(html, tag);
-      const inConfig = configuredLabelIds.includes(lbl.id);
-      if (!inBody && !inConfig) continue;
-      const { data: rows } = await admin
-        .from("event_files")
-        .select("name, path, content_type, size_bytes")
-        .eq("event_id", msg.event_id)
-        .eq("label_id", lbl.id)
-        .order("created_at", { ascending: false });
-      const links: string[] = [];
-      for (const f of rows ?? []) {
-        if (seenPaths.has(f.path)) continue; // a file attached once, even if two labels match
-        seenPaths.add(f.path);
-        const size = Number(f.size_bytes ?? 0);
-        let attached = false;
-        if (size === 0 || attachedBytes + size <= ATTACH_BUDGET) {
-          const { data: blob } = await admin.storage.from("event-files").download(f.path);
-          if (blob) {
-            const buf = Buffer.from(await blob.arrayBuffer());
-            if (attachedBytes + buf.length <= ATTACH_BUDGET) {
-              attachments.push({ filename: f.name, data: buf, contentType: f.content_type || "application/octet-stream" });
-              attachedBytes += buf.length;
-              attached = true;
-            }
-          }
-        }
-        if (!attached) {
-          const { data: signed } = await admin.storage.from("event-files").createSignedUrl(f.path, 60 * 60 * 24 * 7);
-          if (signed?.signedUrl) links.push(`<a href="${signed.signedUrl}">${f.name}</a>`);
-        }
-      }
-      const linkLine = links.length ? `<p style="margin:0 0 12px;">${lbl.name}: ${links.join(" · ")}</p>` : "";
-      if (inBody) {
-        html = replaceTag(html, tag, linkLine); // place links where the tag sat
-      } else if (linkLine) {
-        html += linkLine; // configured-only: append any too-large links
-      }
-    }
-  }
-
-  // document attached to the email template?
-  if (!tmpl?.attach_template_id) {
-    // no attachment configured — still clean up a dangling sign-link tag
-    return finish(replaceTag(html, "document_sign_link", ""));
-  }
-
-  // A booking-agreement email attaches ONE fixed contract, but each event must get
-  // ITS event type's contract. So attaching any configured proposal contract (the
-  // global one or any event type's) means "this event's proposal contract" —
-  // otherwise a Corporate event emailed the Wedding contract straight to /sign.
-  let attachTemplateId = tmpl.attach_template_id as string;
-  if (proposalDocId && attachTemplateId !== proposalDocId) {
-    const { data: typeTpls } = await supabase
-      .from("event_types")
-      .select("proposal_doc_template_id")
-      .not("proposal_doc_template_id", "is", null);
-    const proposalContractIds = new Set<string>(
-      [js?.proposal_doc_template_id, ...(typeTpls ?? []).map((t) => t.proposal_doc_template_id)].filter(Boolean) as string[],
-    );
-    if (proposalContractIds.has(attachTemplateId)) attachTemplateId = proposalDocId;
-  }
-  if ((tmpl.attach_mode ?? "esign_link") === "esign_link") {
-    // new journey: defer generation — send the couple to /proposal to confirm
-    // details + pick a plan; the contract is generated when they continue to sign.
-    // Only reroute the proposal contract itself — other e-sign docs go to /sign.
-    if (proposalFlow && payToken && (!proposalDocId || attachTemplateId === proposalDocId)) {
-      const url = `${appUrl()}/proposal/${payToken}`;
-      if (tagPresent(html, "document_sign_link")) {
-        html = replaceTag(html, "document_sign_link", url);
-      } else {
-        html += signButtonHtml(url, `Review & Sign ${docTypeClientLabel("contract")}`);
-      }
-      return finish(replaceTag(html, "document_sign_link", ""));
-    }
-    // reuse the latest unsigned document for this event+template, else generate fresh
-    const { data: existing } = await supabase
-      .from("documents")
-      .select("id, access_token, doc_type")
-      .eq("event_id", msg.event_id)
-      .eq("template_id", attachTemplateId)
-      .is("signed_at", null)
-      .neq("status", "void")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const doc =
-      existing ?? (await generateDocumentRow(supabase, attachTemplateId, msg.event_id, "sent"));
-    if (doc) {
-      const link = `${appUrl()}/sign/${doc.access_token}`;
-      if (tagPresent(html, "document_sign_link")) {
-        html = replaceTag(html, "document_sign_link", link);
-      } else {
-        html += signButtonHtml(link, `Review & Sign ${docTypeClientLabel(doc.doc_type)}`);
-      }
-      await supabase.from("documents").update({ status: "sent" }).eq("id", doc.id).is("signed_at", null);
-      await supabase.from("email_log").update({ attached_document_id: doc.id }).eq("id", msg.id);
-    }
-  } else {
-    // pdf attachment: prefer the latest SIGNED document, else latest, else generate
-    const { data: docs } = await supabase
-      .from("documents")
-      .select("id, title, signed_at")
-      .eq("event_id", msg.event_id)
-      .eq("template_id", attachTemplateId)
-      .neq("status", "void")
-      .order("created_at", { ascending: false });
-    const pick = (docs ?? []).find((d) => d.signed_at) ?? (docs ?? [])[0] ?? null;
-    const doc =
-      pick ?? (await generateDocumentRow(supabase, attachTemplateId, msg.event_id, "final"));
-    if (doc) {
-      const built = await buildDocumentHtml(supabase, doc.id);
-      if (built) {
-        const pdf = await htmlToPdf(built.html);
-        const filename = `${built.title.replace(/[^\w\- &']+/g, "").trim() || "Document"}.pdf`;
-        attachments.push({ filename, data: pdf, contentType: "application/pdf" });
-
-        // save a copy to the event's files
-        const path = `${msg.event_id}/${doc.id}-${Date.now()}.pdf`;
-        const { error: upError } = await supabase.storage
-          .from("event-files")
-          .upload(path, pdf, { contentType: "application/pdf", upsert: true });
-        if (!upError) {
-          await supabase.from("event_files").insert({
-            event_id: msg.event_id,
-            document_id: doc.id,
-            name: filename,
-            path,
-            content_type: "application/pdf",
-            size_bytes: pdf.length,
-          });
-        }
-        await supabase
-          .from("email_log")
-          .update({ attached_document_id: doc.id, attached_file_name: filename })
-          .eq("id", msg.id);
-      }
-    }
-  }
-
-  return finish(replaceTag(html, "document_sign_link", ""));
+  },
+) {
+  return enrichOutbound(supabase, msg, liveEnrichDeps(), { commit: true });
 }
+
 
 /** Wraps editor-authored bodies in the branded shell (logo header + white card).
     Emails that are already complete HTML documents pass through untouched. */
@@ -450,7 +223,7 @@ export async function cleanupOutboxTmp(
     Pass a service-role client when running without a user session (cron route). */
 export async function processOutbox(
   client?: SupabaseClient,
-  opts?: { onlyIds?: string[]; bodySha256?: Record<string, string> },
+  opts?: { onlyIds?: string[]; bodySha256?: Record<string, string>; attachmentStamp?: Record<string, { documentHtmlSha256: string | null; fileSha256: string[] }> },
 ): Promise<{ sent: number; failed: number; suppressed?: number; skipped: string | null; error?: string }> {
   const { domain } = mailgunConfig();
   const supabase = client ?? (await createClient());
@@ -543,10 +316,16 @@ export async function processOutbox(
     let branded = true;
     try {
       const enriched = await enrichMessage(supabase, msg);
+      const decision = decideDelivery(enriched, opts?.attachmentStamp?.[msg.id as string] ?? null);
+      if (!decision.deliver) {
+        await supabase.from("email_log").update({ status: "queued", claimed_at: null }).eq("id", msg.id).eq("status", "sending");
+        failed++;
+        continue;
+      }
       isMarketing = enriched.isMarketing;
-      enrichedHtml = sanitizeHrefAttributes(enriched.html);
+      enrichedHtml = sanitizeHrefAttributes(decision.html);
       branded = enriched.branded;
-      attachments = enriched.attachments;
+      attachments = decision.attachments;
     } catch (err) {
       await supabase
         .from("email_log")

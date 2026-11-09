@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { processOutbox } from "@/lib/mailgun";
+import { liveEnrichDeps, processOutbox } from "@/lib/mailgun";
+import { enrichOutbound } from "@/lib/outboundEnrich";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { isPhoneOptedOut } from "@/lib/smsOptOut";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
@@ -19,6 +20,13 @@ export async function freezeTemplateEmail(
 ) {
   const template = await loadTemplate(admin, input.templateId, false);
   const rendered = await previewTemplateEmail(admin, input);
+  const planned = await enrichOutbound(admin, {
+    id: "preview",
+    event_id: input.eventId,
+    template_id: input.templateId,
+    body_html: rendered.body ?? "",
+    attached_document_id: null,
+  }, liveEnrichDeps(), { commit: false });
   return {
     template_id: template.id,
     template_updated_at: template.updated_at ?? null,
@@ -28,6 +36,9 @@ export async function freezeTemplateEmail(
     rendered_to: rendered.to,
     rendered_subject: rendered.subject,
     rendered_body_sha256: sha256(rendered.body ?? ""),
+    document_html_sha256: planned.documentHtmlSha256,
+    file_sha256: planned.fileSha256,
+    pdf_deferred: planned.pdfDeferred,
   };
 }
 
@@ -82,6 +93,9 @@ export async function sendTemplateEmail(
   if (input.expectedHash && sha256Text(canonicalJson(frozen)) !== input.expectedHash) {
     throw new Error("The rendered email changed. Nothing was sent.");
   }
+  if (frozen.pdf_deferred) {
+    throw new Error("The Booking Agreement file is not in the approval. Nothing was sent.");
+  }
   const template = await loadTemplate(admin, input.templateId, false);
   if (template.is_sms) throw new Error("That template is a text, not an email.");
   const rendered = await previewTemplateEmail(admin, input);
@@ -105,7 +119,12 @@ export async function sendTemplateEmail(
     bypass_comms_pause: true,
   }).select("id").single();
   if (error) throw new Error(error.message);
-  const drained = await processOutbox(admin, { onlyIds: [queued.id as string] });
+  const drained = await processOutbox(admin, {
+    onlyIds: [queued.id as string],
+    attachmentStamp: {
+      [queued.id as string]: { documentHtmlSha256: frozen.document_html_sha256, fileSha256: frozen.file_sha256 },
+    },
+  });
   return { to, subject, drained, body_matched_approval: true };
 }
 

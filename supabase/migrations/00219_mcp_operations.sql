@@ -122,6 +122,75 @@ $$;
 revoke all on function public.mcp_merge_venues(uuid, uuid[], jsonb) from public, anon, authenticated;
 grant execute on function public.mcp_merge_venues(uuid, uuid[], jsonb) to service_role;
 
+-- Add a client while the event row is locked, so two adds cannot both become primary.
+create or replace function public.mcp_add_event_client(
+  p_event_id uuid,
+  p_client_id uuid,
+  p_role text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  existing uuid;
+  members integer;
+  created uuid;
+begin
+  perform 1 from public.events where id = p_event_id for update;
+  if not found then
+    raise exception 'Event was not found.';
+  end if;
+  select id into existing from public.event_clients where event_id = p_event_id and client_id = p_client_id;
+  if existing is not null then
+    return existing;
+  end if;
+  select count(*) into members from public.event_clients where event_id = p_event_id;
+  insert into public.event_clients (event_id, client_id, role, is_primary)
+  values (p_event_id, p_client_id, coalesce(nullif(btrim(p_role), ''), 'Client'), members = 0)
+  returning id into created;
+  if members = 0 then
+    update public.events set client_id = p_client_id where id = p_event_id;
+  end if;
+  return created;
+end;
+$$;
+
+revoke all on function public.mcp_add_event_client(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.mcp_add_event_client(uuid, uuid, text) to service_role;
+
+-- Flip the contract-holder flag only for a membership on this event.
+create or replace function public.mcp_toggle_contract_holder(
+  p_event_id uuid,
+  p_event_client_id uuid,
+  p_value boolean
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated integer;
+begin
+  perform 1 from public.events where id = p_event_id for update;
+  if not found then
+    raise exception 'Event was not found.';
+  end if;
+  update public.event_clients
+    set is_contract_holder = p_value
+    where id = p_event_client_id and event_id = p_event_id;
+  get diagnostics updated = row_count;
+  if updated = 0 then
+    raise exception 'That client is not on this event.';
+  end if;
+end;
+$$;
+
+revoke all on function public.mcp_toggle_contract_holder(uuid, uuid, boolean) from public, anon, authenticated;
+grant execute on function public.mcp_toggle_contract_holder(uuid, uuid, boolean) to service_role;
+
 -- Run a helper and return only the outbox rows this transaction inserted.
 create or replace function public.mcp_run_helper_claim(
   p_helper_id uuid,

@@ -186,7 +186,7 @@ Do these in order. Each step waits for your approval. Do not mint a token or reg
 3. Roll out the code (merge to `main` so Netlify builds it). Do not deploy with the local Netlify CLI.
 4. Only after that, mint a service token in Settings → Agent Access and register the connector.
 
-Deploying this code before `00218` makes Remove client on the event page fail closed, because that button calls `mcp_remove_event_client`. Deploying it before `00219` makes Choose primary client fail closed the same way, and agent approvals cannot be claimed. Those buttons are coupled to the migrations. The connector stays unregistered until you approve step 4.
+Deploying this code before `00218` makes Remove client on the event page fail closed, because that button calls `mcp_remove_event_client`. Deploying it before `00219` makes Choose primary client, Add client, the contract-holder toggle, and Merge venues fail closed the same way, and agent approvals cannot be claimed. Those buttons are coupled to the migrations. The connector stays unregistered until you approve step 4.
 
 The connector URL is the Netlify hostname, not `https://xos.xpressdjs.com`.
 

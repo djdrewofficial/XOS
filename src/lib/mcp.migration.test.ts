@@ -129,6 +129,30 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     assert.equal((dropped.rows[0] as { n: number }).n, 0);
   });
 
+  it("adds a client and toggles the contract holder under the event lock", async () => {
+    await db.exec(`
+      alter table public.event_clients add column if not exists role text;
+      alter table public.event_clients add column if not exists is_contract_holder boolean;
+      alter table public.event_clients alter column id set default gen_random_uuid();
+      insert into public.events (id, name) values ('abababab-abab-4bab-8bab-abababababab', 'Membership')
+      on conflict (id) do nothing;
+    `);
+    await db.query(`select public.mcp_add_event_client('abababab-abab-4bab-8bab-abababababab', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'Bride') as id`);
+    const second = await db.query(`select public.mcp_add_event_client('abababab-abab-4bab-8bab-abababababab', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', 'Groom') as id`);
+    const rows = await db.query(`select client_id, is_primary, role from public.event_clients where event_id = 'abababab-abab-4bab-8bab-abababababab' order by is_primary desc`);
+    assert.equal((rows.rows[0] as { is_primary: boolean }).is_primary, true);
+    assert.equal((rows.rows[1] as { is_primary: boolean }).is_primary, false);
+    const event = await db.query(`select client_id from public.events where id = 'abababab-abab-4bab-8bab-abababababab'`);
+    assert.equal((event.rows[0] as { client_id: string }).client_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1");
+    await db.exec(`select public.mcp_toggle_contract_holder('abababab-abab-4bab-8bab-abababababab', '${(second.rows[0] as { id: string }).id}', true)`);
+    const holder = await db.query(`select is_contract_holder from public.event_clients where id = '${(second.rows[0] as { id: string }).id}'`);
+    assert.equal((holder.rows[0] as { is_contract_holder: boolean }).is_contract_holder, true);
+    await assert.rejects(
+      () => db.exec(`select public.mcp_toggle_contract_holder('abababab-abab-4bab-8bab-abababababab', '55555555-5555-4555-8555-555555555555', true)`),
+      /not on this event/i,
+    );
+  });
+
   it("does not select a booking helper updated_at column the migrations never added", () => {
     const initial = read("supabase/migrations/00001_initial_schema.sql");
     const helper = initial.slice(initial.indexOf("create table booking_helpers"), initial.indexOf("create table booking_helper_runs"));

@@ -829,20 +829,16 @@ export async function addEventClient(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const clientId = clean(formData.get("client_id"));
   if (!clientId) return;
-  const { count } = await supabase
-    .from("event_clients")
-    .select("id", { count: "exact", head: true })
-    .eq("event_id", eventId);
-  const isFirst = (count ?? 0) === 0;
-  const { error } = await supabase.from("event_clients").insert({
-    event_id: eventId,
-    client_id: clientId,
-    role: clean(formData.get("role")) ?? "Client",
-    is_primary: isFirst,
+  const { error } = await createAdminClient().rpc("mcp_add_event_client", {
+    p_event_id: eventId,
+    p_client_id: clientId,
+    p_role: clean(formData.get("role")) ?? "Client",
   });
-  if (error) throw new Error(error.message);
-  if (isFirst) {
-    await supabase.from("events").update({ client_id: clientId }).eq("id", eventId);
+  if (error) {
+    if (/mcp_add_event_client|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Adding a client needs migration 00219. Nothing was added.");
+    }
+    throw new Error(error.message);
   }
   await autoNameEvent(supabase, eventId);
   revalidatePath(`/events/${eventId}`);
@@ -861,21 +857,16 @@ export async function createClientAndAttach(eventId: string, formData: FormData)
     email: clean(formData.get("email")),
   });
 
-  const { count } = await supabase
-    .from("event_clients")
-    .select("id", { count: "exact", head: true })
-    .eq("event_id", eventId);
-  const isFirst = (count ?? 0) === 0;
-
-  const { error } = await supabase.from("event_clients").insert({
-    event_id: eventId,
-    client_id: found.id,
-    role: clean(formData.get("role")) ?? "Client",
-    is_primary: isFirst,
+  const { error } = await createAdminClient().rpc("mcp_add_event_client", {
+    p_event_id: eventId,
+    p_client_id: found.id,
+    p_role: clean(formData.get("role")) ?? "Client",
   });
-  if (error) throw new Error(error.message);
-  if (isFirst) {
-    await supabase.from("events").update({ client_id: found.id }).eq("id", eventId);
+  if (error) {
+    if (/mcp_add_event_client|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Adding a client needs migration 00219. Nothing was added.");
+    }
+    throw new Error(error.message);
   }
   await autoNameEvent(supabase, eventId);
   revalidatePath(`/events/${eventId}`);
@@ -914,9 +905,17 @@ export async function setPrimaryEventClient(eventId: string, eventClientId: stri
 
 export async function toggleContractHolder(eventId: string, eventClientId: string, value: boolean) {
   await requireModule("events", "edit", { mode: "throw" });
-  const supabase = await createClient();
-  const { error } = await supabase.from("event_clients").update({ is_contract_holder: value }).eq("id", eventClientId);
-  if (error) throw new Error(error.message);
+  const { error } = await createAdminClient().rpc("mcp_toggle_contract_holder", {
+    p_event_id: eventId,
+    p_event_client_id: eventClientId,
+    p_value: value,
+  });
+  if (error) {
+    if (/mcp_toggle_contract_holder|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Updating the contract holder needs migration 00219. Nothing was changed.");
+    }
+    throw new Error(error.message);
+  }
   revalidatePath(`/events/${eventId}`);
 }
 
