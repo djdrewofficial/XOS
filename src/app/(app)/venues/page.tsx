@@ -10,15 +10,21 @@ import {
   mergeVenues,
 } from "./actions";
 
+import { getMe } from "@/lib/auth";
+import { eventSource } from "@/lib/eventSource";
+
 export const dynamic = "force-dynamic";
 
 export default async function VenuesPage() {
   const supabase = await createClient();
-  const [{ data: venues }, { data: categories }, { data: events }] = await Promise.all([
-    supabase.from("venues").select("*").order("name"),
+  // field staff: fee-free venue view + assigned-events-only counts (00217/00218)
+  const src = eventSource(!!(await getMe(supabase))?.fieldStaff);
+  const [{ data: venueRows }, { data: categories }, { data: events }] = await Promise.all([
+    supabase.from(src.venues).select("*").order("name"),
     supabase.from("venue_categories").select("*").order("name"),
-    supabase.from("events").select("venue_id"),
+    supabase.from(src.events).select("venue_id"),
   ]);
+  const venues = venueRows;
 
   const eventCounts: Record<string, number> = {};
   (events ?? []).forEach((e) => {

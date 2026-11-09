@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireMobileStaffModule } from "@/lib/apiAuth";
+import { getMobileMe } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 
@@ -22,12 +24,18 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     }
   );
-  const denied = await requireMobileStaffModule(supabase, token, "inbox", "edit");
+  const me = await getMobileMe(supabase, token);
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // field staff queue texts with inbox VIEW (send-sms checks the DJ rule) and
+  // their session can't read what the drain enriches with (00218): drain
+  // service-role for them. The drain only sends what's already queued.
+  const denied = await requireMobileStaffModule(supabase, token, "inbox", me.fieldStaff ? "view" : "edit");
   if (denied) return denied;
+  const drainer = me.fieldStaff ? createAdminClient() : supabase;
 
   const [email, sms] = await Promise.all([
-    processOutbox(supabase),
-    processSmsOutbox(supabase),
+    processOutbox(drainer),
+    processSmsOutbox(drainer),
   ]);
   return NextResponse.json({ ok: true, email, sms });
 }

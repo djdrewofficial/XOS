@@ -2,18 +2,23 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import EventsGrid, { type GridRow } from "@/components/EventsGrid";
 import AddEventModal from "@/components/AddEventModal";
+import { getMe } from "@/lib/auth";
+import type { XEvent } from "@/lib/types";
+import { eventSource, eventsListSelect, addonNameSelect, addonName, staffNameSelect, staffName } from "@/lib/eventSource";
 
 export const dynamic = "force-dynamic";
 
 export default async function EventsPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
   const supabase = await createClient();
   const showArchived = (await searchParams).show === "archived";
+  // Field staff read the money-free views (assigned events only, no fees).
+  const me = await getMe(supabase);
+  const src = eventSource(!!me?.fieldStaff);
+  const moneyFree = src.fieldStaff;
 
   const eventsQuery = supabase
-    .from("events")
-    .select(
-      "*, client:clients(first_name, last_name, cell_phone, email), status:event_statuses(name, color, text_color), package:packages(name, default_price, deposit_value), venue:venues(name, city, state, setup_fee), event_type:event_types(name), salesperson:employees(first_name, last_name), inquiry_source:inquiry_sources(name)"
-    )
+    .from(src.events)
+    .select(eventsListSelect(src))
     .order("event_date", { ascending: true })
     .limit(1000);
   // active by default; ?show=archived flips to archived-only
@@ -23,22 +28,30 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
   const [{ data: events }, { data: staff }, { data: vendors }, { data: addons }, { data: payments }] =
     await Promise.all([
       eventsQuery,
-      supabase.from("event_staff").select("event_id, employee:employees(first_name, last_name)"),
+      supabase.from(src.eventStaff).select(staffNameSelect(src)),
       supabase.from("event_vendors").select("event_id, vendor:vendors(company_name)"),
-      supabase.from("event_addons").select("event_id, quantity, price_override, price_locked, addon:addons(name, default_price)"),
-      supabase.from("payments").select("event_id, amount").eq("status", "approved").is("deleted_at", null),
+      moneyFree
+        ? supabase.from(src.eventAddons).select(addonNameSelect(src))
+        : supabase.from("event_addons").select("event_id, quantity, price_override, price_locked, addon:addons(name, default_price)"),
+      moneyFree
+        ? Promise.resolve({ data: [] as { event_id: string | null; amount: number }[] })
+        : supabase.from("payments").select("event_id, amount").eq("status", "approved").is("deleted_at", null),
     ]);
+  // field staff: only rows for the events they can see (the views already
+  // filter staff/add-ons; event_vendors is narrowed here before 00218 lands)
+  const visibleIds = new Set(((events ?? []) as unknown as { id: string }[]).map((e) => e.id));
 
   const staffByEvent = new Map<string, string[]>();
-  (staff ?? []).forEach((s) => {
-    const emp = s.employee as unknown as { first_name: string; last_name: string } | null;
-    if (!emp) return;
+  ((staff ?? []) as unknown as { event_id: string; first_name?: string; last_name?: string; employee?: unknown }[]).forEach((s) => {
+    const name = staffName(s);
+    if (!name) return;
     if (!staffByEvent.has(s.event_id)) staffByEvent.set(s.event_id, []);
-    staffByEvent.get(s.event_id)!.push(`${emp.first_name} ${emp.last_name}`.trim());
+    staffByEvent.get(s.event_id)!.push(name);
   });
 
   const vendorsByEvent = new Map<string, string[]>();
   (vendors ?? []).forEach((v) => {
+    if (moneyFree && !visibleIds.has(v.event_id)) return;
     const ven = v.vendor as unknown as { company_name: string } | null;
     if (!ven) return;
     if (!vendorsByEvent.has(v.event_id)) vendorsByEvent.set(v.event_id, []);
@@ -46,13 +59,22 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
   });
 
   const addonsByEvent = new Map<string, { names: string[]; total: number }>();
-  (addons ?? []).forEach((a) => {
-    const ad = a.addon as unknown as { name: string; default_price: number } | null;
+  type AddonRow = {
+    event_id: string;
+    quantity: number;
+    name?: string | null;
+    price_override?: number | null;
+    price_locked?: number | null;
+    addon?: unknown;
+  };
+  ((addons ?? []) as unknown as AddonRow[]).forEach((a) => {
+    const ad = a.addon as { name: string; default_price: number } | null | undefined;
+    const name = addonName(a);
     const entry = addonsByEvent.get(a.event_id) ?? { names: [], total: 0 };
-    if (ad) entry.names.push(a.quantity > 1 ? `${ad.name} ×${a.quantity}` : ad.name);
-    entry.total +=
-      (a.quantity ?? 1) *
-      Number(a.price_override ?? (a as { price_locked?: number | null }).price_locked ?? ad?.default_price ?? 0);
+    if (name) entry.names.push(a.quantity > 1 ? `${name} ×${a.quantity}` : name);
+    if (!moneyFree)
+      entry.total +=
+        (a.quantity ?? 1) * Number(a.price_override ?? a.price_locked ?? ad?.default_price ?? 0);
     addonsByEvent.set(a.event_id, entry);
   });
 
@@ -61,7 +83,8 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
     if (p.event_id) paidByEvent.set(p.event_id, (paidByEvent.get(p.event_id) ?? 0) + Number(p.amount));
   });
 
-  const rows: GridRow[] = (events ?? []).map((e) => {
+  // XEvent-ish row; the field-staff view simply lacks the money columns
+  const rows: GridRow[] = ((events ?? []) as unknown as (XEvent & { event_number?: number | null; inquiry_source?: unknown })[]).map((e) => {
     const client = e.client as unknown as { first_name: string; last_name: string; cell_phone: string | null; email: string | null } | null;
     const status = e.status as unknown as { name: string; color: string; text_color: string } | null;
     const pkg = e.package as unknown as { name: string; default_price: number } | null;
@@ -69,15 +92,23 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
     const sp = e.salesperson as unknown as { first_name: string; last_name: string } | null;
     const addonInfo = addonsByEvent.get(e.id) ?? { names: [], total: 0 };
 
-    const total =
-      Number(e.package_price_override ?? e.package_price_locked ?? pkg?.default_price ?? 0) +
-      addonInfo.total +
-      Number(e.overtime_fee) +
-      Number(e.travel_fee) +
-      Number(venue?.setup_fee ?? 0) -
-      Number(e.discount1_amount) -
-      Number(e.discount2_amount);
+    const total = moneyFree
+      ? 0
+      : Number(e.package_price_override ?? e.package_price_locked ?? pkg?.default_price ?? 0) +
+        addonInfo.total +
+        Number(e.overtime_fee) +
+        Number(e.travel_fee) +
+        Number(venue?.setup_fee ?? 0) -
+        Number(e.discount1_amount) -
+        Number(e.discount2_amount);
     const paid = paidByEvent.get(e.id) ?? 0;
+    const moneyValues: Record<string, number> = moneyFree
+      ? {}
+      : {
+          balance_due: Math.round((total - paid) * 100) / 100,
+          total_fee: Math.round(total * 100) / 100,
+          payments_received: Math.round(paid * 100) / 100,
+        };
 
     return {
       id: e.id,
@@ -94,9 +125,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
         status: status?.name ?? null,
         package: pkg?.name ?? null,
         addons: addonInfo.names.join(", ") || null,
-        balance_due: Math.round((total - paid) * 100) / 100,
-        total_fee: Math.round(total * 100) / 100,
-        payments_received: Math.round(paid * 100) / 100,
+        ...moneyValues,
         venue: venue ? `${venue.name}${venue.city ? ` ${venue.city}, ${venue.state ?? ""}` : ""}`.trim() : null,
         salesperson: sp ? `${sp.first_name} ${sp.last_name}`.trim() : null,
         assigned_employees: (staffByEvent.get(e.id) ?? []).join(", ") || null,
@@ -126,10 +155,10 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
           >
             {showArchived ? "← Active events" : "Show archived"}
           </Link>
-          <AddEventModal className="btn-primary px-4 py-2 text-sm">Add Event</AddEventModal>
+          {!moneyFree && <AddEventModal className="btn-primary px-4 py-2 text-sm">Add Event</AddEventModal>}
         </div>
       </div>
-      <EventsGrid rows={rows} />
+      <EventsGrid rows={rows} moneyFree={moneyFree} />
     </div>
   );
 }
