@@ -1,50 +1,57 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sortDayEvents, type CalDetailedEvent } from "@/lib/dayEvents";
+import {
+  eventSource,
+  calendarSelect,
+  addonNameSelect,
+  addonName,
+  staffNameSelect,
+  staffName,
+  type EventSource,
+} from "@/lib/eventSource";
 
-type AddonRow = { event_id: string; quantity: number; addon: unknown };
-type StaffRow = { event_id: string; role: string | null; employee: unknown };
+type AddonRow = { event_id: string; quantity: number; addon?: unknown; name?: string | null };
+type StaffRow = { event_id: string; role: string | null; employee?: unknown; first_name?: string | null; last_name?: string | null };
 
 /** Events in an inclusive date range, shaped for the day cards. Archived events
- *  are excluded the same way the dashboard calendar always has. */
+ *  are excluded the same way the dashboard calendar always has. Field staff
+ *  (src.fieldStaff) read the money-free views, so they only get assigned events. */
 export async function loadEventsByDate(
   supabase: SupabaseClient,
   start: string,
   end: string,
+  src: EventSource = eventSource(false),
 ): Promise<Record<string, CalDetailedEvent[]>> {
   const { data: rows } = await supabase
-    .from("events")
-    .select(
-      "id, name, event_date, start_time, end_time, client:clients(first_name, last_name, cell_phone), venue:venues(name, city, state), package:packages(name), event_type:event_types(name), status:event_statuses(name, color, text_color)",
-    )
+    .from(src.events)
+    .select(calendarSelect(src))
     .is("archived_at", null)
     .gte("event_date", start)
     .lte("event_date", end)
     .order("event_date");
 
-  const monthEvents = rows ?? [];
+  const monthEvents = (rows ?? []) as unknown as Record<string, unknown>[];
   const ids = monthEvents.map((e) => e.id as string);
   const [{ data: addonRows }, { data: staffRows }] = ids.length
     ? await Promise.all([
-        supabase.from("event_addons").select("event_id, quantity, addon:addons(name)").in("event_id", ids),
-        supabase.from("event_staff").select("event_id, role, employee:employees(first_name, last_name)").in("event_id", ids),
+        supabase.from(src.eventAddons).select(addonNameSelect(src)).in("event_id", ids),
+        supabase.from(src.eventStaff).select(staffNameSelect(src)).in("event_id", ids),
       ])
     : [{ data: [] as AddonRow[] }, { data: [] as StaffRow[] }];
 
   const addonsByEvent = new Map<string, { name: string; quantity: number }[]>();
-  (addonRows ?? []).forEach((a) => {
-    const name = (a.addon as unknown as { name?: string } | null)?.name;
+  ((addonRows ?? []) as unknown as AddonRow[]).forEach((a) => {
+    const name = addonName(a);
     if (!name) return;
-    const row = a as unknown as AddonRow;
+    const row = a;
     (addonsByEvent.get(row.event_id) ?? addonsByEvent.set(row.event_id, []).get(row.event_id)!).push({
       name,
       quantity: Number(row.quantity) || 1,
     });
   });
   const staffByEvent = new Map<string, { name: string; role: string | null }[]>();
-  (staffRows ?? []).forEach((s) => {
-    const row = s as unknown as StaffRow;
-    const emp = row.employee as unknown as { first_name?: string; last_name?: string } | null;
-    const name = `${emp?.first_name ?? ""} ${emp?.last_name ?? ""}`.trim();
+  ((staffRows ?? []) as unknown as StaffRow[]).forEach((row) => {
+    const name = staffName(row);
     if (!name) return;
     (staffByEvent.get(row.event_id) ?? staffByEvent.set(row.event_id, []).get(row.event_id)!).push({
       name,

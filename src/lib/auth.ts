@@ -6,6 +6,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isFieldStaffRole } from "@/lib/fieldStaffRole";
 import {
   resolveAccessMap,
   accessAtLeast,
@@ -33,7 +34,14 @@ export type Me = {
   can: Record<string, Access>;
   /** Where this person should land after login. */
   landing: string;
+  /** Field staff (employee / marketing tier, or a staff row with no tier): sees
+      ONLY events they are assigned to (event_staff) and no money except their
+      own wage. Mirrors the database's xos_is_field_staff() (migration 00217);
+      office tiers (master_admin / admin / salesperson) are false. */
+  fieldStaff: boolean;
 };
+
+export { OFFICE_ROLES, isFieldStaffRole } from "@/lib/fieldStaffRole";
 
 const NO_ACCESS: Record<string, Access> = {};
 
@@ -83,6 +91,7 @@ async function resolveMe(sb: Client, user: { id: string; email?: string }): Prom
       role: "employee",
       can: NO_ACCESS,
       landing: "/portal",
+      fieldStaff: false,
     };
   }
 
@@ -104,6 +113,7 @@ async function resolveMe(sb: Client, user: { id: string; email?: string }): Prom
         role: "master_admin",
         can: resolveAccessMap("master_admin", [], []),
         landing: DEFAULT_LANDING.master_admin,
+        fieldStaff: false,
       };
     }
     return {
@@ -113,6 +123,7 @@ async function resolveMe(sb: Client, user: { id: string; email?: string }): Prom
       role: "employee",
       can: DENY_ALL_ACCESS,
       landing: "/no-access",
+      fieldStaff: false,
     };
   }
 
@@ -127,6 +138,7 @@ async function resolveMe(sb: Client, user: { id: string; email?: string }): Prom
       role,
       can: resolveAccessMap(role, [], []),
       landing: emp?.landing_page || DEFAULT_LANDING.master_admin,
+      fieldStaff: false,
     };
   }
 
@@ -144,7 +156,7 @@ async function resolveMe(sb: Client, user: { id: string; email?: string }): Prom
   );
 
   const landing = await resolveLanding(sb, role, emp?.landing_page ?? null);
-  return { userId: user.id, accountType: "staff", employeeId, role, can, landing };
+  return { userId: user.id, accountType: "staff", employeeId, role, can, landing, fieldStaff: isFieldStaffRole(role) };
 }
 
 /** Per-user override → role default → hardcoded fallback. */

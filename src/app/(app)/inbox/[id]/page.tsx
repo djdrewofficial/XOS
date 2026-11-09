@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { refreshConversation } from "@/lib/highlevel";
 import InboxShell, { type ActiveThread, type ConvRow, type MsgRow } from "@/components/InboxShell";
+import { getMe } from "@/lib/auth";
+import { djClientIds } from "@/lib/fieldStaff";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +18,17 @@ export default async function ConversationPage({
   const supabase = await createClient();
 
   const CONV_COLS = "id, hl_contact_id, client_id, contact_name, phone, email, last_message_at, last_message_direction, last_message_type, last_message_body, unread_count";
+  // field staff: only clients of events where their role contains "DJ" (00217)
+  const me = await getMe(supabase);
+  const scope = me?.fieldStaff ? await djClientIds(supabase) : null;
+  const listQuery = supabase.from("hl_conversations").select(CONV_COLS);
+  if (scope) listQuery.in("client_id", scope.length ? scope : ["00000000-0000-0000-0000-000000000000"]);
   const [{ data: conversations }, { data: conv }] = await Promise.all([
-    supabase.from("hl_conversations").select(CONV_COLS).order("last_message_at", { ascending: false }).limit(200),
+    listQuery.order("last_message_at", { ascending: false }).limit(200),
     supabase.from("hl_conversations").select("*").eq("id", id).maybeSingle(),
   ]);
   if (!conv) notFound();
+  if (scope && !(conv.client_id && scope.includes(conv.client_id))) notFound();
 
   const [{ data: messages }, { data: client }] = await Promise.all([
     supabase
@@ -40,7 +48,7 @@ export default async function ConversationPage({
 
   const { data: events } = client
     ? await supabase
-        .from("events")
+        .from(scope ? "xos_fs_events" : "events")
         .select("id, name, event_date, status:event_statuses(name, color, text_color)")
         .eq("client_id", client.id)
         .order("event_date", { ascending: false })
@@ -49,7 +57,8 @@ export default async function ConversationPage({
 
   // documents attachable to email replies (from this client's events)
   const eventIds = (events ?? []).map((ev) => ev.id as string);
-  const { data: docs } = eventIds.length
+  // documents (money) are office-only
+  const { data: docs } = eventIds.length && !scope
     ? await supabase
         .from("documents")
         .select("id, title")

@@ -211,6 +211,29 @@ export default function NewEventForm(props: NewEventFormProps) {
 
   // ---- Venue ----
   const [venueMode, setVenueMode] = useState<"existing" | "new" | "client_address">("existing");
+  // rooms of the picked venue → venue_room_id (persisted by createEventOnboarding)
+  const [pickedVenueId, setPickedVenueId] = useState("");
+  const [venueRooms, setVenueRooms] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (!pickedVenueId) {
+      Promise.resolve().then(() => live && setVenueRooms([]));
+      return () => {
+        live = false;
+      };
+    }
+    createClient()
+      .from("venue_rooms")
+      .select("id, name")
+      .eq("venue_id", pickedVenueId)
+      .order("name")
+      .then(({ data }) => {
+        if (live) setVenueRooms((data ?? []) as { id: string; name: string }[]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [pickedVenueId]);
   const [newVenue, setNewVenue] = useState<Record<string, unknown> | null>(null);
   const venueRef = useRef<HTMLDivElement>(null);
 
@@ -515,8 +538,13 @@ export default function NewEventForm(props: NewEventFormProps) {
 
       {venueMode === "existing" && (
         <div className="grid grid-cols-2 gap-3">
-          <div><Label>Venue</Label><EntityPicker kind="venue" name="venue_id" /></div>
-          <Field label="Room (if applicable)"><input name="venue_room_id_label" placeholder="Optional room name" className={inputCls} disabled /></Field>
+          <div><Label>Venue</Label><EntityPicker kind="venue" name="venue_id" onChange={setPickedVenueId} /></div>
+          <Field label="Room (if applicable)">
+            <select name="venue_room_id" className={inputCls} disabled={!venueRooms.length} defaultValue="">
+              <option value="">{venueRooms.length ? "No specific room" : "No rooms for this venue"}</option>
+              {venueRooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </Field>
         </div>
       )}
       {venueMode === "new" && (
@@ -622,7 +650,10 @@ export default function NewEventForm(props: NewEventFormProps) {
         fd.set("travel_fee", travelFee);
         fd.set("schedule_plan", schedulePlan);
         fd.set("use_client_address", venueMode === "client_address" ? "true" : "false");
-        if (venueMode !== "existing") fd.delete("venue_id");
+        if (venueMode !== "existing") {
+          fd.delete("venue_id");
+          fd.delete("venue_room_id");
+        }
         fd.set("new_venue_json", venueMode === "new" ? JSON.stringify(readNewVenue()) : "null");
         return props.action(fd);
       }}

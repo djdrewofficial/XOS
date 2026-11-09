@@ -5,6 +5,9 @@ import { money, type XEvent } from "@/lib/types";
 import { updateVenue, addVenueContact, removeVenueContact, addVenueRoom } from "../actions";
 import SaveButton from "@/components/SaveButton";
 
+import { getMe } from "@/lib/auth";
+import { eventSource } from "@/lib/eventSource";
+
 export const dynamic = "force-dynamic";
 
 export default async function VenueDetailPage({
@@ -14,20 +17,24 @@ export default async function VenueDetailPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
+  // field staff: fee-free venue view + only their assigned events (00217/00218)
+  const fieldStaff = !!(await getMe(supabase))?.fieldStaff;
+  const src = eventSource(fieldStaff);
 
-  const [{ data: venue }, { data: contacts }, { data: rooms }, { data: categories }, { data: events }] = await Promise.all([
-    supabase.from("venues").select("*").eq("id", id).single(),
+  const [{ data: venueRow }, { data: contacts }, { data: rooms }, { data: categories }, { data: events }] = await Promise.all([
+    supabase.from(src.venues).select("*").eq("id", id).single(),
     supabase.from("venue_contacts").select("*").eq("venue_id", id).order("name"),
     supabase.from("venue_rooms").select("*").eq("venue_id", id).order("name"),
     supabase.from("venue_categories").select("id, name").eq("is_active", true).order("name"),
     supabase
-      .from("events")
+      .from(src.events)
       .select("*, client:clients(first_name, last_name), status:event_statuses(name, color, text_color)")
       .eq("venue_id", id)
       .order("event_date", { ascending: false })
       .limit(50),
   ]);
 
+  const venue = venueRow;
   if (!venue) notFound();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -114,14 +121,18 @@ export default async function VenueDetailPage({
               <label className="label-xs">Website</label>
               <input name="website" defaultValue={venue.website ?? ""} className="input w-full" placeholder="https://…" />
             </div>
-            <div>
-              <label className="label-xs">Travel Fee ($)</label>
-              <input type="number" step="0.01" name="travel_fee" defaultValue={venue.travel_fee} className="input w-full" />
-            </div>
-            <div>
-              <label className="label-xs">Setup Fee ($)</label>
-              <input type="number" step="0.01" name="setup_fee" defaultValue={venue.setup_fee} className="input w-full" />
-            </div>
+            {!fieldStaff && (
+              <>
+                <div>
+                  <label className="label-xs">Travel Fee ($)</label>
+                  <input type="number" step="0.01" name="travel_fee" defaultValue={venue.travel_fee} className="input w-full" />
+                </div>
+                <div>
+                  <label className="label-xs">Setup Fee ($)</label>
+                  <input type="number" step="0.01" name="setup_fee" defaultValue={venue.setup_fee} className="input w-full" />
+                </div>
+              </>
+            )}
             <div>
               <label className="label-xs">Distance (mi)</label>
               <input type="number" step="0.1" name="distance_miles" defaultValue={venue.distance_miles ?? ""} className="input w-full" />
@@ -253,7 +264,7 @@ export default async function VenueDetailPage({
         </table>
       </div>
       <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-600">
-        Travel fee {money(venue.travel_fee)} · Setup fee {money(venue.setup_fee)}
+        {!fieldStaff && <>Travel fee {money(venue.travel_fee ?? 0)} · Setup fee {money(venue.setup_fee ?? 0)}</>}
         {venue.distance_miles ? ` · ${venue.distance_miles} mi from warehouse` : ""}
       </p>
     </div>

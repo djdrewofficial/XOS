@@ -110,6 +110,7 @@ import { resolveUserNames } from "@/lib/planning";
 import { loadsOnTab } from "@/lib/eventTabData";
 import { visibleInviteStatus } from "@/lib/eventAccess";
 import { isMissingRelation, loadJoinLinks } from "@/lib/eventAccessServer";
+import FieldStaffEventPage from "./FieldStaffEventPage";
 
 export const dynamic = "force-dynamic";
 
@@ -131,6 +132,11 @@ export default async function EventDetailPage({
   // a failed lookup no longer falls open to master_admin. Owners with no employee
   // row still resolve as master_admin inside getMe.
   const viewer = await getMe(supabase);
+  // Field staff (employee / marketing): assigned events only, money-free — a
+  // separate read path over the xos_fs_* views (see fieldStaffLoader.ts).
+  if (viewer?.fieldStaff) {
+    return <FieldStaffEventPage supabase={supabase} me={viewer} id={id} tab={tab} />;
+  }
   const tier = viewer?.role;
   const canDelete = tier === "master_admin";
   const canArchive = tier === "master_admin" || tier === "admin" || tier === "salesperson";

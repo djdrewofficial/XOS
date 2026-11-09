@@ -7,10 +7,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getOrCreateShortLink } from "@/lib/shortLinks";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
-import { buildScheduleRows, parseSchedulePlan } from "@/lib/paymentSchedule";
+import { parseSchedulePlan } from "@/lib/paymentSchedule";
 import { writeSchedulePreservingPaid } from "@/lib/scheduleWrite";
 import { loadEventBundle } from "@/lib/documentRender";
-import { buildEventName, autoNameEvent, type NamingClient } from "@/lib/eventName";
+import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations, fireHelperWebhook } from "@/lib/automations";
 import { dispatchNotification } from "@/lib/notify";
 import { findOrCreateClient } from "@/lib/clients";
@@ -19,6 +19,20 @@ import { requireModule, getMe } from "@/lib/auth";
 import { helperAllowedForEventType, helperAllowedForRole } from "@/lib/helperAccess";
 import { splitSchedule, type SchedRow } from "@/lib/scheduleLock";
 import { inviteClientToXos } from "@/lib/accounts";
+import { requireOffice, requireEventTouch } from "@/lib/fieldStaff";
+import { applyPackageSelection, assignAddonEquipment, createEventCore, eventInputFromForm } from "@/lib/eventCreate";
+
+/* Field staff (employee / marketing tier) only work their assigned events and
+   never touch money. The DB enforces that for user-session writes once 00218 is
+   applied, but the service-role (createAdminClient) paths below bypass RLS, so
+   they — and every money / booking / staffing action — check explicitly. */
+async function officeOnly(): Promise<void> {
+  requireOffice(await getMe());
+}
+async function assignedOrOffice(eventId: string): Promise<void> {
+  const supabase = await createClient();
+  await requireEventTouch(supabase, await getMe(supabase), eventId);
+}
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -125,110 +139,9 @@ function eventPayload(formData: FormData) {
   };
 }
 
-// Resolve the package price for a date: Custom Date Range > weekday price > default.
-// Snapshot semantics (DJEP parity): applied when the package is selected; later
-// package-setting changes don't reprice saved events.
-async function applyPackageSelection(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  eventId: string,
-  packageId: string,
-  eventDate: string | null,
-  manualOverride: boolean
-) {
-  const { data: pkg } = await supabase
-    .from("packages")
-    .select("default_price, deposit_value, deposit_pct, weekday_prices")
-    .eq("id", packageId)
-    .single();
-  if (!pkg) return;
-
-  let effective = Number(pkg.default_price);
-  if (eventDate) {
-    const weekday = (pkg.weekday_prices as Record<string, number> | null) ?? {};
-    const [y, m, d] = eventDate.split("-").map(Number);
-    const dow = String(new Date(y, m - 1, d).getDay());
-    if (weekday[dow] !== undefined) effective = Number(weekday[dow]);
-
-    const { data: ranges } = await supabase
-      .from("package_date_prices")
-      .select("price")
-      .eq("package_id", packageId)
-      .lte("start_date", eventDate)
-      .gte("end_date", eventDate)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (ranges && ranges.length) effective = Number(ranges[0].price);
-  }
-
-  const updates: Record<string, unknown> = {};
-  if (!manualOverride) {
-    updates.package_price_override = effective !== Number(pkg.default_price) ? effective : null;
-  }
-  // default the deposit if none set yet
-  const { data: ev } = await supabase
-    .from("events")
-    .select("deposit_value")
-    .eq("id", eventId)
-    .single();
-  if (ev && Number(ev.deposit_value) === 0) {
-    if (pkg.deposit_pct != null && Number(pkg.deposit_pct) > 0) {
-      updates.deposit_value = Math.round(effective * Number(pkg.deposit_pct)) / 100;
-    } else if (Number(pkg.deposit_value) > 0) {
-      updates.deposit_value = Number(pkg.deposit_value);
-    }
-  }
-  if (Object.keys(updates).length) {
-    await supabase.from("events").update(updates).eq("id", eventId);
-  }
-
-  // auto-assign the package's default add-ons (skip ones already on the event)
-  const { data: addonDefaults } = await supabase
-    .from("package_addon_defaults")
-    .select("addon_id, quantity")
-    .eq("package_id", packageId);
-  if (addonDefaults?.length) {
-    const { data: existing } = await supabase
-      .from("event_addons")
-      .select("addon_id")
-      .eq("event_id", eventId);
-    const have = new Set((existing ?? []).map((x) => x.addon_id));
-    const rows = addonDefaults
-      .filter((a) => !have.has(a.addon_id))
-      .map((a) => ({ event_id: eventId, addon_id: a.addon_id, quantity: a.quantity }));
-    if (rows.length) await supabase.from("event_addons").insert(rows);
-    // pull each auto-added add-on's equipment onto the logistics checklist too
-    for (const r of rows) {
-      await assignAddonEquipment(supabase, eventId, r.addon_id);
-      await assignAddonSections(eventId, r.addon_id);
-    }
-  }
-
-  // auto-assign the package's default equipment to the logistics checklist
-  const { data: equipDefaults } = await supabase
-    .from("package_equipment_defaults")
-    .select("item_id, system_id, quantity")
-    .eq("package_id", packageId);
-  if (equipDefaults?.length) {
-    const { data: existing } = await supabase
-      .from("event_equipment")
-      .select("item_id, system_id")
-      .eq("event_id", eventId);
-    const haveItems = new Set((existing ?? []).map((x) => x.item_id).filter(Boolean));
-    const haveSystems = new Set((existing ?? []).map((x) => x.system_id).filter(Boolean));
-    const rows = equipDefaults
-      .filter((e) => (e.item_id ? !haveItems.has(e.item_id) : !haveSystems.has(e.system_id)))
-      .map((e) => ({
-        event_id: eventId,
-        item_id: e.item_id,
-        system_id: e.system_id,
-        quantity: e.quantity,
-      }));
-    if (rows.length) await supabase.from("event_equipment").insert(rows);
-  }
-}
-
 export async function createEvent(formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const payload = eventPayload(formData);
   // Every event needs a billable client — downstream naming, automations, and
@@ -255,33 +168,6 @@ export async function createEvent(formData: FormData) {
   redirect(`/events/${data.id}`);
 }
 
-// ---- Tabbed onboarding: build the whole event from one submit ----
-type NewClient = {
-  mode: "existing" | "new";
-  client_id?: string;
-  first_name?: string;
-  last_name?: string;
-  email?: string;
-  cell_phone?: string;
-  role?: string;
-  is_primary?: boolean;
-  is_contract_holder?: boolean;
-};
-type NewDiscount = { label?: string; amount?: number };
-type NewAddon = { addon_id: string; quantity?: number; price_override?: number | null };
-type NewStaff = { employee_id: string; role?: string; flat_wage?: number };
-type NewDate = { definition_id: string; value?: string };
-type NewVenue = {
-  name?: string;
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-  lat?: number | null;
-  lng?: number | null;
-  place_id?: string | null;
-};
-
 function parseJson<T>(v: FormDataEntryValue | null, fallback: T): T {
   try {
     const s = (v ?? "").toString();
@@ -295,6 +181,7 @@ function parseJson<T>(v: FormDataEntryValue | null, fallback: T): T {
    open in a modal from anywhere (mirrors what /events/new loads server-side). */
 export async function loadNewEventFormData() {
   await requireModule("events", "view", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const [
     { data: roles },
@@ -329,241 +216,16 @@ export async function loadNewEventFormData() {
 
 export async function createEventOnboarding(formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
-
-  const clients = parseJson<NewClient[]>(formData.get("clients_json"), []);
-
-  // Required-field guard on the primary client (backstop for the form's own
-  // client-side validation): first name, last name, email, and cell must be set,
-  // whether the primary is a new or an existing client.
-  const primaryIn = clients.find((c) => c.is_primary) ?? clients[0];
-  if (!primaryIn) throw new Error("Add a primary client before creating the event.");
-  let pf = primaryIn.first_name, pl = primaryIn.last_name, pe = primaryIn.email, pc = primaryIn.cell_phone;
-  if (primaryIn.mode === "existing" && primaryIn.client_id) {
-    const { data: pc0 } = await supabase
-      .from("clients")
-      .select("first_name, last_name, email, cell_phone")
-      .eq("id", primaryIn.client_id)
-      .maybeSingle();
-    pf = pc0?.first_name ?? pf; pl = pc0?.last_name ?? pl; pe = pc0?.email ?? pe; pc = pc0?.cell_phone ?? pc;
-  }
-  const missingPrimary = [
-    !pf?.trim() && "first name",
-    !pl?.trim() && "last name",
-    !pe?.trim() && "email",
-    !pc?.trim() && "cell phone",
-  ].filter(Boolean);
-  if (missingPrimary.length) throw new Error(`Primary client is missing: ${missingPrimary.join(", ")}.`);
-
-  const discounts = parseJson<NewDiscount[]>(formData.get("discounts_json"), []);
-  const addons = parseJson<NewAddon[]>(formData.get("addons_json"), []);
-  const staff = parseJson<NewStaff[]>(formData.get("staff_json"), []);
-  const customDates = parseJson<NewDate[]>(formData.get("custom_dates_json"), []);
-  const newVenue = parseJson<NewVenue | null>(formData.get("new_venue_json"), null);
-
-  // 1) resolve clients (create the new ones) and figure out the primary
-  const resolved: { client_id: string; role: string | null; is_primary: boolean; is_contract_holder: boolean; naming: NamingClient }[] = [];
-  for (const c of clients) {
-    let id = c.client_id ?? null;
-    let first = c.first_name ?? "";
-    let last = c.last_name ?? "";
-    if (c.mode === "new" || !id) {
-      if (!first && !c.email && !c.cell_phone) continue; // skip empty rows
-      // dedupe by email — reuse an existing client instead of creating a twin
-      const found = await findOrCreateClient(supabase, {
-        first_name: first,
-        last_name: last,
-        email: c.email,
-        cell_phone: c.cell_phone,
-      });
-      id = found.id;
-      first = found.first_name;
-      last = found.last_name;
-    } else {
-      const { data: existing } = await supabase.from("clients").select("first_name, last_name").eq("id", id).maybeSingle();
-      first = existing?.first_name ?? first;
-      last = existing?.last_name ?? last;
-    }
-    resolved.push({
-      client_id: id!,
-      role: c.role ?? null,
-      is_primary: !!c.is_primary,
-      is_contract_holder: !!c.is_contract_holder,
-      naming: { first_name: first, last_name: last, role: c.role ?? null, is_primary: !!c.is_primary },
-    });
-  }
-  if (resolved.length && !resolved.some((r) => r.is_primary)) resolved[0].is_primary = true;
-  const primary = resolved.find((r) => r.is_primary) ?? resolved[0] ?? null;
-
-  // 2) resolve inquiry source (existing, or add new one-time/persisted)
-  let inquirySourceId = clean(formData.get("inquiry_source_id"));
-  const newSourceName = clean(formData.get("new_source_name"));
-  if (!inquirySourceId && newSourceName) {
-    const persist = formData.get("new_source_persist") === "true" || formData.get("new_source_persist") === "on";
-    const { data: src } = await supabase
-      .from("inquiry_sources")
-      .insert({ name: newSourceName, is_active: persist })
-      .select("id")
-      .single();
-    inquirySourceId = src?.id ?? null;
-  }
-
-  // 3) resolve venue (existing, newly-created-from-Google, or client address)
-  const useClientAddress = formData.get("use_client_address") === "true" || formData.get("use_client_address") === "on";
-  let venueId = clean(formData.get("venue_id"));
-  if (useClientAddress) {
-    venueId = null;
-    const addr = clean(formData.get("client_address"));
-    if (addr && primary) await supabase.from("clients").update({ mailing_address: addr }).eq("id", primary.client_id);
-  } else if (!venueId && newVenue?.name) {
-    const { data: v } = await supabase
-      .from("venues")
-      .insert({
-        name: newVenue.name,
-        address: newVenue.address ?? null,
-        city: newVenue.city ?? null,
-        state: newVenue.state ?? null,
-        zip: newVenue.zip ?? null,
-        lat: newVenue.lat ?? null,
-        lng: newVenue.lng ?? null,
-        google_place_id: newVenue.place_id ?? null,
-      })
-      .select("id")
-      .single();
-    venueId = v?.id ?? null;
-  }
-
-  // 4) event name — auto for unnamed weddings
-  const eventTypeId = clean(formData.get("event_type_id"));
-  let typeName: string | null = null;
-  if (eventTypeId) {
-    const { data: t } = await supabase.from("event_types").select("name").eq("id", eventTypeId).maybeSingle();
-    typeName = t?.name ?? null;
-  }
-  let name = clean(formData.get("name"));
-  if (!name) name = buildEventName(resolved.map((r) => r.naming), typeName) || "New Event";
-
-  // 5) insert the event
-  const depositInput = clean(formData.get("deposit_value"));
-  const priceOverride = clean(formData.get("package_price_override"));
-  const packageId = clean(formData.get("package_id"));
-  const { data: event, error: evErr } = await supabase
-    .from("events")
-    .insert({
-      name,
-      event_type_id: eventTypeId,
-      status_id: clean(formData.get("status_id")),
-      inquiry_source_id: inquirySourceId,
-      client_id: primary?.client_id ?? null,
-      event_date: clean(formData.get("event_date")),
-      setup_time: clean(formData.get("setup_time")),
-      start_time: clean(formData.get("start_time")),
-      end_time: clean(formData.get("end_time")),
-      guest_count: formData.get("guest_count") ? num(formData.get("guest_count")) : null,
-      venue_id: venueId,
-      venue_room_id: clean(formData.get("venue_room_id")),
-      use_client_address: useClientAddress,
-      package_id: packageId,
-      package_price_override: priceOverride ? num(formData.get("package_price_override")) : null,
-      deposit_value: depositInput ? num(formData.get("deposit_value")) : 0,
-      travel_fee: num(formData.get("travel_fee")),
-      discount1_label: clean(formData.get("d1l")) ?? (discounts[0]?.label ?? null),
-      discount1_amount: discounts[0]?.amount ?? 0,
-      discount2_label: discounts[1]?.label ?? null,
-      discount2_amount: discounts[1]?.amount ?? 0,
-      internal_notes: clean(formData.get("internal_notes")),
-    })
-    .select("id")
-    .single();
-  if (evErr) throw new Error(evErr.message);
-  const eventId = event.id as string;
-
-  // 6) event_clients
-  if (resolved.length) {
-    await supabase.from("event_clients").insert(
-      resolved.map((r) => ({ event_id: eventId, client_id: r.client_id, role: r.role ?? "Client", is_primary: r.is_primary, is_contract_holder: r.is_contract_holder }))
-    );
-  }
-
-  // 7) package selection (auto add-ons/equipment + price/deposit defaults)
-  if (packageId) {
-    await applyPackageSelection(supabase, eventId, packageId, clean(formData.get("event_date")), !!priceOverride);
-  }
-
-  // 8) explicit add-ons on top of package defaults
-  const addonRows = addons
-    .filter((a) => a.addon_id)
-    .map((a) => ({
-      event_id: eventId,
-      addon_id: a.addon_id,
-      quantity: a.quantity && a.quantity > 0 ? a.quantity : 1,
-      price_override: a.price_override ?? null,
-    }));
-  if (addonRows.length) await supabase.from("event_addons").insert(addonRows);
-
-  // 9) contract notes (internal notes already on the event row)
-  const contractNotes = clean(formData.get("contract_notes"));
-  if (contractNotes) {
-    await supabase.from("event_notes").insert({ event_id: eventId, body: contractNotes, kind: "contract" });
-  }
-
-  // 10) custom / important dates
-  const dateRows = customDates
-    .filter((d) => d.definition_id && d.value)
-    .map((d) => ({ event_id: eventId, definition_id: d.definition_id, value: d.value }));
-  if (dateRows.length) {
-    await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" });
-  }
-
-  // 11) payment schedule — full payment due OR deposit + split (legacy schedule_count still accepted)
-  const schedulePlan =
-    parseSchedulePlan(formData.get("schedule_plan")) ??
-    (formData.get("schedule_count") ? parseSchedulePlan(formData.get("schedule_count")) : null);
-  if (schedulePlan) {
-    const bundle = await loadEventBundle(supabase, eventId);
-    const total = bundle?.total ?? 0;
-    const { data: evDep } = await supabase.from("events").select("deposit_value, event_date").eq("id", eventId).single();
-    const deposit = Number(evDep?.deposit_value ?? 0);
-    let terms: "days_before" | "net_days_after" = "days_before";
-    let termsDays = 30;
-    if (packageId) {
-      const { data: pkg } = await supabase
-        .from("packages")
-        .select("payment_terms, payment_terms_days")
-        .eq("id", packageId)
-        .maybeSingle();
-      if (pkg) {
-        terms = (pkg.payment_terms as typeof terms) ?? "days_before";
-        termsDays = pkg.payment_terms_days ?? 30;
-      }
-    }
-    const rows = buildScheduleRows({
-      total,
-      deposit,
-      eventDate: evDep?.event_date ?? null,
-      terms,
-      termsDays,
-      plan: schedulePlan,
-      today: new Date().toISOString().slice(0, 10),
-    }).map((r) => ({ ...r, event_id: eventId }));
-    await supabase.from("scheduled_payments").insert(rows);
-  }
-
-  // 12) staff (optional — TBD by default)
-  const staffRows = staff
-    .filter((s) => s.employee_id)
-    .map((s) => ({ event_id: eventId, employee_id: s.employee_id, role: s.role || "DJ", flat_wage: s.flat_wage ?? 0 }));
-  if (staffRows.length) await supabase.from("event_staff").insert(staffRows);
-
-  // fire any "event created" automations (configured per event type)
-  await runAutomations(supabase, eventId, "event_created");
-
+  const eventId = await createEventCore(supabase, eventInputFromForm(formData));
   revalidatePath("/events");
   redirect(`/events/${eventId}`);
 }
 
 export async function updateEvent(id: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { data: before } = await supabase
     .from("events")
@@ -589,6 +251,7 @@ export async function updateEvent(id: string, formData: FormData) {
 
 export async function setEventStatus(id: string, statusId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase.from("events").update({ status_id: statusId }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -603,6 +266,7 @@ export async function setEventStatus(id: string, statusId: string) {
     notifications are unaffected; the outbox drains enforce this per event. */
 export async function setEventCommsPaused(id: string, paused: boolean) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase.from("events").update({ comms_paused: paused }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -611,6 +275,7 @@ export async function setEventCommsPaused(id: string, paused: boolean) {
 
 export async function addPayment(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   // num() coerces empty/non-numeric input to 0 and passes negatives through, so
   // guard explicitly: a payment must be a real, positive amount. !(amount > 0)
@@ -635,6 +300,7 @@ export async function addPayment(eventId: string, formData: FormData) {
     Card/PayPal amounts are what the processor captured, so those stay fixed. */
 export async function updatePayment(paymentId: string, eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { data: existing } = await supabase
     .from("payments")
@@ -668,6 +334,7 @@ export async function saveRemainingSchedule(
   rows: { id: string | null; amount: number; due_date: string | null }[],
 ) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const [bundle, { data: sched }, { data: approved }] = await Promise.all([
     loadEventBundle(supabase, eventId),
@@ -715,6 +382,7 @@ export async function saveRemainingSchedule(
 /** "Keep schedule as is" — silence the update-payments prompt until the total changes again. */
 export async function acknowledgeScheduleTotal(eventId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const bundle = await loadEventBundle(supabase, eventId);
   if (!bundle) return;
@@ -727,6 +395,7 @@ export async function acknowledgeScheduleTotal(eventId: string) {
    scheduled payment, and fire payment_received automations. */
 export async function confirmPayment(paymentId: string, eventId: string, formData?: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const note = formData ? clean(formData.get("note")) : null;
 
@@ -773,6 +442,7 @@ export async function confirmPayment(paymentId: string, eventId: string, formDat
    list (money records must be recoverable, never hard-deleted). */
 export async function removePayment(paymentId: string, eventId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const {
     data: { user },
@@ -797,6 +467,7 @@ export async function removePayment(paymentId: string, eventId: string) {
 /* Restore a soft-deleted payment from the "Recently removed" list. */
 export async function restorePayment(paymentId: string, eventId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase
     .from("payments")
@@ -812,6 +483,7 @@ export async function restorePayment(paymentId: string, eventId: string) {
    staff to copy and send to a client. */
 export async function getProposalShortLink(eventId: string): Promise<{ url: string } | { error: string }> {
   await requireModule("events", "view", { mode: "throw" });
+  await officeOnly();
   const admin = createAdminClient();
   const { data: ev } = await admin.from("events").select("pay_token").eq("id", eventId).maybeSingle();
   if (!ev?.pay_token) return { error: "This event has no proposal link yet." };
@@ -830,6 +502,7 @@ export async function getProposalShortLink(eventId: string): Promise<{ url: stri
 
 export async function addScheduledPayments(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   // schedule generation governed by the package's payment rules:
   // allowed splits + final-due terms (N days before event, or corporate Net-N after).
@@ -885,6 +558,7 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
     decides the plan. Read by the public /proposal page when chooser = 'office'. */
 export async function updateBillingTerms(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const terms = clean(formData.get("billing_terms"));
   const count = Math.max(1, Math.round(num(formData.get("billing_terms_count"))) || 2);
@@ -933,6 +607,7 @@ function cleanSmsOverrides(
 /** What the prompted texts on this helper would say for this event. */
 export async function getHelperSmsPrompts(eventId: string, helperId: string): Promise<HelperSmsPrompt[]> {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("preview_helper_sms", {
     p_helper_id: helperId,
@@ -950,6 +625,7 @@ export async function runBookingHelper(
   smsOverrides?: Record<string, HelperSmsOverride>
 ) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   // SECURITY DEFINER — service-role client so a signed-in client/guest can't call
   // run_booking_helper directly (authenticated EXECUTE revoked, migration 00166).
   // Staff access is already gated by requireModule above.
@@ -966,6 +642,11 @@ export async function runBookingHelper(
   if (scope && !helperAllowedForRole(scope, me?.role)) {
     throw new Error(`Your role can't run "${scope.title}".`);
   }
+  // field staff: only helpers that explicitly list their role (an empty
+  // allowed_roles means "everyone" for office, never for field staff)
+  if (me?.fieldStaff && !((scope?.allowed_roles as string[] | null) ?? []).includes(me.role)) {
+    throw new Error(`Your role can't run "${scope?.title ?? "this helper"}".`);
+  }
   // The 3-arg form (this call, including p_sms_overrides) is the staff-click
   // entry point. Its SQL wrapper sets p_manual = true, so the email and SMS it
   // queues bypass events.comms_paused. Automations use the 2-arg form and stay paused.
@@ -978,15 +659,18 @@ export async function runBookingHelper(
   // fire this helper's webhook too (so a manual click can test the Zap)
   await fireHelperWebhook(admin, helperId, eventId);
   // deliver anything the helper queued right away (attachments/sign links
-  // are handled at send time) instead of waiting for the 10-minute cron
-  await processOutbox();
-  await processSmsOutbox();
+  // are handled at send time) instead of waiting for the 10-minute cron.
+  // A field-staff session can't read the event / money rows the drain enriches
+  // with (00218), so drain service-role for them.
+  await processOutbox(me?.fieldStaff ? admin : undefined);
+  await processSmsOutbox(me?.fieldStaff ? admin : undefined);
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
 }
 
 export async function assignStaff(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const employeeId = clean(formData.get("employee_id"));
   if (!employeeId) return;
@@ -1004,6 +688,7 @@ export async function assignStaff(eventId: string, formData: FormData) {
 
 export async function removeStaff(eventId: string, staffId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase.from("event_staff").delete().eq("id", staffId);
   if (error) throw new Error(error.message);
@@ -1017,6 +702,7 @@ export async function markStaff(
   field: "notified_at" | "confirmed_at" | "checked_in_at" | "checked_out_at"
 ) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_staff")
@@ -1030,7 +716,8 @@ export async function markStaff(
 /* Staff self-service: a signed-in employee checks themselves in/out of their own
    assignment (verified by auth_user_id → employee_id → event_staff.employee_id). */
 export async function selfCheckInOut(eventStaffId: string, field: "checked_in_at" | "checked_out_at") {
-  await requireModule("events", "edit", { mode: "throw" });
+  // own-row self-service (verified below): view access is enough
+  await requireModule("events", "view", { mode: "throw" });
   const supabase = await createClient();
   const {
     data: { user },
@@ -1051,7 +738,8 @@ export async function selfCheckInOut(eventStaffId: string, field: "checked_in_at
 
 /* Staff request a correction to their recorded times — admins approve on /payroll. */
 export async function requestTimesheetChange(eventStaffId: string, formData: FormData) {
-  await requireModule("events", "edit", { mode: "throw" });
+  // own-row self-service (verified below): view access is enough
+  await requireModule("events", "view", { mode: "throw" });
   const supabase = await createClient();
   const {
     data: { user },
@@ -1076,6 +764,7 @@ export async function requestTimesheetChange(eventStaffId: string, formData: For
 
 export async function addEventEquipment(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const ref = clean(formData.get("equipment_ref")); // "item:<id>" or "system:<id>"
   if (!ref) return;
@@ -1093,6 +782,7 @@ export async function addEventEquipment(eventId: string, formData: FormData) {
 
 export async function removeEventEquipment(eventId: string, rowId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const { error } = await supabase.from("event_equipment").delete().eq("id", rowId);
   if (error) throw new Error(error.message);
@@ -1101,6 +791,7 @@ export async function removeEventEquipment(eventId: string, rowId: string) {
 
 export async function toggleEquipmentPacked(eventId: string, rowId: string, packed: boolean) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const { error } = await supabase.from("event_equipment").update({ packed }).eq("id", rowId);
   if (error) throw new Error(error.message);
@@ -1113,6 +804,7 @@ export async function markEquipment(
   field: "checked_out_at" | "checked_in_at"
 ) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_equipment")
@@ -1124,6 +816,7 @@ export async function markEquipment(
 
 export async function updateEquipmentNotes(eventId: string, rowId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_equipment")
@@ -1135,6 +828,7 @@ export async function updateEquipmentNotes(eventId: string, rowId: string, formD
 
 export async function addLogisticsNote(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
@@ -1156,6 +850,7 @@ const MAX_UPLOAD = 50 * 1024 * 1024; // 50 MB (project storage limit)
     PDFs — anything. Stored in the `event-files` bucket via the admin client. */
 export async function uploadEventFile(eventId: string, _prev: unknown, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const file = formData.get("file") as File | null;
   if (!file || file.size === 0) return { ok: false as const, error: "Choose a file first." };
   if (file.size > MAX_UPLOAD) return { ok: false as const, error: "File is too large (max 50MB)." };
@@ -1192,6 +887,7 @@ export async function uploadEventFileForm(eventId: string, formData: FormData) {
 /** Change (or clear) a file's label. */
 export async function setEventFileLabel(eventId: string, fileId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const admin = createAdminClient();
   const { error } = await admin
     .from("event_files")
@@ -1205,6 +901,7 @@ export async function setEventFileLabel(eventId: string, fileId: string, formDat
 /** Remove a file (storage object + row). */
 export async function deleteEventFile(eventId: string, fileId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const admin = createAdminClient();
   const { data: f } = await admin.from("event_files").select("path").eq("id", fileId).eq("event_id", eventId).maybeSingle();
   if (f?.path) await admin.storage.from("event-files").remove([f.path]);
@@ -1215,6 +912,7 @@ export async function deleteEventFile(eventId: string, fileId: string) {
 
 export async function addEventVendor(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const vendorId = clean(formData.get("vendor_id"));
   if (!vendorId) return;
@@ -1230,6 +928,7 @@ export async function addEventVendor(eventId: string, formData: FormData) {
 
 export async function removeEventVendor(eventId: string, eventVendorId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const { error } = await supabase.from("event_vendors").delete().eq("id", eventVendorId);
   if (error) throw new Error(error.message);
@@ -1238,6 +937,7 @@ export async function removeEventVendor(eventId: string, eventVendorId: string) 
 
 export async function updateStaffDetails(eventId: string, staffId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_staff")
@@ -1255,6 +955,7 @@ export async function updateStaffDetails(eventId: string, staffId: string, formD
 
 export async function toggleStaffPortal(eventId: string, staffId: string, visible: boolean) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase
     .from("event_staff")
@@ -1266,6 +967,7 @@ export async function toggleStaffPortal(eventId: string, staffId: string, visibl
 
 export async function deleteEvent(eventId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   // hard delete is master_admin only — everyone else archives instead
   await requireTier(supabase, ["master_admin"]);
@@ -1300,6 +1002,7 @@ export async function deleteEvent(eventId: string) {
    emails/SMS so nothing already in the outbox fires. */
 export async function archiveEvent(eventId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   await requireTier(supabase, ["master_admin", "admin", "salesperson"]);
 
@@ -1322,6 +1025,7 @@ export async function archiveEvent(eventId: string) {
 
 export async function unarchiveEvent(eventId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   await requireTier(supabase, ["master_admin", "admin", "salesperson"]);
 
@@ -1336,6 +1040,7 @@ export async function unarchiveEvent(eventId: string) {
 
 export async function addEventClient(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const clientId = clean(formData.get("client_id"));
   if (!clientId) return;
@@ -1360,6 +1065,7 @@ export async function addEventClient(eventId: string, formData: FormData) {
 
 export async function createClientAndAttach(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const firstName = clean(formData.get("first_name"));
   if (!firstName) return;
@@ -1393,6 +1099,7 @@ export async function createClientAndAttach(eventId: string, formData: FormData)
 
 export async function removeEventClient(eventId: string, eventClientId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { data: links } = await supabase
     .from("event_clients")
@@ -1415,6 +1122,7 @@ export async function removeEventClient(eventId: string, eventClientId: string) 
 
 export async function setPrimaryEventClient(eventId: string, eventClientId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { data: link } = await supabase
     .from("event_clients")
@@ -1430,6 +1138,7 @@ export async function setPrimaryEventClient(eventId: string, eventClientId: stri
 
 export async function toggleContractHolder(eventId: string, eventClientId: string, value: boolean) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase.from("event_clients").update({ is_contract_holder: value }).eq("id", eventClientId);
   if (error) throw new Error(error.message);
@@ -1442,6 +1151,7 @@ export async function toggleContractHolder(eventId: string, eventClientId: strin
 export async function inviteEventClientToXos(eventId: string, clientId: string): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient();
   await requireModule("events", "edit", { mode: "throw", supabase });
+  await officeOnly();
   const { data: c } = await supabase.from("clients").select("email, first_name").eq("id", clientId).maybeSingle();
   if (!c?.email) return { ok: false, error: "Add an email to this client first." };
   const res = await inviteClientToXos({ clientId, eventId, email: c.email, name: c.first_name });
@@ -1451,6 +1161,7 @@ export async function inviteEventClientToXos(eventId: string, clientId: string):
 
 export async function addClientNote(eventId: string, clientId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
@@ -1464,30 +1175,9 @@ export async function addClientNote(eventId: string, clientId: string, formData:
   revalidatePath(`/clients/${clientId}`);
 }
 
-async function assignAddonEquipment(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  eventId: string,
-  addonId: string
-) {
-  const { data: defaults } = await supabase
-    .from("addon_equipment_defaults")
-    .select("item_id, system_id, quantity")
-    .eq("addon_id", addonId);
-  if (!defaults?.length) return;
-  const { data: existing } = await supabase
-    .from("event_equipment")
-    .select("item_id, system_id")
-    .eq("event_id", eventId);
-  const haveItems = new Set((existing ?? []).map((x) => x.item_id).filter(Boolean));
-  const haveSystems = new Set((existing ?? []).map((x) => x.system_id).filter(Boolean));
-  const rows = defaults
-    .filter((e) => (e.item_id ? !haveItems.has(e.item_id) : !haveSystems.has(e.system_id)))
-    .map((e) => ({ event_id: eventId, item_id: e.item_id, system_id: e.system_id, quantity: e.quantity }));
-  if (rows.length) await supabase.from("event_equipment").insert(rows);
-}
-
 export async function addEventAddon(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const addonId = clean(formData.get("addon_id"));
   if (!addonId) return;
@@ -1513,6 +1203,7 @@ export async function addEventAddon(eventId: string, formData: FormData) {
 /** This event's wording for its package (blank / unchanged = the catalog description). */
 export async function updateEventPackageDescription(eventId: string, baseDescription: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const text = (formData.get("description") ?? "").toString().replace(/\r\n/g, "\n").trim();
   const override = text && text !== baseDescription.replace(/\r\n/g, "\n").trim() ? text : null;
@@ -1529,6 +1220,7 @@ export async function updateEventAddon(
   formData: FormData
 ) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const update: Record<string, unknown> = {
     quantity: Math.max(1, Math.round(num(formData.get("quantity")) || 1)),
@@ -1547,6 +1239,7 @@ export async function updateEventAddon(
 
 export async function removeEventAddon(eventId: string, eventAddonId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase.from("event_addons").delete().eq("id", eventAddonId);
   if (error) throw new Error(error.message);
@@ -1555,6 +1248,7 @@ export async function removeEventAddon(eventId: string, eventAddonId: string) {
 
 export async function addExpense(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   let categoryId = clean(formData.get("category_id"));
   const newCategory = clean(formData.get("new_category"));
@@ -1582,6 +1276,7 @@ export async function addExpense(eventId: string, formData: FormData) {
 
 export async function deleteExpense(eventId: string, expenseId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase.from("expenses").delete().eq("id", expenseId);
   if (error) throw new Error(error.message);
@@ -1590,6 +1285,7 @@ export async function deleteExpense(eventId: string, expenseId: string) {
 
 export async function addTrip(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   let vehicleId: string | null = null;
   const vehicleName = clean(formData.get("vehicle"));
@@ -1615,6 +1311,7 @@ export async function addTrip(eventId: string, formData: FormData) {
 
 export async function deleteTrip(eventId: string, tripId: string) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase.from("event_trips").delete().eq("id", tripId);
   if (error) throw new Error(error.message);
@@ -1623,6 +1320,7 @@ export async function deleteTrip(eventId: string, tripId: string) {
 
 export async function addEventNote(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
@@ -1638,6 +1336,7 @@ export async function addEventNote(eventId: string, formData: FormData) {
 
 export async function addContractNote(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const body = clean(formData.get("body"));
   if (!body) return;
@@ -1679,6 +1378,7 @@ export async function deleteEventNote(eventId: string, noteId: string) {
 
 export async function updateEventDetails(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase
     .from("events")
@@ -1700,6 +1400,7 @@ export async function updateEventDetails(eventId: string, formData: FormData) {
 
 export async function updateEventVenue(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   let venueId = clean(formData.get("venue_id"));
 
@@ -1744,6 +1445,7 @@ export async function updateEventVenue(eventId: string, formData: FormData) {
 
 export async function updateEventLinks(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { data: event } = await supabase
     .from("events")
@@ -1764,6 +1466,7 @@ export async function updateEventLinks(eventId: string, formData: FormData) {
     RE-SEEDS the planner from it (clears the event's current planner sections). */
 export async function setEventPlanningTemplate(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const templateId = clean(formData.get("planning_template_id"));
   const supabase = await createClient();
   if (!templateId) {
@@ -1776,6 +1479,7 @@ export async function setEventPlanningTemplate(eventId: string, formData: FormDa
 
 export async function updateEventFinancials(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { data: before } = await supabase
     .from("events")
@@ -1848,6 +1552,7 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
 
 export async function updateBookingInfo(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { data: before } = await supabase.from("events").select("status_id").eq("id", eventId).maybeSingle();
   const statusId = clean(formData.get("status_id"));
@@ -1871,6 +1576,7 @@ export async function updateBookingInfo(eventId: string, formData: FormData) {
 
 export async function updateBookingDates(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const { error } = await supabase
     .from("events")
@@ -1916,6 +1622,7 @@ export async function updateBookingDates(eventId: string, formData: FormData) {
 
 export async function addCustomDateField(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
   const supabase = await createClient();
   const name = clean(formData.get("name"));
   if (!name) return;

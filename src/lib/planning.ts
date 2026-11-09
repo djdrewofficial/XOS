@@ -2,6 +2,7 @@
    Server-only. Reads use the caller's RLS-scoped client; seeding uses the
    service-role admin client because clients can't INSERT sections under RLS. */
 import "server-only";
+import { isFieldStaffRole } from "@/lib/fieldStaffRole";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { contentVisible } from "@/lib/ugcModeration";
@@ -724,7 +725,28 @@ export async function resolveEventRole(
   accountType: "staff" | "client" | "event_guest",
   eventId: string,
 ): Promise<PlannerRole | null> {
-  if (accountType === "staff") return "staff";
+  if (accountType === "staff") {
+    // Field staff (employee / marketing) only act as staff on events they're
+    // assigned to — the mobile routes behind this run service-role. Office tiers
+    // and owner logins with no employee row keep access to every event.
+    const { data: acct } = await supabase
+      .from("accounts")
+      .select("employee_id")
+      .eq("auth_user_id", userId)
+      .maybeSingle();
+    const empQuery = acct?.employee_id
+      ? supabase.from("employees").select("id, permission_tier").eq("id", acct.employee_id)
+      : supabase.from("employees").select("id, permission_tier").eq("auth_user_id", userId);
+    const { data: emp } = await empQuery.maybeSingle();
+    if (!emp || !isFieldStaffRole(emp.permission_tier as string | null)) return "staff";
+    const { data: assigned } = await supabase
+      .from("event_staff")
+      .select("id")
+      .eq("event_id", eventId)
+      .eq("employee_id", emp.id)
+      .limit(1);
+    return (assigned ?? []).length > 0 ? "staff" : null;
+  }
 
   const { data: account } = await supabase
     .from("accounts")

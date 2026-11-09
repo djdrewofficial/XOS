@@ -12,7 +12,7 @@ export type GridRow = {
 
 type ColumnDef = { id: string; label: string; align?: "right"; money?: boolean };
 
-const ALL_COLUMNS: ColumnDef[] = [
+const EVERY_COLUMN: ColumnDef[] = [
   { id: "event_number", label: "Event ID" },
   { id: "event_date", label: "Event Date" },
   { id: "event_name", label: "Event Name" },
@@ -56,8 +56,11 @@ function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-export default function EventsGrid({ rows }: { rows: GridRow[] }) {
+/** moneyFree: field-staff mode — the fee / balance / payment columns don't exist
+    (the rows carry no money; see lib/eventSource). */
+export default function EventsGrid({ rows, moneyFree = false }: { rows: GridRow[]; moneyFree?: boolean }) {
   const router = useRouter();
+  const ALL_COLUMNS = useMemo(() => (moneyFree ? EVERY_COLUMN.filter((c) => !c.money) : EVERY_COLUMN), [moneyFree]);
   const [visible, setVisible] = useState<string[]>(DEFAULT_VISIBLE);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ col: string; dir: 1 | -1 }>({ col: "event_date", dir: 1 });
@@ -71,7 +74,7 @@ export default function EventsGrid({ rows }: { rows: GridRow[] }) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as string[];
-        if (Array.isArray(parsed) && parsed.length) setVisible(parsed.filter((c) => ALL_COLUMNS.some((a) => a.id === c)));
+        if (Array.isArray(parsed) && parsed.length) setVisible(parsed.filter((c) => EVERY_COLUMN.some((a) => a.id === c)));
       }
     } catch {}
     try {
@@ -79,7 +82,7 @@ export default function EventsGrid({ rows }: { rows: GridRow[] }) {
       if (saved) {
         const s = JSON.parse(saved) as { statusColorMode?: StatusColorMode; sortBy?: string; sortDir?: 1 | -1 };
         if (s.statusColorMode) setStatusColorMode(s.statusColorMode);
-        if (s.sortBy && ALL_COLUMNS.some((c) => c.id === s.sortBy)) {
+        if (s.sortBy && EVERY_COLUMN.some((c) => c.id === s.sortBy)) {
           setSort({ col: s.sortBy, dir: s.sortDir === -1 ? -1 : 1 });
         }
       }
@@ -137,7 +140,7 @@ export default function EventsGrid({ rows }: { rows: GridRow[] }) {
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av).localeCompare(String(bv)) * dir;
     });
-  }, [rows, filters, sort, view, today]);
+  }, [rows, filters, sort, view, today, ALL_COLUMNS]);
 
   const cols = visible
     .map((id) => ALL_COLUMNS.find((c) => c.id === id))
