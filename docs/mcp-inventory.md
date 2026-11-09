@@ -1,5 +1,7 @@
 # Distinct office operations
 
+Batch commit: `570978f9c9781815fbd99ed2379e0d03197bf696`. The pull request head may be this commit or the inventory stamp on top of it.
+
 This inventory counts a business operation once. A second export that calls the same operation, a read-only loader, or a form wrapper is collapsed into that operation. It is not a separate missing editor.
 
 Identity exclusions are actions whose actor is the client, the guest, the signed-in person changing their own login, or an inbound provider. Office edits that happen to live near those files are not exclusions.
