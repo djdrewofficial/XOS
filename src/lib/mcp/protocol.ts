@@ -1,6 +1,6 @@
 import { canonicalJson, hashToken, hashesEqual, sha256 } from "./crypto";
 import { auditView, hideClientLinks, redact } from "./redact";
-import { tokenDecision, type ServiceTokenRow } from "./auth";
+import { helpersRunSkipsXosApproval, tokenDecision, type ServiceTokenRow } from "./auth";
 import { idempotencyKeyError } from "./idempotency";
 import { missingScopes, scopesAllow } from "./scopes";
 import type { McpStore } from "./store";
@@ -176,7 +176,12 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
 
   const ctx: ToolContext = {
     now,
-    token: { id: token.id, name: token.name, scopes: token.scopes },
+    token: {
+      id: token.id,
+      name: token.name,
+      scopes: token.scopes,
+      helpersSkipXosApproval: token.helpers_skip_xos_approval === true,
+    },
     admin: (call.admin ?? null) as SupabaseClient,
   };
 
@@ -198,7 +203,7 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
   if (rpc.method === "tools/list") {
     const visible = catalog.filter((tool) => scopesAllow(token.scopes, tool.scopes));
     return finish(200, rpcOk(rpc.id, {
-      tools: visible.map(publicTool),
+      tools: visible.map((tool) => publicTool(tool, helpersRunSkipsXosApproval(tool.name, token))),
     }), { status: "ok" });
   }
 
@@ -243,7 +248,7 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
         name: item.name,
         description: item.description,
         scopes: item.scopes,
-        confirm: item.confirm,
+        confirm: item.confirm && !helpersRunSkipsXosApproval(item.name, token),
       })),
     }, secrets);
     return finish(200, rpcOk(rpc.id, toolResult(payload, false)), { status: "ok" });
@@ -288,7 +293,11 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
     return finish(200, rpcError(rpc.id, -32602, idempotencyKeyError(idempotencyKey) ?? "Invalid idempotency key"), { status: "error", errorCode: "idempotency" });
   }
 
-  if (tool.confirm) {
+  // helpers_run may skip the Agent Access receipt when the token row allows it.
+  // The decision is read from mcp_service_tokens, never from a client-supplied flag.
+  const skipHelperConfirm = helpersRunSkipsXosApproval(tool.name, token);
+
+  if (tool.confirm && !skipHelperConfirm) {
     const argsHash = sha256(canonicalJson(argsIn));
     const existing = await store.findOperation(token.id, idempotencyKey!);
     if (existing) {
@@ -323,6 +332,27 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
     });
     confirmationId = row.id;
     return finish(200, rpcOk(rpc.id, toolResult(operationPayload(row), false)), { status: "confirmation_required" });
+  }
+
+  if (skipHelperConfirm) {
+    // Audit: token already on the row; attach helper/event ids + frozen receipt (recipients).
+    const base: Record<string, unknown> =
+      argsRedacted && typeof argsRedacted === "object" && !Array.isArray(argsRedacted)
+        ? { ...(argsRedacted as Record<string, unknown>) }
+        : { arguments: argsIn };
+    base.helper_id = argsIn.helper_id ?? null;
+    base.event_id = argsIn.event_id ?? null;
+    base.helpers_skip_xos_approval = true;
+    try {
+      if (tool.preview) {
+        base.receipt = await tool.preview(argsIn, ctx);
+      } else if (tool.freeze) {
+        base.receipt = await tool.freeze(argsIn, ctx);
+      }
+    } catch {
+      // Preview failure must not block a run that will fail clearly in execute.
+    }
+    argsRedacted = base;
   }
 
   if (write && (await limited(store, "mcp:execute", token.id, limits.perExecute, limits.windowMs, now))) {
@@ -558,10 +588,13 @@ async function beginAudit(
   }
 }
 
-function publicTool(tool: LiveTool) {
-  const human = tool.confirm
+function publicTool(tool: LiveTool, skipXosReceipt = false) {
+  const needsReceipt = tool.confirm && !skipXosReceipt;
+  const human = needsReceipt
     ? " A person must approve the exact receipt in XOS before this runs. xos_confirm does not approve it and does not run it."
-    : "";
+    : skipXosReceipt
+      ? " This token may run helpers_run without an Agent Access receipt. Chat approval is still expected before calling it."
+      : "";
   const draft = tool.scopes.some((scope) => scope.startsWith("comms."))
     ? " A chat host must still show a draft card for a human to accept. This confirmation id is not that card."
     : "";
@@ -580,7 +613,7 @@ function publicTool(tool: LiveTool) {
         },
       },
     },
-    annotations: tool.confirm ? { destructiveHint: true, readOnlyHint: false } : undefined,
+    annotations: needsReceipt || tool.name === "helpers_run" ? { destructiveHint: true, readOnlyHint: false } : undefined,
   };
 }
 

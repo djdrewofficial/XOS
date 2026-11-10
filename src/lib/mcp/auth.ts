@@ -6,7 +6,17 @@ export type ServiceTokenRow = {
   revoked_at: string | null;
   overlap_until: string | null;
   token_hash: string;
+  /** When true, helpers_run skips the Agent Access receipt. Server-side only. */
+  helpers_skip_xos_approval?: boolean;
 };
+
+/** helpers_run alone may skip the XOS receipt when the token record allows it. */
+export function helpersRunSkipsXosApproval(
+  toolName: string,
+  token: Pick<ServiceTokenRow, "helpers_skip_xos_approval">,
+): boolean {
+  return toolName === "helpers_run" && token.helpers_skip_xos_approval === true;
+}
 
 export type TokenDecision =
   | { ok: true }

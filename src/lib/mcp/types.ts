@@ -3,7 +3,13 @@ import type { JsonSchema } from "./validate";
 
 export type ToolContext = {
   now: Date;
-  token: { id: string; name: string; scopes: readonly string[] };
+  token: {
+    id: string;
+    name: string;
+    scopes: readonly string[];
+    /** From mcp_service_tokens.helpers_skip_xos_approval. Not a client-supplied flag. */
+    helpersSkipXosApproval?: boolean;
+  };
   /** Service-role client. Present when the server is handling a live request. */
   admin: SupabaseClient;
   /** Set only while a person is running an approved preview. Sends must match it. */

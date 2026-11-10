@@ -21,9 +21,9 @@ The server is stateless streamable HTTP. Each POST is one JSON-RPC message and t
 1. The bearer token is hashed and looked up. Missing, unknown, revoked, expired, and rotated-past-overlap tokens are rejected. The raw token is not written to the audit log.
 2. The token must hold every scope the tool requires. Anything else is denied.
 3. Reads run immediately.
-4. Money, deletes, client email, client texts, contract sends, and helper runs do not run on the first call. The first call returns a receipt: who would be contacted, the exact text, and the version of any template or helper. Nothing is sent or changed.
+4. Money, deletes, client email, client texts, contract sends, and helper runs do not run on the first call by default. The first call returns a receipt: who would be contacted, the exact text, and the version of any template or helper. Nothing is sent or changed. Exception: when a master admin turns on **Run helpers without XOS approval** for that token, `helpers_run` alone skips the receipt and runs immediately (other confirm tools keep the receipt). The decision is read from the token row, never from a tool argument.
 5. `xos_confirm` only reports that status. Calling it is not approval and does not run the action. A signed-in master admin opens Settings → Agent Access and approves that receipt. If a template or helper changed after the preview, approval stops and nothing runs. A chat host must still show its own draft card. The confirmation id is not that card.
-6. Every call is audited: token name, tool, redacted arguments, status, timing, confirmation id.
+6. Every call is audited: token name, tool, redacted arguments, status, timing, confirmation id. Direct helper runs also record helper id, event id, recipients (from the preview), and the result.
 7. A write can send `Idempotency-Key` (header or `idempotency_key` argument). The same key and the same arguments return the first result and do not run again. A different call with the same key is rejected.
 8. A token is limited to 120 requests a minute and 20 actual writes a minute. Failed logins are limited per IP.
 
@@ -145,7 +145,10 @@ Built in, any valid token:
 
 `documents_send_for_signature` calls `sendDocumentForSignature`, the same function as the document page's Send for signature button.
 
-`helpers_run` calls `executeBookingHelper`: the database helper, then `processOutbox` and `processSmsOutbox`, so contract tags are filled before the message leaves.
+`helpers_run` has two paths, both chosen server-side from the token row:
+
+- Default (receipt): freezes effects, waits for Agent Access approval, then `mcp_run_helper_claim` (hold GUC → claim held rows → drain `sending`).
+- Token flag on: same as the event-page helper button — `executeBookingHelper` (`run_booking_helper` + `drainEventOutbox`) with no hold GUC and no receipt. No new tool parameters; call `helpers_run` the same way.
 
 `comms_send_email_template` queues the row the way a helper's send-email action does, then runs the same outbox.
 
@@ -167,10 +170,11 @@ There are no Supabase Edge Functions in this repo. The Netlify scheduled functio
 
 Master admin only. Settings → Agent Access (`/settings/mcp`).
 
-1. After an explicit approval, apply `supabase/migrations/00219_mcp_service_access.sql` and `supabase/migrations/00220_mcp_approval_and_guards.sql` through the numbered migration history (the same process that records every other file in `supabase_migrations.schema_migrations`). Do not paste them as an untracked SQL editor script. The page shows "One-time setup needed" until those tables exist. This repo does not apply them.
+1. After an explicit approval, apply `supabase/migrations/00219_mcp_service_access.sql` and `supabase/migrations/00220_mcp_approval_and_guards.sql` through the numbered migration history (the same process that records every other file in `supabase_migrations.schema_migrations`). Do not paste them as an untracked SQL editor script. The page shows "One-time setup needed" until those tables exist. This repo does not apply them. Helper direct-run also needs `00225_mcp_helpers_skip_xos_approval.sql` (column defaults to false; existing tokens stay off until a master admin flips the toggle).
 2. Create a token. Name it, pick scopes, optional expiry. The raw token is shown once on that screen. It is not saved, not logged, and not put in the address bar. Copy it into the agent's secret store.
-3. Rotate when you want a new secret. The new token works immediately. The old one keeps working for the overlap you set (default 24 hours, `0` turns it off now), then it stops. Both hashes stay in the table; the raw values do not.
-4. Revoke kills a token immediately, including during an overlap.
+3. Optionally turn on **Run helpers without XOS approval** on that token row. Master admin only. Applies to `helpers_run` only — direct client email/SMS and contract tools still need an Agent Access receipt.
+4. Rotate when you want a new secret. The new token works immediately. The old one keeps working for the overlap you set (default 24 hours, `0` turns it off now), then it stops. Both hashes stay in the table; the raw values do not.
+5. Revoke kills a token immediately, including during an overlap.
 
 The table stores `token_prefix` (the start of the token, so you can tell them apart) and `token_hash`. Row Level Security is on and the API roles have no grants. The settings page reads through the server after the master-admin check.
 

@@ -167,3 +167,28 @@ export async function revokeMcpToken(formData: FormData) {
   if (error) throw new Error(error.message);
   revalidatePath("/settings/mcp");
 }
+
+/** Master admin only. Lets helpers_run skip the Agent Access receipt for this token.
+    Other confirm tools keep the receipt. Off by default; never flipped by an agent. */
+export async function setHelpersSkipXosApproval(formData: FormData) {
+  await requireMaster();
+  const id = String(formData.get("token_id") ?? "").trim();
+  if (!id) throw new Error("Missing token.");
+  const raw = String(formData.get("helpers_skip_xos_approval") ?? "").trim().toLowerCase();
+  const enabled = raw === "true" || raw === "1" || raw === "on";
+  const { data, error } = await createAdminClient()
+    .from("mcp_service_tokens")
+    .update({ helpers_skip_xos_approval: enabled })
+    .eq("id", id)
+    .is("revoked_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    if (/helpers_skip_xos_approval|schema cache|column/i.test(error.message)) {
+      throw new Error("Apply migration 00225 before changing this setting.");
+    }
+    throw new Error(error.message);
+  }
+  if (!data) throw new Error("That token is not active.");
+  revalidatePath("/settings/mcp");
+}
