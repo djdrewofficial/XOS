@@ -227,7 +227,7 @@ This server has not been registered against a live agent. Do not treat a URL in 
 
 The deploy preview of `4d930541d82debe5d85ef3de498d48e611a63ab2` failed in about 23 seconds with no public error message, and the build-log API returned unauthorized. A local `next build` of that tree failed because `events/actions.ts` re-exported `HelperSmsOverride` and `HelperSmsPrompt` from a `"use server"` file. Turbopack treats those as server-action exports. The types now come from `src/lib/bookingHelperRun.ts`, and a later local production build completed. That local build is not a Netlify deploy, and this branch has not been deployed.
 
-The transport follows the 2025-06-18 streamable HTTP rules that were checked in the spec: one POST endpoint, JSON responses, `GET` returns 405 because there is no SSE stream, missing `MCP-Protocol-Version` is accepted as the older 2025-03-26 client, and any other version is rejected. That is a spec reading, not a completed client handshake.
+The transport follows the 2025-06-18 streamable HTTP rules that were checked in the spec: one POST endpoint, JSON responses, `GET` returns 405 because there is no SSE stream. `initialize` negotiates the protocol version — it echoes a supported request (`2025-06-18` or `2025-03-26`) and otherwise answers with `2025-06-18`. Missing `MCP-Protocol-Version` on later requests is accepted as the older 2025-03-26 client; any well-formed `YYYY-MM-DD` header is accepted, and only malformed values get HTTP 400. That is a spec reading, not a completed client handshake.
 
 After a person connects it, `xos_whoami` should list only the granted scopes. A risky tool returns a receipt. A person approves that receipt in XOS. `xos_confirm` does not do that approval.
 
