@@ -1,5 +1,5 @@
 import { mcpTools } from "@/lib/mcp/tools";
-import { handleMcp } from "@/lib/mcp/protocol";
+import { handleMcp, isInvalidMcpProtocolVersionHeader } from "@/lib/mcp/protocol";
 import { secretValuesFromEnv } from "@/lib/mcp/redact";
 import { supabaseStore } from "@/lib/mcp/supabaseStore";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -34,9 +34,13 @@ export async function POST(req: Request) {
     );
   }
   const version = req.headers.get("mcp-protocol-version");
-  if (version && version !== "2025-03-26" && version !== "2025-06-18") {
+  // Missing header: older clients (assume 2025-03-26 per transport spec).
+  // Well-formed but unknown/newer: allow through so initialize can negotiate and
+  // so a client that agreed on a supported version is not blocked.
+  // Malformed: HTTP 400.
+  if (version && isInvalidMcpProtocolVersionHeader(version)) {
     return Response.json(
-      { jsonrpc: "2.0", id: null, error: { code: -32602, message: `Unsupported MCP-Protocol-Version ${version}` } },
+      { jsonrpc: "2.0", id: null, error: { code: -32602, message: `Invalid MCP-Protocol-Version ${version}` } },
       { status: 400, headers: JSON_HEADERS },
     );
   }
