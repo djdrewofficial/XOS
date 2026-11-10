@@ -13,6 +13,7 @@ import {
   type TemplateRow,
 } from "@/lib/scheduledComms";
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
+import { setEventContractHolder } from "../eventMembership";
 import {
   addContact,
   addEventQuestion,
@@ -372,6 +373,20 @@ export const coverageTools: LiveTool[] = [
         throw new Error(error.message);
       }
       return { ok: true };
+    },
+  },
+  {
+    name: "events_set_contract_holder",
+    description: "Set or clear the Booking Agreement holder flag on one event membership, the same way Mark holder / Unset holder does on the event page (mcp_toggle_contract_holder).",
+    scopes: ["write.events"],
+    confirm: false,
+    inputSchema: obj({ event_id: UUID, event_client_id: UUID, contract_holder: { type: "boolean" } }, ["event_id", "event_client_id", "contract_holder"]),
+    async execute(args, ctx) {
+      return setEventContractHolder(adminOf(ctx), {
+        eventId: s(args, "event_id")!,
+        eventClientId: s(args, "event_client_id")!,
+        contractHolder: args.contract_holder === true,
+      });
     },
   },
   {
