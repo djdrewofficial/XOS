@@ -78,6 +78,15 @@ describe("mcp tool catalog", () => {
     assert.match(middleware, /p === "\/api\/mcp"/);
   });
 
+  it("negotiates protocol versions instead of rejecting unknown MCP-Protocol-Version dates", () => {
+    const route = read("src/app/api/mcp/route.ts");
+    const protocol = read("src/lib/mcp/protocol.ts");
+    assert.match(route, /isInvalidMcpProtocolVersionHeader/);
+    assert.doesNotMatch(route, /Unsupported MCP-Protocol-Version/);
+    assert.match(protocol, /negotiateProtocolVersion/);
+    assert.doesNotMatch(protocol, /Unsupported protocol version/);
+  });
+
   it("documents every tool and stores tokens as hashes", () => {
     const docs = read("docs/mcp.md");
     const migration = read("supabase/migrations/00219_mcp_service_access.sql");

@@ -8,9 +8,29 @@ import { McpAuthError, McpScopeError, type ToolContext, type ToolHandler, type T
 import { validateArgs } from "./validate";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const MCP_PROTOCOL_VERSION = "2025-06-18";
+/** Versions this server actually implements. Latest first. Do not list a
+    revision unless the wire format and capabilities for that revision are real. */
+export const MCP_SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"] as const;
+export const MCP_PROTOCOL_VERSION = MCP_SUPPORTED_PROTOCOL_VERSIONS[0];
 export const CONFIRM_TTL_MS = 10 * 60 * 1000;
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Echo a supported client request; otherwise offer the server's latest. Never
+    reject initialize for a version mismatch — the client decides whether to stay. */
+export function negotiateProtocolVersion(requested: unknown): string {
+  if (typeof requested === "string" && (MCP_SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)) {
+    return requested;
+  }
+  return MCP_PROTOCOL_VERSION;
+}
+
+/** MCP revisions are YYYY-MM-DD. Anything else in MCP-Protocol-Version is invalid
+    (HTTP 400). Unknown but well-formed dates are allowed so initialize can
+    negotiate and so a client that already agreed on a supported version is not
+    blocked by a newer preferred header. */
+export function isInvalidMcpProtocolVersionHeader(version: string): boolean {
+  return !/^\d{4}-\d{2}-\d{2}$/.test(version.trim());
+}
 
 export const DEFAULT_LIMITS = {
   windowMs: 60_000,
@@ -162,11 +182,8 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
 
   if (rpc.method === "initialize") {
     const requested = (rpc.params as { protocolVersion?: string } | undefined)?.protocolVersion;
-    if (requested && requested !== "2025-03-26" && requested !== MCP_PROTOCOL_VERSION) {
-      return finish(200, rpcError(rpc.id, -32602, `Unsupported protocol version ${requested}`), { status: "error", errorCode: "protocol" });
-    }
     return finish(200, rpcOk(rpc.id, {
-      protocolVersion: MCP_PROTOCOL_VERSION,
+      protocolVersion: negotiateProtocolVersion(requested),
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "xos-mcp", version: "1.0.0" },
       instructions:

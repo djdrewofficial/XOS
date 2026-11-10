@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { generateServiceToken } from "./mcp/crypto.ts";
-import { executeHumanApproved, handleMcp, toolText, CONFIRM_TTL_MS } from "./mcp/protocol.ts";
+import {
+  executeHumanApproved,
+  handleMcp,
+  toolText,
+  CONFIRM_TTL_MS,
+  MCP_PROTOCOL_VERSION,
+  MCP_SUPPORTED_PROTOCOL_VERSIONS,
+  negotiateProtocolVersion,
+  isInvalidMcpProtocolVersionHeader,
+} from "./mcp/protocol.ts";
 import { memoryStore } from "./mcp/store.ts";
 import type { LiveTool } from "./mcp/protocol.ts";
 import type { ServiceTokenRow } from "./mcp/auth.ts";
@@ -478,5 +487,57 @@ describe("mcp protocol", () => {
     );
     const saved = await store.getConfirmation(id);
     assert.equal(saved?.status, "uncertain");
+  });
+
+  it("negotiates initialize protocol versions without a version-mismatch error", async () => {
+    const { store, addToken } = memoryStore();
+    const { raw, row } = issued([]);
+    addToken(row);
+    const supported = new Set<string>(MCP_SUPPORTED_PROTOCOL_VERSIONS);
+
+    const cases: Array<{ requested: string; expected: string }> = [
+      { requested: "2025-11-25", expected: MCP_PROTOCOL_VERSION },
+      { requested: "2025-06-18", expected: "2025-06-18" },
+      { requested: "2025-03-26", expected: "2025-03-26" },
+      { requested: "2024-11-05", expected: MCP_PROTOCOL_VERSION },
+      { requested: "not-a-real-version", expected: MCP_PROTOCOL_VERSION },
+    ];
+
+    for (const item of cases) {
+      assert.equal(negotiateProtocolVersion(item.requested), item.expected);
+      const res = await handleMcp(store, [], {
+        body: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: item.requested, capabilities: {}, clientInfo: { name: "test", version: "0" } },
+        },
+        authorization: `Bearer ${raw}`,
+      });
+      assert.equal(res.status, 200, item.requested);
+      const body = res.body as { result?: { protocolVersion?: string }; error?: unknown };
+      assert.equal(body.error, undefined, item.requested);
+      assert.ok(body.result, item.requested);
+      assert.equal(body.result.protocolVersion, item.expected, item.requested);
+      assert.ok(supported.has(body.result.protocolVersion!), item.requested);
+    }
+
+    const unauth = await handleMcp(store, [], {
+      body: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "test", version: "0" } },
+      },
+      authorization: null,
+    });
+    assert.equal(unauth.status, 401);
+    assert.match(JSON.stringify(unauth.body), /Missing bearer token/);
+
+    assert.equal(isInvalidMcpProtocolVersionHeader("2025-06-18"), false);
+    assert.equal(isInvalidMcpProtocolVersionHeader("2025-11-25"), false);
+    assert.equal(isInvalidMcpProtocolVersionHeader("2025-03-26"), false);
+    assert.equal(isInvalidMcpProtocolVersionHeader("not-a-date"), true);
+    assert.equal(isInvalidMcpProtocolVersionHeader("1.0"), true);
   });
 });
