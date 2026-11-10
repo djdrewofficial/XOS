@@ -15,6 +15,14 @@ import {
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
 import { setEventContractHolder } from "../eventMembership";
 import {
+  INQUIRY_SOURCE_NAME_SCHEMA,
+  NEW_SOURCE_NAME_SCHEMA,
+  createOrReuseInquirySource,
+  findInquirySourceByNameInsensitive,
+  planEventInquirySource,
+  resolveEventInquirySource,
+} from "../inquirySource";
+import {
   addContact,
   addEventQuestion,
   addEventSection,
@@ -106,7 +114,7 @@ const MERGE_FIELDS = new Set([
 export const coverageTools: LiveTool[] = [
   {
     name: "events_create_onboarding",
-    description: "Create an event the way the new-event wizard does: clients, venue, package, add-ons, schedule, and staff, then run event-created automations for that event only.",
+    description: "Create an event the way the new-event wizard does: clients, venue, package, add-ons, schedule, and staff, then run event-created automations for that event only. List sources first with events_form_options, pick a match (inquiry_source_id or exact case-sensitive inquiry_source_name), and create a new one with new_source_name only if nothing matches.",
     scopes: ["write.events", "write.clients"],
     confirm: true,
     inputSchema: obj({
@@ -124,8 +132,9 @@ export const coverageTools: LiveTool[] = [
       custom_dates_json: STR,
       new_venue_json: STR,
       inquiry_source_id: UUID,
-      new_source_name: STR,
-      new_source_persist: { type: "boolean" },
+      inquiry_source_name: INQUIRY_SOURCE_NAME_SCHEMA,
+      new_source_name: NEW_SOURCE_NAME_SCHEMA,
+      new_source_persist: { type: "boolean", description: "When inserting a new source, store it as active (true) or one-time inactive (false)." },
       use_client_address: { type: "boolean" },
       client_address: STR,
       venue_room_id: UUID,
@@ -140,10 +149,13 @@ export const coverageTools: LiveTool[] = [
       contract_notes: STR,
     }, ["clients_json"]),
     async authorize(args, ctx) {
+      const admin = adminOf(ctx);
+      const newName = s(args, "new_source_name");
+      const willCreateSource = Boolean(newName) && !(await findInquirySourceByNameInsensitive(admin, newName!));
       const normalized = onboardingEffects({
         staff: json(args, "staff_json", []),
         newVenue: json(args, "new_venue_json", null),
-        newSourceName: s(args, "new_source_name"),
+        newSourceName: willCreateSource ? newName : null,
         packagePriceOverride: args.package_price_override,
         depositValue: args.deposit_value,
         travelFee: args.travel_fee,
@@ -152,15 +164,15 @@ export const coverageTools: LiveTool[] = [
       });
       const missing = normalized.scopes.filter((scope) => !ctx.token.scopes.includes(scope));
       if (missing.length) throw new McpScopeError(`This wizard needs ${missing.join(", ")}.`);
-      const { data, error } = await adminOf(ctx).from("booking_helpers").select("id, event_type_ids").eq("is_active", true).eq("auto_on_create", true);
+      const { data, error } = await admin.from("booking_helpers").select("id, event_type_ids").eq("is_active", true).eq("auto_on_create", true);
       if (error) throw new Error(error.message);
       const eventType = s(args, "event_type_id");
       for (const helper of data ?? []) {
         const types = (helper.event_type_ids as string[] | null) ?? [];
         if (types.length && eventType && !types.includes(eventType)) continue;
-        assertEffectScopes(ctx.token.scopes, await collectHelperEffects(adminOf(ctx), helper.id as string));
+        assertEffectScopes(ctx.token.scopes, await collectHelperEffects(admin, helper.id as string));
       }
-      const { data: notices, error: noticeError } = await adminOf(ctx).from("notification_settings").select("email, sms").eq("type_key", "event_created").eq("is_enabled", true);
+      const { data: notices, error: noticeError } = await admin.from("notification_settings").select("email, sms").eq("type_key", "event_created").eq("is_enabled", true);
       if (noticeError) throw new Error(noticeError.message);
       if ((notices ?? []).some((row) => row.email) && !ctx.token.scopes.includes("comms.email")) {
         throw new McpScopeError("Creating this event emails staff and needs comms.email.");
@@ -170,10 +182,14 @@ export const coverageTools: LiveTool[] = [
       }
     },
     async freeze(args, ctx) {
+      const admin = adminOf(ctx);
+      const source = await planEventInquirySource(admin, args);
+      const newName = s(args, "new_source_name");
+      const willCreateSource = source.provided && source.created;
       const normalized = onboardingEffects({
         staff: json(args, "staff_json", []),
         newVenue: json(args, "new_venue_json", null),
-        newSourceName: s(args, "new_source_name"),
+        newSourceName: willCreateSource ? newName : null,
         packagePriceOverride: args.package_price_override,
         depositValue: args.deposit_value,
         travelFee: args.travel_fee,
@@ -181,30 +197,41 @@ export const coverageTools: LiveTool[] = [
         addons: json(args, "addons_json", []),
       });
       const effects = [];
-      const { data } = await adminOf(ctx).from("booking_helpers").select("id, event_type_ids").eq("is_active", true).eq("auto_on_create", true);
+      const { data } = await admin.from("booking_helpers").select("id, event_type_ids").eq("is_active", true).eq("auto_on_create", true);
       const eventType = s(args, "event_type_id");
       for (const helper of data ?? []) {
         const types = (helper.event_type_ids as string[] | null) ?? [];
         if (types.length && eventType && !types.includes(eventType)) continue;
-        effects.push(await collectHelperEffects(adminOf(ctx), helper.id as string));
+        effects.push(await collectHelperEffects(admin, helper.id as string));
       }
-      return { normalized, clients: json<OnboardingClient[]>(args, "clients_json", []), automations: effects };
+      return {
+        normalized,
+        clients: json<OnboardingClient[]>(args, "clients_json", []),
+        automations: effects,
+        inquiry_source_id: source.provided && !source.created ? source.id : null,
+        inquiry_source_will_create: willCreateSource,
+        inquiry_source_new_name: willCreateSource ? newName : null,
+      };
     },
     async preview(args, ctx) {
       const frozen = await (coverageTools.find((tool) => tool.name === "events_create_onboarding")!.freeze!(args, ctx));
       return frozen;
     },
     async execute(args, ctx) {
-      const created = await createEventOnboardingRecord(adminOf(ctx), {
+      const admin = adminOf(ctx);
+      // Resolve/create in MCP first, then pass only the id into createEventCore so the UI
+      // auto-create path is not used from the connector.
+      const source = await resolveEventInquirySource(admin, args);
+      const created = await createEventOnboardingRecord(admin, {
         clients: json<OnboardingClient[]>(args, "clients_json", []),
         discounts: json(args, "discounts_json", []),
         addons: json(args, "addons_json", []),
         staff: onboardingEffects({ staff: json(args, "staff_json", []) }).staff,
         customDates: json(args, "custom_dates_json", []),
         newVenue: json(args, "new_venue_json", null),
-        inquirySourceId: s(args, "inquiry_source_id"),
-        newSourceName: s(args, "new_source_name"),
-        newSourcePersist: args.new_source_persist === true,
+        inquirySourceId: source.provided ? source.id : null,
+        newSourceName: null,
+        newSourcePersist: false,
         useClientAddress: args.use_client_address === true,
         clientAddress: s(args, "client_address"),
         venueId: s(args, "venue_id"),
@@ -228,9 +255,11 @@ export const coverageTools: LiveTool[] = [
       });
       return {
         id: created.id,
+        inquiry_source_id: source.provided ? source.id : null,
+        inquiry_source_created: source.provided ? source.created : false,
         delivery: "pending_second_approval",
         detail: "The event exists. Helper mail is held. Notifications and webhooks wait for events_release_held_sends. The outbox cron does not claim held rows.",
-        effects: await collectAutomationEffects(adminOf(ctx), created.id, "event_created"),
+        effects: await collectAutomationEffects(admin, created.id, "event_created"),
       };
     },
   },
@@ -799,20 +828,24 @@ export const coverageTools: LiveTool[] = [
   },
   {
     name: "sources_save",
-    description: "Create or rename an inquiry source.",
+    description: "Create or rename an inquiry source. List sources with events_form_options first, pick a match, and create a new one only if nothing matches. Creating without source_id reuses a trimmed case-insensitive name match instead of inserting a duplicate.",
     scopes: ["write.settings"],
     confirm: false,
     inputSchema: obj({ source_id: UUID, name: { type: "string", minLength: 1 }, is_active: { type: "boolean" } }, ["name"]),
     async execute(args, ctx) {
       const admin = adminOf(ctx);
-      const row = { name: s(args, "name"), is_active: bool(args, "is_active") ?? true };
+      const name = s(args, "name")!;
       if (s(args, "source_id")) {
+        const row = { name, is_active: bool(args, "is_active") ?? true };
         const { error } = await admin.from("inquiry_sources").update(row).eq("id", s(args, "source_id"));
         if (error) throw new Error(error.message);
-        return { id: s(args, "source_id") };
+        return { id: s(args, "source_id"), created: false };
       }
-      const created = await query(admin.from("inquiry_sources").insert(row).select("id").single()) as { id: string };
-      return { id: created.id };
+      const saved = await createOrReuseInquirySource(admin, {
+        name,
+        isActive: bool(args, "is_active") ?? true,
+      });
+      return { id: saved.id, created: saved.created, name: saved.name };
     },
   },
   {

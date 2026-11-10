@@ -26,7 +26,7 @@ import { staffCost, staffHours } from "@/lib/payroll";
 import { canonicalJson, sha256 } from "../crypto";
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
 import { addEventClientMembership } from "../eventMembership";
-import { insertEventWithInquirySource, updateEventWithInquirySource } from "../inquirySource";
+import { INQUIRY_SOURCE_NAME_SCHEMA, insertEventWithInquirySource, updateEventWithInquirySource } from "../inquirySource";
 import { McpScopeError, type ToolContext } from "../types";
 import type { LiveTool } from "../protocol";
 import type { JsonSchema } from "../validate";
@@ -266,7 +266,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_form_options",
-    description: "Reference lists for creating an event: types, statuses, sources, packages, add-ons, active staff.",
+    description: "Reference lists for creating an event: types, statuses, every inquiry source (id, name, is_active), packages, add-ons, active staff. List sources first, pick a match, and create a new one only if nothing matches.",
     scopes: ["read.events"],
     confirm: false,
     inputSchema: obj({}),
@@ -275,7 +275,7 @@ export const officeTools: LiveTool[] = [
       const [types, statuses, sources, packages, addons, employees] = await Promise.all([
         query(admin.from("event_types").select("id, name").eq("is_active", true).order("name")),
         query(admin.from("event_statuses").select("id, name").eq("is_active", true).order("sort_order")),
-        query(admin.from("inquiry_sources").select("id, name").eq("is_active", true).order("name")),
+        query(admin.from("inquiry_sources").select("id, name, is_active").order("name")),
         query(admin.from("packages").select(ctx.token.scopes.includes("read.catalog") ? "id, name, default_price" : "id, name").eq("is_active", true).order("display_order")),
         query(admin.from("addons").select(ctx.token.scopes.includes("read.catalog") ? "id, name, default_price" : "id, name").eq("is_active", true).order("display_order")),
         query(admin.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name")),
@@ -285,7 +285,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_create",
-    description: "Create an event for an existing client. Applies the package's date price and default add-ons, the same way the simple Add Event form does. Optional inquiry_source_id or exact inquiry_source_name sets the lead source (must already exist). Does not run event-created automations; use events_set_status or helpers_run when you mean to message the client.",
+    description: "Create an event for an existing client. Applies the package's date price and default add-ons, the same way the simple Add Event form does. List sources with events_form_options first, pick a match (inquiry_source_id or exact case-sensitive inquiry_source_name), and create a new one with sources_save only if nothing matches. Does not run event-created automations; use events_set_status or helpers_run when you mean to message the client.",
     scopes: ["write.events"],
     confirm: false,
     inputSchema: obj({
@@ -298,7 +298,7 @@ export const officeTools: LiveTool[] = [
       package_id: UUID,
       guest_count: { type: "integer", minimum: 0 },
       inquiry_source_id: UUID,
-      inquiry_source_name: { type: "string", minLength: 1 },
+      inquiry_source_name: INQUIRY_SOURCE_NAME_SCHEMA,
     }, ["client_id", "name"]),
     async execute(args, ctx) {
       const admin = adminOf(ctx);
@@ -322,7 +322,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_update",
-    description: "Update core event fields: name, date, times, guest count, venue, inquiry source (id or exact name). Status is separate (events_set_status) because a status change can message the client. Booking-section updates also accept inquiry_source_id via events_record.",
+    description: "Update core event fields: name, date, times, guest count, venue, inquiry source (id or exact, case-sensitive name). List sources with events_form_options first, pick a match, and create a new one with sources_save only if nothing matches. Status is separate (events_set_status) because a status change can message the client. Booking-section updates also accept inquiry_source_id via events_record.",
     scopes: ["write.events"],
     confirm: false,
     inputSchema: obj({
@@ -336,7 +336,7 @@ export const officeTools: LiveTool[] = [
       venue_id: UUID,
       internal_notes: { type: "string" },
       inquiry_source_id: UUID,
-      inquiry_source_name: { type: "string", minLength: 1 },
+      inquiry_source_name: INQUIRY_SOURCE_NAME_SCHEMA,
     }, ["event_id"]),
     async execute(args, ctx) {
       const patch: Record<string, unknown> = {};
