@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getMe } from "@/lib/auth";
+import { formatMcpScopeLabels } from "@/lib/mcp/scopes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ApprovalCard, MintForm, RevokeButton, RotateForm } from "./McpAdmin";
 
@@ -85,7 +86,7 @@ export default async function McpSettingsPage() {
                   <tr key={token.id} className="border-t border-zinc-200">
                     <td className="px-3 py-2">{token.name}</td>
                     <td className="px-3 py-2 font-mono text-xs">{token.token_prefix}…</td>
-                    <td className="px-3 py-2 text-xs">{(token.scopes ?? []).join(", ") || "—"}</td>
+                    <td className="px-3 py-2 text-xs">{formatMcpScopeLabels(token.scopes ?? [])}</td>
                     <td className="px-3 py-2">{token.last_used_at ? new Date(token.last_used_at).toLocaleString() : "Never"}</td>
                     <td className="px-3 py-2">{statusLabel(token)}</td>
                     <td className="px-3 py-2">{token.revoked_at ? null : <RevokeButton id={token.id} />}</td>

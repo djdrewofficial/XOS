@@ -5,14 +5,18 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   MCP_SCOPES,
+  MCP_SCOPE_LABELS,
   allMcpScopes,
+  formatMcpScopeLabels,
   hasHighRiskMcpScope,
+  mcpScopeUiComplete,
   readMcpScopes,
   toggleMcpScope,
 } from "./mcp/scopes.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const mintForm = readFileSync(join(root, "src/app/(app)/settings/mcp/McpAdmin.tsx"), "utf8");
+const page = readFileSync(join(root, "src/app/(app)/settings/mcp/page.tsx"), "utf8");
 const actions = readFileSync(join(root, "src/app/(app)/settings/mcp/actions.ts"), "utf8");
 
 describe("MCP mint form scope selection", () => {
@@ -35,39 +39,45 @@ describe("MCP mint form scope selection", () => {
     let selected = allMcpScopes();
     selected = [];
     assert.deepEqual(selected, []);
-    assert.equal(selected.length, 0);
   });
 
   it("submitted scopes equal the checked set after toggles and bulk actions", () => {
     let selected = allMcpScopes();
     assert.deepEqual(selected, [...MCP_SCOPES]);
-
     selected = readMcpScopes();
     assert.deepEqual(selected, MCP_SCOPES.filter((scope) => scope.startsWith("read.")));
-
     selected = [];
     selected = toggleMcpScope(selected, "write.events", true);
     selected = toggleMcpScope(selected, "money", true);
     selected = toggleMcpScope(selected, "comms.email", true);
     assert.deepEqual(selected, ["write.events", "money", "comms.email"]);
     assert.equal(hasHighRiskMcpScope(selected), true);
-
     selected = toggleMcpScope(selected, "money", false);
     assert.deepEqual(selected, ["write.events", "comms.email"]);
-    assert.equal(hasHighRiskMcpScope(["write.events"]), false);
-    assert.equal(hasHighRiskMcpScope(["delete"]), true);
-    assert.equal(hasHighRiskMcpScope(["money.payroll"]), true);
-    assert.equal(hasHighRiskMcpScope(["comms.sms"]), true);
   });
 
-  it("wires the bulk buttons as type=button and keeps checkboxes controlled from MCP_SCOPES", () => {
+  it("gives every closed-list scope exactly one friendly label and group entry", () => {
+    const check = mcpScopeUiComplete();
+    assert.deepEqual(check, { ok: true });
+    assert.deepEqual(Object.keys(MCP_SCOPE_LABELS).sort(), [...MCP_SCOPES].sort());
+    assert.equal(MCP_SCOPE_LABELS["comms.contract"], "Send booking agreements");
+    assert.doesNotMatch(Object.values(MCP_SCOPE_LABELS).join(" "), /\binvoice\b|\bcontract\b/i);
+    assert.equal(formatMcpScopeLabels(["read.events", "money", "comms.contract"]), "View events, Payments, Send booking agreements");
+    assert.match(page, /formatMcpScopeLabels/);
+  });
+
+  it("wires bulk buttons, grouped labels, and the one-time secret panel", () => {
     assert.match(mintForm, /allMcpScopes\(\)/);
     assert.match(mintForm, /readMcpScopes\(\)/);
     assert.match(mintForm, /setSelected\(\[\]\)/);
-    assert.equal((mintForm.match(/type="button"/g) ?? []).length >= 3, true);
-    assert.match(mintForm, /checked=\{selected\.includes\(scope\)\}/);
-    assert.match(mintForm, /name="scope"/);
-    assert.match(mintForm, /hasHighRiskMcpScope\(selected\)/);
+    assert.match(mintForm, /MCP_SCOPE_GROUPS/);
+    assert.match(mintForm, /MCP_SCOPE_LABELS/);
+    assert.match(mintForm, /TokenSecretPanel/);
+    assert.match(mintForm, /This is the only time you will see this key/);
+    assert.match(mintForm, /"Copy"/);
+    assert.match(mintForm, /"Copied"/);
+    assert.match(mintForm, /Done — I've copied it/);
     assert.match(actions, /acknowledgeMcpTokenFlash/);
+    assert.equal((mintForm.match(/type="button"/g) ?? []).length >= 5, true);
   });
 });

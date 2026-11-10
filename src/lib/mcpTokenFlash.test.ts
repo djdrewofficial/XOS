@@ -50,7 +50,12 @@ describe("one-time MCP token flash", () => {
     // Refreshing before returning the secret remounts MintForm and drops useActionState.
     assert.doesNotMatch(actions, /revalidatePath\("\/settings\/mcp"\);\s*return \{ token:/);
     assert.match(actions, /acknowledgeMcpTokenFlash/);
-    assert.match(admin, /I've copied it/);
+    assert.match(admin, /TokenSecretPanel/);
+    assert.match(admin, /This is the only time you will see this key/);
+    assert.match(admin, /"Copy"/);
+    assert.match(admin, /"Copied"/);
+    assert.match(admin, /Done — I've copied it/);
+    assert.match(admin, /navigator\.clipboard\.writeText/);
   });
 
   it("revokes the inserted row when post-insert work fails, so a secretless token is not left active", async () => {
