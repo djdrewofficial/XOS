@@ -12,7 +12,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildScheduleRows, parseSchedulePlan, type SchedulePlan } from "@/lib/paymentSchedule";
 import { loadEventBundle } from "@/lib/documentRender";
 import { buildEventName, type NamingClient } from "@/lib/eventName";
-import { runAutomations } from "@/lib/automations";
 import { findOrCreateClient } from "@/lib/clients";
 import { assignAddonSections } from "@/lib/planning";
 
@@ -263,9 +262,16 @@ export function eventInputFromForm(formData: FormData): EventCreateInput {
   };
 }
 
+export type EventCreateOptions = {
+  /** Passed to the event_created automations. "hold" queues their mail as held for a second approval. */
+  drain?: "all" | "event" | "hold";
+  /** Delete the new event and throw when a child insert fails, instead of leaving a partial event. */
+  cleanupOnError?: boolean;
+};
+
 /** Create the event + everything hanging off it. Returns the new event id.
     Throws Error(message) on a validation / insert failure. */
-export async function createEventCore(supabase: SupabaseClient, input: EventCreateInput): Promise<string> {
+export async function createEventCore(supabase: SupabaseClient, input: EventCreateInput, options: EventCreateOptions = {}): Promise<string> {
   const clients = input.clients;
 
   // Required-field guard on the primary client (backstop for the form's own
@@ -420,12 +426,17 @@ export async function createEventCore(supabase: SupabaseClient, input: EventCrea
     .single();
   if (evErr) throw new Error(evErr.message);
   const eventId = event.id as string;
+  const check = async (label: string, result: { error: { message: string } | null }) => {
+    if (!options.cleanupOnError || !result.error) return;
+    await supabase.from("events").delete().eq("id", eventId);
+    throw new Error(`${label}: ${result.error.message}`);
+  };
 
   // 6) event_clients
   if (resolved.length) {
-    await supabase.from("event_clients").insert(
+    await check("Saving the clients", await supabase.from("event_clients").insert(
       resolved.map((r) => ({ event_id: eventId, client_id: r.client_id, role: r.role ?? "Client", is_primary: r.is_primary, is_contract_holder: r.is_contract_holder }))
-    );
+    ));
   }
 
   // 7) package selection (auto add-ons/equipment + price/deposit defaults)
@@ -442,12 +453,12 @@ export async function createEventCore(supabase: SupabaseClient, input: EventCrea
       quantity: a.quantity && a.quantity > 0 ? a.quantity : 1,
       price_override: a.price_override ?? null,
     }));
-  if (addonRows.length) await supabase.from("event_addons").insert(addonRows);
+  if (addonRows.length) await check("Saving the add-ons", await supabase.from("event_addons").insert(addonRows));
 
   // 9) contract notes (internal notes already on the event row)
   const contractNotes = input.contract_notes;
   if (contractNotes) {
-    await supabase.from("event_notes").insert({ event_id: eventId, body: contractNotes, kind: "contract" });
+    await check("Saving the note", await supabase.from("event_notes").insert({ event_id: eventId, body: contractNotes, kind: "contract" }));
   }
 
   // 10) custom / important dates
@@ -455,7 +466,7 @@ export async function createEventCore(supabase: SupabaseClient, input: EventCrea
     .filter((d) => d.definition_id && d.value)
     .map((d) => ({ event_id: eventId, definition_id: d.definition_id, value: d.value }));
   if (dateRows.length) {
-    await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" });
+    await check("Saving the dates", await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" }));
   }
 
   // 11) payment schedule — full payment due OR deposit + split
@@ -487,17 +498,19 @@ export async function createEventCore(supabase: SupabaseClient, input: EventCrea
       plan: schedulePlan,
       today: new Date().toISOString().slice(0, 10),
     }).map((r) => ({ ...r, event_id: eventId }));
-    await supabase.from("scheduled_payments").insert(rows);
+    await check("Saving the schedule", await supabase.from("scheduled_payments").insert(rows));
   }
 
   // 12) staff (optional — TBD by default)
   const staffRows = staff
     .filter((s) => s.employee_id)
     .map((s) => ({ event_id: eventId, employee_id: s.employee_id, role: s.role || "DJ", flat_wage: s.flat_wage ?? 0 }));
-  if (staffRows.length) await supabase.from("event_staff").insert(staffRows);
+  if (staffRows.length) await check("Saving the staff", await supabase.from("event_staff").insert(staffRows));
 
   // fire any "event created" automations (configured per event type)
-  await runAutomations(supabase, eventId, "event_created");
+  // Loaded here so the validation above can run without the mail stack.
+  const { runAutomations } = await import("@/lib/automations");
+  await runAutomations(supabase, eventId, "event_created", options.drain ? { drain: options.drain } : {});
 
   return eventId;
 }

@@ -11,6 +11,7 @@ import { syncClientLoginPhone } from "@/lib/loginPhoneAdmin";
 import { flashPhoneNotice } from "@/lib/phoneNotice";
 import { recordSmsOptSignal } from "@/lib/smsOptOut";
 import { findOrCreateClient } from "@/lib/clients";
+import { anonymizeClientRecord } from "@/lib/anonymizeClient";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -96,50 +97,10 @@ export async function setClientSmsConsent(id: string, consented: boolean): Promi
 export async function anonymizeClient(id: string): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient();
   await requireModule("clients", "edit", { mode: "throw", supabase });
-  const admin = createAdminClient();
-  const { data: before } = await admin.from("clients").select("cell_phone").eq("id", id).maybeSingle();
-
-  const { error: upErr } = await admin
-    .from("clients")
-    .update({
-      first_name: "Deleted",
-      last_name: "Client",
-      organization: null,
-      cell_phone: null,
-      email: null,
-      mailing_address: null,
-      anniversary: null,
-      notes: null,
-      instagram: null,
-      tiktok: null,
-      authorized_rep_name: null,
-      authorized_rep_title: null,
-      authorized_rep_email: null,
-      authorized_rep_phone: null,
-      anonymized_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id);
-  if (upErr) return { ok: false, error: upErr.message };
-
-  // Drop the sign-in number before the login is removed. If delete fails, the
-  // number is still cleared when it actually changed from a real phone to empty.
-  await syncClientLoginPhone(id, null, before?.cell_phone ?? null);
-
-  // Remove their portal login. Deleting the auth user cascades the accounts row
-  // (accounts.auth_user_id references auth.users on delete cascade).
-  const { data: acct } = await admin
-    .from("accounts")
-    .select("auth_user_id")
-    .eq("account_type", "client")
-    .eq("client_id", id)
-    .maybeSingle();
-  if (acct?.auth_user_id) {
-    try {
-      await admin.auth.admin.deleteUser(acct.auth_user_id as string);
-    } catch {
-      /* best-effort — the PII is already scrubbed; a stale auth row can be cleaned up manually */
-    }
+  try {
+    await anonymizeClientRecord(createAdminClient(), id);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Could not anonymize this client." };
   }
 
   revalidatePath(`/clients/${id}`);

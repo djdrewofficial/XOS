@@ -1,12 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import {
-  runBookingHelper,
-  getHelperSmsPrompts,
-  type HelperSmsPrompt,
-  type HelperSmsOverride,
-} from "@/app/(app)/events/actions";
+import { runBookingHelper, getHelperSmsPrompts } from "@/app/(app)/events/actions";
+import type { HelperSmsOverride, HelperSmsPrompt } from "@/lib/bookingHelperRun";
 
 type Helper = {
   id: string;

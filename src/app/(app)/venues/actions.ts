@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModule } from "@/lib/auth";
 
 function clean(v: FormDataEntryValue | null): string | null {
@@ -83,26 +84,19 @@ export async function mergeVenues(
   if (!losers.length) return;
   const supabase = await createClient();
   await requireModule("venues", "edit", { mode: "throw", supabase });
-
-  // 1) reassign all references loser -> survivor (this includes venue_djep_map,
-  //    which is how the survivor inherits the losers' DJEP ids).
-  for (const table of ["events", "inquiry_sources", "venue_contacts", "venue_rooms", "venue_djep_map"]) {
-  await requireModule("venues", "edit", { mode: "throw" });
-    const { error } = await supabase.from(table).update({ venue_id: survivorId }).in("venue_id", losers);
-    if (error) throw new Error(`${table}: ${error.message}`);
-  }
-
-  // 2) apply the chosen "keep" values to the survivor (whitelisted columns only)
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(fields ?? {})) if (MERGE_FIELDS.has(k)) patch[k] = v;
-  if (Object.keys(patch).length) {
-    const { error } = await supabase.from("venues").update(patch).eq("id", survivorId);
-    if (error) throw new Error(error.message);
+  const { error } = await createAdminClient().rpc("mcp_merge_venues", {
+    p_survivor: survivorId,
+    p_losers: losers,
+    p_fields: patch,
+  });
+  if (error) {
+    if (/mcp_merge_venues|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Merging venues needs migration 00221. Nothing was changed.");
+    }
+    throw new Error(error.message);
   }
-
-  // 3) delete the now-detached losers
-  const { error: delErr } = await supabase.from("venues").delete().in("id", losers);
-  if (delErr) throw new Error(delErr.message);
 
   revalidatePath("/venues");
   revalidatePath(`/venues/${survivorId}`);

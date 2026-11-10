@@ -19,6 +19,15 @@ export type NotifyContext = {
   statusId?: string | null;
   // optional explicit recipients (e.g. "the staffer who was just assigned")
   employeeIds?: string[];
+  /** Insert email and SMS as held and return bell/push plans instead of delivering them. */
+  hold?: boolean;
+};
+
+export type HeldNotice = {
+  emailIds: string[];
+  smsIds: string[];
+  bells: { employeeId: string; title: string; body: string | null; href: string | null; typeKey: string }[];
+  pushes: { employeeIds: string[]; tiers: string[]; title: string; body: string | null; href: string | null }[];
 };
 
 type TypeRow = {
@@ -52,21 +61,24 @@ export async function dispatchNotification(
   supabase: SupabaseClient,
   typeKey: string,
   ctx: NotifyContext = {}
-): Promise<void> {
+): Promise<HeldNotice> {
+  if (ctx.hold) return dispatchInner(supabase, typeKey, ctx);
   try {
     await dispatchInner(supabase, typeKey, ctx);
   } catch (err) {
     console.error(`[notify] dispatch ${typeKey} failed`, err);
   }
+  return { emailIds: [], smsIds: [], bells: [], pushes: [] };
 }
 
-async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: NotifyContext): Promise<void> {
+async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: NotifyContext): Promise<HeldNotice> {
   const { data: type } = await supabase
     .from("notification_types")
     .select("key, is_client_facing, staff_title_tpl, staff_body_tpl, href_tpl, email_template_id, sms_template_id, is_active")
     .eq("key", typeKey)
     .maybeSingle();
-  if (!type || !(type as TypeRow).is_active) return;
+  const empty: HeldNotice = { emailIds: [], smsIds: [], bells: [], pushes: [] };
+  if (!type || !(type as TypeRow).is_active) return empty;
   const t = type as TypeRow;
 
   const { data: settings } = await supabase
@@ -75,7 +87,7 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
     .eq("type_key", typeKey)
     .eq("is_enabled", true);
   const rows = (settings ?? []) as SettingRow[];
-  if (rows.length === 0) return;
+  if (rows.length === 0) return empty;
 
   // Resolve each audience to employees, unioning channels per employee.
   const perEmployee = new Map<string, { emp: EmployeeLite; ch: Channels }>();
@@ -129,7 +141,7 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
     }
   }
 
-  if (perEmployee.size === 0) return;
+  if (perEmployee.size === 0) return empty;
 
   // Render staff copy once (merge tags need an event). Falls back to raw text.
   const title = await render(supabase, ctx.eventId, t.staff_title_tpl) ?? typeKey;
@@ -145,8 +157,13 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
   // agreement_signed — its legacy office bell is suppressed by the notif_types
   // allowlist) is owned by the dispatcher. Inserts go through the SECURITY
   // DEFINER create_targeted_notification so they succeed from any RLS context.
+  const held: HeldNotice = { emailIds: [], smsIds: [], bells: [], pushes: [] };
   const LEGACY_INAPP = new Set(["payment_received", "time_off_request"]);
-  if (!LEGACY_INAPP.has(typeKey)) {
+  if (ctx.hold) {
+    for (const r of recipients.filter((r) => r.ch.in_app)) {
+      held.bells.push({ employeeId: r.emp.id, title, body: body ?? null, href, typeKey });
+    }
+  } else if (!LEGACY_INAPP.has(typeKey)) {
     // create_targeted_notification is SECURITY DEFINER and no longer executable by
     // the `authenticated` role (migration 00166); dispatchNotification runs from
     // staff actions and admin/webhook contexts, so call it via the service-role
@@ -169,7 +186,9 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
   // owner/unlinked-staff devices (no employee_id) via device_tokens.effective_tier.
   const pushEmpIds = recipients.filter((r) => r.ch.push).map((r) => r.emp.id);
   const pushTiers = rows.filter((r) => STATIC_ROLES.has(r.audience) && r.push).map((r) => r.audience);
-  if (pushEmpIds.length || pushTiers.length) {
+  if (ctx.hold) {
+    if (pushEmpIds.length || pushTiers.length) held.pushes.push({ employeeIds: pushEmpIds, tiers: pushTiers, title, body: body ?? null, href });
+  } else if (pushEmpIds.length || pushTiers.length) {
     await sendPush(supabase, pushEmpIds, pushTiers, { title, body: body ?? undefined, href });
   }
 
@@ -186,9 +205,11 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
       reply_to: sender?.reply_to ?? null,
       subject: title,
       body_html: `<p>${escapeHtml(body ?? title)}</p>`,
-      status: "queued",
+      status: ctx.hold ? "held" : "queued",
     }));
-    await supabase.from("email_log").insert(emailRows);
+    const inserted = await supabase.from("email_log").insert(emailRows).select("id");
+    if (ctx.hold && inserted.error) throw new Error(inserted.error.message);
+    held.emailIds = ((inserted.data ?? []) as { id: string }[]).map((row) => row.id);
   }
 
   // ---- SMS (staff alert) ----
@@ -200,10 +221,13 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
       client_id: null,
       to_number: r.emp.phone,
       body: smsBody,
-      status: "queued",
+      status: ctx.hold ? "held" : "queued",
     }));
-    await supabase.from("sms_log").insert(smsRows);
+    const inserted = await supabase.from("sms_log").insert(smsRows).select("id");
+    if (ctx.hold && inserted.error) throw new Error(inserted.error.message);
+    held.smsIds = ((inserted.data ?? []) as { id: string }[]).map((row) => row.id);
   }
+  return held;
 }
 
 function mergeRecipient(

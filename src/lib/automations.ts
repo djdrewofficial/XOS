@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { processOutbox } from "@/lib/mailgun";
@@ -35,7 +36,7 @@ export async function runAutomations(
   supabase: SupabaseClient,
   eventId: string,
   trigger: AutomationTrigger,
-  opts: { statusId?: string } = {}
+  opts: { statusId?: string; drain?: "all" | "event" | "hold" } = {}
 ): Promise<void> {
   const { data: ev } = await supabase
     .from("events")
@@ -56,7 +57,18 @@ export async function runAutomations(
     status_changed: "event_status_changed",
   };
   const notifType = NOTIF_FOR_TRIGGER[trigger];
-  if (notifType) {
+  const holdAdmin = opts.drain === "hold" ? createAdminClient() : null;
+  if (notifType && opts.drain === "hold") {
+    const notice = await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId, hold: true });
+    const effects = [
+      ...notice.bells.map((bell) => ({ event_id: eventId, kind: "bell", payload: bell, payload_sha: createHash("sha256").update(JSON.stringify(bell)).digest("hex"), status: "held" })),
+      ...notice.pushes.map((push) => ({ event_id: eventId, kind: "push", payload: push, payload_sha: createHash("sha256").update(JSON.stringify(push)).digest("hex"), status: "held" })),
+    ];
+    if (effects.length) {
+      const { error } = await holdAdmin!.from("mcp_held_effects").insert(effects);
+      if (error) throw new Error(`Holding the staff notification needs migration 00223. Nothing was sent. ${error.message}`);
+    }
+  } else if (notifType) {
     await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId });
   }
 
@@ -89,6 +101,7 @@ export async function runAutomations(
   if (matched.length === 0) return;
 
   let ran = false;
+  const queuedSince = new Date().toISOString();
   // A matched helper can assign a planning template. Apply once: only reseed when
   // it actually changes the event's template (so it never wipes planning twice).
   const desiredTemplate = matched.find((h) => h.planning_template_id)?.planning_template_id ?? null;
@@ -110,12 +123,33 @@ export async function runAutomations(
       // 2-arg form: this is an automation, so queued mail stays subject to
       // events.comms_paused. run_booking_helper enforces its own visibility +
       // one-shot guards (raises if it shouldn't run) — skip those quietly.
-      await admin.rpc("run_booking_helper", { p_helper_id: h.id, p_event_id: eventId });
-    } catch {
+      const { error } = opts.drain === "hold"
+        ? await admin.rpc("mcp_run_helper_held", { p_helper_id: h.id, p_event_id: eventId })
+        : await admin.rpc("run_booking_helper", { p_helper_id: h.id, p_event_id: eventId });
+      if (error) {
+        if (opts.drain === "hold" && /schema cache|could not find|does not exist/i.test(error.message)) {
+          throw new Error("Holding onboarding mail needs migration 00222. Nothing was sent.");
+        }
+        if (!/already|visibility|one-shot|should not/i.test(error.message)) throw new Error(error.message);
+        continue;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (opts.drain === "hold" && /schema cache|could not find|does not exist|00222/i.test(message)) throw err;
       continue;
     }
     ran = true;
-    if (h.webhook_url) {
+    if (opts.drain === "hold" && h.webhook_url) {
+      const webhookPayload = { helper_id: h.id, webhook_url: h.webhook_url, trigger, event_id: eventId };
+      const { error: effectError } = await admin.from("mcp_held_effects").insert({
+        event_id: eventId,
+        kind: "webhook",
+        payload: webhookPayload,
+        payload_sha: createHash("sha256").update(JSON.stringify(webhookPayload)).digest("hex"),
+        status: "held",
+      });
+      if (effectError) throw new Error(`Holding the webhook needs migration 00223. Nothing was sent. ${effectError.message}`);
+    } else if (h.webhook_url) {
       try {
         await fireWebhook(supabase, h.webhook_url, eventId, trigger);
       } catch {
@@ -124,11 +158,17 @@ export async function runAutomations(
     }
   }
 
-  // deliver anything the helpers queued (emails/SMS)
-  if (ran) {
+  // deliver anything the helpers queued (emails/SMS). "event" sends only rows
+  // queued for this event after this call started, not the whole outbox.
+  if (ran && opts.drain !== "hold") {
     try {
-      await processOutbox(supabase);
-      await processSmsOutbox(supabase);
+      if (opts.drain === "event") {
+        const { drainEventOutbox } = await import("@/lib/scopedOutbox");
+        await drainEventOutbox(admin, eventId, queuedSince);
+      } else {
+        await processOutbox(supabase);
+        await processSmsOutbox(supabase);
+      }
     } catch {
       /* the outbox cron retries */
     }
@@ -139,6 +179,21 @@ type ClientLite = { first_name?: string; last_name?: string; email?: string | nu
 
 /** Fire a single helper's webhook (used when a helper is run manually — handy
     for testing a Zap from the event page without signing a contract). */
+export async function postApprovedWebhook(url: string, payload: Record<string, unknown>): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("The approved webhook is not a URL.");
+  }
+  if (parsed.protocol !== "https:") throw new Error("The approved webhook must be https.");
+  if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.0\.0\.0)/.test(parsed.hostname)) throw new Error("The approved webhook host is not public.");
+  const body = JSON.stringify(payload);
+  if (body.includes("pay_token")) throw new Error("The approved webhook payload must not include a pay token.");
+  const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body, redirect: "error" });
+  if (!response.ok) throw new Error(`Webhook delivery failed (${response.status}).`);
+}
+
 export async function fireHelperWebhook(supabase: SupabaseClient, helperId: string, eventId: string): Promise<void> {
   const { data: h } = await supabase.from("booking_helpers").select("webhook_url").eq("id", helperId).maybeSingle();
   const url = (h?.webhook_url as string | null) ?? null;

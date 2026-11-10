@@ -93,7 +93,7 @@ export async function middleware(request: NextRequest) {
       p.startsWith("/api/places") || p.startsWith("/api/mobile/") ||
       p.startsWith("/api/music/") || p.startsWith("/api/cron/") ||
       p.startsWith("/api/unsubscribe/") || p.startsWith("/api/fireflies/") ||
-      p.startsWith("/api/comms-delivery");
+      p.startsWith("/api/comms-delivery") || p === "/api/mcp";
     if (!machineEndpoint && request.headers.get("x-origin-verify") !== originSecret) {
       return new NextResponse("Forbidden", { status: 403 });
     }
@@ -210,6 +210,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/cron/") ||
     pathname.startsWith("/api/unsubscribe/") ||
     pathname.startsWith("/api/comms-delivery") ||
+    pathname === "/api/mcp" ||
     pathname === "/api/passkey/authenticate/options" ||
     pathname === "/api/passkey/authenticate/verify";
   // The mobile reset bridge is public for a signed-out visit. These headers

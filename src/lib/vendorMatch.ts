@@ -26,15 +26,17 @@ function topCandidates(name: string, all: Candidate[], n = 40): Candidate[] {
   return scored.filter((s) => s.score > 0).sort((a, b) => b.score - a.score).slice(0, n).map((s) => s.c);
 }
 
-export async function runVendorMatching(admin: SupabaseClient, limit = 50): Promise<{ processed: number; suggestions: number }> {
+export async function runVendorMatching(admin: SupabaseClient, limit = 50, onlyIds?: string[]): Promise<{ processed: number; suggestions: number }> {
   if (!isOpenAIConfigured()) return { processed: 0, suggestions: 0 };
 
-  const { data: pending } = await admin
+  let pendingQuery = admin
     .from("event_vendors")
     .select("id, event_id, vendor_id, contact_name, contact_phone, contact_email, vendor:vendors(company_name, category)")
     .is("match_checked_at", null)
     .order("created_at", { ascending: true })
     .limit(limit);
+  if (onlyIds) pendingQuery = pendingQuery.in("id", onlyIds);
+  const { data: pending } = await pendingQuery;
   if (!pending?.length) return { processed: 0, suggestions: 0 };
 
   const { data: dir } = await admin.from("vendors").select("id, company_name, category");

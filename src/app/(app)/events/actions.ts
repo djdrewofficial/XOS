@@ -5,19 +5,26 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getOrCreateShortLink } from "@/lib/shortLinks";
-import { processOutbox } from "@/lib/mailgun";
-import { processSmsOutbox } from "@/lib/highlevel";
 import { parseSchedulePlan } from "@/lib/paymentSchedule";
-import { writeSchedulePreservingPaid } from "@/lib/scheduleWrite";
 import { loadEventBundle } from "@/lib/documentRender";
 import { autoNameEvent } from "@/lib/eventName";
-import { runAutomations, fireHelperWebhook } from "@/lib/automations";
+import { runAutomations } from "@/lib/automations";
+import { executeBookingHelper, previewHelperSms, type HelperSmsOverride, type HelperSmsPrompt } from "@/lib/bookingHelperRun";
+import {
+  addScheduledPaymentPlan,
+  confirmPaymentRecord,
+  recordPayment,
+  restorePaymentRecord,
+  saveRemainingScheduleRows,
+  softRemovePayment,
+  updatePaymentRecord,
+} from "@/lib/paymentOps";
+import { archiveEventRecord, assertEventDeletable, unarchiveEventRecord } from "@/lib/eventLifecycle";
+import { updateEventFinancialsRecord } from "@/lib/eventFinancials";
 import { dispatchNotification } from "@/lib/notify";
 import { findOrCreateClient } from "@/lib/clients";
 import { reseedEventPlanning, assignAddonSections } from "@/lib/planning";
 import { requireModule, getMe } from "@/lib/auth";
-import { helperAllowedForEventType, helperAllowedForRole } from "@/lib/helperAccess";
-import { splitSchedule, type SchedRow } from "@/lib/scheduleLock";
 import { inviteClientToXos } from "@/lib/accounts";
 import { requireOffice, requireEventTouch } from "@/lib/fieldStaff";
 import { applyPackageSelection, assignAddonEquipment, createEventCore, eventInputFromForm } from "@/lib/eventCreate";
@@ -277,22 +284,14 @@ export async function addPayment(eventId: string, formData: FormData) {
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const supabase = await createClient();
-  // num() coerces empty/non-numeric input to 0 and passes negatives through, so
-  // guard explicitly: a payment must be a real, positive amount. !(amount > 0)
-  // rejects 0, negatives, and NaN in one check. (The DB CHECK backstops every
-  // insert path; this gives staff a clear message.)
-  const amount = num(formData.get("amount"));
-  if (!(amount > 0)) throw new Error("Enter a payment amount greater than $0.");
-  const { error } = await supabase.from("payments").insert({
-    event_id: eventId,
-    amount,
+  await recordPayment(supabase, {
+    eventId,
+    amount: num(formData.get("amount")),
     method: clean(formData.get("method")) ?? "other",
     reason: clean(formData.get("reason")),
-    paid_at: clean(formData.get("paid_at")) ?? new Date().toISOString(),
+    paidAt: clean(formData.get("paid_at")),
     notes: clean(formData.get("notes")),
   });
-  if (error) throw new Error(error.message);
-  await runAutomations(supabase, eventId, "payment_received");
   revalidateMoney(eventId);
 }
 
@@ -302,27 +301,16 @@ export async function updatePayment(paymentId: string, eventId: string, formData
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const supabase = await createClient();
-  const { data: existing } = await supabase
-    .from("payments")
-    .select("id, paypal_capture_id")
-    .eq("id", paymentId)
-    .eq("event_id", eventId)
-    .maybeSingle();
-  if (!existing) throw new Error("Payment not found.");
-  const update: Record<string, unknown> = {
+  const amountRaw = clean(formData.get("amount"));
+  await updatePaymentRecord(supabase, {
+    paymentId,
+    eventId,
+    amount: amountRaw == null ? null : num(formData.get("amount")),
     method: clean(formData.get("method")) ?? "other",
     reason: clean(formData.get("reason")),
+    paidAt: clean(formData.get("paid_at")),
     notes: clean(formData.get("notes")),
-  };
-  const paidAt = clean(formData.get("paid_at"));
-  if (paidAt) update.paid_at = paidAt;
-  if (!existing.paypal_capture_id) {
-    const amount = num(formData.get("amount"));
-    if (!(amount > 0)) throw new Error("Enter a payment amount greater than $0.");
-    update.amount = amount;
-  }
-  const { error } = await supabase.from("payments").update(update).eq("id", paymentId);
-  if (error) throw new Error(error.message);
+  });
   revalidateMoney(eventId);
 }
 
@@ -336,46 +324,7 @@ export async function saveRemainingSchedule(
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const supabase = await createClient();
-  const [bundle, { data: sched }, { data: approved }] = await Promise.all([
-    loadEventBundle(supabase, eventId),
-    supabase.from("scheduled_payments").select("id, seq, amount, due_date, label").eq("event_id", eventId).order("seq"),
-    supabase.from("payments").select("amount, scheduled_payment_id").eq("event_id", eventId).eq("status", "approved").is("deleted_at", null),
-  ]);
-  if (!bundle) throw new Error("Event not found.");
-  const { locked, open, lockedSum } = splitSchedule((sched ?? []) as SchedRow[], (approved ?? []) as { amount: number; scheduled_payment_id: string | null }[]);
-  const openIds = new Set(open.map((r) => r.id));
-  const lockedIds = new Set(locked.map((r) => r.id));
-
-  const keep = rows
-    .map((r) => ({ ...r, amount: Math.round(Number(r.amount) * 100) / 100 }))
-    .filter((r) => r.amount > 0);
-  if (keep.some((r) => r.id && lockedIds.has(r.id))) throw new Error("Paid installments can't be changed.");
-  if (keep.some((r) => r.id && !openIds.has(r.id))) throw new Error("The schedule changed — refresh and try again.");
-  const target = Math.round((bundle.total - lockedSum) * 100) / 100;
-  const sum = Math.round(keep.reduce((s, r) => s + r.amount, 0) * 100) / 100;
-  if (Math.abs(sum - target) >= 0.01) {
-    throw new Error(`Remaining payments add up to $${sum.toFixed(2)} — they need to total $${target.toFixed(2)}.`);
-  }
-
-  // drop open installments that were removed (or zeroed), then update/insert the rest
-  const keptIds = new Set(keep.map((r) => r.id).filter(Boolean) as string[]);
-  const removed = open.filter((r) => !keptIds.has(r.id)).map((r) => r.id);
-  if (removed.length) {
-    const { error } = await supabase.from("scheduled_payments").delete().in("id", removed);
-    if (error) throw new Error(error.message);
-  }
-  let seq = locked.reduce((m, r) => Math.max(m, r.seq), 0);
-  const sorted = [...keep].sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
-  for (const [i, r] of sorted.entries()) {
-    seq++;
-    const label = i === sorted.length - 1 ? "Final Payment" : `Payment ${seq}`;
-    const row = { seq, amount: r.amount, due_date: r.due_date || null, label };
-    const { error } = r.id
-      ? await supabase.from("scheduled_payments").update(row).eq("id", r.id)
-      : await supabase.from("scheduled_payments").insert({ ...row, event_id: eventId });
-    if (error) throw new Error(error.message);
-  }
-  await supabase.from("events").update({ schedule_ack_total: bundle.total }).eq("id", eventId);
+  await saveRemainingScheduleRows(supabase, eventId, rows);
   revalidateMoney(eventId);
 }
 
@@ -386,7 +335,8 @@ export async function acknowledgeScheduleTotal(eventId: string) {
   const supabase = await createClient();
   const bundle = await loadEventBundle(supabase, eventId);
   if (!bundle) return;
-  await supabase.from("events").update({ schedule_ack_total: bundle.total }).eq("id", eventId);
+  const { error } = await supabase.from("events").update({ schedule_ack_total: bundle.total }).eq("id", eventId);
+  if (error) throw new Error(error.message);
   revalidatePath(`/events/${eventId}`);
 }
 
@@ -397,42 +347,11 @@ export async function confirmPayment(paymentId: string, eventId: string, formDat
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const supabase = await createClient();
-  const note = formData ? clean(formData.get("note")) : null;
-
-  // A pending claim only counts toward the balance once approved, so verify it's
-  // a real positive amount before it enters the ledger (defense in depth).
-  const { data: pending } = await supabase
-    .from("payments")
-    .select("amount")
-    .eq("id", paymentId)
-    .eq("event_id", eventId)
-    .maybeSingle();
-  if (!pending) throw new Error("Payment not found.");
-  if (!(Number(pending.amount) > 0)) throw new Error("This payment's amount is invalid — remove it and re-enter.");
-
-  // link to the earliest scheduled payment with no approved payment against it
-  const [{ data: scheduled }, { data: priorPayments }] = await Promise.all([
-    supabase.from("scheduled_payments").select("id, seq").eq("event_id", eventId).order("seq"),
-    supabase
-      .from("payments")
-      .select("scheduled_payment_id")
-      .eq("event_id", eventId)
-      .eq("status", "approved")
-      .is("deleted_at", null),
-  ]);
-  const taken = new Set((priorPayments ?? []).map((p) => p.scheduled_payment_id).filter(Boolean));
-  const scheduledId = (scheduled ?? []).find((s) => !taken.has(s.id))?.id ?? null;
-
-  const patch: Record<string, unknown> = { status: "approved", scheduled_payment_id: scheduledId, paid_at: new Date().toISOString() };
-  if (note) patch.notes = note; // staff-entered Zelle details replace the auto reminder
-  const { error } = await supabase
-    .from("payments")
-    .update(patch)
-    .eq("id", paymentId)
-    .eq("event_id", eventId);
-  if (error) throw new Error(error.message);
-
-  await runAutomations(supabase, eventId, "payment_received");
+  await confirmPaymentRecord(supabase, {
+    paymentId,
+    eventId,
+    note: formData ? clean(formData.get("note")) : null,
+  });
   revalidateMoney(eventId);
 }
 
@@ -453,14 +372,7 @@ export async function removePayment(paymentId: string, eventId: string) {
   const by = emp
     ? emp.stage_name || `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim() || null
     : user?.email ?? null;
-
-  const { error } = await supabase
-    .from("payments")
-    .update({ deleted_at: new Date().toISOString(), deleted_by: by })
-    .eq("id", paymentId)
-    .eq("event_id", eventId)
-    .is("deleted_at", null);
-  if (error) throw new Error(error.message);
+  await softRemovePayment(supabase, { paymentId, eventId, deletedBy: by ?? "staff" });
   revalidateMoney(eventId);
 }
 
@@ -469,12 +381,7 @@ export async function restorePayment(paymentId: string, eventId: string) {
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("payments")
-    .update({ deleted_at: null, deleted_by: null })
-    .eq("id", paymentId)
-    .eq("event_id", eventId);
-  if (error) throw new Error(error.message);
+  await restorePaymentRecord(supabase, { paymentId, eventId });
   revalidateMoney(eventId);
 }
 
@@ -504,52 +411,16 @@ export async function addScheduledPayments(eventId: string, formData: FormData) 
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const supabase = await createClient();
-  // schedule generation governed by the package's payment rules:
-  // allowed splits + final-due terms (N days before event, or corporate Net-N after).
-  // "full" (entire investment due now) is always allowed — it isn't a package split.
   const plan =
     parseSchedulePlan(formData.get("plan")) ??
     parseSchedulePlan(formData.get("count"));
-  if (!plan || plan.kind === "net") {
-    throw new Error("Pick Full payment due or a deposit + installment split.");
-  }
-  const total = num(formData.get("total"));
-  const deposit = num(formData.get("deposit"));
-  const eventDate = clean(formData.get("event_date"));
-
-  const { data: event } = await supabase
-    .from("events")
-    .select("package_id")
-    .eq("id", eventId)
-    .single();
-  let terms: "days_before" | "net_days_after" = "days_before";
-  let termsDays = 30;
-  let allowedSplits: number[] = [1, 2, 3];
-  if (event?.package_id) {
-    const { data: pkg } = await supabase
-      .from("packages")
-      .select("payment_terms, payment_terms_days, allowed_splits")
-      .eq("id", event.package_id)
-      .single();
-    if (pkg) {
-      terms = (pkg.payment_terms as typeof terms) ?? "days_before";
-      termsDays = pkg.payment_terms_days ?? 30;
-      allowedSplits = pkg.allowed_splits?.length ? pkg.allowed_splits : [1, 2, 3];
-    }
-  }
-  if (plan.kind === "split" && !allowedSplits.includes(plan.count)) {
-    throw new Error(`This package allows ${allowedSplits.join(", ")} payment split(s) — ${plan.count} is not permitted.`);
-  }
-
-  // Preserve already-paid installments (and their payment links); only the
-  // unpaid portion is regenerated to cover the remaining balance.
-  await writeSchedulePreservingPaid(supabase, eventId, {
-    total,
-    deposit,
-    eventDate: eventDate ?? null,
-    terms,
-    termsDays,
+  if (!plan) throw new Error("Pick Full payment due or a deposit + installment split.");
+  await addScheduledPaymentPlan(supabase, {
+    eventId,
     plan,
+    total: num(formData.get("total")),
+    deposit: num(formData.get("deposit")),
+    eventDate: clean(formData.get("event_date")),
   });
   revalidateMoney(eventId);
 }
@@ -570,51 +441,11 @@ export async function updateBillingTerms(eventId: string, formData: FormData) {
   revalidatePath(`/events/${eventId}`);
 }
 
-/** One SMS action on a helper that is flagged "prompt to send", rendered exactly as
-    it would go out (merge tags filled, HTML reduced to text) so the office can read,
-    edit or skip it before the helper runs. */
-export type HelperSmsPrompt = {
-  index: number;
-  kind: "client" | "custom" | "staff";
-  label: string;
-  template: string | null;
-  recipients: { name: string | null; phone: string }[];
-  body: string;
-};
-
-export type HelperSmsOverride = { skip?: boolean; body?: string };
-
-/** ~10 SMS segments; anything longer is a template problem, not a text message. */
-const SMS_BODY_MAX = 1600;
-
-function cleanSmsOverrides(
-  overrides?: Record<string, HelperSmsOverride>
-): Record<string, HelperSmsOverride> | null {
-  if (!overrides) return null;
-  const out: Record<string, HelperSmsOverride> = {};
-  for (const [key, value] of Object.entries(overrides)) {
-    if (!/^\d+$/.test(key) || !value) continue; // keys are action indexes
-    if (value.skip) {
-      out[key] = { skip: true };
-      continue;
-    }
-    const body = (value.body ?? "").trim().slice(0, SMS_BODY_MAX);
-    if (body) out[key] = { body };
-  }
-  return Object.keys(out).length > 0 ? out : null;
-}
-
 /** What the prompted texts on this helper would say for this event. */
 export async function getHelperSmsPrompts(eventId: string, helperId: string): Promise<HelperSmsPrompt[]> {
   await requireModule("events", "edit", { mode: "throw" });
   await assignedOrOffice(eventId);
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc("preview_helper_sms", {
-    p_helper_id: helperId,
-    p_event_id: eventId,
-  });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as HelperSmsPrompt[];
+  return previewHelperSms(createAdminClient(), eventId, helperId);
 }
 
 export async function runBookingHelper(
@@ -626,44 +457,19 @@ export async function runBookingHelper(
 ) {
   await requireModule("events", "edit", { mode: "throw" });
   await assignedOrOffice(eventId);
-  // SECURITY DEFINER — service-role client so a signed-in client/guest can't call
-  // run_booking_helper directly (authenticated EXECUTE revoked, migration 00166).
-  // Staff access is already gated by requireModule above.
-  const admin = createAdminClient();
-  // the button is hidden for the wrong event type / role — enforce it here too
-  const [me, { data: scope }, { data: ev }] = await Promise.all([
-    getMe(),
-    admin.from("booking_helpers").select("title, visible_event_type_ids, allowed_roles").eq("id", helperId).maybeSingle(),
-    admin.from("events").select("event_type_id").eq("id", eventId).maybeSingle(),
-  ]);
-  if (scope && !helperAllowedForEventType(scope, ev?.event_type_id as string | null)) {
-    throw new Error(`"${scope.title}" isn't set up for this event type.`);
-  }
-  if (scope && !helperAllowedForRole(scope, me?.role)) {
-    throw new Error(`Your role can't run "${scope.title}".`);
-  }
-  // field staff: only helpers that explicitly list their role (an empty
-  // allowed_roles means "everyone" for office, never for field staff)
-  if (me?.fieldStaff && !((scope?.allowed_roles as string[] | null) ?? []).includes(me.role)) {
-    throw new Error(`Your role can't run "${scope?.title ?? "this helper"}".`);
-  }
-  // The 3-arg form (this call, including p_sms_overrides) is the staff-click
-  // entry point. Its SQL wrapper sets p_manual = true, so the email and SMS it
-  // queues bypass events.comms_paused. Automations use the 2-arg form and stay paused.
-  const { error } = await admin.rpc("run_booking_helper", {
-    p_helper_id: helperId,
-    p_event_id: eventId,
-    p_sms_overrides: cleanSmsOverrides(smsOverrides),
+  // Service-role client: run_booking_helper is not executable by a signed-in
+  // client (migration 00166). Staff access is gated by requireModule above.
+  // executeBookingHelper drains this event's outbox with the service-role client,
+  // which field staff need (00218 hides the money rows the drain enriches with).
+  const me = await getMe();
+  await executeBookingHelper(createAdminClient(), {
+    eventId,
+    helperId,
+    smsOverrides,
+    actorRole: me?.role ?? null,
+    actorFieldStaff: me?.fieldStaff === true,
+    enforceRole: true,
   });
-  if (error) throw new Error(error.message);
-  // fire this helper's webhook too (so a manual click can test the Zap)
-  await fireHelperWebhook(admin, helperId, eventId);
-  // deliver anything the helper queued right away (attachments/sign links
-  // are handled at send time) instead of waiting for the 10-minute cron.
-  // A field-staff session can't read the event / money rows the drain enriches
-  // with (00218), so drain service-role for them.
-  await processOutbox(me?.fieldStaff ? admin : undefined);
-  await processSmsOutbox(me?.fieldStaff ? admin : undefined);
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
 }
@@ -979,16 +785,7 @@ export async function deleteEvent(eventId: string) {
   // which hides the event and stops automations while keeping the money records
   // attributable. Count via the service-role client so RLS can't hide rows and let
   // the guard fail open.
-  const admin = createAdminClient();
-  const { count: payCount } = await admin
-    .from("payments")
-    .select("id", { count: "exact", head: true })
-    .eq("event_id", eventId);
-  if ((payCount ?? 0) > 0) {
-    throw new Error(
-      "This event has payment history and can't be permanently deleted — that would orphan its payment records. Archive it instead: it'll be hidden and all automations stop, but the money records stay attributable.",
-    );
-  }
+  await assertEventDeletable(createAdminClient(), eventId);
 
   const { error } = await supabase.from("events").delete().eq("id", eventId);
   if (error) throw new Error(error.message);
@@ -1005,18 +802,7 @@ export async function archiveEvent(eventId: string) {
   await officeOnly();
   const supabase = await createClient();
   await requireTier(supabase, ["master_admin", "admin", "salesperson"]);
-
-  const { error } = await supabase
-    .from("events")
-    .update({ archived_at: new Date().toISOString() })
-    .eq("id", eventId);
-  if (error) throw new Error(error.message);
-
-  // stop anything already queued by automations from sending
-  await supabase.from("email_log").update({ status: "cancelled" }).eq("event_id", eventId).eq("status", "queued");
-  await supabase.from("sms_log").update({ status: "cancelled" }).eq("event_id", eventId).eq("status", "queued");
-
-  await supabase.from("event_logs").insert({ event_id: eventId, actor: await actorName(supabase), action: "Event archived" });
+  await archiveEventRecord(supabase, eventId, await actorName(supabase));
 
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
@@ -1028,11 +814,7 @@ export async function unarchiveEvent(eventId: string) {
   await officeOnly();
   const supabase = await createClient();
   await requireTier(supabase, ["master_admin", "admin", "salesperson"]);
-
-  const { error } = await supabase.from("events").update({ archived_at: null }).eq("id", eventId);
-  if (error) throw new Error(error.message);
-
-  await supabase.from("event_logs").insert({ event_id: eventId, actor: await actorName(supabase), action: "Event unarchived" });
+  await unarchiveEventRecord(supabase, eventId, await actorName(supabase));
 
   revalidatePath(`/events/${eventId}`);
   revalidatePath("/events");
@@ -1044,20 +826,16 @@ export async function addEventClient(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const clientId = clean(formData.get("client_id"));
   if (!clientId) return;
-  const { count } = await supabase
-    .from("event_clients")
-    .select("id", { count: "exact", head: true })
-    .eq("event_id", eventId);
-  const isFirst = (count ?? 0) === 0;
-  const { error } = await supabase.from("event_clients").insert({
-    event_id: eventId,
-    client_id: clientId,
-    role: clean(formData.get("role")) ?? "Client",
-    is_primary: isFirst,
+  const { error } = await createAdminClient().rpc("mcp_add_event_client", {
+    p_event_id: eventId,
+    p_client_id: clientId,
+    p_role: clean(formData.get("role")) ?? "Client",
   });
-  if (error) throw new Error(error.message);
-  if (isFirst) {
-    await supabase.from("events").update({ client_id: clientId }).eq("id", eventId);
+  if (error) {
+    if (/mcp_add_event_client|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Adding a client needs migration 00221. Nothing was added.");
+    }
+    throw new Error(error.message);
   }
   await autoNameEvent(supabase, eventId);
   revalidatePath(`/events/${eventId}`);
@@ -1077,21 +855,16 @@ export async function createClientAndAttach(eventId: string, formData: FormData)
     email: clean(formData.get("email")),
   });
 
-  const { count } = await supabase
-    .from("event_clients")
-    .select("id", { count: "exact", head: true })
-    .eq("event_id", eventId);
-  const isFirst = (count ?? 0) === 0;
-
-  const { error } = await supabase.from("event_clients").insert({
-    event_id: eventId,
-    client_id: found.id,
-    role: clean(formData.get("role")) ?? "Client",
-    is_primary: isFirst,
+  const { error } = await createAdminClient().rpc("mcp_add_event_client", {
+    p_event_id: eventId,
+    p_client_id: found.id,
+    p_role: clean(formData.get("role")) ?? "Client",
   });
-  if (error) throw new Error(error.message);
-  if (isFirst) {
-    await supabase.from("events").update({ client_id: found.id }).eq("id", eventId);
+  if (error) {
+    if (/mcp_add_event_client|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Adding a client needs migration 00221. Nothing was added.");
+    }
+    throw new Error(error.message);
   }
   await autoNameEvent(supabase, eventId);
   revalidatePath(`/events/${eventId}`);
@@ -1100,22 +873,16 @@ export async function createClientAndAttach(eventId: string, formData: FormData)
 export async function removeEventClient(eventId: string, eventClientId: string) {
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
-  const supabase = await createClient();
-  const { data: links } = await supabase
-    .from("event_clients")
-    .select("id, client_id, is_primary")
-    .eq("event_id", eventId);
-  if ((links ?? []).length <= 1) {
-    throw new Error("An event must always have at least one client.");
-  }
-  const removed = (links ?? []).find((l) => l.id === eventClientId);
-  const { error } = await supabase.from("event_clients").delete().eq("id", eventClientId);
-  if (error) throw new Error(error.message);
-  if (removed?.is_primary) {
-    // promote the next client to primary / contract holder
-    const next = (links ?? []).find((l) => l.id !== eventClientId)!;
-    await supabase.from("event_clients").update({ is_primary: true }).eq("id", next.id);
-    await supabase.from("events").update({ client_id: next.client_id }).eq("id", eventId);
+  const admin = createAdminClient();
+  const { error } = await admin.rpc("mcp_remove_event_client", {
+    p_event_id: eventId,
+    p_event_client_id: eventClientId,
+  });
+  if (error) {
+    if (/mcp_remove_event_client|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Removing a client needs migration 00220. Nothing was deleted.");
+    }
+    throw new Error(error.message);
   }
   revalidatePath(`/events/${eventId}`);
 }
@@ -1123,25 +890,33 @@ export async function removeEventClient(eventId: string, eventClientId: string) 
 export async function setPrimaryEventClient(eventId: string, eventClientId: string) {
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
-  const supabase = await createClient();
-  const { data: link } = await supabase
-    .from("event_clients")
-    .select("client_id")
-    .eq("id", eventClientId)
-    .single();
-  if (!link) return;
-  await supabase.from("event_clients").update({ is_primary: false }).eq("event_id", eventId);
-  await supabase.from("event_clients").update({ is_primary: true }).eq("id", eventClientId);
-  await supabase.from("events").update({ client_id: link.client_id }).eq("id", eventId);
+  const { error } = await createAdminClient().rpc("mcp_set_primary_client", {
+    p_event_id: eventId,
+    p_event_client_id: eventClientId,
+  });
+  if (error) {
+    if (/mcp_set_primary_client|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Choosing the primary client needs migration 00221. Nothing was changed.");
+    }
+    throw new Error(error.message);
+  }
   revalidatePath(`/events/${eventId}`);
 }
 
 export async function toggleContractHolder(eventId: string, eventClientId: string, value: boolean) {
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
-  const supabase = await createClient();
-  const { error } = await supabase.from("event_clients").update({ is_contract_holder: value }).eq("id", eventClientId);
-  if (error) throw new Error(error.message);
+  const { error } = await createAdminClient().rpc("mcp_toggle_contract_holder", {
+    p_event_id: eventId,
+    p_event_client_id: eventClientId,
+    p_value: value,
+  });
+  if (error) {
+    if (/mcp_toggle_contract_holder|schema cache|could not find/i.test(error.message)) {
+      throw new Error("Updating the contract holder needs migration 00221. Nothing was changed.");
+    }
+    throw new Error(error.message);
+  }
   revalidatePath(`/events/${eventId}`);
 }
 
@@ -1481,72 +1256,18 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const supabase = await createClient();
-  const { data: before } = await supabase
-    .from("events")
-    .select("package_id, event_date, venue_id")
-    .eq("id", eventId)
-    .single();
-  const newPackageId = clean(formData.get("package_id"));
   const overrideSubmitted = clean(formData.get("package_price_override")) != null;
-
-  // num() coerces bad input to 0 and let negatives through — clamp every money
-  // field to >= 0 (the events_*_nonneg CHECK constraints are the DB backstop).
   const nn = (name: string) => Math.max(0, num(formData.get(name)));
-  const override = overrideSubmitted ? nn("package_price_override") : null;
-  const deposit = nn("deposit_value");
-  const overtime = nn("overtime_fee");
-  const travel = nn("travel_fee");
-  let discount1 = nn("discount1_amount");
-  let discount2 = nn("discount2_amount");
-
-  // Total-floor guard: clamp the combined discounts so the event total can't go
-  // negative. Subtotal = resolved package price + fees + add-ons + venue setup.
-  // Only clamp when the subtotal is genuinely positive, so a lookup glitch can't
-  // silently wipe a legitimate discount.
-  const pkgId = newPackageId ?? before?.package_id ?? null;
-  let pkgPrice = override ?? 0;
-  if (override == null && pkgId) {
-    const { data: pkg } = await supabase.from("packages").select("default_price").eq("id", pkgId).maybeSingle();
-    pkgPrice = Number(pkg?.default_price ?? 0);
-  }
-  const [{ data: eAddons }, venueRes] = await Promise.all([
-    supabase
-      .from("event_addons")
-      .select("quantity, price_override, price_locked, addon:addons(default_price)")
-      .eq("event_id", eventId),
-    before?.venue_id
-      ? supabase.from("venues").select("setup_fee").eq("id", before.venue_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
-  const addonsTotal = (eAddons ?? []).reduce((s, a) => {
-    const unit = a.price_override ?? a.price_locked ?? (a.addon as { default_price?: number } | null)?.default_price ?? 0;
-    return s + Number(a.quantity) * Number(unit);
-  }, 0);
-  const venueSetup = Number((venueRes.data as { setup_fee?: number } | null)?.setup_fee ?? 0);
-  const subtotal = pkgPrice + overtime + travel + addonsTotal + venueSetup;
-  if (subtotal > 0) {
-    discount1 = Math.min(discount1, subtotal);
-    discount2 = Math.min(discount2, Math.max(0, subtotal - discount1));
-  }
-
-  const { error } = await supabase
-    .from("events")
-    .update({
-      package_id: newPackageId,
-      package_price_override: override,
-      deposit_value: deposit,
-      overtime_fee: overtime,
-      travel_fee: travel,
-      discount1_amount: discount1,
-      discount2_amount: discount2,
-    })
-    .eq("id", eventId);
-  if (error) throw new Error(error.message);
-
-  // package newly selected or changed → apply date-aware pricing + package defaults
-  if (newPackageId && newPackageId !== before?.package_id) {
-    await applyPackageSelection(supabase, eventId, newPackageId, before?.event_date ?? null, overrideSubmitted);
-  }
+  await updateEventFinancialsRecord(supabase, eventId, {
+    packageId: clean(formData.get("package_id")),
+    packagePriceOverride: overrideSubmitted ? nn("package_price_override") : null,
+    overrideSubmitted,
+    deposit: nn("deposit_value"),
+    overtime: nn("overtime_fee"),
+    travel: nn("travel_fee"),
+    discount1: nn("discount1_amount"),
+    discount2: nn("discount2_amount"),
+  });
   revalidateMoney(eventId);
 }
 
