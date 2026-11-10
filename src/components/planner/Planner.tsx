@@ -87,8 +87,8 @@ import {
   addLibrarySection,
   listLibrarySections,
   disablePlaylistSync,
-  type LibrarySectionOption,
 } from "@/app/portal/plan/[eventId]/actions";
+import type { LibrarySectionOption } from "@/app/portal/plan/[eventId]/plannerActionTypes";
 import { faPlus } from "@fortawesome/free-solid-svg-icons";
 import FieldHistory, { FieldHistoryProvider } from "@/components/planner/FieldHistory";
 import SectionMomentNotes, { DoNotPlayText } from "@/components/planner/SectionMomentNotes";

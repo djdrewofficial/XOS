@@ -19,15 +19,13 @@ import { reconcileSection, type SyncSectionRow } from "@/lib/spotifySync";
 import { boothTemplates, boothFilters } from "@/lib/templatesbooth";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Me } from "@/lib/auth";
-
-/** Machine payload that `restorePlannerValue` replays. Absent = not restorable. */
-export type PlannerSnapshot =
-  | { kind: "answer"; questionId: string; answer: string | null }
-  | { kind: "song_row"; row: Record<string, unknown> }
-  | { kind: "song_patch"; songId: string; patch: Record<string, unknown> }
-  | { kind: "question_row"; question: Record<string, unknown>; answer: Record<string, unknown> | null }
-  | { kind: "section_tree"; section: Record<string, unknown>; questions: Record<string, unknown>[]; answers: Record<string, unknown>[]; songs: Record<string, unknown>[] }
-  | { kind: "section_patch"; sectionId: string; patch: Record<string, unknown> };
+import type {
+  BoothBackdrop,
+  BoothDesign,
+  BoothSelection,
+  LibrarySectionOption,
+  PlannerSnapshot,
+} from "./plannerActionTypes";
 
 /** What an audit entry points at, so staff can see a per-field history and
     restore a previous value. old/new are display text; snapshot drives Restore. */
@@ -724,15 +722,6 @@ export async function addSection(
   return { ok: true, id: created.id as string };
 }
 
-export type LibrarySectionOption = {
-  id: string;
-  title: string;
-  icon: string | null;
-  module: string | null;
-  section_type: string;
-  question_count: number;
-};
-
 /** The reusable Section Templates library, for the staff "Add Section" picker. */
 export async function listLibrarySections(eventId: string): Promise<LibrarySectionOption[]> {
   const { supabase } = await requireStaff(eventId);
@@ -1264,25 +1253,6 @@ export async function disablePlaylistSync(eventId: string, sectionId: string) {
 }
 
 // ─────────────────── Photo Booth module (backdrops + designs) ───────────────────
-
-export type BoothBackdrop = { id: string; name: string; image_url: string; category: string | null };
-export type BoothDesign = {
-  src: string;
-  post_url: string | null;
-  layout_size: string | null;
-  image_type: string | null;
-  no_of_images: string | null;
-  type: string | null;
-  type_name: string | null;
-  video_url?: string | null;
-  poster?: string | null;
-};
-export type BoothSelection = {
-  backdrop_id: string | null;
-  design: BoothDesign | null;
-  picked_by_name: string | null;
-  updated_at: string | null;
-} | null;
 
 /** Active backdrops + this event's saved selection (RLS-scoped), with the name
     of whoever last picked (so staff can see who chose what). */
