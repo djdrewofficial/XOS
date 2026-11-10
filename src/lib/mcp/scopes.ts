@@ -38,6 +38,33 @@ export type McpScope = (typeof MCP_SCOPES)[number];
 
 const SCOPE_SET = new Set<string>(MCP_SCOPES);
 
+/** Every scope in the closed list. Used by the mint form's "Select all". */
+export function allMcpScopes(scopes: readonly McpScope[] = MCP_SCOPES): McpScope[] {
+  return [...scopes];
+}
+
+/** Scopes that start with `read.`, including read.reports. */
+export function readMcpScopes(scopes: readonly McpScope[] = MCP_SCOPES): McpScope[] {
+  return scopes.filter((scope) => scope.startsWith("read."));
+}
+
+/** delete, money, money.payroll, and any comms.* scope. */
+export function isHighRiskMcpScope(scope: string): boolean {
+  return scope === "delete" || scope === "money" || scope === "money.payroll" || scope.startsWith("comms.");
+}
+
+export function hasHighRiskMcpScope(selected: readonly string[]): boolean {
+  return selected.some(isHighRiskMcpScope);
+}
+
+/** Toggle one scope in a checked set. Returns a new array in MCP_SCOPES order. */
+export function toggleMcpScope(selected: readonly string[], scope: McpScope, on: boolean): McpScope[] {
+  const next = new Set(selected.filter(isMcpScope));
+  if (on) next.add(scope);
+  else next.delete(scope);
+  return MCP_SCOPES.filter((item) => next.has(item));
+}
+
 export function isMcpScope(value: string): value is McpScope {
   return SCOPE_SET.has(value);
 }

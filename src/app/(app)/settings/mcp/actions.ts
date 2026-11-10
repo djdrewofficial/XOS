@@ -7,85 +7,105 @@ import { generateServiceToken } from "@/lib/mcp/crypto";
 import { executeHumanApproved } from "@/lib/mcp/protocol";
 import { secretValuesFromEnv } from "@/lib/mcp/redact";
 import { assertScopes } from "@/lib/mcp/scopes";
+import { mintTokenFlash, rotateTokenFlash, type TokenFlash, type TokenFlashStore } from "@/lib/mcpTokenFlash";
 import { supabaseStore } from "@/lib/mcp/supabaseStore";
 import { mcpTools } from "@/lib/mcp/tools";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export type TokenFlash = { token: string; prefix: string; name: string } | { error: string } | null;
+export type { TokenFlash };
+
+function tokenStore(): TokenFlashStore {
+  const admin = createAdminClient();
+  return {
+    async insert(row) {
+      const { data, error } = await admin.from("mcp_service_tokens").insert(row).select("id").single();
+      if (error || !data) return { error: "Could not save the token. Apply migration 00219 first." };
+      return { id: data.id as string };
+    },
+    async setOverlap(id, overlapUntil) {
+      const { error } = await admin.from("mcp_service_tokens").update({ overlap_until: overlapUntil }).eq("id", id);
+      return { error: error?.message ?? null };
+    },
+    async revoke(id, at) {
+      const { error } = await admin.from("mcp_service_tokens").update({ revoked_at: at, overlap_until: at }).eq("id", id);
+      return { error: error?.message ?? null };
+    },
+  };
+}
 
 function fail(error: unknown, fallback: string): TokenFlash {
   return { error: error instanceof Error ? error.message : fallback };
 }
 
-/** Mint a service token. The raw value is returned once and is not logged. */
+/** Mint a service token. The raw value is returned once and is not logged.
+    Do not revalidate the page before returning the secret — that remounts the
+    form and drops useActionState, so Create stays on Creating… and the secret
+    never appears even though the row was inserted. */
 export async function mintMcpToken(_prev: TokenFlash, formData: FormData): Promise<TokenFlash> {
-  await requireMaster();
-  const name = String(formData.get("name") ?? "").trim();
-  if (!name) return { error: "Give the token a name." };
-  let scopes;
   try {
-    scopes = assertScopes(formData.getAll("scope").map(String));
+    await requireMaster();
+    const name = String(formData.get("name") ?? "").trim();
+    if (!name) return { error: "Give the token a name." };
+    let scopes;
+    try {
+      scopes = assertScopes(formData.getAll("scope").map(String));
+    } catch (error) {
+      return fail(error, "Those scopes are not valid.");
+    }
+    if (!scopes.length) return { error: "Pick at least one scope. A token with no scopes can only see who it is." };
+    const days = Number(formData.get("expires_days") || 0);
+    const expires = Number.isFinite(days) && days > 0 ? new Date(Date.now() + days * 86_400_000).toISOString() : null;
+    const minted = generateServiceToken();
+    const me = await getMe();
+    return mintTokenFlash(tokenStore(), {
+      name,
+      scopes,
+      expiresAt: expires,
+      note: String(formData.get("note") ?? "").trim() || null,
+      createdBy: me?.userId ?? null,
+      minted,
+    });
   } catch (error) {
-    return fail(error, "Those scopes are not valid.");
+    return fail(error, "Could not create the token.");
   }
-  if (!scopes.length) return { error: "Pick at least one scope. A token with no scopes can only see who it is." };
-  const days = Number(formData.get("expires_days") || 0);
-  const expires = Number.isFinite(days) && days > 0 ? new Date(Date.now() + days * 86_400_000).toISOString() : null;
-  const minted = generateServiceToken();
-  const me = await getMe();
-  const { error } = await createAdminClient().from("mcp_service_tokens").insert({
-    name,
-    token_prefix: minted.prefix,
-    token_hash: minted.hash,
-    scopes,
-    expires_at: expires,
-    created_by: me?.userId ?? null,
-    note: String(formData.get("note") ?? "").trim() || null,
-  });
-  if (error) return { error: "Could not save the token. Apply migration 00219 first." };
-  revalidatePath("/settings/mcp");
-  return { token: minted.raw, prefix: minted.prefix, name };
 }
 
-/** Issue a new token with the same scopes. The old one keeps working until the overlap ends. */
+/** Issue a new token with the same scopes. The old one keeps working until the overlap ends.
+    Same rule as mint: return the secret before refreshing the page. */
 export async function rotateMcpToken(_prev: TokenFlash, formData: FormData): Promise<TokenFlash> {
-  await requireMaster();
-  const id = String(formData.get("token_id") ?? "");
-  const hours = Math.max(0, Math.min(24 * 14, Number(formData.get("overlap_hours") ?? 24) || 0));
-  const admin = createAdminClient();
-  const { data: old } = await admin
-    .from("mcp_service_tokens")
-    .select("id, name, scopes, note, expires_at")
-    .eq("id", id)
-    .is("revoked_at", null)
-    .maybeSingle();
-  if (!old) return { error: "That token is not active." };
-  const minted = generateServiceToken();
-  const me = await getMe();
-  const { data: created, error } = await admin.from("mcp_service_tokens").insert({
-    name: old.name,
-    token_prefix: minted.prefix,
-    token_hash: minted.hash,
-    scopes: old.scopes,
-    expires_at: old.expires_at,
-    rotated_from_id: old.id,
-    note: old.note,
-    created_by: me?.userId ?? null,
-  }).select("id").single();
-  if (error || !created) return { error: "Could not rotate the token." };
-  const { error: overlapError } = await admin
-    .from("mcp_service_tokens")
-    .update({ overlap_until: new Date(Date.now() + hours * 3_600_000).toISOString() })
-    .eq("id", old.id);
-  if (overlapError) {
-    const { error: revokeError } = await admin.from("mcp_service_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", created.id);
-    if (revokeError) {
-      throw new Error("Rotation failed and the new token could not be revoked. Revoke that token before using either one.");
-    }
-    return { error: "Rotation did not finish. The new token was revoked and the old token is unchanged." };
+  try {
+    await requireMaster();
+    const id = String(formData.get("token_id") ?? "");
+    const hours = Math.max(0, Math.min(24 * 14, Number(formData.get("overlap_hours") ?? 24) || 0));
+    const admin = createAdminClient();
+    const { data: old } = await admin
+      .from("mcp_service_tokens")
+      .select("id, name, scopes, note, expires_at")
+      .eq("id", id)
+      .is("revoked_at", null)
+      .maybeSingle();
+    if (!old) return { error: "That token is not active." };
+    const minted = generateServiceToken();
+    const me = await getMe();
+    return rotateTokenFlash(tokenStore(), {
+      oldId: old.id as string,
+      name: old.name as string,
+      scopes: (old.scopes as string[]) ?? [],
+      expiresAt: (old.expires_at as string | null) ?? null,
+      note: (old.note as string | null) ?? null,
+      createdBy: me?.userId ?? null,
+      overlapUntil: new Date(Date.now() + hours * 3_600_000).toISOString(),
+      minted,
+    });
+  } catch (error) {
+    return fail(error, "Could not rotate the token.");
   }
+}
+
+/** Refresh the token list after the person has copied the one-time secret. */
+export async function acknowledgeMcpTokenFlash(): Promise<void> {
+  await requireMaster();
   revalidatePath("/settings/mcp");
-  return { token: minted.raw, prefix: minted.prefix, name: old.name as string };
 }
 
 /** The only path that runs a sensitive preview. Requires the signed-in master admin, not an agent token. */
