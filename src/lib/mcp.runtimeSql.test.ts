@@ -25,13 +25,15 @@ describe("runtime sql guards", () => {
         event_id uuid,
         status text not null default 'queued',
         body_html text,
-        subject text
+        subject text,
+        error text
       );
       create table public.sms_log (
         id uuid primary key,
         event_id uuid,
         status text not null default 'queued',
-        body text
+        body text,
+        error text
       );
       alter table public.email_log add constraint email_log_status_check
         check (status = any (array['queued','sending','sent','delivered','opened','failed','bounced','complained','cancelled']));
@@ -66,14 +68,28 @@ describe("runtime sql guards", () => {
         insert into public.email_log (id, event_id, status, body_html, subject)
         values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', p_event_id, 'queued', 'hello', 'Subject');
       end $fn$;
+      -- Same contract processOutbox uses on the cron path: only status=queued.
+      create or replace function public.claim_email_outbox(p_limit integer)
+      returns setof public.email_log
+      language plpgsql as $fn$
+      begin
+        return query
+          update public.email_log
+          set status = 'sending'
+          where id in (
+            select id from public.email_log where status = 'queued' order by id limit p_limit for update skip locked
+          )
+          returning *;
+      end $fn$;
     `);
-    const ops = read("supabase/migrations/00219_mcp_operations.sql");
+    const ops = read("supabase/migrations/00221_mcp_operations.sql");
     const claimFn = ops.slice(ops.indexOf("create or replace function public.mcp_run_helper_claim"), ops.indexOf("revoke all on function public.mcp_run_helper_claim"));
     const mergeStart = ops.indexOf("create or replace function public.mcp_merge_venues");
     const mergeFn = ops.slice(mergeStart, ops.indexOf("revoke all on function public.mcp_merge_venues"));
     await db.exec(claimFn);
     await db.exec(mergeFn);
-    await db.exec(read("supabase/migrations/00221_mcp_held_effects.sql"));
+    await db.exec(read("supabase/migrations/00222_mcp_held_outbox.sql"));
+    await db.exec(read("supabase/migrations/00223_mcp_held_effects.sql"));
     const event = "11111111-1111-4111-8111-111111111111";
     const helper = "22222222-2222-4222-8222-222222222222";
     await db.exec(`insert into public.events (id, name) values ('${event}', 'Wedding')`);
@@ -85,10 +101,32 @@ describe("runtime sql guards", () => {
       () => db.query(`select * from public.mcp_run_helper_claim('${helper}', '${event}', null)`),
       /42702|42846|ambiguous|cannot cast/i,
     );
-    await db.exec(read("supabase/migrations/00222_mcp_runtime_guards.sql"));
+    await db.exec(read("supabase/migrations/00224_mcp_runtime_guards.sql"));
     await db.exec(`insert into public.email_log (id, status, body_html) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'held', 'notice')`);
-    const claimed = await db.query(`select channel, id, body_sha from public.mcp_run_helper_claim('${helper}', '${event}', null)`);
+
+    // Mismatch: helper body never lands in queued, and processOutbox's claim sees nothing.
+    const wrong = await db.query(
+      `select channel, id, body_sha from public.mcp_run_helper_claim('${helper}', '${event}', null, array['${"0".repeat(64)}']::text[])`,
+    );
+    assert.equal(wrong.rows.length, 0);
+    const mismatched = await db.query(`select status from public.email_log where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'`);
+    assert.equal((mismatched.rows[0] as { status: string }).status, "blocked");
+    const queuedAfterMismatch = await db.query(`select count(*)::int as n from public.email_log where status = 'queued'`);
+    assert.equal((queuedAfterMismatch.rows[0] as { n: number }).n, 0);
+    const cronClaim = await db.query(`select id from public.claim_email_outbox(50)`);
+    assert.equal(cronClaim.rows.length, 0, "processOutbox cron claim must not see a mismatched helper body");
+
+    await db.exec(`delete from public.email_log where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'`);
+    const helloSha = createHash("sha256").update("hello").digest("hex");
+    const claimed = await db.query(
+      `select channel, id, body_sha from public.mcp_run_helper_claim('${helper}', '${event}', null, array['${helloSha}']::text[])`,
+    );
     assert.equal((claimed.rows[0] as { id: string }).id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1");
+    const matched = await db.query(`select status from public.email_log where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'`);
+    assert.equal((matched.rows[0] as { status: string }).status, "sending");
+    const neverQueued = await db.query(`select count(*)::int as n from public.email_log where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1' and status = 'queued'`);
+    assert.equal((neverQueued.rows[0] as { n: number }).n, 0);
+
     const keep = "12121212-1212-4121-8121-121212121212";
     const drop = "13131313-1313-4131-8131-131313131313";
     const category = "14141414-1414-4141-8141-141414141414";

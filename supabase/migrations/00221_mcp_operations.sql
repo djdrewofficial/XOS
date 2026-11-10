@@ -1,10 +1,10 @@
 -- Operation claims for the MCP connector. Apply through the numbered migration
 -- history after an explicit approval. Do not paste this as an untracked script.
 --
--- Depends on 00217 and 00218.
+-- Depends on 00219 and 00220.
 --
 -- booking_helpers and email_templates do not have updated_at in any migration
--- through 00218. Do not select that column. Version those rows by their body
+-- through 00220. Do not select that column. Version those rows by their body
 -- and actions content instead.
 
 alter table public.mcp_confirmations

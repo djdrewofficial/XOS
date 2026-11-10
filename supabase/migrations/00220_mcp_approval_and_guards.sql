@@ -2,7 +2,7 @@
 -- numbered migration history after an explicit approval. Do not paste it
 -- as a one-off script.
 --
--- Depends on 00217_mcp_service_access.sql.
+-- Depends on 00219_mcp_service_access.sql.
 
 -- Human approval is recorded on the preview. The agent token cannot set these.
 alter table public.mcp_confirmations

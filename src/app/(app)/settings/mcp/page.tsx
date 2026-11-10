@@ -63,7 +63,7 @@ export default async function McpSettingsPage() {
         <div className="card p-5">
           <h2 className="card-title">One-time setup needed</h2>
           <p className="text-sm text-zinc-600">
-            Apply <code>supabase/migrations/00217_mcp_service_access.sql</code> before creating tokens. This page does not apply it.
+            Apply <code>supabase/migrations/00219_mcp_service_access.sql</code> before creating tokens. This page does not apply it.
           </p>
         </div>
       ) : (
@@ -109,7 +109,7 @@ export default async function McpSettingsPage() {
             );
           }) : (
             <div className="card p-5 text-sm">
-              Approvals need migration 00218 in the migration history. Until then, sensitive previews cannot be run.
+              Approvals need migration 00220 in the migration history. Until then, sensitive previews cannot be run.
             </div>
           )}
           <MintForm />

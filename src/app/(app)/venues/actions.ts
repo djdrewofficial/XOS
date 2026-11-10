@@ -93,7 +93,7 @@ export async function mergeVenues(
   });
   if (error) {
     if (/mcp_merge_venues|schema cache|could not find/i.test(error.message)) {
-      throw new Error("Merging venues needs migration 00219. Nothing was changed.");
+      throw new Error("Merging venues needs migration 00221. Nothing was changed.");
     }
     throw new Error(error.message);
   }

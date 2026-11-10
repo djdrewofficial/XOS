@@ -9,6 +9,7 @@ import {
   removeAppMemberDecision,
   restoreHidden,
   revertOverrideDecision,
+  assertCatalogPriceScope,
   saveCatalogItem,
   saveCompanyMail,
   saveCustomDateDefinition,
@@ -32,7 +33,7 @@ import {
 } from "@/lib/officeRemaining";
 import type { EditorDb } from "@/lib/officeEdits";
 import type { LiveTool } from "../protocol";
-import type { ToolContext } from "../types";
+import { McpScopeError, type ToolContext } from "../types";
 import type { JsonSchema } from "../validate";
 
 const UUID: JsonSchema = { type: "string", format: "uuid" };
@@ -259,13 +260,25 @@ export const remainingTools: LiveTool[] = [
   },
   {
     name: "catalog_items",
-    description: "Create, rename, reprice, or delete a package or add-on. Deleting a package that events use is still refused by the database.",
+    description: "Create, rename, reprice, or delete a package or add-on. Deleting a package that events use is still refused by the database. Changing the price needs the money scope.",
     scopes: ["write.catalog"],
     confirm: true,
     inputSchema: obj({ table: { type: "string", enum: ["packages", "addons"] }, item_id: UUID, name: STR, price: { type: "number" }, delete: { type: "boolean" } }, ["table"]),
+    async authorize(args, ctx) {
+      try {
+        assertCatalogPriceScope(args, ctx.token.scopes);
+      } catch (err) {
+        throw new McpScopeError(err instanceof Error ? err.message : "Changing a catalog price needs money.");
+      }
+    },
     async execute(args, ctx) {
       const table = s(args, "table") as "packages" | "addons";
-      return saveCatalogItem(db(ctx), table, { id: s(args, "item_id"), name: s(args, "name") ?? undefined, price: typeof args.price === "number" ? args.price : 0, delete: args.delete === true });
+      return saveCatalogItem(db(ctx), table, {
+        id: s(args, "item_id"),
+        name: s(args, "name") ?? undefined,
+        price: typeof args.price === "number" ? args.price : undefined,
+        delete: args.delete === true,
+      });
     },
   },
   {

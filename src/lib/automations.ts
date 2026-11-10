@@ -66,7 +66,7 @@ export async function runAutomations(
     ];
     if (effects.length) {
       const { error } = await holdAdmin!.from("mcp_held_effects").insert(effects);
-      if (error) throw new Error(`Holding the staff notification needs migration 00221. Nothing was sent. ${error.message}`);
+      if (error) throw new Error(`Holding the staff notification needs migration 00223. Nothing was sent. ${error.message}`);
     }
   } else if (notifType) {
     await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId });
@@ -128,14 +128,14 @@ export async function runAutomations(
         : await admin.rpc("run_booking_helper", { p_helper_id: h.id, p_event_id: eventId });
       if (error) {
         if (opts.drain === "hold" && /schema cache|could not find|does not exist/i.test(error.message)) {
-          throw new Error("Holding onboarding mail needs migration 00220. Nothing was sent.");
+          throw new Error("Holding onboarding mail needs migration 00222. Nothing was sent.");
         }
         if (!/already|visibility|one-shot|should not/i.test(error.message)) throw new Error(error.message);
         continue;
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (opts.drain === "hold" && /schema cache|could not find|does not exist|00220/i.test(message)) throw err;
+      if (opts.drain === "hold" && /schema cache|could not find|does not exist|00222/i.test(message)) throw err;
       continue;
     }
     ran = true;
@@ -148,7 +148,7 @@ export async function runAutomations(
         payload_sha: createHash("sha256").update(JSON.stringify(webhookPayload)).digest("hex"),
         status: "held",
       });
-      if (effectError) throw new Error(`Holding the webhook needs migration 00221. Nothing was sent. ${effectError.message}`);
+      if (effectError) throw new Error(`Holding the webhook needs migration 00223. Nothing was sent. ${effectError.message}`);
     } else if (h.webhook_url) {
       try {
         await fireWebhook(supabase, h.webhook_url, eventId, trigger);

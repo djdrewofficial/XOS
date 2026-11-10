@@ -2,13 +2,13 @@
 
 Applying migrations and registering a connector are approval-gated rollout steps. They are not done in this change. See the order in `docs/mcp.md`.
 
-`booking_helpers` and `email_templates` have no `updated_at` column in migrations `00001` through `00218`. Effect snapshots hash the helper actions and the template body instead of reading that column.
+`booking_helpers` and `email_templates` have no `updated_at` column in migrations `00001` through `00220`. Effect snapshots hash the helper actions and the template body instead of reading that column.
 
 `src/lib/mcp/tools/office.ts` and `src/lib/mcp/tools/coverage.ts` cover the office screens that were still missing: the new-event wizard, package and add-on edits with versions and date prices, template and helper edits, scheduled-comm skip, undo, mark-sent, and override, expenses, trips, equipment damage and photos, Fireflies review, vendor-suggestion review, venue merge, status, source, and custom-field editors, timesheet approval, planner templates, notification audience channels, journeys, the dashboard layout, and venue, vendor, staff, and equipment edits.
 
-Payments stay attached to their event in `00218`: the foreign key is `ON DELETE RESTRICT`. That file is not applied. The isolated test creates a payment with `ON DELETE SET NULL`, applies `00218`, and checks that deleting the event is refused and the payment still points at the event.
+Payments stay attached to their event in `00220`: the foreign key is `ON DELETE RESTRICT`. That file is not applied. The isolated test creates a payment with `ON DELETE SET NULL`, applies `00220`, and checks that deleting the event is refused and the payment still points at the event.
 
-Staff client removal and the agent tool both call `mcp_remove_event_client`. Until `00218` is applied, both fail closed and delete nothing.
+Staff client removal and the agent tool both call `mcp_remove_event_client`. Until `00220` is applied, both fail closed and delete nothing.
 
 Security exclusions, which stay off the connector:
 

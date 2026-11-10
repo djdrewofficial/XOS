@@ -837,7 +837,7 @@ export async function addEventClient(eventId: string, formData: FormData) {
   });
   if (error) {
     if (/mcp_add_event_client|schema cache|could not find/i.test(error.message)) {
-      throw new Error("Adding a client needs migration 00219. Nothing was added.");
+      throw new Error("Adding a client needs migration 00221. Nothing was added.");
     }
     throw new Error(error.message);
   }
@@ -865,7 +865,7 @@ export async function createClientAndAttach(eventId: string, formData: FormData)
   });
   if (error) {
     if (/mcp_add_event_client|schema cache|could not find/i.test(error.message)) {
-      throw new Error("Adding a client needs migration 00219. Nothing was added.");
+      throw new Error("Adding a client needs migration 00221. Nothing was added.");
     }
     throw new Error(error.message);
   }
@@ -882,7 +882,7 @@ export async function removeEventClient(eventId: string, eventClientId: string) 
   });
   if (error) {
     if (/mcp_remove_event_client|schema cache|could not find/i.test(error.message)) {
-      throw new Error("Removing a client needs migration 00218. Nothing was deleted.");
+      throw new Error("Removing a client needs migration 00220. Nothing was deleted.");
     }
     throw new Error(error.message);
   }
@@ -897,7 +897,7 @@ export async function setPrimaryEventClient(eventId: string, eventClientId: stri
   });
   if (error) {
     if (/mcp_set_primary_client|schema cache|could not find/i.test(error.message)) {
-      throw new Error("Choosing the primary client needs migration 00219. Nothing was changed.");
+      throw new Error("Choosing the primary client needs migration 00221. Nothing was changed.");
     }
     throw new Error(error.message);
   }
@@ -913,7 +913,7 @@ export async function toggleContractHolder(eventId: string, eventClientId: strin
   });
   if (error) {
     if (/mcp_toggle_contract_holder|schema cache|could not find/i.test(error.message)) {
-      throw new Error("Updating the contract holder needs migration 00219. Nothing was changed.");
+      throw new Error("Updating the contract holder needs migration 00221. Nothing was changed.");
     }
     throw new Error(error.message);
   }

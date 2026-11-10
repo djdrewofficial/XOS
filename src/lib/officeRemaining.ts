@@ -291,6 +291,20 @@ export async function saveVenueMileage(db: EditorDb, venueId: string, input: { e
   return { auto_mileage: input.enabled === true, distance_miles: miles };
 }
 
+/** Catalog price changes need the money scope. Omitted price is a rename only. */
+export function assertCatalogPriceScope(args: Record<string, unknown>, scopes: readonly string[]) {
+  if ("price" in args && !scopes.includes("money")) {
+    throw new Error("Changing a catalog price needs money.");
+  }
+}
+
+/** Venue travel_fee changes need the money scope. */
+export function assertVenueTravelFeeScope(args: Record<string, unknown>, scopes: readonly string[]) {
+  if ("travel_fee" in args && !scopes.includes("money")) {
+    throw new Error("Changing a venue travel fee needs money.");
+  }
+}
+
 export async function saveCatalogItem(db: EditorDb, table: "packages" | "addons", input: { id?: string | null; name?: string; price?: number; delete?: boolean }) {
   if (input.delete) {
     await must(db.from(table).delete().eq("id", uuid(input.id, "Item")), "Deleting the catalog item");
@@ -298,13 +312,19 @@ export async function saveCatalogItem(db: EditorDb, table: "packages" | "addons"
   }
   const name = String(input.name ?? "").trim();
   if (!name) throw new Error("Name is required.");
-  const price = Number(input.price ?? 0);
-  if (!Number.isFinite(price) || price < 0) throw new Error("Price must be a number.");
-  const row = { name, default_price: price };
   if (input.id) {
+    const row: Record<string, unknown> = { name };
+    if (input.price !== undefined) {
+      const price = Number(input.price);
+      if (!Number.isFinite(price) || price < 0) throw new Error("Price must be a number.");
+      row.default_price = price;
+    }
     await must(db.from(table).update(row).eq("id", uuid(input.id, "Item")), "Updating the catalog item");
     return row;
   }
+  const price = Number(input.price ?? 0);
+  if (!Number.isFinite(price) || price < 0) throw new Error("Price must be a number.");
+  const row = { name, default_price: price };
   await must(db.from(table).insert(row), "Saving the catalog item");
   return row;
 }

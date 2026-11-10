@@ -487,7 +487,7 @@ export const officeTools: LiveTool[] = [
       });
       if (error) {
         if (/mcp_remove_event_client|schema cache|could not find/i.test(error.message)) {
-          throw new Error("Removing a client is unavailable until migration 00218 is applied. Nothing was deleted.");
+          throw new Error("Removing a client is unavailable until migration 00220 is applied. Nothing was deleted.");
         }
         throw new Error(error.message);
       }
@@ -1385,34 +1385,35 @@ export const officeTools: LiveTool[] = [
     async execute(args, ctx) {
       const overrides = args.sms_overrides && typeof args.sms_overrides === "object" ? args.sms_overrides as Record<string, { skip?: boolean; body?: string }> : null;
       const admin = adminOf(ctx);
+      const approved = ctx.approvedSnapshot as { effects?: { template_body_sha256?: string | null }[] } | null;
+      const approvedHashes = [...new Set((approved?.effects ?? []).map((effect) => effect.template_body_sha256).filter((hash): hash is string => Boolean(hash)))];
+      // Hash check happens inside mcp_run_helper_claim in the same transaction that
+      // inserts the rows, so a mismatch is blocked before claim_email_outbox can see it.
       const { data, error } = await admin.rpc("mcp_run_helper_claim", {
         p_helper_id: s(args, "helper_id"),
         p_event_id: s(args, "event_id"),
         p_sms: overrides,
+        p_approved_body_sha: approvedHashes,
       });
       if (error) {
         if (/mcp_run_helper_claim|schema cache|could not find/i.test(error.message)) {
-          throw new Error("Running a helper from the agent needs migration 00219. Nothing was sent.");
+          throw new Error("Running a helper from the agent needs migration 00221. Nothing was sent.");
         }
         throw new Error(error.message);
       }
       const rows = (data ?? []) as { channel: string; id: string; body_sha: string }[];
-      const approved = ctx.approvedSnapshot as { effects?: { template_body_sha256?: string | null }[] } | null;
-      const approvedHashes = new Set((approved?.effects ?? []).map((effect) => effect.template_body_sha256).filter((hash): hash is string => Boolean(hash)));
-      const accepted = [];
-      for (const row of rows) {
-        if (approvedHashes.size > 0 && !approvedHashes.has(row.body_sha)) {
-          const table = row.channel === "sms" ? "sms_log" : "email_log";
-          const { error: blockError } = await admin.from(table).update({ status: "blocked", error: "Body is not the approved template. Not returned to the outbox." }).eq("id", row.id);
-          if (blockError) throw new Error(blockError.message);
-          continue;
-        }
-        accepted.push(row);
-      }
-      const emailIds = accepted.filter((row) => row.channel === "email").map((row) => row.id);
-      const smsIds = accepted.filter((row) => row.channel === "sms").map((row) => row.id);
-      const email = await processOutbox(admin, { onlyIds: emailIds, bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "email").map((row) => [row.id, row.body_sha])) });
-      const sms = await processSmsOutbox(admin, { onlyIds: smsIds, bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "sms").map((row) => [row.id, row.body_sha])) });
+      const emailIds = rows.filter((row) => row.channel === "email").map((row) => row.id);
+      const smsIds = rows.filter((row) => row.channel === "sms").map((row) => row.id);
+      const email = await processOutbox(admin, {
+        onlyIds: emailIds,
+        fromStatus: "sending",
+        bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "email").map((row) => [row.id, row.body_sha])),
+      });
+      const sms = await processSmsOutbox(admin, {
+        onlyIds: smsIds,
+        fromStatus: "sending",
+        bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "sms").map((row) => [row.id, row.body_sha])),
+      });
       return { ok: true, email_ids: emailIds, sms_ids: smsIds, email, sms };
     },
   },

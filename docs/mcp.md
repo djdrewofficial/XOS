@@ -166,7 +166,7 @@ There are no Supabase Edge Functions in this repo. The Netlify scheduled functio
 
 Master admin only. Settings → Agent Access (`/settings/mcp`).
 
-1. After an explicit approval, apply `supabase/migrations/00217_mcp_service_access.sql` and `supabase/migrations/00218_mcp_approval_and_guards.sql` through the numbered migration history (the same process that records every other file in `supabase_migrations.schema_migrations`). Do not paste them as an untracked SQL editor script. The page shows "One-time setup needed" until those tables exist. This repo does not apply them.
+1. After an explicit approval, apply `supabase/migrations/00219_mcp_service_access.sql` and `supabase/migrations/00220_mcp_approval_and_guards.sql` through the numbered migration history (the same process that records every other file in `supabase_migrations.schema_migrations`). Do not paste them as an untracked SQL editor script. The page shows "One-time setup needed" until those tables exist. This repo does not apply them.
 2. Create a token. Name it, pick scopes, optional expiry. The raw token is shown once on that screen. It is not saved, not logged, and not put in the address bar. Copy it into the agent's secret store.
 3. Rotate when you want a new secret. The new token works immediately. The old one keeps working for the overlap you set (default 24 hours, `0` turns it off now), then it stops. Both hashes stay in the table; the raw values do not.
 4. Revoke kills a token immediately, including during an overlap.
@@ -181,12 +181,12 @@ Drew approves each of these. Nothing in this change deploys or applies the migra
 
 Do these in order. Each step waits for your approval. Do not mint a token or register a connector before the code that reads these tables is deployed.
 
-1. Review the migration files `00217`, `00218`, and `00219` against the history already recorded in `supabase_migrations.schema_migrations`.
+1. Review the migration files `00219`, `00220`, and `00221` against the history already recorded in `supabase_migrations.schema_migrations`.
 2. Apply those exact files through that history. Do not paste them as an untracked script.
 3. Roll out the code (merge to `main` so Netlify builds it). Do not deploy with the local Netlify CLI.
 4. Only after that, mint a service token in Settings → Agent Access and register the connector.
 
-Deploying this code before `00218` makes Remove client on the event page fail closed, because that button calls `mcp_remove_event_client`. Deploying it before `00219` makes Choose primary client, Add client, the contract-holder toggle, and Merge venues fail closed the same way, and agent approvals cannot be claimed. Those buttons are coupled to the migrations. The connector stays unregistered until you approve step 4.
+Deploying this code before `00220` makes Remove client on the event page fail closed, because that button calls `mcp_remove_event_client`. Deploying it before `00221` makes Choose primary client, Add client, the contract-holder toggle, and Merge venues fail closed the same way, and agent approvals cannot be claimed. Those buttons are coupled to the migrations. The connector stays unregistered until you approve step 4.
 
 The connector URL is the Netlify hostname, not `https://xos.xpressdjs.com`.
 

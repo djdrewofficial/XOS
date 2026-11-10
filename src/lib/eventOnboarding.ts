@@ -60,11 +60,11 @@ export async function createEventOnboardingRecord(supabase: SupabaseClient, inpu
     });
     const message = probe.error?.message ?? "";
     if (probe.error && /schema cache|could not find|does not exist/i.test(message)) {
-      throw new Error("Holding onboarding mail needs migration 00220. Nothing was created.");
+      throw new Error("Holding onboarding mail needs migration 00222. Nothing was created.");
     }
     const effects = await supabase.from("mcp_held_effects").select("id").limit(1);
     if (effects.error && /schema cache|could not find|does not exist|mcp_held_effects/i.test(effects.error.message)) {
-      throw new Error("Holding staff notifications and webhooks needs migration 00221. Nothing was created.");
+      throw new Error("Holding staff notifications and webhooks needs migration 00223. Nothing was created.");
     }
   }
   const clients = input.clients ?? [];

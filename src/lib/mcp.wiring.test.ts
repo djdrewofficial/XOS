@@ -49,6 +49,8 @@ describe("mcp tool catalog", () => {
     assert.equal(byName.get("helpers_run")?.confirm, true);
     assert.equal(byName.get("payments_add")?.confirm, true);
     assert.equal(byName.get("events_list")?.confirm, false);
+    assert.equal(byName.get("venues_update")?.confirm, true);
+    assert.equal(byName.get("catalog_items")?.confirm, true);
   });
 
   it("sends contracts and helper mail through the app, not a raw insert", () => {
@@ -57,6 +59,8 @@ describe("mcp tool catalog", () => {
     const helper = read("src/lib/bookingHelperRun.ts");
     assert.match(office, /sendDocumentForSignature/);
     assert.match(office, /mcp_run_helper_claim/);
+    assert.match(office, /p_approved_body_sha/);
+    assert.match(office, /fromStatus:\s*"sending"/);
     assert.match(office, /onlyIds: emailIds/);
     assert.match(send, /agreementEmailHtml/);
     assert.match(send, /processOutbox/);
@@ -76,7 +80,7 @@ describe("mcp tool catalog", () => {
 
   it("documents every tool and stores tokens as hashes", () => {
     const docs = read("docs/mcp.md");
-    const migration = read("supabase/migrations/00217_mcp_service_access.sql");
+    const migration = read("supabase/migrations/00219_mcp_service_access.sql");
     for (const tool of catalog(read("src/lib/mcp/tools/office.ts") + "\n" + read("src/lib/mcp/tools/coverage.ts") + "\n" + read("src/lib/mcp/tools/parity.ts") + "\n" + read("src/lib/mcp/tools/remaining.ts"))) assert.match(docs, new RegExp(`\\b${tool.name}\\b`));
     assert.match(docs, /xos_whoami/);
     assert.match(docs, /xos_confirm/);

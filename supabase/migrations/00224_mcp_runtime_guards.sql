@@ -13,10 +13,17 @@ alter table public.sms_log drop constraint if exists sms_log_status_check;
 alter table public.sms_log add constraint sms_log_status_check
   check (status = any (array['queued','sending','held','blocked','sent','failed','cancelled','suppressed']));
 
+-- Helper mail must never sit in `queued` where claim_email_outbox / the cron
+-- can send it before the approved body hash is checked. Hold on insert (GUC),
+-- then in this same transaction move matches to `sending` and mismatches to
+-- `blocked`. Rows without an approved hash are blocked, not queued.
+drop function if exists public.mcp_run_helper_claim(uuid, uuid, jsonb);
+
 create or replace function public.mcp_run_helper_claim(
   p_helper_id uuid,
   p_event_id uuid,
-  p_sms jsonb
+  p_sms jsonb,
+  p_approved_body_sha text[] default '{}'
 )
 returns table(channel text, id uuid, body_sha text)
 language plpgsql
@@ -24,25 +31,63 @@ security definer
 set search_path = public
 as $$
 begin
+  perform set_config('xos.approval_hold', 'on', true);
   perform 1 from public.events as locked_event where locked_event.id = p_event_id for update;
   perform public.run_booking_helper(p_helper_id, p_event_id, p_sms);
+
+  update public.email_log
+  set
+    status = case
+      when cardinality(coalesce(p_approved_body_sha, '{}')) > 0
+           and encode(sha256(convert_to(coalesce(email_log.body_html, ''), 'UTF8')), 'hex') = any (p_approved_body_sha)
+        then 'sending'
+      else 'blocked'
+    end,
+    error = case
+      when cardinality(coalesce(p_approved_body_sha, '{}')) > 0
+           and encode(sha256(convert_to(coalesce(email_log.body_html, ''), 'UTF8')), 'hex') = any (p_approved_body_sha)
+        then email_log.error
+      else 'Body is not the approved template. Not returned to the outbox.'
+    end
+  where email_log.event_id = p_event_id
+    and email_log.status in ('queued', 'held')
+    and email_log.xmin::text = txid_current()::text;
+
+  update public.sms_log
+  set
+    status = case
+      when cardinality(coalesce(p_approved_body_sha, '{}')) > 0
+           and encode(sha256(convert_to(coalesce(sms_log.body, ''), 'UTF8')), 'hex') = any (p_approved_body_sha)
+        then 'sending'
+      else 'blocked'
+    end,
+    error = case
+      when cardinality(coalesce(p_approved_body_sha, '{}')) > 0
+           and encode(sha256(convert_to(coalesce(sms_log.body, ''), 'UTF8')), 'hex') = any (p_approved_body_sha)
+        then sms_log.error
+      else 'Body is not the approved template. Not returned to the outbox.'
+    end
+  where sms_log.event_id = p_event_id
+    and sms_log.status in ('queued', 'held')
+    and sms_log.xmin::text = txid_current()::text;
+
   return query
     select 'email'::text, email_log.id, encode(sha256(convert_to(coalesce(email_log.body_html, ''), 'UTF8')), 'hex')
     from public.email_log
     where email_log.event_id = p_event_id
-      and email_log.status = 'queued'
+      and email_log.status = 'sending'
       and email_log.xmin::text = txid_current()::text;
   return query
     select 'sms'::text, sms_log.id, encode(sha256(convert_to(coalesce(sms_log.body, ''), 'UTF8')), 'hex')
     from public.sms_log
     where sms_log.event_id = p_event_id
-      and sms_log.status = 'queued'
+      and sms_log.status = 'sending'
       and sms_log.xmin::text = txid_current()::text;
 end;
 $$;
 
-revoke all on function public.mcp_run_helper_claim(uuid, uuid, jsonb) from public, anon, authenticated;
-grant execute on function public.mcp_run_helper_claim(uuid, uuid, jsonb) to service_role;
+revoke all on function public.mcp_run_helper_claim(uuid, uuid, jsonb, text[]) from public, anon, authenticated;
+grant execute on function public.mcp_run_helper_claim(uuid, uuid, jsonb, text[]) to service_role;
 
 create or replace function public.mcp_merge_venues(
   p_survivor uuid,

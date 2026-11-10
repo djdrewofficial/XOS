@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createEventOnboardingRecord, type OnboardingClient } from "@/lib/eventOnboarding";
 import { onboardingEffects, saveArticle, saveBackdrop, saveBriefingPref, saveDocumentBlocks, saveHelperButton, saveWeekdayPrices } from "@/lib/officeEdits";
+import { assertVenueTravelFeeScope } from "@/lib/officeRemaining";
 import { sanitizeLayout, type Role } from "@/lib/dashboardWidgets";
 import { syncRecent, firefliesConfigured } from "@/lib/fireflies";
 import {
@@ -366,7 +367,7 @@ export const coverageTools: LiveTool[] = [
       });
       if (error) {
         if (/mcp_set_primary_client|schema cache|could not find/i.test(error.message)) {
-          throw new Error("Choosing the primary client needs migration 00219. Nothing was changed.");
+          throw new Error("Choosing the primary client needs migration 00221. Nothing was changed.");
         }
         throw new Error(error.message);
       }
@@ -509,10 +510,17 @@ export const coverageTools: LiveTool[] = [
   },
   {
     name: "venues_update",
-    description: "Update a venue name, address, fees, and mileage flag.",
+    description: "Update a venue name, address, fees, and mileage flag. Changing travel_fee needs the money scope and human approval.",
     scopes: ["write.venues"],
-    confirm: false,
+    confirm: true,
     inputSchema: obj({ venue_id: UUID, name: STR, address: STR, city: STR, state: STR, travel_fee: { type: "number" }, distance_miles: { type: "number" }, auto_mileage: { type: "boolean" }, notes: STR }, ["venue_id"]),
+    async authorize(args, ctx) {
+      try {
+        assertVenueTravelFeeScope(args, ctx.token.scopes);
+      } catch (err) {
+        throw new McpScopeError(err instanceof Error ? err.message : "Changing a venue travel fee needs money.");
+      }
+    },
     async execute(args, ctx) {
       const patch: Record<string, unknown> = {};
       for (const key of ["name", "address", "city", "state", "travel_fee", "distance_miles", "auto_mileage", "notes"]) if (key in args) patch[key] = args[key];
@@ -540,7 +548,7 @@ export const coverageTools: LiveTool[] = [
       });
       if (error) {
         if (/mcp_merge_venues|schema cache|could not find/i.test(error.message)) {
-          throw new Error("Merging venues needs migration 00219. Nothing was changed.");
+          throw new Error("Merging venues needs migration 00221. Nothing was changed.");
         }
         throw new Error(error.message);
       }

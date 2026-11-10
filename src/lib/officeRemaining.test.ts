@@ -11,6 +11,9 @@ import {
   removeAppMemberDecision,
   restoreHidden,
   revertOverrideDecision,
+  assertCatalogPriceScope,
+  assertVenueTravelFeeScope,
+  saveCatalogItem,
   saveEmployeeProfile,
   saveNamedRow,
   saveSmsConsent,
@@ -132,4 +135,28 @@ describe("remaining office handlers", () => {
     assert.equal(revertOverrideDecision("pending", false), "delete");
     assert.throws(() => revertOverrideDecision("sent", true), /already went out/);
   });
+
+  it("leaves catalog default_price alone when price is omitted on update", async () => {
+    const itemId = "44444444-4444-4444-8444-444444444444";
+    const { db, tables } = memoryDb({ packages: [{ id: itemId, name: "Old", default_price: 2450 }] });
+    const renamed = await saveCatalogItem(db, "packages", { id: itemId, name: "Renamed" });
+    assert.equal(renamed.name, "Renamed");
+    assert.equal("default_price" in renamed, false);
+    assert.equal(tables.packages[0].default_price, 2450);
+    assert.equal(tables.packages[0].name, "Renamed");
+    const priced = await saveCatalogItem(db, "packages", { id: itemId, name: "Renamed", price: 2600 });
+    assert.equal(priced.default_price, 2600);
+    assert.equal(tables.packages[0].default_price, 2600);
+  });
+
+  it("requires money to change a catalog price or venue travel fee", () => {
+    assert.throws(() => assertCatalogPriceScope({ table: "packages", price: 10 }, ["write.catalog"]), /money/);
+    assert.throws(() => assertVenueTravelFeeScope({ venue_id: employee, travel_fee: 50 }, ["write.venues"]), /money/);
+    assertCatalogPriceScope({ table: "packages", name: "Only rename" }, ["write.catalog"]);
+    assertVenueTravelFeeScope({ venue_id: employee, name: "Hall" }, ["write.venues"]);
+    assertCatalogPriceScope({ table: "packages", price: 10 }, ["write.catalog", "money"]);
+    assertVenueTravelFeeScope({ venue_id: employee, travel_fee: 50 }, ["write.venues", "money"]);
+  });
 });
+
+

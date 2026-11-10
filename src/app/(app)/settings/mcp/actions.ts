@@ -42,7 +42,7 @@ export async function mintMcpToken(_prev: TokenFlash, formData: FormData): Promi
     created_by: me?.userId ?? null,
     note: String(formData.get("note") ?? "").trim() || null,
   });
-  if (error) return { error: "Could not save the token. Apply migration 00217 first." };
+  if (error) return { error: "Could not save the token. Apply migration 00219 first." };
   revalidatePath("/settings/mcp");
   return { token: minted.raw, prefix: minted.prefix, name };
 }
@@ -96,7 +96,7 @@ export async function approveMcpPreview(formData: FormData) {
   const id = String(formData.get("confirmation_id") ?? "");
   const admin = createAdminClient();
   const { data: row, error } = await admin.from("mcp_confirmations").select("token_id").eq("id", id).maybeSingle();
-  if (error || !row) throw new Error("That preview is not available. Apply migration 00218 before approving.");
+  if (error || !row) throw new Error("That preview is not available. Apply migration 00220 before approving.");
   const { data: token, error: tokenError } = await admin
     .from("mcp_service_tokens")
     .select("id, name, scopes, revoked_at, expires_at, overlap_until")
