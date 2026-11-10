@@ -5,12 +5,11 @@ import { requireApiModule } from "@/lib/apiAuth";
 import { getMe } from "@/lib/auth";
 import { buildEventContext } from "@/lib/eventAI";
 import { isOpenAIConfigured } from "@/lib/openai";
-import { AI_CONSENT_BLOCKED, contractClientHasAiConsent } from "@/lib/aiConsent";
 
 /* Run-of-show: START (POST) + STATUS (GET). The slow OpenAI+PDF work runs in a
    background function (15-min limit) because the sync request caps at ~26s. POST
    builds the event context, inserts a job, and triggers the background function; the
-   button polls GET for status. */
+   button polls GET for status. Booking includes staff AI use of event info. */
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -37,9 +36,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const denied = await requireApiModule("events", "edit", supabase);
     if (denied) return denied;
     if (!isOpenAIConfigured()) return NextResponse.json({ ok: false, error: "OpenAI isn't configured (OPENAI_API_KEY missing)." }, { status: 400 });
-    if (!(await contractClientHasAiConsent(supabase, id))) {
-      return NextResponse.json({ ok: false, error: AI_CONSENT_BLOCKED }, { status: 403 });
-    }
 
     const body = await req.json().catch(() => ({}));
     const emailStaff = !!body?.email;

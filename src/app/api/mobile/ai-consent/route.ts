@@ -5,7 +5,7 @@ import { resolveEventRole } from "@/lib/planning";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AI_CONSENT_POLICY_VERSION, consentIsActive, contractClientAuthUserId, type ConsentRow } from "@/lib/aiConsent";
 
-/* Client app opt-in for staff AI tools.
+/* Legacy client AI consent rows (table kept; staff tools no longer gate on them).
    GET  /api/mobile/ai-consent?eventId=<uuid>
    POST /api/mobile/ai-consent
         { eventId, action: "grant" | "withdraw", policyVersion?, source?: "app" | "web" }
@@ -13,7 +13,7 @@ import { AI_CONSENT_POLICY_VERSION, consentIsActive, contractClientAuthUserId, t
    Response:
    { eventId, granted, grantedAt, withdrawnAt, policyVersion, source }
 
-   Default is not granted. Staff cannot grant or withdraw for a client. */
+   Staff AI tools ignore these rows. Staff cannot grant or withdraw for a client. */
 
 export const dynamic = "force-dynamic";
 

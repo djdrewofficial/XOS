@@ -1,10 +1,12 @@
-/* Explicit opt-in before personal event data is sent to OpenAI.
-   No row, or a withdrawn row, means not granted. */
+/* Legacy ai_consents helpers for the mobile API and historical rows.
+   Staff AI tools no longer gate on these rows: booking includes a plain AI
+   notice, with no client opt-in or opt-out. SMS marketing consent stays separate. */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const AI_CONSENT_POLICY_VERSION = "2026-11-06";
 
+/** @deprecated Staff AI tools are no longer blocked by client consent. */
 export const AI_CONSENT_BLOCKED = "Client hasn't allowed AI tools for this event";
 
 export type ConsentRow = {
@@ -107,11 +109,9 @@ export async function contractClientAuthUserId(sb: SupabaseClient, eventId: stri
   return account.auth_user_id as string;
 }
 
-/** True only when the contract client's app login has an active consent for this event. */
-export async function contractClientHasAiConsent(sb: SupabaseClient, eventId: string): Promise<boolean> {
-  const userId = await contractClientAuthUserId(sb, eventId);
-  if (!userId) return false;
-  return callerHasAiConsent(sb, userId, eventId);
+/** Always true for staff tools — booking includes the AI notice; no opt-in gate. */
+export async function contractClientHasAiConsent(_sb: SupabaseClient, _eventId: string): Promise<boolean> {
+  return true;
 }
 
 export async function callerHasAiConsent(sb: SupabaseClient, authUserId: string, eventId: string): Promise<boolean> {
@@ -153,37 +153,7 @@ export async function consentedPeopleForEvent(
   return { userIds, clientIds };
 }
 
-/** Event ids whose contract client has an active consent. Missing table fails closed. */
-export async function consentedEventIds(sb: SupabaseClient, eventIds: string[]): Promise<Set<string>> {
-  const ids = [...new Set(eventIds.filter(Boolean))];
-  const allowed = new Set<string>();
-  if (!ids.length) return allowed;
-  const { data: events, error } = await sb.from("events").select("id, client_id").in("id", ids);
-  if (error || !events?.length) return allowed;
-  const clientIds = [...new Set(events.map((event) => event.client_id).filter(Boolean))] as string[];
-  if (!clientIds.length) return allowed;
-  const { data: accounts, error: accountErr } = await sb
-    .from("accounts")
-    .select("auth_user_id, client_id")
-    .eq("account_type", "client")
-    .in("client_id", clientIds);
-  if (accountErr || !accounts?.length) return allowed;
-  const userByClient = new Map(accounts.map((row) => [row.client_id as string, row.auth_user_id as string]));
-  const userIds = [...userByClient.values()];
-  const { data: consents, error: consentErr } = await sb
-    .from("ai_consents")
-    .select("auth_user_id, event_id, granted_at, withdrawn_at")
-    .in("event_id", ids)
-    .in("auth_user_id", userIds);
-  if (consentErr) return allowed;
-  const active = new Set(
-    (consents ?? [])
-      .filter((row) => consentIsActive(row as ConsentRow))
-      .map((row) => `${row.auth_user_id}:${row.event_id}`),
-  );
-  for (const event of events) {
-    const userId = event.client_id ? userByClient.get(event.client_id as string) : undefined;
-    if (userId && active.has(`${userId}:${event.id}`)) allowed.add(event.id as string);
-  }
-  return allowed;
+/** All given event ids — staff AI no longer filters by client consent rows. */
+export async function consentedEventIds(_sb: SupabaseClient, eventIds: string[]): Promise<Set<string>> {
+  return new Set(eventIds.filter(Boolean));
 }

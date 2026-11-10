@@ -2,11 +2,11 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { chatComplete, isOpenAIConfigured } from "@/lib/openai";
 import { sendBrandedEmail } from "@/lib/mailgun";
-import { consentedEventIds, rowsForAi } from "@/lib/aiConsent";
 
 /* Daily morning briefing: gather the day's operational picture, let GPT write a
    friendly skimmable summary, and email it to the office. Runs from the
-   /api/cron/morning-briefing route (service-role client). */
+   /api/cron/morning-briefing route (service-role client). Booking includes
+   staff AI use of event info — every listed event can go to the model. */
 
 const DAY = 86400000;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -48,12 +48,6 @@ export async function sendMorningBriefing(admin: SupabaseClient, to = "events@xp
       .order("event_date", { ascending: true }),
   ]);
 
-  const eventIds = [
-    ...(events ?? []).map((event) => event.id as string),
-    ...(dues ?? []).map((row) => pluck(row, "event", "id")).filter((id): id is string => Boolean(id)),
-    ...(unsigned ?? []).map((event) => event.id as string),
-  ];
-  const allowed = await consentedEventIds(admin, eventIds);
   const evList = (events ?? []).map((e) => ({
     id: e.id as string,
     name: (e.name as string | null) ?? "Event",
@@ -63,35 +57,22 @@ export async function sendMorningBriefing(admin: SupabaseClient, to = "events@xp
     status: pluck(e, "status", "name"),
     package: pluck(e, "package", "name"),
     today: e.event_date === todayStr,
-    allowed: allowed.has(e.id as string),
   }));
   const dueList = (dues ?? [])
     .filter((d) => !pluckRaw(d, "event")?.archived_at)
-    .map((d) => {
-      const eventId = pluck(d, "event", "id");
-      return {
-        due: d.due_date as string,
-        amount: Number(d.amount) || 0,
-        label: d.label as string | null,
-        event: pluck(d, "event", "name"),
-        allowed: Boolean(eventId) && allowed.has(eventId as string),
-      };
-    });
+    .map((d) => ({
+      due: d.due_date as string,
+      amount: Number(d.amount) || 0,
+      label: d.label as string | null,
+      event: pluck(d, "event", "name"),
+    }));
   const unsignedList = (unsigned ?? []).map((u) => ({
     name: (u.name as string | null) ?? "Event",
     date: u.event_date as string,
     sent: u.contract_sent_date as string | null,
-    allowed: allowed.has(u.id as string),
   }));
 
   const aiData = {
-    today: todayStr,
-    eventsToday: rowsForAi(evList.filter((e) => e.today)),
-    eventsNext14: rowsForAi(evList.filter((e) => !e.today)),
-    paymentsDueNext7: rowsForAi(dueList),
-    unsignedAgreements: rowsForAi(unsignedList),
-  };
-  const staffData = {
     today: todayStr,
     eventsToday: evList.filter((e) => e.today),
     eventsNext14: evList.filter((e) => !e.today),
@@ -108,24 +89,18 @@ export async function sendMorningBriefing(admin: SupabaseClient, to = "events@xp
       "Write a concise, friendly MORNING BRIEFING email body in simple HTML (only <h3>, <p>, <ul>, <li>, <strong>; no <html>/<head>/<style>). " +
       "Organize into: Today, This Week (next 14 days), Payments Due (next 7 days), Needs Attention (unsigned agreements). " +
       "Lead with the most important items. If a section has nothing, say so in one short line. Format dates like 'Sat, Apr 25' and money like $1,200. Keep it skimmable, short bullets, no fluff. " +
-      "Only the events in this JSON have AI permission. Do not invent other client names.";
+      "Use only the events in this JSON. Do not invent other client names.";
     try {
       bodyHtml = await chatComplete([
         { role: "system", content: system },
-        { role: "user", content: `Today is ${todayStr}. Here is today's permitted data as JSON:\n\n${JSON.stringify(aiData)}` },
+        { role: "user", content: `Today is ${todayStr}. Here is today's data as JSON:\n\n${JSON.stringify(aiData)}` },
       ]);
       bodyHtml = bodyHtml.replace(/^```html?/i, "").replace(/```$/i, "").trim();
     } catch {
-      bodyHtml = fallbackHtml(staffData);
+      bodyHtml = fallbackHtml(aiData);
     }
   } else {
-    bodyHtml = fallbackHtml(staffData);
-  }
-  const heldBack = evList.filter((event) => !event.allowed);
-  if (heldBack.length && isOpenAIConfigured() && aiHasRows) {
-    bodyHtml += `<h3>Not included in the AI summary</h3><ul>${heldBack
-      .map((event) => `<li>${event.date} · ${event.name}${event.venue ? ` · ${event.venue}` : ""}</li>`)
-      .join("")}</ul>`;
+    bodyHtml = fallbackHtml(aiData);
   }
 
   const niceDate = today.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
