@@ -25,6 +25,8 @@ import { buildOutstanding } from "@/lib/reports/build";
 import { staffCost, staffHours } from "@/lib/payroll";
 import { canonicalJson, sha256 } from "../crypto";
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
+import { addEventClientMembership } from "../eventMembership";
+import { INQUIRY_SOURCE_NAME_SCHEMA, insertEventWithInquirySource, updateEventWithInquirySource } from "../inquirySource";
 import { McpScopeError, type ToolContext } from "../types";
 import type { LiveTool } from "../protocol";
 import type { JsonSchema } from "../validate";
@@ -264,7 +266,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_form_options",
-    description: "Reference lists for creating an event: types, statuses, sources, packages, add-ons, active staff.",
+    description: "Reference lists for creating an event: types, statuses, every inquiry source (id, name, is_active), packages, add-ons, active staff. List sources first, pick a match, and create a new one only if nothing matches.",
     scopes: ["read.events"],
     confirm: false,
     inputSchema: obj({}),
@@ -273,7 +275,7 @@ export const officeTools: LiveTool[] = [
       const [types, statuses, sources, packages, addons, employees] = await Promise.all([
         query(admin.from("event_types").select("id, name").eq("is_active", true).order("name")),
         query(admin.from("event_statuses").select("id, name").eq("is_active", true).order("sort_order")),
-        query(admin.from("inquiry_sources").select("id, name").eq("is_active", true).order("name")),
+        query(admin.from("inquiry_sources").select("id, name, is_active").order("name")),
         query(admin.from("packages").select(ctx.token.scopes.includes("read.catalog") ? "id, name, default_price" : "id, name").eq("is_active", true).order("display_order")),
         query(admin.from("addons").select(ctx.token.scopes.includes("read.catalog") ? "id, name, default_price" : "id, name").eq("is_active", true).order("display_order")),
         query(admin.from("employees").select("id, first_name, last_name").eq("is_active", true).order("first_name")),
@@ -283,7 +285,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_create",
-    description: "Create an event for an existing client. Applies the package's date price and default add-ons, the same way the simple Add Event form does. Does not run event-created automations; use events_set_status or helpers_run when you mean to message the client.",
+    description: "Create an event for an existing client. Applies the package's date price and default add-ons, the same way the simple Add Event form does. List sources with events_form_options first, pick a match (inquiry_source_id or exact case-sensitive inquiry_source_name), and create a new one with sources_save only if nothing matches. Does not run event-created automations; use events_set_status or helpers_run when you mean to message the client.",
     scopes: ["write.events"],
     confirm: false,
     inputSchema: obj({
@@ -295,27 +297,32 @@ export const officeTools: LiveTool[] = [
       venue_id: UUID,
       package_id: UUID,
       guest_count: { type: "integer", minimum: 0 },
+      inquiry_source_id: UUID,
+      inquiry_source_name: INQUIRY_SOURCE_NAME_SCHEMA,
     }, ["client_id", "name"]),
     async execute(args, ctx) {
       const admin = adminOf(ctx);
-      const { data, error } = await admin.from("events").insert({
-        client_id: s(args, "client_id"),
-        name: s(args, "name"),
-        event_type_id: s(args, "event_type_id"),
-        status_id: s(args, "status_id"),
-        event_date: s(args, "event_date"),
-        venue_id: s(args, "venue_id"),
-        package_id: s(args, "package_id"),
-        guest_count: args.guest_count ?? null,
-      }).select("id").single();
-      if (error) throw new Error(error.message);
-      if (s(args, "package_id")) await applyPackageSelection(admin, data.id, s(args, "package_id")!, s(args, "event_date"), false);
-      return { id: data.id };
+      const created = await insertEventWithInquirySource(
+        admin,
+        {
+          client_id: s(args, "client_id"),
+          name: s(args, "name"),
+          event_type_id: s(args, "event_type_id"),
+          status_id: s(args, "status_id"),
+          event_date: s(args, "event_date"),
+          venue_id: s(args, "venue_id"),
+          package_id: s(args, "package_id"),
+          guest_count: args.guest_count ?? null,
+        },
+        args,
+      );
+      if (s(args, "package_id")) await applyPackageSelection(admin, created.id, s(args, "package_id")!, s(args, "event_date"), false);
+      return created;
     },
   },
   {
     name: "events_update",
-    description: "Update core event fields: name, date, times, guest count, venue, status is separate (events_set_status) because a status change can message the client.",
+    description: "Update core event fields: name, date, times, guest count, venue, inquiry source (id or exact, case-sensitive name). List sources with events_form_options first, pick a match, and create a new one with sources_save only if nothing matches. Status is separate (events_set_status) because a status change can message the client. Booking-section updates also accept inquiry_source_id via events_record.",
     scopes: ["write.events"],
     confirm: false,
     inputSchema: obj({
@@ -328,6 +335,8 @@ export const officeTools: LiveTool[] = [
       guest_count: { type: "integer", minimum: 0 },
       venue_id: UUID,
       internal_notes: { type: "string" },
+      inquiry_source_id: UUID,
+      inquiry_source_name: INQUIRY_SOURCE_NAME_SCHEMA,
     }, ["event_id"]),
     async execute(args, ctx) {
       const patch: Record<string, unknown> = {};
@@ -335,9 +344,7 @@ export const officeTools: LiveTool[] = [
         if (key in args) patch[key] = s(args, key);
       }
       if ("guest_count" in args) patch.guest_count = args.guest_count;
-      const { error } = await adminOf(ctx).from("events").update(patch).eq("id", s(args, "event_id"));
-      if (error) throw new Error(error.message);
-      return { ok: true };
+      return updateEventWithInquirySource(adminOf(ctx), s(args, "event_id")!, patch, args);
     },
   },
   {
@@ -455,20 +462,17 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_add_client",
-    description: "Attach an existing client to an event. The first client becomes primary.",
+    description: "Attach an existing client to an event the same way the event page does (mcp_add_event_client). The first client becomes primary. Optional contract_holder true marks that membership as the Booking Agreement holder via mcp_toggle_contract_holder.",
     scopes: ["write.events", "write.clients"],
     confirm: false,
-    inputSchema: obj({ event_id: UUID, client_id: UUID, role: { type: "string" } }, ["event_id", "client_id"]),
+    inputSchema: obj({ event_id: UUID, client_id: UUID, role: { type: "string" }, contract_holder: { type: "boolean" } }, ["event_id", "client_id"]),
     async execute(args, ctx) {
-      const admin = adminOf(ctx);
-      const eventId = s(args, "event_id")!;
-      const clientId = s(args, "client_id")!;
-      const { count } = await admin.from("event_clients").select("id", { count: "exact", head: true }).eq("event_id", eventId);
-      const isFirst = (count ?? 0) === 0;
-      const { error } = await admin.from("event_clients").insert({ event_id: eventId, client_id: clientId, role: s(args, "role") ?? "Client", is_primary: isFirst });
-      if (error) throw new Error(error.message);
-      if (isFirst) await admin.from("events").update({ client_id: clientId }).eq("id", eventId);
-      return { ok: true, primary: isFirst };
+      return addEventClientMembership(adminOf(ctx), {
+        eventId: s(args, "event_id")!,
+        clientId: s(args, "client_id")!,
+        role: s(args, "role"),
+        contractHolder: args.contract_holder === true,
+      });
     },
   },
   {
@@ -1334,7 +1338,7 @@ export const officeTools: LiveTool[] = [
     confirm: false,
     inputSchema: obj({}),
     async execute(_args, ctx) {
-      const rows = await query(adminOf(ctx).from("booking_helpers").select("id, title, is_active, actions").order("sort_order"));
+      const rows = await query(adminOf(ctx).from("booking_helpers").select("id, title, is_active, actions").order("position"));
       const helpers = (Array.isArray(rows) ? rows : []).map((row) => {
         const item = row as { actions?: { type?: string }[] };
         return { ...item, action_types: (item.actions ?? []).map((act) => act.type), actions: undefined };
