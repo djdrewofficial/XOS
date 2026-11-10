@@ -44,7 +44,7 @@ describe("AI consent state", () => {
     );
   });
 
-  it("leaves unconsented rows out of the model payload", () => {
+  it("keeps the rowsForAi helper for legacy callers", () => {
     const rows = [
       { id: "a", name: "Alex", allowed: true },
       { id: "b", name: "Jordan", allowed: false },
@@ -52,7 +52,7 @@ describe("AI consent state", () => {
     assert.deepEqual(rowsForAi(rows), [{ id: "a", name: "Alex" }]);
   });
 
-  it("does not let one person's opt-in cover another person's free text", () => {
+  it("keeps per-person filter helpers for historical rows without using them as staff gates", () => {
     const consented = new Set(["contract-user"]);
     assert.equal(answerAllowed("guest-user", consented), false);
     assert.equal(answerAllowed(null, consented), false);
@@ -277,13 +277,17 @@ describe("AI consent schema and call sites", () => {
     );
   });
 
-  it("blocks personal staff tools without consent and strips the morning briefing", () => {
-    assert.match(read("src/lib/eventAI.ts"), /contractClientHasAiConsent/);
-    assert.match(read("src/lib/eventAI.ts"), /AI_CONSENT_BLOCKED/);
+  it("does not gate staff AI tools on client consent rows", () => {
+    assert.doesNotMatch(read("src/lib/eventAI.ts"), /contractClientHasAiConsent/);
+    assert.doesNotMatch(read("src/lib/eventAI.ts"), /AI_CONSENT_BLOCKED/);
+    assert.doesNotMatch(read("src/lib/eventAI.ts"), /answerAllowed|songLineAllowed|clientContactAllowed|consentedPeopleForEvent/);
+    assert.doesNotMatch(read("src/app/api/events/[id]/run-of-show/route.ts"), /contractClientHasAiConsent|AI_CONSENT_BLOCKED/);
+    assert.doesNotMatch(read("src/lib/morningBriefing.ts"), /rowsForAi|consentedEventIds/);
+    assert.doesNotMatch(read("src/app/(app)/events/[id]/spotify-export-actions.ts"), /contractClientHasAiConsent/);
+    assert.doesNotMatch(read("src/app/(app)/events/[id]/page.tsx"), /AiConsentBadge/);
+    assert.equal(existsSync(join(root, "src/components/AiConsentBadge.tsx")), false);
     assert.equal(AI_CONSENT_BLOCKED, "Client hasn't allowed AI tools for this event");
-    assert.match(read("src/app/api/events/[id]/run-of-show/route.ts"), /contractClientHasAiConsent/);
-    assert.match(read("src/lib/morningBriefing.ts"), /rowsForAi/);
-    assert.match(read("src/lib/eventAI.ts"), /answerAllowed/);
+    assert.match(read("src/lib/aiConsent.ts"), /async function contractClientHasAiConsent[\s\S]*return true/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /not_contract_client/);
     assert.match(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /eligibleNumber/);
     assert.match(read("src/app/api/mobile/sms-marketing-consent/route.ts"), /clients\.cell_phone/);
@@ -295,7 +299,6 @@ describe("AI consent schema and call sites", () => {
     assert.match(read("src/app/api/assistant/chat/route.ts"), /assistantTextHasDirectContact/);
     assert.match(read("supabase/migrations/00215_sms_marketing_consent.sql"), /sms_marketing_consent_events/);
     assert.equal(existsSync(join(root, "src/app/api/music/recommend/route.ts")), false);
-    assert.match(read("src/app/(app)/events/[id]/spotify-export-actions.ts"), /contractClientHasAiConsent/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /action !== "grant" && action !== "withdraw"/);
     assert.match(read("src/app/api/mobile/ai-consent/route.ts"), /ai_consent_save/);
     assert.doesNotMatch(read("src/app/api/mobile/ai-consent/route.ts"), /from\("ai_consents"\)\.upsert/);

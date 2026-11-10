@@ -40,28 +40,31 @@ describe("app policy text", () => {
     assert.match(chrome, /APP_POLICY_SUPPORT_EMAIL/);
   });
 
-  it("states staff AI still processes personal data and that acceptance is not permission", () => {
+  it("states staff AI as a plain booking notice with no opt-in or opt-out", () => {
     const en = policyPlainText("privacy", "en");
     const es = policyPlainText("privacy", "es");
     assert.match(en, /Removing client-facing song recommendations does not remove staff AI/);
-    assert.match(en, /This disclosure is not itself permission to send personal data to third-party AI/);
-    assert.match(en, /unless you opt in for that event/);
-    assert.match(en, /You can withdraw/);
-    assert.match(es, /Puede retirar esa elección/);
+    assert.match(en, /Booking with Xpress Entertainment includes notice that staff may use these AI tools/);
+    assert.match(en, /There is no separate AI opt-in or opt-out in the app/);
+    assert.match(en, /Marketing texts remain a separate optional choice/);
+    assert.doesNotMatch(en, /unless you opt in for that event/);
+    assert.doesNotMatch(en, /You can withdraw that choice/);
+    assert.match(es, /Contratar con Xpress Entertainment incluye el aviso/);
+    assert.match(es, /No hay una opción separada de autorización o retirada de IA/);
     assert.doesNotMatch(en, /—/);
     assert.match(en, /OpenAI/);
     assert.match(es, /no elimina la IA del personal/);
-    assert.match(es, /no constituye por sí mismo autorización/);
     const terms = policyPlainText("terms", "en");
     const termsEs = policyPlainText("terms", "es");
-    assert.match(terms, /Accepting these Terms is not explicit permission for third-party AI processing/);
+    assert.match(terms, /Booking includes that AI notice/);
+    assert.match(terms, /there is no separate AI opt-in or opt-out in the app/);
     assert.match(terms, /Anyone on the event can report content or a person/);
     assert.match(terms, /Hosts can remove guest content and remove guests/);
     assert.match(terms, /Xpress can remove content that breaks these terms/);
     assert.match(termsEs, /Cualquier persona en el evento puede reportar contenido o a una persona/);
     assert.match(termsEs, /Los anfitriones pueden quitar el contenido de los invitados y quitar invitados/);
     assert.doesNotMatch(`${terms}\n${termsEs}`, /—/);
-    assert.match(terms, /proposed separate authorization/);
+    assert.doesNotMatch(terms, /proposed separate authorization/);
     assert.doesNotMatch(en, /all AI processing has stopped/);
     assert.doesNotMatch(en, /For You has been removed from every/);
   });

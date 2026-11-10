@@ -1,21 +1,12 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { chatComplete, isOpenAIConfigured } from "@/lib/openai";
-import {
-  AI_CONSENT_BLOCKED,
-  answerAllowed,
-  clientContactAllowed,
-  consentedPeopleForEvent,
-  contractClientAuthUserId,
-  contractClientHasAiConsent,
-  songLineAllowed,
-  songNoteAllowed,
-} from "@/lib/aiConsent";
 
 /* Event intelligence: gather everything known about one event (basics, staff,
-   package/add-ons, the planner timeline + songs + Q&A, Fireflies call notes/transcript,
-   internal notes) into a text context, then use OpenAI to (a) write a staff briefing
-   and (b) answer questions grounded in that data. Server-only. */
+   package/add-ons, the planner timeline + songs + Q&A) into a text context, then
+   use OpenAI to (a) write a staff briefing and (b) answer questions grounded in
+   that data. Server-only. Booking includes staff AI use of event info — no
+   per-client consent gate. */
 
 const clamp = (s: string | null | undefined, n: number) =>
   s && s.length > n ? s.slice(0, n) + " …[truncated]" : s || "";
@@ -33,10 +24,6 @@ export async function buildEventContext(
   opts: { transcriptChars?: number } = {},
 ): Promise<string> {
   void opts.transcriptChars;
-  const [{ userIds, clientIds }, contractUserId] = await Promise.all([
-    consentedPeopleForEvent(sb, eventId),
-    contractClientAuthUserId(sb, eventId),
-  ]);
   const { data: e } = await sb
     .from("events")
     .select(
@@ -70,7 +57,6 @@ export async function buildEventContext(
   L.push(`Salesperson: ${nameOf(pick(e, "salesperson")) || "?"}`);
 
   const clients = (ecs ?? [])
-    .filter((c) => clientContactAllowed((pick(c, "client") as { id?: string } | null)?.id, clientIds))
     .map((c) => `${nameOf(pick(c, "client"))}${pick(c, "role") ? ` (${pick(c, "role")})` : ""}`)
     .filter(Boolean);
   if (clients.length) L.push(`Clients: ${clients.join(", ")}`);
@@ -84,14 +70,11 @@ export async function buildEventContext(
   // Planner timeline
   if (pick(e, "planning_seeded")) {
     const ansByQ = new Map(
-      (ans ?? [])
-        .filter((a) => answerAllowed(pick(a, "answered_by") as string | null, userIds))
-        .map((a) => [pick(a, "question_id") as string, pick(a, "answer") as string]),
+      (ans ?? []).map((a) => [pick(a, "question_id") as string, pick(a, "answer") as string]),
     );
     const qById = new Map((qs ?? []).map((q) => [pick(q, "id") as string, q]));
     const songsBySec = new Map<string, Row[]>();
     for (const s of songs ?? []) {
-      if (!songLineAllowed(pick(s, "requested_by") as string | null, userIds, contractUserId)) continue;
       const sid = pick(s, "section_id") as string;
       const arr = songsBySec.get(sid) ?? [];
       arr.push(s as Row);
@@ -115,7 +98,7 @@ export async function buildEventContext(
       }
       for (const s of songsBySec.get(sid) ?? []) {
         const tags = [pick(s, "must_play") ? "MUST-PLAY" : "", pick(s, "do_not_play") ? "DO-NOT-PLAY" : ""].filter(Boolean).join("/");
-        const note = songNoteAllowed(pick(s, "requested_by") as string | null, userIds) ? pick(s, "note") : null;
+        const note = pick(s, "note");
         L.push(`- ♪ ${pick(s, "title")}${pick(s, "artist") ? ` — ${pick(s, "artist")}` : ""}${tags ? ` [${tags}]` : ""}${note ? ` (${note})` : ""}`);
       }
     }
@@ -127,7 +110,7 @@ export async function buildEventContext(
     L.push(`\n## PLANNER: not started.`);
   }
 
-  L.push("\n## OMITTED\nCall transcripts, internal notes, and free text from people who have not opted in are not included.");
+  L.push("\n## OMITTED\nCall transcripts and internal notes are not included.");
 
   return L.join("\n");
 }
@@ -139,7 +122,6 @@ function nameField(e: unknown, key: string): string {
 
 export async function summarizeEvent(sb: SupabaseClient, eventId: string): Promise<{ ok: boolean; text?: string; error?: string }> {
   if (!isOpenAIConfigured()) return { ok: false, error: "OpenAI isn't configured (OPENAI_API_KEY missing)." };
-  if (!(await contractClientHasAiConsent(sb, eventId))) return { ok: false, error: AI_CONSENT_BLOCKED };
   const ctx = await buildEventContext(sb, eventId);
   if (!ctx) return { ok: false, error: "Event not found." };
   const system =
@@ -154,7 +136,6 @@ export async function summarizeEvent(sb: SupabaseClient, eventId: string): Promi
 
 export async function answerEventQuestion(sb: SupabaseClient, eventId: string, question: string): Promise<{ ok: boolean; text?: string; error?: string }> {
   if (!isOpenAIConfigured()) return { ok: false, error: "OpenAI isn't configured (OPENAI_API_KEY missing)." };
-  if (!(await contractClientHasAiConsent(sb, eventId))) return { ok: false, error: AI_CONSENT_BLOCKED };
   const ctx = await buildEventContext(sb, eventId);
   if (!ctx) return { ok: false, error: "Event not found." };
   const system = `You answer questions about ONE specific event for the staff of a DJ/event company, using ONLY the event data below. If the answer isn't in the data, say you don't have that on file (never guess). Be concise and specific — quote song titles, times, and names exactly.\n\n=== EVENT DATA ===\n${ctx}`;
