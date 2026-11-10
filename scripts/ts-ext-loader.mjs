@@ -4,6 +4,9 @@ import { resolve as resolvePath } from "node:path";
 
 /** Lets `node --test` load extensionless TypeScript imports the same way Next does. */
 export async function resolve(specifier, context, nextResolve) {
+  if (specifier === "server-only") {
+    return nextResolve(pathToFileURL(resolvePath(process.cwd(), "scripts/shims/server-only.mjs")).href, context);
+  }
   if (specifier === "next/headers") {
     return nextResolve(pathToFileURL(resolvePath(process.cwd(), "scripts/shims/next-headers.mjs")).href, context);
   }

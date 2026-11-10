@@ -1,7 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fireHelperWebhook } from "@/lib/automations";
-import { helperAllowedForEventType, helperAllowedForRole } from "@/lib/helperAccess";
-import { drainEventOutbox } from "@/lib/scopedOutbox";
+import { helperAllowedForEventType, helperAllowedForFieldStaff, helperAllowedForRole } from "@/lib/helperAccess";
 
 export type HelperSmsPrompt = {
   index: number;
@@ -53,6 +51,8 @@ export async function executeBookingHelper(
     helperId: string;
     smsOverrides?: Record<string, HelperSmsOverride> | null;
     actorRole: string | null;
+    /** Field staff (employee / marketing tier). Enforced even when enforceRole is false. */
+    actorFieldStaff?: boolean;
     /** Staff clicks pass true. A service token is not a staff role; the token
         scopes are the authorization, and the event-type limit still applies. */
     enforceRole: boolean;
@@ -70,6 +70,9 @@ export async function executeBookingHelper(
   if (input.enforceRole && !helperAllowedForRole(scope, input.actorRole)) {
     throw new Error(`Your role can't run "${scope.title}".`);
   }
+  if (input.actorFieldStaff && !helperAllowedForFieldStaff(scope, input.actorRole)) {
+    throw new Error(`Your role can't run "${scope.title}".`);
+  }
   const queuedSince = new Date().toISOString();
   const { error } = await admin.rpc("run_booking_helper", {
     p_helper_id: input.helperId,
@@ -77,6 +80,8 @@ export async function executeBookingHelper(
     p_sms_overrides: cleanSmsOverrides(input.smsOverrides),
   });
   if (error) throw new Error(error.message);
+  // Loaded here so the role and event-type guards above can run without the mail stack.
+  const [{ fireHelperWebhook }, { drainEventOutbox }] = await Promise.all([import("@/lib/automations"), import("@/lib/scopedOutbox")]);
   await fireHelperWebhook(admin, input.helperId, input.eventId);
   await drainEventOutbox(admin, input.eventId, queuedSince);
   return { title: scope.title as string };

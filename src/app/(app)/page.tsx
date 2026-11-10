@@ -55,7 +55,7 @@ export default async function Dashboard({
       case "recent_notifications":
         return <RecentNotifications />;
       case "quick_actions":
-        return <QuickActions />;
+        return <QuickActions fieldStaff={!!me?.fieldStaff} />;
       case "my_upcoming_events":
         return <MyUpcomingEvents />;
       default:
@@ -67,9 +67,11 @@ export default async function Dashboard({
     <div>
       <div className="mb-5 flex items-center justify-between">
         <h1 className="page-title mb-0">Dashboard</h1>
-        <Link href="/settings/dashboard" className="text-xs font-semibold text-zinc-400 hover:text-brand dark:hover:text-brand-lighter">
-          ✦ Edit Layout
-        </Link>
+        {!me?.fieldStaff && (
+          <Link href="/settings/dashboard" className="text-xs font-semibold text-zinc-400 hover:text-brand dark:hover:text-brand-lighter">
+            ✦ Edit Layout
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">

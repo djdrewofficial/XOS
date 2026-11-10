@@ -7,6 +7,7 @@ import { holidaysForYear } from "@/lib/holidays";
 import MonthCalendarClient from "@/components/dashboard/MonthCalendarClient";
 import { loadEventsByDate } from "@/lib/calendarEvents";
 import StaffCheckIn from "@/components/StaffCheckIn";
+import { eventSource } from "@/lib/eventSource";
 
 /* Dashboard widgets — each is a self-contained async server component that
    fetches its own data. Registered in src/lib/dashboardWidgets.ts; placed
@@ -14,6 +15,13 @@ import StaffCheckIn from "@/components/StaffCheckIn";
 
 function pad(n: number) {
   return n.toString().padStart(2, "0");
+}
+
+/** Field staff read the money-free views (assigned events only — migration
+    00217); office tiers read the base tables. getMe is React-cached. */
+async function viewerSource(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const me = await getMe(supabase);
+  return eventSource(!!me?.fieldStaff);
 }
 
 function todayStr() {
@@ -24,6 +32,7 @@ function todayStr() {
 /* ---------------- Monthly Stats ---------------- */
 export async function StatCards() {
   const supabase = await createClient();
+  const src = await viewerSource(supabase);
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
   const monthEnd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
@@ -37,14 +46,14 @@ export async function StatCards() {
   const [{ data: statuses }, { data: createdThisMonth }, { data: bookedThisMonth }] = await Promise.all([
     supabase.from("event_statuses").select("id, is_leads_group, is_lost_sale_group, is_booked_group"),
     supabase
-      .from("events")
+      .from(src.events)
       .select("id, status_id")
       .or(
         `and(initial_contact_date.gte.${monthStart},initial_contact_date.lte.${monthEnd}),` +
           `and(initial_contact_date.is.null,created_at.gte.${monthStart}T00:00:00,created_at.lte.${monthEnd}T23:59:59)`
       ),
     supabase
-      .from("events")
+      .from(src.events)
       .select("id, status_id")
       .or(
         `and(contract_signed_date.gte.${monthStart},contract_signed_date.lte.${monthEnd}),` +
@@ -82,6 +91,7 @@ export async function StatCards() {
 /* ---------------- Month Calendar ---------------- */
 export async function MonthCalendar({ m }: { m?: string }) {
   const supabase = await createClient();
+  const src = await viewerSource(supabase);
   const now = new Date();
   const today = todayStr();
 
@@ -114,11 +124,11 @@ export async function MonthCalendar({ m }: { m?: string }) {
   const [{ data: timeOff }, eventsByDate] = await Promise.all([
     supabase
       .from("employee_time_off")
-      .select("*, employee:employees(first_name, last_name)")
+      .select(`*, employee:${src.employees}(first_name, last_name)`)
       .eq("status", "approved")
       .lte("start_date", gridEndStr)
       .gte("end_date", gridStartStr),
-    loadEventsByDate(supabase, gridStartStr, gridEndStr),
+    loadEventsByDate(supabase, gridStartStr, gridEndStr, src),
   ]);
 
   const holidays = new Map<string, string>([
@@ -167,9 +177,10 @@ export async function MonthCalendar({ m }: { m?: string }) {
 /* ---------------- Upcoming Events ---------------- */
 export async function UpcomingEvents() {
   const supabase = await createClient();
+  const src = await viewerSource(supabase);
   const { data: upcoming } = await supabase
-    .from("events")
-    .select("*, client:clients(first_name, last_name), status:event_statuses(name, color, text_color), venue:venues(name)")
+    .from(src.events)
+    .select(`*, client:clients(first_name, last_name), status:event_statuses(name, color, text_color), venue:${src.venues}(name)`)
     .is("archived_at", null)
     .gte("event_date", todayStr())
     .order("event_date", { ascending: true })
@@ -189,7 +200,7 @@ export async function UpcomingEvents() {
             </tr>
           </thead>
           <tbody>
-            {(upcoming ?? []).map((e: XEvent) => (
+            {((upcoming ?? []) as unknown as XEvent[]).map((e) => (
               <tr key={e.id} className="row hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
                 <td className="px-4 py-2 whitespace-nowrap">{e.event_date}</td>
                 <td className="px-4 py-2">
@@ -222,6 +233,8 @@ export async function UpcomingEvents() {
 /* ---------------- Recent Payments ---------------- */
 export async function RecentPayments() {
   const supabase = await createClient();
+  // money widget: never for field staff, whatever the saved layout says
+  if ((await viewerSource(supabase)).fieldStaff) return null;
   const { data: recentPayments } = await supabase
     .from("payments")
     .select("*, event:events(id, name)")
@@ -285,7 +298,19 @@ export async function RecentNotifications() {
 }
 
 /* ---------------- Quick Actions ---------------- */
-export function QuickActions() {
+export function QuickActions({ fieldStaff = false }: { fieldStaff?: boolean }) {
+  if (fieldStaff) {
+    return (
+      <div>
+        <h2 className="card-title">Quick Actions</h2>
+        <div className="card grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
+          <Link href="/events" className="btn-ghost justify-center py-3 text-sm">
+            My Events
+          </Link>
+        </div>
+      </div>
+    );
+  }
   const actions = [
     { href: "/events", label: "Events List" },
     { href: "/clients", label: "Clients" },
@@ -324,9 +349,10 @@ export async function MyUpcomingEvents() {
     );
   }
 
+  const src = eventSource(me.fieldStaff);
   const { data: assignments } = await supabase
-    .from("event_staff")
-    .select("id, role, checked_in_at, checked_out_at, event:events(id, name, event_date, start_time, archived_at, status:event_statuses(name, color, text_color), venue:venues(name))")
+    .from(src.eventStaff)
+    .select(`id, role, checked_in_at, checked_out_at, event:${src.events}(id, name, event_date, start_time, archived_at, status:event_statuses(name, color, text_color), venue:${src.venues}(name))`)
     .eq("employee_id", me.employeeId);
 
   const today = todayStr();

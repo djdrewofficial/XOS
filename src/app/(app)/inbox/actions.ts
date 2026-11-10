@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireModule } from "@/lib/auth";
+import { requireModule, getMe } from "@/lib/auth";
+import { djClientIds } from "@/lib/fieldStaff";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -17,6 +18,16 @@ import { htmlToPdf } from "@/lib/pdf";
 import type { ActiveThread, ConvRow } from "@/components/InboxShell";
 import type { MsgRow, ThreadDoc } from "@/components/MessageParts";
 
+/* Field staff (employee / marketing) only see / text the clients of events where
+   their assignment role contains "DJ" — xos_dj_client_ids(), migration 00217.
+   Returns null for office (no filter) or the allowed client ids. */
+async function fieldStaffClientScope(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string[] | null> {
+  const me = await getMe(supabase);
+  if (!me?.fieldStaff) return null;
+  return djClientIds(supabase);
+}
+const NO_MATCH = "00000000-0000-0000-0000-000000000000";
+
 const CONV_COLS =
   "id, hl_contact_id, client_id, contact_name, phone, email, last_message_at, last_message_direction, last_message_type, last_message_body, unread_count";
 
@@ -25,8 +36,10 @@ const CONV_COLS =
 export async function loadThread(id: string): Promise<ActiveThread | null> {
   await requireModule("inbox", "view", { mode: "throw" });
   const supabase = await createClient();
+  const scope = await fieldStaffClientScope(supabase);
   const { data: conv } = await supabase.from("hl_conversations").select("*").eq("id", id).maybeSingle();
   if (!conv) return null;
+  if (scope && !(conv.client_id && scope.includes(conv.client_id))) return null;
 
   const [{ data: messages }, { data: client }] = await Promise.all([
     supabase.from("hl_messages").select("*").eq("conversation_id", id).order("date_added", { ascending: true }).limit(500),
@@ -36,11 +49,12 @@ export async function loadThread(id: string): Promise<ActiveThread | null> {
   ]);
 
   const { data: events } = client
-    ? await supabase.from("events").select("id, name, event_date, status:event_statuses(name, color, text_color)").eq("client_id", client.id).order("event_date", { ascending: false }).limit(10)
+    ? await supabase.from(scope ? "xos_fs_events" : "events").select("id, name, event_date, status:event_statuses(name, color, text_color)").eq("client_id", client.id).order("event_date", { ascending: false }).limit(10)
     : { data: [] };
 
   const eventIds = (events ?? []).map((ev) => ev.id as string);
-  const { data: docs } = eventIds.length
+  // documents (money) are office-only
+  const { data: docs } = eventIds.length && !scope
     ? await supabase.from("documents").select("id, title").in("event_id", eventIds).neq("status", "void").order("created_at", { ascending: false }).limit(20)
     : { data: [] };
 
@@ -74,9 +88,10 @@ export async function loadThread(id: string): Promise<ActiveThread | null> {
 export async function loadMoreConversations(beforeIso: string): Promise<ConvRow[]> {
   await requireModule("inbox", "view", { mode: "throw" });
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("hl_conversations")
-    .select(CONV_COLS)
+  const scope = await fieldStaffClientScope(supabase);
+  const q = supabase.from("hl_conversations").select(CONV_COLS);
+  if (scope) q.in("client_id", scope.length ? scope : [NO_MATCH]);
+  const { data } = await q
     .lt("last_message_at", beforeIso)
     .order("last_message_at", { ascending: false })
     .limit(200);
@@ -86,7 +101,10 @@ export async function loadMoreConversations(beforeIso: string): Promise<ConvRow[
 export async function syncInbox(full?: boolean) {
   await requireModule("inbox", "view", { mode: "throw" });
   const supabase = await createClient();
-  await syncHighLevelConversations(supabase, { full });
+  // the mirror sync writes every conversation; a field-staff session may only
+  // touch its DJ clients' rows (00218), so it syncs service-role (no data returned)
+  const scope = await fieldStaffClientScope(supabase);
+  await syncHighLevelConversations(scope ? createAdminClient() : supabase, { full: scope ? false : full });
   revalidatePath("/inbox");
 }
 
@@ -95,7 +113,10 @@ export async function syncInbox(full?: boolean) {
 export async function listInboxClients() {
   await requireModule("inbox", "view", { mode: "throw" });
   const supabase = await createClient();
-  const { data } = await supabase.from("clients").select("id, first_name, last_name, cell_phone").order("first_name");
+  const scope = await fieldStaffClientScope(supabase);
+  const q = supabase.from("clients").select("id, first_name, last_name, cell_phone");
+  if (scope) q.in("id", scope.length ? scope : [NO_MATCH]);
+  const { data } = await q.order("first_name");
   return (data ?? []) as { id: string; first_name: string; last_name: string; cell_phone: string | null }[];
 }
 
@@ -104,7 +125,9 @@ export async function listInboxClients() {
     Files upload to the public sms-media bucket (unguessable uuid paths);
     an XOS document can be attached as a branded PDF (Email especially). */
 export async function sendInboxReply(conversationId: string, formData: FormData) {
-  await requireModule("inbox", "edit", { mode: "throw" });
+  // field staff reply with inbox VIEW access, but only to their DJ clients (checked below)
+  const preScope = await fieldStaffClientScope(await createClient());
+  await requireModule("inbox", preScope ? "view" : "edit", { mode: "throw" });
   const body = (formData.get("body") ?? "").toString().trim();
   const channel = ((formData.get("channel") ?? "SMS").toString() || "SMS") as
     | "SMS" | "Email" | "WhatsApp" | "IG" | "FB" | "GMB";
@@ -122,6 +145,10 @@ export async function sendInboxReply(conversationId: string, formData: FormData)
     .eq("id", conversationId)
     .single();
   if (!conv) throw new Error("Conversation not found.");
+  if (preScope && !(conv.client_id && preScope.includes(conv.client_id))) {
+    throw new Error("Not authorized for this conversation.");
+  }
+  if (preScope && docId) throw new Error("Attaching documents is office-only.");
   if (channel === "SMS" && !conv.phone && !conv.hl_contact_id) {
     throw new Error("This conversation has no phone number to text.");
   }
@@ -183,8 +210,10 @@ export async function sendInboxReply(conversationId: string, formData: FormData)
   });
   if (error) throw new Error(error.message);
 
-  await processSmsOutbox(supabase);
-  await refreshConversation(supabase, conversationId);
+  // field-staff sessions can't read the rows the drain enriches with — drain service-role
+  const drainer = preScope ? createAdminClient() : supabase;
+  await processSmsOutbox(drainer);
+  await refreshConversation(drainer, conversationId);
   revalidatePath(`/inbox/${conversationId}`);
   revalidatePath("/inbox");
 }
@@ -194,7 +223,8 @@ export async function sendInboxReply(conversationId: string, formData: FormData)
     immediately. origin = "inbox" (redirects into the new thread) or an event
     id (stays on the event's Comms tab). */
 export async function startConversation(formData: FormData) {
-  await requireModule("inbox", "edit", { mode: "throw" });
+  const preScope = await fieldStaffClientScope(await createClient());
+  await requireModule("inbox", preScope ? "view" : "edit", { mode: "throw" });
   const body = (formData.get("body") ?? "").toString().trim();
   const phoneRaw = (formData.get("phone") ?? "").toString().trim();
   const clientId = (formData.get("client_id") ?? "").toString().trim() || null;
@@ -203,8 +233,12 @@ export async function startConversation(formData: FormData) {
   if (!body) return;
   const phone = toE164(phoneRaw);
   if (!phone) throw new Error(`"${phoneRaw}" doesn't look like a valid phone number.`);
+  // field staff: only an existing DJ client, never a raw number
+  if (preScope && !(clientId && preScope.includes(clientId))) {
+    throw new Error("Not authorized to text this number.");
+  }
 
-  const supabase = await createClient();
+  const supabase = preScope ? createAdminClient() : await createClient();
   const { data: queuedRow, error } = await supabase
     .from("sms_log")
     .insert({ client_id: clientId, to_number: phone, body })

@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 import { cookies } from "next/headers";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isOwnerEmail } from "@/lib/permissions";
 import { permCacheSecret } from "@/lib/permSnapshot";
 import { sendBrandedEmail } from "@/lib/mailgun";
@@ -46,18 +46,33 @@ function pepper(): string | undefined {
   return permCacheSecret();
 }
 
-async function staffSession(): Promise<{ ok: true; ctx: StaffSession } | { ok: false; error: string }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user?.email) return { ok: false, error: "You need to be signed in again." };
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const sessionId = sessionIdFromAccessToken(session?.access_token);
-  if (!sessionId || session?.user.id !== user.id) return { ok: false, error: "You need to be signed in again." };
+/** `bearer` is the XOS Staff app's access token (mobile routes have no cookies). */
+async function staffSession(bearer?: string): Promise<{ ok: true; ctx: StaffSession } | { ok: false; error: string }> {
+  let supabase: SupabaseClient;
+  let user: { id: string; email?: string; app_metadata?: Record<string, unknown> } | null;
+  let sessionId: string | null;
+  if (bearer) {
+    supabase = createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+      global: { headers: { Authorization: `Bearer ${bearer}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await supabase.auth.getUser(bearer);
+    if (error || !data.user?.email) return { ok: false, error: "You need to be signed in again." };
+    user = data.user;
+    sessionId = sessionIdFromAccessToken(bearer);
+    if (!sessionId) return { ok: false, error: "You need to be signed in again." };
+  } else {
+    supabase = await createClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user?.email) return { ok: false, error: "You need to be signed in again." };
+    user = data.user;
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    sessionId = sessionIdFromAccessToken(session?.access_token);
+    if (!sessionId || session?.user.id !== user.id) return { ok: false, error: "You need to be signed in again." };
+  }
+  if (!user.email) return { ok: false, error: "You need to be signed in again." };
 
   const { data: emp, error: empErr } = await supabase
     .from("employees")
@@ -154,9 +169,9 @@ async function consume(ctx: StaffSession, purpose: EmailMfaPurpose, code: string
   return { ok: true };
 }
 
-export async function sendEmailMfaCodeForSession(purpose: EmailMfaPurpose): Promise<EmailMfaResult> {
+export async function sendEmailMfaCodeForSession(purpose: EmailMfaPurpose, bearer?: string): Promise<EmailMfaResult> {
   if (!isEmailMfaPurpose(purpose)) return { ok: false, error: "Couldn't send a verification code." };
-  const session = await staffSession();
+  const session = await staffSession(bearer);
   if (!session.ok) return session;
   const { ctx } = session;
   const secret = pepper();
@@ -209,9 +224,11 @@ export async function sendEmailMfaCodeForSession(purpose: EmailMfaPurpose): Prom
   return { ok: true };
 }
 
-export async function verifyEmailMfaCodeForSession(purpose: EmailMfaPurpose, code: string): Promise<EmailMfaResult> {
+/** With `bearer` (the staff app) there is no cookie to stamp: the app keeps
+    its own proof bound to this session id, the same rule the cookie follows. */
+export async function verifyEmailMfaCodeForSession(purpose: EmailMfaPurpose, code: string, bearer?: string): Promise<EmailMfaResult> {
   if (!isEmailMfaPurpose(purpose)) return { ok: false, error: "That code didn't work." };
-  const session = await staffSession();
+  const session = await staffSession(bearer);
   if (!session.ok) return session;
   const { ctx } = session;
   const checked = await consume(ctx, purpose, code);
@@ -230,6 +247,7 @@ export async function verifyEmailMfaCodeForSession(purpose: EmailMfaPurpose, cod
     if (error || !updated?.length) return { ok: false, error: "Set up email codes in My Account → Security first." };
   }
 
+  if (bearer) return { ok: true };
   const stamped = await writeStepUpCookie(ctx.userId, ctx.sessionId);
   if (!stamped) return { ok: false, error: "Email codes aren't available right now." };
   return { ok: true };

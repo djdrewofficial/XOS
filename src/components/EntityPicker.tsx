@@ -64,6 +64,7 @@ export default function EntityPicker({
   required = false,
   compact = false,
   placeholder,
+  onChange,
 }: {
   kind: Kind;
   name: string;
@@ -73,6 +74,9 @@ export default function EntityPicker({
   required?: boolean;
   compact?: boolean;
   placeholder?: string;
+  /** Called with the selected id ("" when cleared). Optional — the hidden input
+      still carries the value for server-action forms. */
+  onChange?: (id: string) => void;
 }) {
   const cfg = KINDS[kind];
   const [query, setQuery] = useState("");
@@ -83,6 +87,13 @@ export default function EntityPicker({
   const [selectedLabel, setSelectedLabel] = useState(defaultLabel ?? "");
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+  useEffect(() => {
+    onChangeRef.current?.(selectedId);
+  }, [selectedId]);
 
   // resolve a pre-selected id's label on mount when one wasn't supplied
   useEffect(() => {

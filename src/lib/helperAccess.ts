@@ -27,6 +27,12 @@ export function helperAllowedForRole(h: HelperScope, role: string | null | undef
   return roles.length === 0 || role === "master_admin" || (!!role && roles.includes(role));
 }
 
+/** Field staff run only helpers that list their role explicitly. An empty
+    allowed_roles means "everyone" for office, never for field staff. */
+export function helperAllowedForFieldStaff(h: HelperScope, role: string | null | undefined): boolean {
+  return !!role && (h.allowed_roles ?? []).includes(role);
+}
+
 export function helperAllowed(h: HelperScope, eventTypeId: string | null | undefined, role: string | null | undefined): boolean {
   return helperAllowedForEventType(h, eventTypeId) && helperAllowedForRole(h, role);
 }

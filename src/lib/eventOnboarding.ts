@@ -1,10 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findOrCreateClient } from "@/lib/clients";
-import { loadEventBundle } from "@/lib/documentRender";
-import { buildEventName, type NamingClient } from "@/lib/eventName";
-import { applyPackageSelection } from "@/lib/packageSelection";
-import { buildScheduleRows, parseSchedulePlan } from "@/lib/paymentSchedule";
-import { runAutomations } from "@/lib/automations";
+import { createEventCore, type EventCreateInput } from "@/lib/eventCreate";
+import { parseSchedulePlan } from "@/lib/paymentSchedule";
 
 export type OnboardingClient = {
   mode?: "existing" | "new";
@@ -51,7 +47,74 @@ export type OnboardingInput = {
   drain?: "all" | "event" | "hold";
 };
 
-/** The new-event wizard, without the form or the redirect. */
+const opt = (v: string | null | undefined) => v ?? undefined;
+
+/** The connector's onboarding input in the shape the web form and the mobile endpoint build. */
+export function onboardingCreateInput(input: OnboardingInput): EventCreateInput {
+  const venue = input.newVenue;
+  return {
+    clients: (input.clients ?? []).map((c) => ({
+      mode: c.mode ?? (c.client_id ? "existing" : "new"),
+      client_id: opt(c.client_id),
+      first_name: opt(c.first_name),
+      last_name: opt(c.last_name),
+      email: opt(c.email),
+      cell_phone: opt(c.cell_phone),
+      role: opt(c.role),
+      is_primary: !!c.is_primary,
+      is_contract_holder: !!c.is_contract_holder,
+    })),
+    name: input.name?.trim() || null,
+    event_type_id: input.eventTypeId ?? null,
+    status_id: input.statusId ?? null,
+    event_date: input.eventDate ?? null,
+    setup_time: input.setupTime ?? null,
+    start_time: input.startTime ?? null,
+    end_time: input.endTime ?? null,
+    guest_count: input.guestCount ?? null,
+    inquiry_source_id: input.inquirySourceId ?? null,
+    new_source_name: input.newSourceName ?? null,
+    new_source_persist: input.newSourcePersist === true,
+    internal_notes: input.internalNotes ?? null,
+    contract_notes: input.contractNotes ?? null,
+    custom_dates: (input.customDates ?? [])
+      .filter((d) => d.definition_id)
+      .map((d) => ({ definition_id: d.definition_id!, value: opt(d.value) })),
+    package_id: input.packageId ?? null,
+    package_price_override: input.packagePriceOverride ?? null,
+    deposit_value: input.depositValue ?? null,
+    travel_fee: input.travelFee ?? 0,
+    discount1_label: null,
+    discounts: (input.discounts ?? []).map((d) => ({ label: opt(d.label), amount: d.amount ?? undefined })),
+    addons: (input.addons ?? [])
+      .filter((a) => a.addon_id)
+      .map((a) => ({ addon_id: a.addon_id!, quantity: a.quantity ?? undefined, price_override: a.price_override ?? null })),
+    schedule_plan: parseSchedulePlan(input.schedulePlan ?? null),
+    use_client_address: input.useClientAddress === true,
+    client_address: input.clientAddress ?? null,
+    venue_id: input.venueId ?? null,
+    venue_room_id: input.venueRoomId ?? null,
+    new_venue: venue
+      ? {
+          name: opt(venue.name),
+          address: venue.address ?? null,
+          city: venue.city ?? null,
+          state: venue.state ?? null,
+          zip: venue.zip ?? null,
+          lat: venue.lat ?? null,
+          lng: venue.lng ?? null,
+          place_id: venue.place_id ?? null,
+        }
+      : null,
+    staff: (input.staff ?? [])
+      .filter((s) => s.employee_id)
+      .map((s) => ({ employee_id: s.employee_id!, role: opt(s.role), flat_wage: s.flat_wage ?? undefined })),
+  };
+}
+
+/** The new-event wizard for the connector. Same creation path and validation as
+    the web form and the mobile endpoint (createEventCore), plus the hold probe,
+    drain control, and delete-on-failure cleanup. */
 export async function createEventOnboardingRecord(supabase: SupabaseClient, input: OnboardingInput): Promise<{ id: string }> {
   if (input.drain === "hold") {
     const probe = await supabase.rpc("mcp_run_helper_held", {
@@ -67,151 +130,9 @@ export async function createEventOnboardingRecord(supabase: SupabaseClient, inpu
       throw new Error("Holding staff notifications and webhooks needs migration 00223. Nothing was created.");
     }
   }
-  const clients = input.clients ?? [];
-  const primaryIn = clients.find((c) => c.is_primary) ?? clients[0];
-  if (!primaryIn) throw new Error("Add a primary client before creating the event.");
-  let pf = primaryIn.first_name, pl = primaryIn.last_name, pe = primaryIn.email, pc = primaryIn.cell_phone;
-  if (primaryIn.mode === "existing" && primaryIn.client_id) {
-    const { data: pc0 } = await supabase.from("clients").select("first_name, last_name, email, cell_phone").eq("id", primaryIn.client_id).maybeSingle();
-    pf = pc0?.first_name ?? pf; pl = pc0?.last_name ?? pl; pe = pc0?.email ?? pe; pc = pc0?.cell_phone ?? pc;
-  }
-  const missingPrimary = [!pf?.trim() && "first name", !pl?.trim() && "last name", !pe?.trim() && "email", !pc?.trim() && "cell phone"].filter(Boolean);
-  if (missingPrimary.length) throw new Error(`Primary client is missing: ${missingPrimary.join(", ")}.`);
-
-  const resolved: { client_id: string; role: string | null; is_primary: boolean; is_contract_holder: boolean; naming: NamingClient }[] = [];
-  for (const c of clients) {
-    let id = c.client_id ?? null;
-    let first = c.first_name ?? "";
-    let last = c.last_name ?? "";
-    if (c.mode === "new" || !id) {
-      if (!first && !c.email && !c.cell_phone) continue;
-      const found = await findOrCreateClient(supabase, { first_name: first, last_name: last, email: c.email, cell_phone: c.cell_phone });
-      id = found.id;
-      first = found.first_name;
-      last = found.last_name;
-    } else {
-      const { data: existing } = await supabase.from("clients").select("first_name, last_name").eq("id", id).maybeSingle();
-      first = existing?.first_name ?? first;
-      last = existing?.last_name ?? last;
-    }
-    resolved.push({
-      client_id: id!,
-      role: c.role ?? null,
-      is_primary: !!c.is_primary,
-      is_contract_holder: !!c.is_contract_holder,
-      naming: { first_name: first, last_name: last, role: c.role ?? null, is_primary: !!c.is_primary },
-    });
-  }
-  if (resolved.length && !resolved.some((r) => r.is_primary)) resolved[0].is_primary = true;
-  const primary = resolved.find((r) => r.is_primary) ?? resolved[0] ?? null;
-
-  let inquirySourceId = input.inquirySourceId ?? null;
-  if (!inquirySourceId && input.newSourceName) {
-    const { data: src } = await supabase.from("inquiry_sources").insert({ name: input.newSourceName, is_active: input.newSourcePersist === true }).select("id").single();
-    inquirySourceId = src?.id ?? null;
-  }
-
-  let venueId = input.useClientAddress ? null : (input.venueId ?? null);
-  if (input.useClientAddress) {
-    if (input.clientAddress && primary) await supabase.from("clients").update({ mailing_address: input.clientAddress }).eq("id", primary.client_id);
-  } else if (!venueId && input.newVenue?.name) {
-    const venue = input.newVenue;
-    const { data: v } = await supabase.from("venues").insert({
-      name: venue.name,
-      address: venue.address ?? null,
-      city: venue.city ?? null,
-      state: venue.state ?? null,
-      zip: venue.zip ?? null,
-      lat: venue.lat ?? null,
-      lng: venue.lng ?? null,
-      google_place_id: venue.place_id ?? null,
-    }).select("id").single();
-    venueId = v?.id ?? null;
-  }
-
-  let typeName: string | null = null;
-  if (input.eventTypeId) {
-    const { data: t } = await supabase.from("event_types").select("name").eq("id", input.eventTypeId).maybeSingle();
-    typeName = t?.name ?? null;
-  }
-  const name = input.name?.trim() || buildEventName(resolved.map((r) => r.naming), typeName) || "New Event";
-  const discounts = input.discounts ?? [];
-  const { data: event, error: evErr } = await supabase.from("events").insert({
-    name,
-    event_type_id: input.eventTypeId ?? null,
-    status_id: input.statusId ?? null,
-    inquiry_source_id: inquirySourceId,
-    client_id: primary?.client_id ?? null,
-    event_date: input.eventDate ?? null,
-    setup_time: input.setupTime ?? null,
-    start_time: input.startTime ?? null,
-    end_time: input.endTime ?? null,
-    guest_count: input.guestCount ?? null,
-    venue_id: venueId,
-    venue_room_id: input.venueRoomId ?? null,
-    use_client_address: input.useClientAddress === true,
-    package_id: input.packageId ?? null,
-    package_price_override: input.packagePriceOverride ?? null,
-    deposit_value: input.depositValue ?? 0,
-    travel_fee: input.travelFee ?? 0,
-    discount1_label: discounts[0]?.label ?? null,
-    discount1_amount: discounts[0]?.amount ?? 0,
-    discount2_label: discounts[1]?.label ?? null,
-    discount2_amount: discounts[1]?.amount ?? 0,
-    internal_notes: input.internalNotes ?? null,
-  }).select("id").single();
-  if (evErr) throw new Error(evErr.message);
-  const eventId = event.id as string;
-
-  const fail = async (label: string, error: { message: string } | null) => {
-    if (!error) return;
-    await supabase.from("events").delete().eq("id", eventId);
-    throw new Error(`${label}: ${error.message}`);
-  };
-  if (resolved.length) {
-    const inserted = await supabase.from("event_clients").insert(resolved.map((r) => ({
-      event_id: eventId, client_id: r.client_id, role: r.role ?? "Client", is_primary: r.is_primary, is_contract_holder: r.is_contract_holder,
-    })));
-    await fail("Saving the clients", inserted.error);
-  }
-  if (input.packageId) await applyPackageSelection(supabase, eventId, input.packageId, input.eventDate ?? null, input.packagePriceOverride != null);
-  const addonRows = (input.addons ?? []).filter((a) => a.addon_id).map((a) => ({
-    event_id: eventId, addon_id: a.addon_id, quantity: a.quantity && a.quantity > 0 ? a.quantity : 1, price_override: a.price_override ?? null,
-  }));
-  if (addonRows.length) await fail("Saving the add-ons", (await supabase.from("event_addons").insert(addonRows)).error);
-  if (input.contractNotes) await fail("Saving the note", (await supabase.from("event_notes").insert({ event_id: eventId, body: input.contractNotes, kind: "contract" })).error);
-  const dateRows = (input.customDates ?? []).filter((d) => d.definition_id && d.value).map((d) => ({ event_id: eventId, definition_id: d.definition_id, value: d.value }));
-  if (dateRows.length) await fail("Saving the dates", (await supabase.from("event_custom_dates").upsert(dateRows, { onConflict: "event_id,definition_id" })).error);
-
-  const schedulePlan = parseSchedulePlan(input.schedulePlan ?? null);
-  if (schedulePlan) {
-    const bundle = await loadEventBundle(supabase, eventId);
-    const { data: evDep } = await supabase.from("events").select("deposit_value, event_date").eq("id", eventId).single();
-    let terms: "days_before" | "net_days_after" = "days_before";
-    let termsDays = 30;
-    if (input.packageId) {
-      const { data: pkg } = await supabase.from("packages").select("payment_terms, payment_terms_days").eq("id", input.packageId).maybeSingle();
-      if (pkg) {
-        terms = (pkg.payment_terms as typeof terms) ?? "days_before";
-        termsDays = pkg.payment_terms_days ?? 30;
-      }
-    }
-    const rows = buildScheduleRows({
-      total: bundle?.total ?? 0,
-      deposit: Number(evDep?.deposit_value ?? 0),
-      eventDate: evDep?.event_date ?? null,
-      terms,
-      termsDays,
-      plan: schedulePlan,
-      today: new Date().toISOString().slice(0, 10),
-    }).map((r) => ({ ...r, event_id: eventId }));
-    await fail("Saving the schedule", (await supabase.from("scheduled_payments").insert(rows)).error);
-  }
-
-  const staffRows = (input.staff ?? []).filter((s) => s.employee_id).map((s) => ({
-    event_id: eventId, employee_id: s.employee_id, role: s.role || "DJ", flat_wage: s.flat_wage ?? 0,
-  }));
-  if (staffRows.length) await fail("Saving the staff", (await supabase.from("event_staff").insert(staffRows)).error);
-  await runAutomations(supabase, eventId, "event_created", { drain: input.drain ?? "all" });
-  return { id: eventId };
+  const id = await createEventCore(supabase, onboardingCreateInput(input), {
+    drain: input.drain ?? "all",
+    cleanupOnError: true,
+  });
+  return { id };
 }
