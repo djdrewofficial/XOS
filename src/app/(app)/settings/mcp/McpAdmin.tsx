@@ -18,6 +18,7 @@ import {
   rejectMcpPreview,
   rotateMcpToken,
   revokeMcpToken,
+  setHelpersSkipXosApproval,
 } from "./actions";
 
 export function MintForm() {
@@ -106,6 +107,32 @@ export function RevokeButton({ id }: { id: string }) {
   );
 }
 
+/** Master-admin toggle. Off = helpers_run still needs an Agent Access receipt. */
+export function HelpersSkipToggle({ id, enabled }: { id: string; enabled: boolean }) {
+  return (
+    <form action={setHelpersSkipXosApproval} className="max-w-[14rem] space-y-1">
+      <input type="hidden" name="token_id" value={id} />
+      <input type="hidden" name="helpers_skip_xos_approval" value={enabled ? "false" : "true"} />
+      <button
+        type="submit"
+        className={
+          enabled
+            ? "rounded border border-amber-400 bg-amber-50 px-2 py-1 text-left text-xs font-medium text-amber-950"
+            : "btn-ghost px-2 py-1 text-left text-xs"
+        }
+        title="When on, helpers_run executes immediately without an Agent Access receipt. Other email/SMS tools still need approval."
+      >
+        {enabled ? "Helpers: no XOS approval (on)" : "Helpers: require XOS approval"}
+      </button>
+      {enabled ? (
+        <p className="text-[11px] leading-snug text-amber-900">
+          Run helpers without XOS approval. Chat approval is still expected before the agent calls the tool.
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
 function ScopePicker({
   selected,
   setSelected,
@@ -152,7 +179,7 @@ function ScopePicker({
       </div>
       {hasHighRiskMcpScope(selected) ? (
         <p className="mt-2 text-xs text-amber-800">
-          High-risk scopes are checked (delete, payments, payroll, or communications). Those still need a person to approve each send or change.
+          High-risk scopes are checked (delete, payments, payroll, or communications). Those still need a person to approve each send or change in Agent Access, except helpers_run when that token later has “Run helpers without XOS approval” turned on.
         </p>
       ) : null}
     </fieldset>

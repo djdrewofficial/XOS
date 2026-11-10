@@ -59,6 +59,8 @@ describe("mcp tool catalog", () => {
     const helper = read("src/lib/bookingHelperRun.ts");
     assert.match(office, /sendDocumentForSignature/);
     assert.match(office, /mcp_run_helper_claim/);
+    assert.match(office, /executeBookingHelper/);
+    assert.match(office, /helpersSkipXosApproval/);
     assert.match(office, /p_approved_body_sha/);
     assert.match(office, /fromStatus:\s*"sending"/);
     assert.match(office, /onlyIds: emailIds/);

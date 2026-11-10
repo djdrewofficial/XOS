@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getMe } from "@/lib/auth";
 import { formatMcpScopeLabels } from "@/lib/mcp/scopes";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ApprovalCard, MintForm, RevokeButton, RotateForm } from "./McpAdmin";
+import { ApprovalCard, HelpersSkipToggle, MintForm, RevokeButton, RotateForm } from "./McpAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,11 @@ type TokenRow = {
   expires_at: string | null;
   revoked_at: string | null;
   overlap_until: string | null;
+  helpers_skip_xos_approval?: boolean | null;
 };
+
+const TOKEN_COLS =
+  "id, name, token_prefix, scopes, created_at, last_used_at, expires_at, revoked_at, overlap_until";
 
 export default async function McpSettingsPage() {
   const me = await getMe();
@@ -24,13 +28,24 @@ export default async function McpSettingsPage() {
 
   let tokens: TokenRow[] = [];
   let setupNeeded = false;
+  let helpersSkipReady = false;
   try {
-    const { data, error } = await createAdminClient()
+    const admin = createAdminClient();
+    const withFlag = await admin
       .from("mcp_service_tokens")
-      .select("id, name, token_prefix, scopes, created_at, last_used_at, expires_at, revoked_at, overlap_until")
+      .select(`${TOKEN_COLS}, helpers_skip_xos_approval`)
       .order("created_at", { ascending: false });
-    if (error) setupNeeded = true;
-    else tokens = (data ?? []) as TokenRow[];
+    if (!withFlag.error) {
+      tokens = (withFlag.data ?? []) as TokenRow[];
+      helpersSkipReady = true;
+    } else {
+      const fallback = await admin
+        .from("mcp_service_tokens")
+        .select(TOKEN_COLS)
+        .order("created_at", { ascending: false });
+      if (fallback.error) setupNeeded = true;
+      else tokens = (fallback.data ?? []) as TokenRow[];
+    }
   } catch {
     setupNeeded = true;
   }
@@ -69,6 +84,11 @@ export default async function McpSettingsPage() {
         </div>
       ) : (
         <>
+          {!helpersSkipReady ? (
+            <div className="card p-4 text-sm text-zinc-600">
+              Helper direct-run needs migration <code>00225_mcp_helpers_skip_xos_approval.sql</code> before the per-token toggle appears. This page does not apply it.
+            </div>
+          ) : null}
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
               <thead className="table-head text-left">
@@ -76,6 +96,7 @@ export default async function McpSettingsPage() {
                   <th className="px-3 py-2">Name</th>
                   <th className="px-3 py-2">Prefix</th>
                   <th className="px-3 py-2">Scopes</th>
+                  <th className="px-3 py-2">Helpers</th>
                   <th className="px-3 py-2">Last used</th>
                   <th className="px-3 py-2">Status</th>
                   <th />
@@ -83,17 +104,26 @@ export default async function McpSettingsPage() {
               </thead>
               <tbody>
                 {tokens.map((token) => (
-                  <tr key={token.id} className="border-t border-zinc-200">
+                  <tr key={token.id} className="border-t border-zinc-200 align-top">
                     <td className="px-3 py-2">{token.name}</td>
                     <td className="px-3 py-2 font-mono text-xs">{token.token_prefix}…</td>
                     <td className="px-3 py-2 text-xs">{formatMcpScopeLabels(token.scopes ?? [])}</td>
+                    <td className="px-3 py-2">
+                      {!token.revoked_at && helpersSkipReady ? (
+                        <HelpersSkipToggle id={token.id} enabled={token.helpers_skip_xos_approval === true} />
+                      ) : token.helpers_skip_xos_approval ? (
+                        <span className="text-xs text-amber-800">Skip XOS approval</span>
+                      ) : (
+                        <span className="text-xs text-zinc-400">—</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">{token.last_used_at ? new Date(token.last_used_at).toLocaleString() : "Never"}</td>
                     <td className="px-3 py-2">{statusLabel(token)}</td>
                     <td className="px-3 py-2">{token.revoked_at ? null : <RevokeButton id={token.id} />}</td>
                   </tr>
                 ))}
                 {tokens.length === 0 ? (
-                  <tr><td colSpan={6} className="px-3 py-4 text-zinc-500">No tokens yet.</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-4 text-zinc-500">No tokens yet.</td></tr>
                 ) : null}
               </tbody>
             </table>

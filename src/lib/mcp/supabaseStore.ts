@@ -13,7 +13,7 @@ export function supabaseStore(admin: SupabaseClient): McpStore {
     async findTokenByHash(hash) {
       const { data, error } = await admin
         .from("mcp_service_tokens")
-        .select("id, name, scopes, expires_at, revoked_at, overlap_until, token_hash")
+        .select("id, name, scopes, expires_at, revoked_at, overlap_until, token_hash, helpers_skip_xos_approval")
         .eq("token_hash", hash)
         .maybeSingle();
       if (error) throw new Error("Could not look up the service token.");

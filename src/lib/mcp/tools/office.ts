@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { inviteClientToXos, sendAccountInvite, sendPasswordReset } from "@/lib/accounts";
-import { previewHelperSms } from "@/lib/bookingHelperRun";
+import { executeBookingHelper, previewHelperSms } from "@/lib/bookingHelperRun";
 import { inviteEffect } from "@/lib/officeEdits";
 import { RESET_APPROVAL_BODY } from "@/lib/oneTimeLink";
 import { findOrCreateClient } from "@/lib/clients";
@@ -1359,7 +1359,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "helpers_run",
-    description: "Run a booking helper the way the event-page button does: the database queues its actions, then the app outbox fills contract merge tags and sends. Event-type limits still apply. If the helper emails or texts, the token also needs those comms scopes.",
+    description: "Run a booking helper the way the event-page button does: the database queues its actions, then the app outbox fills contract merge tags and sends. Event-type limits still apply. If the helper emails or texts, the token also needs those comms scopes. By default this returns an Agent Access receipt for a master admin to approve. When that token has “Run helpers without XOS approval” on, this tool runs immediately with no receipt (chat approval is still expected). Contracts still only go out through the app Send Contract path or a dedicated contract tool.",
     scopes: ["helpers.run"],
     confirm: true,
     inputSchema: obj({
@@ -1389,13 +1389,36 @@ export const officeTools: LiveTool[] = [
     async execute(args, ctx) {
       const overrides = args.sms_overrides && typeof args.sms_overrides === "object" ? args.sms_overrides as Record<string, { skip?: boolean; body?: string }> : null;
       const admin = adminOf(ctx);
+      const eventId = s(args, "event_id")!;
+      const helperId = s(args, "helper_id")!;
+
+      // Server-side token flag only (never a client argument). Same path as the
+      // event-page helper button: run_booking_helper + drainEventOutbox, no hold GUC.
+      if (ctx.token.helpersSkipXosApproval === true) {
+        const ran = await executeBookingHelper(admin, {
+          eventId,
+          helperId,
+          smsOverrides: overrides,
+          actorRole: null,
+          enforceRole: false,
+        });
+        return {
+          ok: true,
+          path: "direct",
+          helper_id: helperId,
+          event_id: eventId,
+          title: ran.title,
+          helpers_skip_xos_approval: true,
+        };
+      }
+
       const approved = ctx.approvedSnapshot as { effects?: { template_body_sha256?: string | null }[] } | null;
       const approvedHashes = [...new Set((approved?.effects ?? []).map((effect) => effect.template_body_sha256).filter((hash): hash is string => Boolean(hash)))];
       // Hash check happens inside mcp_run_helper_claim in the same transaction that
       // inserts the rows, so a mismatch is blocked before claim_email_outbox can see it.
       const { data, error } = await admin.rpc("mcp_run_helper_claim", {
-        p_helper_id: s(args, "helper_id"),
-        p_event_id: s(args, "event_id"),
+        p_helper_id: helperId,
+        p_event_id: eventId,
         p_sms: overrides,
         p_approved_body_sha: approvedHashes,
       });
@@ -1418,7 +1441,7 @@ export const officeTools: LiveTool[] = [
         fromStatus: "sending",
         bodySha256: Object.fromEntries(rows.filter((row) => row.channel === "sms").map((row) => [row.id, row.body_sha])),
       });
-      return { ok: true, email_ids: emailIds, sms_ids: smsIds, email, sms };
+      return { ok: true, path: "held_claim", helper_id: helperId, event_id: eventId, email_ids: emailIds, sms_ids: smsIds, email, sms };
     },
   },
   {
