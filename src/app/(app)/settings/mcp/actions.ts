@@ -12,8 +12,6 @@ import { supabaseStore } from "@/lib/mcp/supabaseStore";
 import { mcpTools } from "@/lib/mcp/tools";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export type { TokenFlash };
-
 function tokenStore(): TokenFlashStore {
   const admin = createAdminClient();
   return {

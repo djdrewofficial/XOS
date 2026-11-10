@@ -76,7 +76,7 @@ describe("MCP mint form scope selection", () => {
     assert.match(mintForm, /This is the only time you will see this key/);
     assert.match(mintForm, /"Copy"/);
     assert.match(mintForm, /"Copied"/);
-    assert.match(mintForm, /Done — I've copied it/);
+    assert.match(mintForm, /Done, I've copied it/);
     assert.match(actions, /acknowledgeMcpTokenFlash/);
     assert.equal((mintForm.match(/type="button"/g) ?? []).length >= 5, true);
   });

@@ -19,9 +19,8 @@ import {
   selectBackdrop,
   selectBoothDesign,
   fetchBoothTemplates,
-  type BoothBackdrop,
-  type BoothDesign,
 } from "@/app/portal/plan/[eventId]/actions";
+import type { BoothBackdrop, BoothDesign } from "@/app/portal/plan/[eventId]/plannerActionTypes";
 
 const PER_PAGE = 12; // grid page size
 

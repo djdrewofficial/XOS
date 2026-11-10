@@ -4,9 +4,8 @@ import { useMemo, useState } from "react";
 import {
   resolvePlannerTracksForExport,
   createSpotifyPlaylistsFromConfirmed,
-  type ResolvedSection,
-  type SpotifyExportResult,
 } from "@/app/(app)/events/[id]/spotify-export-actions";
+import type { ResolvedSection, SpotifyExportResult } from "@/app/(app)/events/[id]/spotifyExportTypes";
 
 /* Staff-only Spotify export. Flow: pick sections → resolve matches (YouTube
    titles cleaned by AI) → DJ confirms each match → create playlists.

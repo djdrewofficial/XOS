@@ -13,12 +13,7 @@ import { runAutomations } from "@/lib/automations";
 import { loadEventJourney } from "@/lib/eventJourney";
 import { sendAccountInvite } from "@/lib/accounts";
 import { ESIGN_CONSENT_VERSION, esignConsentText } from "@/lib/esignConsent";
-
-export type SignResult = {
-  ok: boolean;
-  error?: string;
-  afterSignUrl?: string | null;
-};
+import type { SignResult } from "./signResult";
 
 /* The legally-relevant act: validates intent + consent, freezes a content hash,
    records the full audit trail, locks the document, notifies the office, and

@@ -7,6 +7,7 @@ import { getSpotifyConnection, createSpotifyPlaylist, addTracksToSpotifyPlaylist
 import { searchMusic } from "@/lib/music";
 import { isOpenAIConfigured, chatComplete } from "@/lib/openai";
 import { contractClientHasAiConsent } from "@/lib/aiConsent";
+import type { ResolvedCandidate, ResolvedSection, ResolvedSong, SpotifyExportResult } from "./spotifyExportTypes";
 
 /* Staff-only Spotify export, two phases:
    1) resolvePlannerTracksForExport — match every song in the chosen sections to a
@@ -15,25 +16,6 @@ import { contractClientHasAiConsent } from "@/lib/aiConsent";
       for the DJ to CONFIRM.
    2) createSpotifyPlaylistsFromConfirmed — takes the DJ-approved track ids and
       creates one playlist per section ("MM/DD - EVENT - SECTION"). */
-
-export type ResolvedCandidate = {
-  trackId: string;
-  title: string;
-  artist: string;
-  album: string | null;
-  artworkUrl: string | null;
-};
-export type ResolvedSong = {
-  songId: string;
-  originalTitle: string;
-  originalArtist: string | null;
-  provider: string;
-  candidate: ResolvedCandidate | null;
-  confidence: "high" | "review"; // high = came from Spotify already; review = matched by search/AI
-};
-export type ResolvedSection = { sectionId: string; title: string; songs: ResolvedSong[] };
-
-export type SpotifyExportResult = { section: string; url?: string; added?: number; error?: string };
 
 type SongRow = {
   id: string;

@@ -54,7 +54,7 @@ describe("one-time MCP token flash", () => {
     assert.match(admin, /This is the only time you will see this key/);
     assert.match(admin, /"Copy"/);
     assert.match(admin, /"Copied"/);
-    assert.match(admin, /Done — I've copied it/);
+    assert.match(admin, /Done, I've copied it/);
     assert.match(admin, /navigator\.clipboard\.writeText/);
   });
 

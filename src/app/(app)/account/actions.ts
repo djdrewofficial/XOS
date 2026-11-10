@@ -21,6 +21,7 @@ import { passwordMeetsPolicy, validatePasswordChange } from "@/lib/passwordPolic
 import { deliverPasswordReset } from "@/lib/sendPasswordReset";
 import { syncEmployeeLoginPhone } from "@/lib/loginPhoneAdmin";
 import { flashPhoneNotice } from "@/lib/phoneNotice";
+import type { PasswordChangeResult } from "./passwordChangeResult";
 
 /* Self-service profile edits. Every write is scoped to the CALLER'S OWN employee
    row (resolved from the session, never client-supplied) and limited to a safe
@@ -81,10 +82,6 @@ export async function uploadMyPhoto(formData: FormData) {
   if (error) throw new Error(error.message);
   revalidatePath("/account");
 }
-
-export type PasswordChangeResult =
-  | { ok: true }
-  | { ok: false; error: string; needsNonce?: boolean; needsMfa?: boolean };
 
 /* Change the signed-in user's own password. The current password is checked
    with a throwaway client so a wrong guess can't replace this browser's

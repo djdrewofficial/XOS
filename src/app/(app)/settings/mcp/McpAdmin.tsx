@@ -10,6 +10,7 @@ import {
   toggleMcpScope,
   type McpScope,
 } from "@/lib/mcp/scopes";
+import type { TokenFlash } from "@/lib/mcpTokenFlash";
 import {
   acknowledgeMcpTokenFlash,
   approveMcpPreview,
@@ -17,7 +18,6 @@ import {
   rejectMcpPreview,
   rotateMcpToken,
   revokeMcpToken,
-  type TokenFlash,
 } from "./actions";
 
 export function MintForm() {
@@ -240,7 +240,7 @@ function TokenSecretPanel({ token, name, kind }: { token: string; name: string; 
         disabled={pending}
         onClick={() => start(async () => { await acknowledgeMcpTokenFlash(); })}
       >
-        {pending ? "Refreshing…" : "Done — I've copied it"}
+        {pending ? "Refreshing…" : "Done, I've copied it"}
       </button>
     </div>
   );

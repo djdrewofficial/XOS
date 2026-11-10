@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
-import type { SignResult } from "@/app/sign/[token]/actions";
+import type { SignResult } from "@/app/sign/[token]/signResult";
 import { esignConsentText } from "@/lib/esignConsent";
 
 /* The e-sign action panel on the public document page. ESIGN/UETA flow:
