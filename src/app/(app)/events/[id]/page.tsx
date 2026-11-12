@@ -101,7 +101,9 @@ import { helperAllowed } from "@/lib/helperAccess";
 import type { ConvRow } from "@/components/InboxShell";
 import SigningChecklist from "@/components/SigningChecklist";
 import CopyProposalLink from "@/components/CopyProposalLink";
+import CopyPaymentLink from "@/components/CopyPaymentLink";
 import { resolveRequiredFields, getMissingSigningFields, eventFinancialsHidden } from "@/lib/signingRequirements";
+import { buildPayUrl } from "@/lib/payLink";
 import { loadEventsByDate } from "@/lib/calendarEvents";
 import EventDateBadge from "@/components/EventDateBadge";
 import { summarizeHelperActions, type HelperAction } from "@/lib/helperSummary";
@@ -2735,6 +2737,14 @@ export default async function EventDetailPage({
         ranHelperIds={(helperRuns ?? []).map((r) => r.helper_id)}
         hasPayments={approvedPayments.length > 0}
       />
+
+      {/* Payment link for office staff (hidden for venue-paid / hide_financials events;
+          field staff never reach this page). Easy to tap on mobile next to helpers. */}
+      {!financialsHidden && (
+        <div className="mb-4">
+          <CopyPaymentLink url={buildPayUrl(event.pay_token)} />
+        </div>
+      )}
 
       {/* ---------- OVERVIEW PANELS ---------- */}
       <div className="mb-5 grid gap-4 lg:grid-cols-3">

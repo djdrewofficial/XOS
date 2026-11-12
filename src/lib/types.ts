@@ -121,6 +121,7 @@ export type XEvent = {
   custom_fields: Record<string, string>;
   internal_notes: string | null;
   hide_financials?: boolean | null; // null = inherit event-type default
+  pay_token?: string | null; // public /pay/<token> key (default gen_random_uuid)
   archived_at?: string | null; // non-null = archived: automations stopped, hidden from active lists
   created_at: string;
   // joined
