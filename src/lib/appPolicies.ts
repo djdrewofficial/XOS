@@ -1,8 +1,10 @@
 /* Customer-facing text for the Xpress client app.
-   Staff AI is disclosed as a plain notice (booking includes staff OpenAI use on
-   event info; no opt-in or opt-out). SMS marketing consent stays separate and
-   optional. Review labels and App Store worksheet notes stay in docs/app-policies/.
-   These pages do not set an effective date. */
+   Privacy body comes from xpress-client legalCopy.ts (14dbffe8) via appPrivacyCopy.ts.
+   SMS marketing consent stays separate and optional. Review labels and App Store
+   worksheet notes stay in docs/app-policies/. Privacy prints Effective date
+   September 1, 2026 from that approved copy. */
+
+import { privacyCopyEn, privacyCopyEs } from "./appPrivacyCopy";
 
 export type PolicyLang = "en" | "es";
 export type PolicyDocId = "privacy" | "terms" | "deletion";
@@ -18,142 +20,30 @@ export const APP_POLICY_PATHS: Record<PolicyDocId, string> = {
   deletion: "/app-data-deletion",
 };
 
-export type PolicySection = { heading: string; body: string };
+export type PolicyListItem = string | { lead: string; text: string };
+
+export type PolicyBlock =
+  | { type: "p"; text: string; lead?: string }
+  | { type: "ul"; items: PolicyListItem[] }
+  | { type: "table"; columns: [string, string]; rows: [string, string][] };
+
+export type PolicySection = {
+  heading: string;
+  /** Simple single-paragraph sections (Terms, deletion). */
+  body?: string;
+  /** Structured Privacy blocks: paragraphs, lists, and tables. */
+  blocks?: PolicyBlock[];
+};
 
 export type PolicyDocument = {
   id: PolicyDocId;
   title: string;
   description: string;
   navLabel: string;
+  preamble?: string[];
   lead?: string;
   sections: PolicySection[];
 };
-
-const privacyEn: PolicySection[] = [
-  {
-    heading: "1. Who we are and what this policy covers",
-    body: "Xpress Entertainment Corp, 11280 Pines Blvd, Pembroke Pines FL 33026, provides this event-planning app. This policy explains information handled through the app and related XOS staff workflows. It distinguishes information you enter in the app from booking and customer records we already hold and display or use for your event. Our separate websites, booking agreements and external payment services may involve additional information and notices.",
-  },
-  {
-    heading: "2. Accounts and sign-in",
-    body: "We use Supabase for account authentication, database services and storage. You may sign in with email and password, Google, or Apple. We handle your account email, account and authentication identifiers, event membership and role, and identity information returned by your chosen provider, which may include your name. Apple may provide a private relay email instead of your personal email. Email confirmation and password-reset messages support account access. The app is not intended to collect your Apple or Google password. The provider's own terms and privacy notice apply to its sign-in service.",
-  },
-  {
-    heading: "3. Booking information and event records",
-    body: "Our booking and customer-management records may include names, organization, phone number, email, mailing address, anniversary, notes, SMS opt-in status and timestamp, and optional Instagram or TikTok handles. These records can exist independently of an app account. An event host's app can show existing event and booking details and, when enabled, read-only financial information such as the package, add-ons, travel, overtime, discounts, payment records and payment schedules. Showing these records does not mean the app collected them originally. The app does not provide card checkout, in-app purchases or an app subscription.",
-  },
-  {
-    heading: "4. Planning content you provide",
-    body: "We store answers to planning questions, song selections and suggestions, song titles and other provider metadata, provider names and public music or playlist links, request attribution, likes, must-play and do-not-play preferences, notes and avoid-list content. Section notes can contain up to 4,000 characters. Answers and other contributions can be associated with an author or account identifier. Please include only information needed to plan the event. Do not put passwords, card numbers, government identification, or unnecessary sensitive information about yourself or others in planning fields or attachments.",
-  },
-  {
-    heading: "5. Shared event access",
-    body: "Event planning is collaborative. Hosts and staff can access event planning content for their roles. Guests can contribute to sections the host has opened to guests. Host-only financial information, host-only avoid-list content and planner files are intended to be restricted by role. Information you contribute to a shared section is not a private message to staff. Avoid putting confidential material into shared sections, and contact support if access appears wrong. Event access controls do not make a publicly hosted cover-photo URL private.",
-  },
-  {
-    heading: "6. Photos, files and invitations",
-    body: "A host or staff member can upload an event cover photo. Cover photos are stored in the public event-photos bucket and anyone with the photo URL may access them, even when app editing is restricted. Planner PDFs and images are stored separately in the private event-files bucket, with a maximum file size of 25 MB, for staff and authorized event hosts. When a host invites someone, we handle the person's name, email and relationship to the event to create and send the invitation. Mailgun processes invitation emails, and guest and email-log records are retained separately from login accounts. Provide another person's details only when you have a proper basis to invite them, and let them know the invitation concerns shared event planning.",
-  },
-  {
-    heading: "7. Clipboard and technical information",
-    body: "The app makes a one-time clipboard check to offer an event join link; joining through that offer requires a tap. A clipboard check is not a request for your address book. Failed join attempts are logged with IP address, user identifier and a hash of the join code for access and abuse handling. Service providers and servers may also handle technical request and service logs. This policy does not promise an absence of all logging. A web contract signature workflow can record IP address and user agent; that is a separate web workflow, not direct collection by the iOS contract-signature feature.",
-  },
-  {
-    heading: "8. Why we use information",
-    body: "We use account and event information to authenticate you, associate you with the correct event, save and share planning contributions, prepare and deliver booked services, show relevant booking records, send invitations and operational messages, respond to support, and investigate security or access problems. Optional social handles are not required for core planning. Marketing texts require a separate optional permission and must not be bundled into acceptance of these policies or access to planning. Operational messages about your account, invitations or booking are distinct from marketing. Marketing texts are a separate choice, off until you turn them on, and they are stored only for the mobile number already on your booking record. That choice records the time, the disclosure version, and whether it came from the app or the web. It is not permission for email, and it is not permission for booking or account texts. You can withdraw it later in the app. Replying STOP still stops texts to that number. If no mobile number is on file, we do not store a marketing text choice.",
-  },
-  {
-    heading: "9. Providers and external content",
-    body: "In addition to Supabase, Apple and Google sign-in and Mailgun invitations, music tools use Spotify, Apple Music, iTunes Search and YouTube for catalog searches or public-link lookups. The relevant query text or public playlist or video link can be sent to the provider. These tools do not link your personal music-service account, and the app is not a full-song streaming service. TemplatesBooth receives photo-booth catalog filters, not the event's identity in the reviewed lookup. Expo supplies app updates. Staff communication workflows can use HighLevel and may create or update a contact's name, email and phone number; that is not a direct client-app integration. PayPal is associated with the website, not an iOS checkout. The sender configured for Supabase authentication emails has not been established as Mailgun.",
-  },
-  {
-    heading: "10. Staff AI processing",
-    body: "Removing client-facing song recommendations does not remove staff AI. Staff XOS tools can send OpenAI event and planning information for summaries, event questions and run-of-show drafts. Depending on the tool, inputs include client names, email, phone, venue and address, planning answers, songs, notes, must-play and do-not-play details, and other event information held for your booking. A morning briefing can include event or couple names, venues, payment amounts and unsigned-contract dates. A staff assistant can also receive content staff paste into it. These are separate staff workflows, not music-account linking. Booking with Xpress Entertainment includes notice that staff may use these AI tools on event information. There is no separate AI opt-in or opt-out in the app. Marketing texts remain a separate optional choice. The staff assistant can still receive words a staff member types. Email addresses and phone numbers in that chat are refused. A name typed in a sentence is not fully blocked there.",
-  },
-  {
-    heading: "11. Other disclosures and advertising",
-    body: "We disclose information to the people involved in your event and to providers as described above. We may also disclose information where required by applicable law, to respond to lawful requests, or as necessary to address fraud, abuse or legal claims, subject to applicable protections. No advertising or cross-app tracking SDK was identified in the reviewed client code. That finding is not a guarantee about every server log or every provider's independent practices, and it does not establish unverified vendor contractual terms. Any materially different collection or use needs appropriate notice and any required permission.",
-  },
-  {
-    heading: "12. Deletion",
-    body: "Deleting your account removes your app login and access. You cannot sign back in with that login. We remove the app account record, event app memberships, and device tokens for that login. The event's planning details, guest record, contract, and payment records stay with the booking so your DJ can perform the event and as required by law. If you signed in with Apple, we try to revoke that sign-in. The login is still removed if that request fails.",
-  },
-  {
-    heading: "13. Choices, rights and security",
-    body: "You can omit optional social information, choose what appropriate planning content and files to submit, and initiate login deletion in the app. You may contact drew@xpressdjs.com to request access, correction, a copy, deletion of retained information, or withdrawal of an optional consent. Rights and exceptions depend on applicable law. We may need to verify your identity and your connection to the event without asking for unnecessary information. Information about other people may need separate handling. A withdrawal does not undo processing already completed or remove records that must lawfully be retained. No security method is a guarantee against unauthorized access; do not treat public cover photos as secure storage.",
-  },
-  {
-    heading: "14. Eligibility and changes",
-    body: "The app's selected eligibility rule is 18 or older; this is not a statement of Apple's age rating and does not imply age verification. Do not submit unnecessary information about children. If you believe a child has provided personal information through the app, contact us. Changes to this policy will be identified with a revision or effective date when approved and published. A notice alone does not replace any permission required for a new use.",
-  },
-  {
-    heading: "15. Contact",
-    body: "For privacy questions and data requests: drew@xpressdjs.com. For app help, event access and content reports: events@xpressdjs.com. Postal contact: Xpress Entertainment Corp, 11280 Pines Blvd, Pembroke Pines FL 33026.",
-  },
-];
-
-const privacyEs: PolicySection[] = [
-  {
-    heading: "1. Quiénes somos y alcance de esta política",
-    body: "Xpress Entertainment Corp, 11280 Pines Blvd, Pembroke Pines FL 33026, ofrece esta aplicación de planificación de eventos. Esta política explica el tratamiento de información mediante la aplicación y los procesos relacionados del personal en XOS. Distingue la información que usted introduce en la aplicación de los registros de reservas y clientes que ya tenemos y que mostramos o utilizamos para su evento. Nuestros sitios web, contratos de reserva y servicios de pago externos pueden implicar información y avisos adicionales.",
-  },
-  {
-    heading: "2. Cuentas e inicio de sesión",
-    body: "Utilizamos Supabase para autenticar cuentas, gestionar bases de datos y almacenar archivos. Puede iniciar sesión con correo electrónico y contraseña, Google o Apple. Tratamos el correo de su cuenta, identificadores de cuenta y autenticación, la pertenencia y el rol dentro del evento, y los datos de identidad que devuelve el proveedor elegido, que pueden incluir su nombre. Apple puede proporcionar una dirección de retransmisión privada en lugar de su correo personal. Los mensajes de confirmación de correo y restablecimiento de contraseña permiten gestionar el acceso. La aplicación no está diseñada para recopilar su contraseña de Apple o Google. Al servicio de inicio de sesión del proveedor se aplican sus propias condiciones y su aviso de privacidad.",
-  },
-  {
-    heading: "3. Información de reservas y registros del evento",
-    body: "Los registros de reservas y gestión de clientes pueden incluir nombre, organización, teléfono, correo electrónico, dirección postal, aniversario, notas, estado y fecha de autorización de SMS, y nombres de usuario opcionales de Instagram o TikTok. Estos registros pueden existir independientemente de una cuenta de la aplicación. La aplicación del anfitrión puede mostrar datos existentes del evento y de la reserva y, cuando esté habilitado, información financiera de solo lectura: paquete, servicios adicionales, desplazamientos, horas extra, descuentos, registros de pagos y calendario de pagos. Mostrar estos registros no significa que se recopilaran originalmente en la aplicación. La aplicación no ofrece pagos con tarjeta, compras dentro de la aplicación ni una suscripción de la aplicación.",
-  },
-  {
-    heading: "4. Contenido de planificación que usted aporta",
-    body: "Almacenamos respuestas a preguntas de planificación, selecciones y sugerencias de canciones, títulos y otros metadatos del proveedor, nombres de proveedores y enlaces públicos de música o listas de reproducción, atribución de solicitudes, Me gusta, preferencias de canciones imprescindibles y prohibidas, notas y contenido de la lista de temas o situaciones que se deben evitar. Las notas de cada sección admiten hasta 4.000 caracteres. Las respuestas y otras aportaciones pueden vincularse a un identificador de autor o cuenta. Incluya únicamente lo necesario para planificar el evento. No introduzca contraseñas, números de tarjeta, documentos de identidad ni información sensible innecesaria sobre usted u otras personas en campos o archivos adjuntos.",
-  },
-  {
-    heading: "5. Acceso compartido al evento",
-    body: "La planificación es colaborativa. Los anfitriones y el personal pueden acceder al contenido de planificación según sus roles. Los invitados pueden participar en las secciones que el anfitrión haya abierto para ellos. La información financiera, el contenido de la lista de temas o situaciones que se deben evitar y los archivos del planificador reservados al anfitrión están destinados a tener acceso restringido por rol. Lo que aporte a una sección compartida no es un mensaje privado al personal. Evite incluir material confidencial en secciones compartidas y contacte con soporte si observa un acceso incorrecto. Los controles de acceso del evento no convierten en privada la URL pública de una foto de portada.",
-  },
-  {
-    heading: "6. Fotos, archivos e invitaciones",
-    body: "Un anfitrión o miembro del personal puede subir una foto de portada. Las portadas se almacenan en el contenedor público event-photos y cualquier persona que tenga la URL puede acceder a ellas, aunque la edición en la aplicación esté restringida. Los PDF y las imágenes del planificador se almacenan por separado en el contenedor privado event-files, con un máximo de 25 MB por archivo, para el personal y los anfitriones autorizados. Cuando un anfitrión invita a alguien, tratamos el nombre, correo y relación de esa persona con el evento para crear y enviar la invitación. Mailgun procesa estos correos y los registros de invitados y de correos se conservan por separado de las cuentas de acceso. Facilite datos de otra persona solo cuando tenga una base adecuada para invitarla e infórmele de que la invitación se refiere a la planificación compartida del evento.",
-  },
-  {
-    heading: "7. Portapapeles e información técnica",
-    body: "La aplicación comprueba una vez el portapapeles para ofrecer un enlace de acceso al evento; debe tocar esa opción para unirse. Esta comprobación no solicita su agenda de contactos. Los intentos fallidos de acceso se registran con dirección IP, identificador de usuario y un hash del código de acceso para gestionar el acceso y los abusos. Los proveedores y servidores también pueden tratar registros técnicos de solicitudes y servicios. Esta política no promete la ausencia de todo registro. Un proceso de firma de contratos en la web puede registrar la IP y el agente de usuario; es un proceso web separado, no una recopilación directa mediante una función de firma de contratos de iOS.",
-  },
-  {
-    heading: "8. Para qué utilizamos la información",
-    body: "Utilizamos los datos de cuenta y evento para autenticarle, asociarle al evento correcto, guardar y compartir aportaciones, preparar y prestar los servicios reservados, mostrar registros de reserva pertinentes, enviar invitaciones y mensajes operativos, atender consultas e investigar problemas de seguridad o acceso. Los nombres de usuario de redes sociales son opcionales y no se necesitan para la planificación básica. Los SMS de marketing requieren una autorización opcional y separada que no debe agruparse con la aceptación de estas políticas ni con el acceso a la planificación. Los mensajes operativos sobre la cuenta, las invitaciones o la reserva son distintos del marketing. Los textos promocionales son una elección separada, apagada hasta que usted la active, y solo se guardan para el número móvil que ya está en su reserva. Esa elección guarda la hora, la versión del aviso y si vino de la aplicación o de la web. No es permiso para correo electrónico ni para textos de la reserva o de la cuenta. Puede retirarla después en la aplicación. Responder STOP sigue deteniendo los textos a ese número. Si no hay un número móvil en el registro, no guardamos una elección de textos promocionales.",
-  },
-  {
-    heading: "9. Proveedores y contenido externo",
-    body: "Además de Supabase, el inicio de sesión de Apple y Google y las invitaciones de Mailgun, las herramientas de música utilizan Spotify, Apple Music, iTunes Search y YouTube para búsquedas de catálogo o consultas de enlaces públicos. El texto de búsqueda o el enlace público de una lista o vídeo pueden enviarse al proveedor correspondiente. Estas herramientas no vinculan su cuenta personal de música y la aplicación no es un servicio de reproducción de canciones completas. TemplatesBooth recibe filtros de catálogo de fotomatón, no la identidad del evento en la consulta revisada. Expo suministra actualizaciones de la aplicación. Los procesos de comunicación del personal pueden utilizar HighLevel y crear o actualizar el nombre, correo y teléfono de un contacto; no es una integración directa de la aplicación del cliente. PayPal está relacionado con el sitio web, no con pagos en iOS. No se ha confirmado que Mailgun sea el proveedor configurado para enviar los correos de autenticación de Supabase.",
-  },
-  {
-    heading: "10. Tratamiento mediante IA del personal",
-    body: "Eliminar las recomendaciones de canciones para clientes no elimina la IA del personal. Las herramientas de XOS pueden enviar a OpenAI datos del evento y de planificación para generar resúmenes, responder preguntas y preparar borradores del programa del evento. Según la herramienta, se incluyen nombres, correo, teléfono, lugar y dirección del evento, respuestas, canciones, notas, preferencias de canciones imprescindibles y prohibidas, y otra información del evento asociada a su reserva. Un informe matutino puede incluir nombres del evento o de la pareja, lugares, importes de pagos y fechas de contratos sin firmar. Un asistente del personal también puede recibir contenido pegado por el personal. Son procesos separados y no vinculan cuentas de música. Contratar con Xpress Entertainment incluye el aviso de que el personal puede usar estas herramientas de IA sobre la información del evento. No hay una opción separada de autorización o retirada de IA en la aplicación. Los textos de marketing siguen siendo una elección opcional y separada. El asistente del personal todavía puede recibir texto que un miembro del personal escriba. Los correos y teléfonos en ese chat se rechazan. Un nombre escrito en una frase no queda bloqueado por completo.",
-  },
-  {
-    heading: "11. Otras comunicaciones de datos y publicidad",
-    body: "Compartimos información con las personas que participan en su evento y con proveedores según lo descrito. También podemos comunicar información cuando lo exija la legislación aplicable, para responder a solicitudes legales o cuando sea necesario para abordar fraude, abusos o reclamaciones, con las protecciones aplicables. No se identificó un SDK de publicidad o seguimiento entre aplicaciones en el código del cliente revisado. Esto no garantiza las prácticas de cada registro de servidor o proveedor independiente ni acredita condiciones contractuales de proveedores no verificadas. Cualquier recopilación o uso sustancialmente diferente necesita el aviso adecuado y los permisos exigibles.",
-  },
-  {
-    heading: "12. Eliminación",
-    body: "Eliminar su cuenta quita el acceso a la aplicación. No podrá volver a entrar con ese acceso. Quitamos el registro de la cuenta de la aplicación, las pertenencias al evento en la aplicación y los tokens de dispositivo de ese acceso. Los detalles de planificación del evento, el registro del invitado, el contrato y los registros de pago permanecen con la reserva para que su DJ pueda realizar el evento y cuando la ley lo exige. Si inició sesión con Apple, intentamos revocar ese acceso. El acceso se elimina aunque esa solicitud falle.",
-  },
-  {
-    heading: "13. Opciones, derechos y seguridad",
-    body: "Puede omitir las redes sociales opcionales, elegir qué contenido y archivos apropiados aportar e iniciar la eliminación de su acceso dentro de la aplicación. Puede escribir a drew@xpressdjs.com para solicitar acceso, rectificación, una copia, eliminación de información conservada o retirada de un consentimiento opcional. Los derechos y sus excepciones dependen de la legislación aplicable. Podemos necesitar verificar su identidad y relación con el evento sin solicitar información innecesaria. Los datos de otras personas pueden requerir un tratamiento separado. La retirada no deshace el tratamiento ya realizado ni elimina registros que deban conservarse legalmente. Ningún método de seguridad garantiza la ausencia de accesos no autorizados; no utilice las portadas públicas como almacenamiento seguro.",
-  },
-  {
-    heading: "14. Requisitos de uso y cambios",
-    body: "La regla de elegibilidad elegida para la aplicación es tener al menos 18 años; no es una declaración de la clasificación por edades de Apple ni implica una verificación de edad. No aporte información innecesaria sobre menores. Si cree que un menor ha facilitado datos personales mediante la aplicación, contacte con nosotros. Los cambios de esta política se identificarán mediante una fecha de revisión o entrada en vigor cuando se aprueben y publiquen. Un aviso no sustituye la autorización que pueda requerirse para un nuevo uso.",
-  },
-  {
-    heading: "15. Contacto",
-    body: "Consultas de privacidad y solicitudes de datos: drew@xpressdjs.com. Ayuda de la aplicación, acceso al evento y denuncias de contenido: events@xpressdjs.com. Dirección postal: Xpress Entertainment Corp, 11280 Pines Blvd, Pembroke Pines FL 33026.",
-  },
-];
 
 const termsEn: PolicySection[] = [
   {
@@ -275,10 +165,11 @@ export const APP_POLICIES: Record<PolicyLang, Record<PolicyDocId, PolicyDocument
   en: {
     privacy: {
       id: "privacy",
-      title: "Privacy Policy",
-      description: "Privacy policy for the Xpress Entertainment client event-planning app.",
+      title: privacyCopyEn.title,
+      description: "Privacy policy for the Xpress DJs event-planning app.",
       navLabel: "Privacy Policy",
-      sections: privacyEn,
+      preamble: [...privacyCopyEn.preamble],
+      sections: privacyCopyEn.sections as unknown as PolicySection[],
     },
     terms: {
       id: "terms",
@@ -299,10 +190,11 @@ export const APP_POLICIES: Record<PolicyLang, Record<PolicyDocId, PolicyDocument
   es: {
     privacy: {
       id: "privacy",
-      title: "Política de privacidad",
-      description: "Política de privacidad de la aplicación de planificación de eventos de Xpress Entertainment.",
+      title: privacyCopyEs.title,
+      description: "Política de privacidad de la aplicación Xpress DJs.",
       navLabel: "Política de privacidad",
-      sections: privacyEs,
+      preamble: [...privacyCopyEs.preamble],
+      sections: privacyCopyEs.sections as unknown as PolicySection[],
     },
     terms: {
       id: "terms",
@@ -370,9 +262,29 @@ export function linkPolicyText(text: string, lang: PolicyLang, here: PolicyDocId
   return parts.filter((part) => part.text.length > 0);
 }
 
+function listItemText(item: PolicyListItem): string {
+  return typeof item === "string" ? item : `${item.lead} ${item.text}`.replace(/\s+/g, " ").trim();
+}
+
+function sectionPlainText(section: PolicySection): string[] {
+  const parts: string[] = [section.heading];
+  if (section.body) parts.push(section.body);
+  for (const block of section.blocks ?? []) {
+    if (block.type === "p") {
+      parts.push(block.lead ? `${block.lead} ${block.text}` : block.text);
+    } else if (block.type === "ul") {
+      for (const item of block.items) parts.push(listItemText(item));
+    } else {
+      parts.push(block.columns.join(" | "));
+      for (const row of block.rows) parts.push(row.join(" | "));
+    }
+  }
+  return parts;
+}
+
 export function policyPlainText(id: PolicyDocId, lang: PolicyLang): string {
   const doc = APP_POLICIES[lang][id];
-  return [doc.title, doc.lead ?? "", ...doc.sections.flatMap((section) => [section.heading, section.body])]
+  return [doc.title, ...(doc.preamble ?? []), doc.lead ?? "", ...doc.sections.flatMap(sectionPlainText)]
     .filter(Boolean)
     .join("\n");
 }
