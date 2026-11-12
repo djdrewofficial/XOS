@@ -185,6 +185,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/app-privacy") ||
     pathname.startsWith("/app-terms") ||
     pathname.startsWith("/app-data-deletion") ||
+    pathname.startsWith("/support") ||
     pathname.startsWith("/privacy") ||
     pathname.startsWith("/terms") ||
     pathname.startsWith("/sign/") ||

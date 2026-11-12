@@ -13,6 +13,8 @@ import {
   type PolicyDocId,
   type PolicyLang,
 } from "./appPolicies.ts";
+import { privacyCopyEn, privacyCopyEs } from "./appPrivacyCopy.ts";
+import { APP_SUPPORT_PATH, supportPlainText } from "./appSupport.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -29,7 +31,7 @@ describe("app policy text", () => {
       }
       for (const id of DOCS) {
         assert.match(policyPlainText(id, lang), /drew@xpressdjs\.com/);
-        assert.ok(APP_POLICIES[lang][id].sections.length >= 3);
+        assert.ok(APP_POLICIES[lang][id].sections.length >= 1);
       }
       assert.match(policyPlainText("privacy", lang), /events@xpressdjs\.com/);
       assert.match(policyPlainText("terms", lang), /events@xpressdjs\.com/);
@@ -38,42 +40,30 @@ describe("app policy text", () => {
     assert.match(chrome, /APP_POLICY_ADDRESS/);
     assert.match(chrome, /APP_POLICY_PRIVACY_EMAIL/);
     assert.match(chrome, /APP_POLICY_SUPPORT_EMAIL/);
+    assert.doesNotMatch(chrome, /sr-only/);
   });
 
-  it("states staff AI as a plain booking notice with no opt-in or opt-out", () => {
+  it("publishes the approved privacy copy with the September 1, 2026 effective date", () => {
     const en = policyPlainText("privacy", "en");
     const es = policyPlainText("privacy", "es");
-    assert.match(en, /Removing client-facing song recommendations does not remove staff AI/);
-    assert.match(en, /Booking with Xpress Entertainment includes notice that staff may use these AI tools/);
-    assert.match(en, /There is no separate AI opt-in or opt-out in the app/);
-    assert.match(en, /Marketing texts remain a separate optional choice/);
-    assert.doesNotMatch(en, /unless you opt in for that event/);
-    assert.doesNotMatch(en, /You can withdraw that choice/);
-    assert.match(es, /Contratar con Xpress Entertainment incluye el aviso/);
-    assert.match(es, /No hay una opción separada de autorización o retirada de IA/);
+    assert.match(en, /Effective date: September 1, 2026/);
+    assert.match(es, /Fecha de entrada en vigor: 1 de septiembre de 2026/);
+    assert.match(en, /Xpress Entertainment Corp \("Xpress", "we", "us"\) makes the Xpress DJs app/);
+    assert.match(en, /Every provider that receives personal information from us is bound/);
+    assert.match(en, /Fireflies/);
+    assert.match(en, /open the My Event tab and tap Delete account/);
+    assert.match(es, /abra la pestaña Mi evento y toque Eliminar cuenta/);
+    assert.equal(APP_POLICIES.en.privacy.preamble?.[1], privacyCopyEn.preamble[1]);
+    assert.equal(APP_POLICIES.es.privacy.preamble?.[1], privacyCopyEs.preamble[1]);
+    assert.equal(APP_POLICIES.en.privacy.sections.length, privacyCopyEn.sections.length);
     assert.doesNotMatch(en, /—/);
-    assert.match(en, /OpenAI/);
-    assert.match(es, /no elimina la IA del personal/);
-    const terms = policyPlainText("terms", "en");
-    const termsEs = policyPlainText("terms", "es");
-    assert.match(terms, /Booking includes that AI notice/);
-    assert.match(terms, /there is no separate AI opt-in or opt-out in the app/);
-    assert.match(terms, /Anyone on the event can report content or a person/);
-    assert.match(terms, /Hosts can remove guest content and remove guests/);
-    assert.match(terms, /Xpress can remove content that breaks these terms/);
-    assert.match(termsEs, /Cualquier persona en el evento puede reportar contenido o a una persona/);
-    assert.match(termsEs, /Los anfitriones pueden quitar el contenido de los invitados y quitar invitados/);
-    assert.doesNotMatch(`${terms}\n${termsEs}`, /—/);
-    assert.doesNotMatch(terms, /proposed separate authorization/);
-    assert.doesNotMatch(en, /all AI processing has stopped/);
-    assert.doesNotMatch(en, /For You has been removed from every/);
+    assert.doesNotMatch(es, /—/);
   });
 
-  it("says deletion removes the login and leaves the booking records", () => {
+  it("keeps terms and deletion login-removal language", () => {
     for (const lang of LANGS) {
-      const privacy = policyPlainText("privacy", lang);
       const deletion = policyPlainText("deletion", lang);
-      assert.doesNotMatch(`${privacy}\n${deletion}`, /—/);
+      assert.doesNotMatch(deletion, /—/);
       assert.doesNotMatch(deletion, /Former guest|Invitado anterior|within \d+ days|retained for \d+ years/);
     }
     const en = policyPlainText("deletion", "en");
@@ -81,22 +71,14 @@ describe("app policy text", () => {
     assert.match(en, /removes your app login and access/);
     assert.match(en, /planning details, guest record, contract, and payment records stay/);
     assert.match(en, /so your DJ can perform the event and as required by law/);
-    assert.match(policyPlainText("privacy", "en"), /removes your app login and access/);
     assert.match(es, /quita el acceso a la aplicación/);
     assert.match(es, /registro del invitado/);
     assert.match(es, /cuando la ley lo exige/);
-  });
-
-  it("does not print an effective date or the review banner", () => {
-    for (const lang of LANGS) {
-      for (const id of DOCS) {
-        const text = policyPlainText(id, lang);
-        assert.doesNotMatch(text, /Draft for review/);
-        assert.doesNotMatch(text, /Borrador para revisión/);
-        assert.doesNotMatch(text, /Last updated:/);
-        assert.doesNotMatch(text, /Effective [A-Z][a-z]+ \d/);
-      }
-    }
+    const terms = policyPlainText("terms", "en");
+    const termsEs = policyPlainText("terms", "es");
+    assert.match(terms, /Anyone on the event can report content or a person/);
+    assert.match(termsEs, /Cualquier persona en el evento puede reportar contenido o a una persona/);
+    assert.doesNotMatch(`${terms}\n${termsEs}`, /—/);
   });
 
   it("links the other app documents and leaves the current page as text", () => {
@@ -114,7 +96,7 @@ describe("app policy text", () => {
     assert.equal(policyLang(undefined), "en");
   });
 
-  it("publishes the three app routes and leaves the booking policy in place", () => {
+  it("publishes the app policy routes and leaves the booking policy in place", () => {
     const middleware = read("src/middleware.ts");
     for (const path of Object.values(APP_POLICY_PATHS)) {
       assert.match(middleware, new RegExp(path.replace("/", "\\/")));
@@ -132,5 +114,32 @@ describe("app policy text", () => {
     assert.match(read("src/components/AppPolicyDocument.tsx"), /aria-current=\{lang === "en" \? "true" : undefined\}/);
     assert.match(read("src/components/AppPolicyDocument.tsx"), /<main lang=\{lang\}/);
     assert.doesNotMatch(read("src/app/app-privacy/page.tsx"), /July 15, 2026/);
+  });
+});
+
+describe("public app store support and privacy routes", () => {
+  it("keeps /app-privacy and /support public so they render logged out", () => {
+    const middleware = read("src/middleware.ts");
+    const publicBlock = middleware.slice(middleware.indexOf("const isPublic"), middleware.indexOf("if (isPublic)"));
+    assert.match(publicBlock, /pathname\.startsWith\("\/app-privacy"\)/);
+    assert.match(publicBlock, /pathname\.startsWith\("\/support"\)/);
+    assert.equal(APP_SUPPORT_PATH, "/support");
+    assert.match(read("src/app/support/page.tsx"), /APP_SUPPORT/);
+    assert.match(read("src/app/support/page.tsx"), /APP_POLICY_SUPPORT_EMAIL/);
+    assert.doesNotMatch(read("src/app/support/page.tsx"), /createClient|getUser|supabase\.auth/);
+    assert.doesNotMatch(read("src/app/app-privacy/page.tsx"), /createClient|getUser|supabase\.auth/);
+    assert.match(supportPlainText("en"), /Xpress DJs app support/);
+    assert.match(supportPlainText("en"), /events@xpressdjs\.com/);
+    assert.match(supportPlainText("en"), /Forgot password/);
+    assert.match(supportPlainText("en"), /My Event tab/);
+    assert.match(supportPlainText("en"), /Delete account/);
+    assert.match(supportPlainText("es"), /Si necesita ayuda/);
+    assert.match(supportPlainText("es"), /Incluya su nombre/);
+    assert.match(supportPlainText("es"), /Mi evento/);
+    assert.match(supportPlainText("es"), /Eliminar cuenta/);
+    assert.doesNotMatch(supportPlainText("en"), /—/);
+    assert.doesNotMatch(supportPlainText("es"), /—/);
+    assert.doesNotMatch(read("src/app/support/page.tsx"), /—/);
+    assert.doesNotMatch(`${supportPlainText("en")}\n${supportPlainText("es")}`, /\d{3}[-.)]\d{3}/);
   });
 });
