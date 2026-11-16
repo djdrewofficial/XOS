@@ -1,13 +1,18 @@
 /* Payment-received receipt merge tags — TypeScript mirror of the SQL resolver
-   in migration 00226 (most_recent_payment_*, balance_status). Keep the money
+   in migration 00226 / 00229 (most_recent_payment_*, balance_status). Keep the money
    rules identical: only approved, non-deleted payment.amount reduces the
    balance; processing_fee is shown separately and never counted as paid. */
+
+import { formatPaymentDate } from "./paymentDateFormat";
 
 export type ReceiptPayment = {
   amount: number;
   method: string;
   paidAt: string; // ISO date or timestamptz
   processingFee?: number | null;
+  reason?: string | null;
+  notes?: string | null;
+  bankDepositRef?: string | null;
   status?: string | null;
   deletedAt?: string | null;
 };
@@ -19,12 +24,6 @@ export type ReceiptEventMoney = {
 
 const money = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-
-const longDate = (iso: string) => {
-  const d = new Date(iso.includes("T") ? iso : `${iso}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-};
 
 /** Display label for a stored payment method (PayPal stays PayPal). */
 export function formatPaymentMethod(method: string): string {
@@ -75,12 +74,23 @@ export function balanceStatus(totalFee: number, payments: ReceiptPayment[]): str
   return bal <= 0 ? "Paid in full" : money(bal);
 }
 
+/** Notes on the payment, falling back to reason then bank deposit reference. */
+export function paymentNotes(payment: ReceiptPayment | null): string {
+  if (!payment) return "";
+  const notes = (payment.notes ?? "").trim();
+  if (notes) return notes;
+  const reason = (payment.reason ?? "").trim();
+  if (reason) return reason;
+  return (payment.bankDepositRef ?? "").trim();
+}
+
 export type PaymentReceiptTags = {
   most_recent_payment_amount: string;
   most_recent_payment_method: string;
   most_recent_payment_date: string;
   most_recent_payment_processing_fee: string;
   most_recent_payment_fee_line: string;
+  most_recent_payment_notes: string;
   payments_received: string;
   balance_due: string;
   balance_status: string;
@@ -95,10 +105,11 @@ export function paymentReceiptTags(input: ReceiptEventMoney): PaymentReceiptTags
   return {
     most_recent_payment_amount: latest ? money(Number(latest.amount || 0)) : "",
     most_recent_payment_method: latest ? formatPaymentMethod(latest.method) : "",
-    most_recent_payment_date: latest ? longDate(latest.paidAt) : "",
+    most_recent_payment_date: latest ? formatPaymentDate(latest.paidAt) : "",
     most_recent_payment_processing_fee: feeMoney,
     most_recent_payment_fee_line:
       fee > 0 ? `<br>Card service fee: <strong>${feeMoney}</strong>` : "",
+    most_recent_payment_notes: paymentNotes(latest),
     payments_received: money(paid),
     balance_due: money(bal),
     balance_status: bal <= 0 ? "Paid in full" : money(bal),
@@ -131,3 +142,26 @@ export function applyMergeTags(template: string, tags: Record<string, string>): 
   }
   return out;
 }
+
+export const PAYMENT_RECEIPT_TEMPLATE_NAME = "Payment Receipt";
+
+/** Sample document body used by docs/samples/payment-receipt-sample.pdf. */
+export const PAYMENT_RECEIPT_DOC_BODY = [
+  "<p>Thank you for your payment. This receipt relates to your booking agreement with Xpress Entertainment.</p>",
+  "<p><strong>Client:</strong> <client_name><br>",
+  "<strong>Event:</strong> <event_name><br>",
+  "<strong>Event number:</strong> <event_number><br>",
+  "<strong>Event date:</strong> <event_date_long><br>",
+  "<strong>Date issued:</strong> <current_date></p>",
+  "<p><strong>Most recent payment</strong><br>",
+  "Amount: <strong><most_recent_payment_amount></strong><br>",
+  "Method: <strong><most_recent_payment_method></strong><br>",
+  "Date: <strong><most_recent_payment_date></strong>",
+  "<most_recent_payment_fee_line></p>",
+  "<p>Confirmation / notes: <most_recent_payment_notes></p>",
+  "<p>Investment total: <strong><total_fee></strong><br>",
+  "Paid to date: <strong><payments_received></strong><br>",
+  "Remaining balance: <strong><balance_status></strong></p>",
+].join("");
+
+export const PAYMENT_RECEIPT_PDF_FILENAME = "Xpress Receipt - <event_number>";

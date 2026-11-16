@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import DocumentShell from "@/components/DocumentShell";
 import PrintButton from "@/components/PrintButton";
-import { sanitizeBlocks, docTypeClientLabel } from "@/lib/documentBlocks";
+import { sanitizeBlocks, defaultHeaderKicker } from "@/lib/documentBlocks";
 
 /* Standalone document view — no app chrome, print-clean. Phase 2 adds the
    public client route (token URL) + e-sign on top of this same shell. */
@@ -46,7 +46,10 @@ export default async function DocumentPrintPage({
       </div>
       <DocumentShell
         title={doc.title}
-        docType={docTypeClientLabel(doc.doc_type)}
+        docType={
+          ((doc as { header_kicker?: string | null }).header_kicker ?? "").trim() ||
+          defaultHeaderKicker(doc.doc_type)
+        }
         clientName={clientName}
         eventDateLabel={fmtDate(ev?.event_date)}
         companyName={cs?.company_name ?? "Xpress Entertainment"}

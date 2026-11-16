@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { money } from "@/lib/types";
-import { sanitizeBlocks, type DocBlock } from "@/lib/documentBlocks";
+import { defaultHeaderKicker, formatDocumentTitle, sanitizeBlocks, type DocBlock } from "@/lib/documentBlocks";
+import { formatPaymentDate } from "@/lib/paymentDateFormat";
+import { balanceStatus, formatPaymentMethod, paymentNotes, totalPaid, type ReceiptPayment } from "@/lib/paymentReceiptMerge";
 
 /* Server-side document generation: merges text blocks via render_merge_tags and
    renders smart blocks from event data, freezing everything into the document
@@ -55,6 +57,7 @@ export type EventBundle = {
   };
   addons: { quantity: number; price_override: number | null; price_locked: number | null; description_override?: string | null; addon: { name: string; client_facing_name?: string | null; description: string | null; default_price: number } | null }[];
   schedule: { seq: number; due_date: string | null; amount: number; label: string | null }[];
+  payments: ReceiptPayment[];
   pinnedDescription: string | null;
   /** venue-paid event (Villa Toscana / Booked EV): client-facing output shows no money */
   financialsHidden: boolean;
@@ -63,7 +66,7 @@ export type EventBundle = {
 };
 
 export async function loadEventBundle(supabase: SupabaseClient, eventId: string): Promise<EventBundle | null> {
-  const [{ data: event }, { data: addons }, { data: schedule }, { data: notes }] = await Promise.all([
+  const [{ data: event }, { data: addons }, { data: schedule }, { data: notes }, { data: paymentRows }] = await Promise.all([
     supabase
       .from("events")
       .select(
@@ -77,6 +80,11 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
       .eq("event_id", eventId),
     supabase.from("scheduled_payments").select("seq, due_date, amount, label").eq("event_id", eventId).order("seq"),
     supabase.from("event_notes").select("body").eq("event_id", eventId).eq("kind", "contract").order("created_at"),
+    supabase
+      .from("payments")
+      .select("amount, method, paid_at, processing_fee, reason, notes, bank_deposit_ref, status, deleted_at")
+      .eq("event_id", eventId)
+      .order("paid_at", { ascending: true }),
   ]);
   if (!event) return null;
 
@@ -119,7 +127,38 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
   const { data: hidden } = await supabase.rpc("event_financials_hidden", { p_event_id: eventId });
   const financialsHidden = hidden === true;
 
-  return { event: e, addons: addonRows, schedule: schedule ?? [], pinnedDescription, contractNotes, total, financialsHidden };
+  const payments: ReceiptPayment[] = ((paymentRows ?? []) as {
+    amount: number;
+    method: string;
+    paid_at: string;
+    processing_fee?: number | null;
+    reason?: string | null;
+    notes?: string | null;
+    bank_deposit_ref?: string | null;
+    status?: string | null;
+    deleted_at?: string | null;
+  }[]).map((p) => ({
+    amount: Number(p.amount || 0),
+    method: p.method,
+    paidAt: p.paid_at,
+    processingFee: p.processing_fee,
+    reason: p.reason,
+    notes: p.notes,
+    bankDepositRef: p.bank_deposit_ref,
+    status: p.status,
+    deletedAt: p.deleted_at,
+  }));
+
+  return {
+    event: e,
+    addons: addonRows,
+    schedule: schedule ?? [],
+    payments,
+    pinnedDescription,
+    contractNotes,
+    total,
+    financialsHidden,
+  };
 }
 
 /** Structured fee lines — shared by the document fee table and the quote-style emails. */
@@ -212,10 +251,31 @@ export function renderPaymentSchedule(b: EventBundle): string {
   return `<table class="xdoc-table"><thead><tr><th>Payment</th><th>Due</th><th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/** Actual received payments table + paid to date / remaining balance.
+    processing_fee is display-only and never counted toward paid/balance. */
+export function renderPaymentsReceived(b: EventBundle): string {
+  if (b.financialsHidden) return "";
+  const live = b.payments.filter((p) => (p.status ?? "approved") === "approved" && !p.deletedAt);
+  if (live.length === 0) {
+    return `<p class="xdoc-muted">No payments recorded yet.</p>`;
+  }
+  const rows = live
+    .map((p) => {
+      const note = paymentNotes(p);
+      const fee = Number(p.processingFee ?? 0);
+      const feeLine = fee > 0 ? `<div class="xdoc-desc">Card service fee: ${money(fee)} (not applied to balance)</div>` : "";
+      return `<tr><td>${esc(formatPaymentDate(p.paidAt))}</td><td>${esc(formatPaymentMethod(p.method))}${feeLine}</td><td>${esc(note)}</td><td class="xdoc-amount">${money(Number(p.amount || 0))}</td></tr>`;
+    })
+    .join("");
+  const paid = totalPaid(live);
+  const remaining = balanceStatus(b.total, live);
+  return `<table class="xdoc-table"><thead><tr><th>Paid</th><th>Method</th><th>Notes</th><th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3">Paid to date</td><td class="xdoc-amount">${money(paid)}</td></tr><tr><td colspan="3">Remaining balance</td><td class="xdoc-amount">${esc(remaining)}</td></tr></tfoot></table>`;
+}
+
 export function renderEventDetails(b: EventBundle): string {
   const e = b.event;
   const venueLine = e.venue
-    ? `${esc(e.venue.name)}${e.venue.address ? ` — ${esc(e.venue.address)}` : ""}${e.venue.city ? `, ${esc(e.venue.city)}` : ""}${e.venue.state ? `, ${esc(e.venue.state)}` : ""}`
+    ? `${esc(e.venue.name)}${e.venue.address ? ` - ${esc(e.venue.address)}` : ""}${e.venue.city ? `, ${esc(e.venue.city)}` : ""}${e.venue.state ? `, ${esc(e.venue.state)}` : ""}`
     : "To be determined";
   const cells = [
     ["Event", esc(e.name || e.event_type?.name || "Event")],
@@ -255,7 +315,18 @@ export async function generateDocumentRow(
   if (!rendered) return null;
 
   const client = event.client as unknown as { first_name: string; last_name: string } | null;
-  const title = `${template.name} — ${client ? `${client.first_name} ${client.last_name}`.trim() : event.name || "Event"}`;
+  const clientName = client ? `${client.first_name} ${client.last_name}`.trim() : "";
+  const title = formatDocumentTitle(
+    (template as { title_format?: string | null }).title_format,
+    {
+      template: template.name,
+      client: clientName,
+      event: event.name || "",
+    },
+  );
+  const headerKicker =
+    ((template as { header_kicker?: string | null }).header_kicker ?? "").trim() ||
+    defaultHeaderKicker(template.doc_type);
 
   const { data: doc, error } = await supabase
     .from("documents")
@@ -264,6 +335,7 @@ export async function generateDocumentRow(
       event_id: eventId,
       title,
       doc_type: template.doc_type,
+      header_kicker: headerKicker,
       blocks: rendered,
       status,
       // carry the photo-release opt-out flag so /sign shows the opt-out control
@@ -314,6 +386,8 @@ export async function renderBlocks(
       out.push({ ...block, html: renderFeeTable(bundle) });
     } else if (block.type === "payment_schedule") {
       out.push({ ...block, html: renderPaymentSchedule(bundle) });
+    } else if (block.type === "payments_received") {
+      out.push({ ...block, html: renderPaymentsReceived(bundle) });
     } else if (block.type === "event_details") {
       out.push({ ...block, html: renderEventDetails(bundle) });
     } else if (block.type === "signature") {

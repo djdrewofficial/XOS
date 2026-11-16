@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import DocumentShell from "@/components/DocumentShell";
 import PrintButton from "@/components/PrintButton";
 import SignPanel from "@/components/SignPanel";
-import { sanitizeBlocks, docTypeClientLabel } from "@/lib/documentBlocks";
+import { sanitizeBlocks, defaultHeaderKicker, docTypeClientLabel } from "@/lib/documentBlocks";
 import { loadEventJourney } from "@/lib/eventJourney";
 import { signDocument } from "./actions";
 
@@ -90,7 +90,10 @@ export default async function PublicSignPage({
       <div className="px-4 sm:px-0">
         <DocumentShell
           title={doc.title}
-          docType={docTypeClientLabel(doc.doc_type)}
+          docType={
+            ((doc as { header_kicker?: string | null }).header_kicker ?? "").trim() ||
+            defaultHeaderKicker(doc.doc_type)
+          }
           clientName={clientName}
           eventDateLabel={fmtDate(ev?.event_date)}
           companyName={companyName}

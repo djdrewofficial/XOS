@@ -39,6 +39,9 @@ describe("shared outbound enrichment", () => {
         }
         if (table === "events") return chain({ pay_token: "pay-token", event_type_id: null });
         if (table === "journey_settings") return chain({ proposal_flow_enabled: false, proposal_doc_template_id: null });
+        if (table === "document_templates") {
+          return chain({ fresh_on_attach: false, pdf_filename: null, name: "Booking Agreement", doc_type: "contract" });
+        }
         if (table === "documents") return chain({ id: "doc-1", title: "Booking Agreement", signed_at: "2026-01-01", access_token: "hidden", doc_type: "contract" }, [{ id: "doc-1", title: "Booking Agreement", signed_at: "2026-01-01" }]);
         if (table === "email_log" || table === "event_files") {
           return chain(null, null);
@@ -181,5 +184,66 @@ describe("shared outbound enrichment", () => {
     assert.equal(rendered, 0);
     assert.equal(planned.pdfDeferred, false);
     assert.equal(planned.html.includes("data-sign-button"), false);
+  });
+
+  it("always generates a fresh receipt PDF and never opens a signing path", async () => {
+    const pdf = Buffer.from("%PDF-1.4 receipt");
+    let generated = 0;
+    let rendered = 0;
+    const supabase = {
+      from(table: string) {
+        if (table === "email_templates") {
+          return chain({
+            attach_template_id: "receipt-tpl",
+            attach_mode: "pdf",
+            branded_shell: true,
+            attach_file_label_ids: [],
+            is_marketing: false,
+          });
+        }
+        if (table === "events") return chain({ pay_token: null, event_type_id: null });
+        if (table === "journey_settings") return chain({ proposal_flow_enabled: false, proposal_doc_template_id: null });
+        if (table === "document_templates") {
+          return chain({ fresh_on_attach: true, pdf_filename: "Xpress Receipt - <event_number>", name: "Payment Receipt", doc_type: "receipt" });
+        }
+        if (table === "documents") return chain(null, [{ id: "stale", title: "stale", signed_at: null }]);
+        if (table === "email_log" || table === "event_files") return chain(null, null);
+        return chain(null, []);
+      },
+      rpc: async () => ({ data: "Xpress Receipt - 500123", error: null }),
+      storage: { from: () => ({ upload: async () => ({ error: null }) }) },
+    };
+    const deps: EnrichDeps = {
+      fillJoinLinks: async (_e, html) => html,
+      loadEventBundle: async () => null,
+      quoteSummaryHtml: () => "",
+      paymentPlanHtml: () => "",
+      signButtonHtml: () => {
+        throw new Error("receipt pdf must not add a sign button");
+      },
+      appUrl: () => "https://xos.example",
+      createAdminClient: () => ({ from: () => chain(null, []), storage: { from: () => ({ download: async () => ({ data: null }) }) } } as never),
+      generateDocumentRow: async () => {
+        generated += 1;
+        return { id: "fresh-receipt", title: "Payment Receipt - Client", doc_type: "receipt" };
+      },
+      buildDocumentHtml: async () => ({ html: "<article>PAYMENT RECEIPT</article>", title: "Payment Receipt - Client" }),
+      htmlToPdf: async () => {
+        rendered += 1;
+        return pdf;
+      },
+    };
+    const planned = await enrichOutbound(supabase as never, {
+      id: "msg-receipt",
+      event_id: "event-1",
+      template_id: "email-receipt",
+      body_html: "<p>Thanks for your payment</p>",
+      attached_document_id: null,
+    }, deps, { commit: true });
+    assert.equal(generated, 1);
+    assert.equal(rendered, 1);
+    assert.equal(planned.attachments.length, 1);
+    assert.equal(planned.attachments[0].filename, "Xpress Receipt - 500123.pdf");
+    assert.equal(planned.html.includes("sign"), false);
   });
 });

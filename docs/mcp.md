@@ -115,6 +115,7 @@ Built in, any valid token:
 | equipment_list | read.equipment | |
 | documents_list | read.documents | |
 | documents_get | read.documents | |
+| documents_download_pdf | read.documents | Branded PDF as base64; no email, no signing request |
 | documents_generate | write.documents | |
 | documents_send_for_signature | comms.contract | yes |
 | documents_set_status | write.documents | yes |
