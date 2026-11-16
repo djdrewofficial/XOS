@@ -491,7 +491,7 @@ describe("row mapping", () => {
 describe("scheduler SQL", () => {
   const sql = readFileSync(join(root, "supabase/migrations/00206_scheduled_comm_controls.sql"), "utf8");
   const employeeModeSql = readFileSync(
-    join(root, "supabase/migrations/00227_sched_employee_mode_excluded.sql"),
+    join(root, "supabase/migrations/00228_sched_employee_mode_excluded.sql"),
     "utf8",
   );
 
