@@ -20,7 +20,7 @@ import {
   totalPaid,
   type ReceiptPayment,
 } from "@/lib/paymentReceiptMerge";
-import type { SchedRow } from "@/lib/scheduleLock";
+import { unpaidScheduleRows as unpaidByDueDate, type SchedRow } from "@/lib/scheduleLock";
 import { money } from "@/lib/types";
 
 /* Server-side document generation: merges text blocks via render_merge_tags and
@@ -251,30 +251,13 @@ export function withBlockHeading(options: DocBlockOptions | undefined, html: str
   return `<h3 class="xdoc-block-heading">${esc(heading)}</h3>${html}`;
 }
 
-/** Remaining schedule rows after applying received payments in due-date order
-    (then seq). Linked scheduled_payment_id rows are covered first; leftover cash
-    covers earlier due dates. */
-export function unpaidScheduleRows(
-  schedule: SchedRow[],
-  payments: ReceiptPayment[],
-): SchedRow[] {
-  const approved = payments.filter((p) => (p.status ?? "approved") === "approved" && !p.deletedAt);
-  const linked = new Set(approved.map((p) => p.scheduledPaymentId).filter(Boolean) as string[]);
-  const received = approved.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const sorted = [...schedule].sort((a, b) => {
-    const da = a.due_date ? a.due_date.slice(0, 10) : "9999-99-99";
-    const db = b.due_date ? b.due_date.slice(0, 10) : "9999-99-99";
-    if (da !== db) return da.localeCompare(db);
-    return a.seq - b.seq;
-  });
-  const open: SchedRow[] = [];
-  let cumulative = 0;
-  for (const r of sorted) {
-    cumulative += Number(r.amount);
-    if (linked.has(r.id) || cumulative <= received + 0.005) continue;
-    open.push(r);
-  }
-  return open;
+/** Remaining schedule rows after netting ACTUAL approved payments (linked or not)
+    against schedule rows in due-date order. Re-export for document tests. */
+export function unpaidScheduleRows(schedule: SchedRow[], payments: ReceiptPayment[]): SchedRow[] {
+  const approved = payments
+    .filter((p) => (p.status ?? "approved") === "approved" && !p.deletedAt)
+    .map((p) => ({ amount: Number(p.amount || 0), scheduled_payment_id: p.scheduledPaymentId ?? null }));
+  return unpaidByDueDate(schedule, approved);
 }
 
 export function renderFeeTable(b: EventBundle, options?: DocBlockOptions): string {

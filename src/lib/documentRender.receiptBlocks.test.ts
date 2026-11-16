@@ -267,6 +267,21 @@ describe("renderPaymentSchedule options", () => {
       ["mid", "late"],
     );
 
+    // Drew example: $2,500 schedule, one UNLINKED $750 payment → upcoming $1,750
+    const example = unpaidScheduleRows(
+      [
+        { id: "a", seq: 1, due_date: "2026-04-10", amount: 750, label: "Retainer" },
+        { id: "b", seq: 2, due_date: "2027-02-23", amount: 875, label: "Second" },
+        { id: "c", seq: 3, due_date: "2027-03-25", amount: 875, label: "Final" },
+      ],
+      [{ amount: 750, method: "zelle", paidAt: "2026-04-10T00:00:00Z", scheduledPaymentId: null }],
+    );
+    assert.deepEqual(
+      example.map((r) => r.amount),
+      [875, 875],
+    );
+
+
     const hidden = renderPaymentSchedule(
       bundle({ financialsHidden: false, total: 2700, payments: fullPay }),
       { onlyUnpaid: true, hideWhenPaidInFull: true, heading: "Upcoming Payments" },
