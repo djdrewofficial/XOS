@@ -27,9 +27,18 @@ export const XDOC_CSS = `
 .xdoc-table tfoot td { border-top: 2px solid #4b328e; border-bottom: none;
   font-weight: 800; font-size: 15px; background: #f6f4fb; }
 .xdoc-amount { text-align: right; white-space: nowrap; }
+.xdoc-qty { text-align: center; white-space: nowrap; width: 3.5em; }
 .xdoc-desc { font-size: 12.5px; color: #6b6b76; margin-top: 3px; white-space: pre-line; }
 .xdoc-discount td { color: #1d7a46; }
 .xdoc-muted { color: #8a8a94; font-style: italic; }
+.xdoc-summary { margin: 16px 0; padding: 14px 18px; border-radius: 12px;
+  background: linear-gradient(135deg, #f6f4fb 0%, #efeafc 100%);
+  border: 1px solid #ddd4f3; font-family: ui-sans-serif, system-ui, sans-serif; }
+.xdoc-summary-row { display: flex; justify-content: space-between; gap: 16px;
+  padding: 6px 0; font-size: 14px; font-weight: 600; color: #3a3a42; }
+.xdoc-summary-row + .xdoc-summary-row { border-top: 1px solid #e4ddf4; }
+.xdoc-summary-due { color: #4b328e; font-size: 15px; font-weight: 800; }
+.xdoc-summary-paid { color: #1d7a46; font-size: 15px; font-weight: 800; }
 .xdoc-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px; margin: 14px 0; font-family: ui-sans-serif, system-ui, sans-serif; }
 .xdoc-detail { background: #f6f4fb; border-radius: 10px; padding: 10px 14px; }
@@ -65,8 +74,9 @@ export const XDOC_CSS = `
   .xdoc-noprint { display: none !important; }
   .xdoc-header { border-radius: 0; padding: 34px 44px 28px; }
   .xdoc-body { padding: 32px 44px; }
-  /* keep blocks from snapping in half across pages */
-  .xdoc-table, .xdoc-details, .xdoc-sign, .xdoc-detail { break-inside: avoid; page-break-inside: avoid; }
+  /* Avoid forced blank page-1 gaps: do NOT keep whole tall tables on one page.
+     Keep compact cards/boxes and individual table rows together instead. */
+  .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-summary { break-inside: avoid; page-break-inside: avoid; }
   .xdoc-sec { border: none; border-radius: 0; }
   .xdoc-sec summary { background: none; padding: 8px 0 2px; }
   .xdoc-sec summary::before { display: none; }

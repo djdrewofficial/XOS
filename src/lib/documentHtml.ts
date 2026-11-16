@@ -72,7 +72,8 @@ export function wrapDocHtml(opts: {
   .xdoc-sec summary { background: none; padding: 8px 0 2px; }
   .xdoc-sec summary::before { display: none; }
   .xdoc-sec-body { padding: 4px 0 10px; }
-  .xdoc-table, .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-summary { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
   </style></head><body style="margin:0;background:#f4f4f7;">
   <div class="xdoc">
     <header class="xdoc-header">

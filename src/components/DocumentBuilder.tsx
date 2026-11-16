@@ -3,12 +3,137 @@
 import { useState } from "react";
 import RichTextEditor from "@/components/RichTextEditor";
 import SaveButton from "@/components/SaveButton";
-import { BLOCK_NAMES, SMART_BLOCKS, type DocBlock } from "@/lib/documentBlocks";
+import {
+  BLOCK_NAMES,
+  DEFAULT_FEE_TOTAL_LABEL,
+  DEFAULT_SUMMARY_BALANCE_LABEL,
+  DEFAULT_SUMMARY_PAID_IN_FULL_LABEL,
+  DEFAULT_SUMMARY_PAID_LABEL,
+  DEFAULT_SUMMARY_TOTAL_LABEL,
+  SMART_BLOCKS,
+  type DocBlock,
+  type DocBlockOptions,
+} from "@/lib/documentBlocks";
 
 /* Block-based document builder. Text blocks open the rich-text editor (merge
    tags included); smart blocks are placeholders rendered from event data at
-   generation time. Used for templates (raw) and one-off edits of generated
-   documents (mode="document": smart blocks are frozen html, shown read-only). */
+   generation time. Money smart blocks expose editable options in template mode.
+   Used for templates (raw) and one-off edits of generated documents
+   (mode="document": smart blocks are frozen html, shown read-only). */
+
+function updateOptions(block: DocBlock, patch: DocBlockOptions): DocBlock {
+  return { ...block, options: { ...(block.options ?? {}), ...patch } };
+}
+
+function SmartBlockSettings({
+  block,
+  onChange,
+}: {
+  block: DocBlock;
+  onChange: (next: DocBlock) => void;
+}) {
+  const o = block.options ?? {};
+  if (block.type === "fee_table") {
+    return (
+      <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={o.showDescriptions !== false}
+            onChange={(e) => onChange(updateOptions(block, { showDescriptions: e.target.checked }))}
+          />
+          Show descriptions
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={o.showQty === true}
+            onChange={(e) => onChange(updateOptions(block, { showQty: e.target.checked }))}
+          />
+          Show qty and unit price columns
+        </label>
+        <label className="block text-xs text-zinc-500">
+          Total label
+          <input
+            type="text"
+            className="input mt-1 w-full"
+            value={o.totalLabel ?? DEFAULT_FEE_TOTAL_LABEL}
+            onChange={(e) => onChange(updateOptions(block, { totalLabel: e.target.value }))}
+          />
+        </label>
+      </div>
+    );
+  }
+  if (block.type === "payments_received") {
+    return (
+      <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={o.showNotes === true}
+            onChange={(e) => onChange(updateOptions(block, { showNotes: e.target.checked }))}
+          />
+          Show notes column
+        </label>
+        <p className="text-[11px] text-zinc-400">
+          Off by default. When on, imported DJEP / PayPal dump notes are still stripped from the client PDF.
+        </p>
+      </div>
+    );
+  }
+  if (block.type === "payment_schedule") {
+    return (
+      <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={o.onlyUnpaid === true}
+            onChange={(e) => onChange(updateOptions(block, { onlyUnpaid: e.target.checked }))}
+          />
+          Only show unpaid / upcoming
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={o.hideWhenPaidInFull === true}
+            onChange={(e) => onChange(updateOptions(block, { hideWhenPaidInFull: e.target.checked }))}
+          />
+          Hide when paid in full
+        </label>
+      </div>
+    );
+  }
+  if (block.type === "summary_box") {
+    return (
+      <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
+        {(
+          [
+            ["totalLabel", "Total label", DEFAULT_SUMMARY_TOTAL_LABEL],
+            ["paidLabel", "Paid label", DEFAULT_SUMMARY_PAID_LABEL],
+            ["balanceLabel", "Balance label", DEFAULT_SUMMARY_BALANCE_LABEL],
+            ["paidInFullLabel", "Paid in full label", DEFAULT_SUMMARY_PAID_IN_FULL_LABEL],
+          ] as const
+        ).map(([key, label, fallback]) => (
+          <label key={key} className="block text-xs text-zinc-500">
+            {label}
+            <input
+              type="text"
+              className="input mt-1 w-full"
+              value={(o[key] as string | undefined) ?? fallback}
+              onChange={(e) => onChange(updateOptions(block, { [key]: e.target.value }))}
+            />
+          </label>
+        ))}
+      </div>
+    );
+  }
+  return null;
+}
+
 export default function DocumentBuilder({
   initial,
   mode,
@@ -40,17 +165,42 @@ export default function DocumentBuilder({
         type,
         title: type === "section" ? "" : undefined,
         html: type === "text" || type === "section" ? "" : undefined,
+        ...(type === "fee_table"
+          ? { options: { showDescriptions: true, showQty: false, totalLabel: DEFAULT_FEE_TOTAL_LABEL } }
+          : {}),
+        ...(type === "payments_received" ? { options: { showNotes: false } } : {}),
+        ...(type === "payment_schedule" ? { options: { onlyUnpaid: false, hideWhenPaidInFull: false } } : {}),
+        ...(type === "summary_box"
+          ? {
+              options: {
+                totalLabel: DEFAULT_SUMMARY_TOTAL_LABEL,
+                paidLabel: DEFAULT_SUMMARY_PAID_LABEL,
+                balanceLabel: DEFAULT_SUMMARY_BALANCE_LABEL,
+                paidInFullLabel: DEFAULT_SUMMARY_PAID_IN_FULL_LABEL,
+              },
+            }
+          : {}),
       },
     ]);
   }
 
+  function setBlock(index: number, next: DocBlock) {
+    setBlocks((prev) => prev.map((b, i) => (i === index ? next : b)));
+  }
+
   return (
     <div className="space-y-3">
-      {/* block order/type manifest — html for text blocks travels via the editors' own hidden inputs */}
+      {/* block order/type/options manifest — html for text blocks travels via the editors' own hidden inputs */}
       <input
         type="hidden"
         name="block_manifest"
-        value={JSON.stringify(blocks.map((b) => ({ id: b.id, type: b.type })))}
+        value={JSON.stringify(
+          blocks.map((b) => ({
+            id: b.id,
+            type: b.type,
+            ...(b.options ? { options: b.options } : {}),
+          })),
+        )}
       />
 
       {blocks.map((b, i) => (
@@ -60,9 +210,20 @@ export default function DocumentBuilder({
               {BLOCK_NAMES[b.type]}
             </span>
             <span className="ml-auto flex items-center gap-1">
-              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="btn-ghost px-2 py-0.5 text-xs disabled:opacity-30">↑</button>
-              <button type="button" onClick={() => move(i, 1)} disabled={i === blocks.length - 1} className="btn-ghost px-2 py-0.5 text-xs disabled:opacity-30">↓</button>
-              <button type="button" onClick={() => remove(i)} className="ml-1 text-xs font-semibold text-red-600 hover:underline dark:text-red-400">Remove</button>
+              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="btn-ghost px-2 py-0.5 text-xs disabled:opacity-30">
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => move(i, 1)}
+                disabled={i === blocks.length - 1}
+                className="btn-ghost px-2 py-0.5 text-xs disabled:opacity-30"
+              >
+                ↓
+              </button>
+              <button type="button" onClick={() => remove(i)} className="ml-1 text-xs font-semibold text-red-600 hover:underline dark:text-red-400">
+                Remove
+              </button>
             </span>
           </div>
 
@@ -86,27 +247,31 @@ export default function DocumentBuilder({
             </div>
           ) : mode === "document" && b.html ? (
             <div className="p-4">
-              <div className="mb-2 text-[11px] uppercase tracking-wide text-zinc-400">
-                Frozen at generation — re-generate the document to refresh
-              </div>
-              <div className="pointer-events-none rounded-lg border border-zinc-200 bg-white p-3 text-sm text-zinc-700 dark:border-white/10 [&_table]:w-full" dangerouslySetInnerHTML={{ __html: b.html }} />
+              <div className="mb-2 text-[11px] uppercase tracking-wide text-zinc-400">Frozen at generation — re-generate the document to refresh</div>
+              <div
+                className="pointer-events-none rounded-lg border border-zinc-200 bg-white p-3 text-sm text-zinc-700 dark:border-white/10 [&_table]:w-full"
+                dangerouslySetInnerHTML={{ __html: b.html }}
+              />
             </div>
           ) : (
-            <p className="px-4 py-5 text-sm text-zinc-500">
-              {SMART_BLOCKS.find((s) => s.type === b.type)?.description ?? "Rendered from the event when a document is generated."}
-            </p>
+            <>
+              <p className="px-4 py-5 text-sm text-zinc-500">
+                {SMART_BLOCKS.find((s) => s.type === b.type)?.description ?? "Rendered from the event when a document is generated."}
+              </p>
+              {mode === "template" && <SmartBlockSettings block={b} onChange={(next) => setBlock(i, next)} />}
+            </>
           )}
         </div>
       ))}
 
-      {blocks.length === 0 && (
-        <p className="card px-4 py-10 text-center text-sm text-zinc-500">Empty document — add blocks below.</p>
-      )}
+      {blocks.length === 0 && <p className="card px-4 py-10 text-center text-sm text-zinc-500">Empty document — add blocks below.</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Add block:</span>
-          <button type="button" onClick={() => add("text")} className="btn-ghost px-3 py-1.5 text-xs">+ Text</button>
+          <button type="button" onClick={() => add("text")} className="btn-ghost px-3 py-1.5 text-xs">
+            + Text
+          </button>
           <button
             type="button"
             onClick={() => add("section")}

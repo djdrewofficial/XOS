@@ -15,6 +15,9 @@ export type ReceiptPayment = {
   bankDepositRef?: string | null;
   status?: string | null;
   deletedAt?: string | null;
+  /** Present when the row was imported from DJEP; notes are treated as import noise. */
+  legacyDjepId?: string | null;
+  scheduledPaymentId?: string | null;
 };
 
 export type ReceiptEventMoney = {
@@ -82,6 +85,39 @@ export function paymentNotes(payment: ReceiptPayment | null): string {
   const reason = (payment.reason ?? "").trim();
   if (reason) return reason;
   return (payment.bankDepositRef ?? "").trim();
+}
+
+/** Heuristic: DJEP / processor import noise that should never print on a client receipt. */
+export function looksLikeImportedPaymentNote(text: string | null | undefined): boolean {
+  const raw = (text ?? "").trim();
+  if (!raw) return false;
+  // email addresses commonly pasted into DJEP payment notes
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(raw)) return true;
+  // PayPal transaction / capture ids (CAP-…, "PayPal #…", txn id language)
+  if (/\bCAP-[A-Z0-9_-]+\b/i.test(raw)) return true;
+  if (/\bPayPal\s*[#:]?\s*[A-Z0-9-]{6,}\b/i.test(raw)) return true;
+  if (/\b(?:txn[_ -]?id|transaction[_ -]?id|paypal[_ -]?capture|paypal\s+capture)\b/i.test(raw)) return true;
+  // DJEP divider / dump style notes
+  if (/(?:^|\n)-{3,}(?:\n|$)/.test(raw) && raw.split(/\n/).length >= 3) return true;
+  return false;
+}
+
+/** Client-facing notes for the payments_received Notes column.
+    Never prints imported DJEP / processor dump notes (email, PayPal txn ids, legacy import). */
+export function clientFacingPaymentNotes(payment: ReceiptPayment | null): string {
+  if (!payment) return "";
+  if (payment.legacyDjepId) {
+    // Imported payment: only a clean staff reason is safe to show
+    const reason = (payment.reason ?? "").trim();
+    if (reason && !looksLikeImportedPaymentNote(reason)) return reason;
+    return "";
+  }
+  const notes = (payment.notes ?? "").trim();
+  if (notes && !looksLikeImportedPaymentNote(notes)) return notes;
+  const reason = (payment.reason ?? "").trim();
+  if (reason && !looksLikeImportedPaymentNote(reason)) return reason;
+  // bank deposit refs often look like internal ops codes; skip on client docs
+  return "";
 }
 
 export type PaymentReceiptTags = {
