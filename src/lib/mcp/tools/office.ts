@@ -22,7 +22,6 @@ import { previewDocumentSend, sendDocumentForSignature } from "@/lib/sendForSign
 import { isPhoneOptedOut } from "@/lib/smsOptOut";
 import { assertSmsBody } from "../smsPolicy";
 import { buildOutstanding } from "@/lib/reports/build";
-import { staffCost, staffHours } from "@/lib/payroll";
 import { canonicalJson, sha256 } from "../crypto";
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
 import { addEventClientMembership } from "../eventMembership";
@@ -1315,32 +1314,100 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "payroll_generate",
-    description: "Build payroll payables for a pay period from staff hours and rates. Updates existing auto rows and inserts new ones. Does not pay anyone.",
+    description: "Build payroll payables for a pay period. Hourly rows use locked timesheet amounts only; flat wages use flat_wage. Updates existing auto rows and inserts new ones. Does not pay anyone.",
     scopes: ["money.payroll"],
     confirm: true,
     inputSchema: obj({ payday: { type: "string" }, period_start: { type: "string" }, period_end: { type: "string" } }, ["payday", "period_start", "period_end"]),
     async execute(args, ctx) {
       const admin = adminOf(ctx);
       const payday = s(args, "payday")!;
-      const { data: events } = await admin.from("events").select("id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate))").is("archived_at", null).gte("event_date", s(args, "period_start")).lte("event_date", s(args, "period_end"));
+      const { staffCostForPayroll, staffHours: hoursFn, staffCost: costFn } = await import("@/lib/payroll");
+      const { data: clockSettings } = await admin.from("time_clock_settings").select("*").eq("id", true).maybeSingle();
+      const requireApproval = clockSettings?.require_approval_before_payroll !== false;
+      const { data: events } = await admin.from("events").select("id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate))").is("archived_at", null).gte("event_date", s(args, "period_start")).lte("event_date", s(args, "period_end"));
+      const staffIds = (events ?? []).flatMap((ev) => ((ev.event_staff ?? []) as { id: string }[]).map((es) => es.id));
+      const punchesByStaff: Record<string, { punch_type: string; punched_at: string; deleted_at: string | null }[]> = {};
+      if (staffIds.length) {
+        const { data: punches } = await admin.from("time_punches").select("event_staff_id, punch_type, punched_at").in("event_staff_id", staffIds).is("deleted_at", null);
+        for (const p of punches ?? []) {
+          const sid = p.event_staff_id as string;
+          if (!punchesByStaff[sid]) punchesByStaff[sid] = [];
+          punchesByStaff[sid].push({ punch_type: p.punch_type as string, punched_at: p.punched_at as string, deleted_at: null });
+        }
+      }
       const { data: existing } = await admin.from("payroll_payables").select("id, employee_id, event_id").eq("pay_period", payday).eq("source", "auto");
       const existingByKey = new Map((existing ?? []).map((r) => [`${r.employee_id}|${r.event_id}`, r.id as string]));
       const toInsert: Record<string, unknown>[] = [];
+      let skippedHourly = 0;
       for (const ev of events ?? []) {
         if (!(ev.status as { counts_payroll?: boolean } | null)?.counts_payroll) continue;
         const travel = (ev.venue as { travel_minutes?: number | null } | null)?.travel_minutes ?? 0;
-        for (const es of (ev.event_staff ?? []) as Array<{ employee_id: string | null; role: string | null; pay_type: string | null; flat_wage: number | null; start_time: string | null; end_time: string | null; checked_in_at: string | null; checked_out_at: string | null; employee: { hourly_rate?: number | null } | null }>) {
+        for (const es of (ev.event_staff ?? []) as Array<{
+          id: string;
+          employee_id: string | null;
+          role: string | null;
+          pay_type: string | null;
+          flat_wage: number | null;
+          hourly_rate_override: number | null;
+          timesheet_status: string | null;
+          timesheet_hours: number | null;
+          timesheet_amount: number | null;
+          timesheet_rate: number | null;
+          start_time: string | null;
+          end_time: string | null;
+          checked_in_at: string | null;
+          checked_out_at: string | null;
+          employee: { hourly_rate?: number | null } | null;
+        }>) {
           if (!es.employee_id) continue;
-          const hours = staffHours(es, ev, travel, { actual: !!(es.checked_in_at && es.checked_out_at) });
-          const cost = staffCost(es, es.employee, hours);
+          const payType = es.pay_type ?? "flat";
+          const punches = punchesByStaff[es.id] ?? [];
+          const hours = hoursFn(es, ev, travel, {
+            actual: punches.length > 0 || !!(es.checked_in_at && es.checked_out_at),
+            punches,
+            settings: clockSettings,
+            punchedHourly: payType === "hourly" && punches.length > 0,
+          });
+          let cost: number | null;
+          if (payType === "hourly" && requireApproval) {
+            cost = staffCostForPayroll(es, es.employee, hours);
+            if (cost == null) {
+              skippedHourly += 1;
+              continue;
+            }
+          } else {
+            cost = costFn(es, es.employee, hours);
+          }
           const key = `${es.employee_id}|${ev.id}`;
           const existingId = existingByKey.get(key);
-          if (existingId) await admin.from("payroll_payables").update({ amount_owed: cost, description: es.role }).eq("id", existingId);
-          else toInsert.push({ pay_period: payday, payee_kind: "employee", employee_id: es.employee_id, event_id: ev.id, description: es.role, amount_owed: cost, source: "auto" });
+          if (existingId) {
+            await admin.from("payroll_payables").update({ amount_owed: cost, description: es.role }).eq("id", existingId);
+            await admin.from("event_staff").update({ timesheet_payable_id: existingId }).eq("id", es.id);
+          } else {
+            toInsert.push({
+              pay_period: payday,
+              payee_kind: "employee",
+              employee_id: es.employee_id,
+              event_id: ev.id,
+              description: es.role,
+              amount_owed: cost,
+              source: "auto",
+              _event_staff_id: es.id,
+            });
+          }
         }
       }
-      if (toInsert.length) await admin.from("payroll_payables").insert(toInsert);
-      return { inserted: toInsert.length };
+      if (toInsert.length) {
+        const pending = toInsert.map((r) => ({ es: r._event_staff_id as string, employee_id: r.employee_id as string, event_id: r.event_id as string }));
+        const rows = toInsert.map(({ _event_staff_id: _, ...rest }) => rest);
+        const { data: inserted, error } = await admin.from("payroll_payables").insert(rows).select("id, employee_id, event_id");
+        if (error) throw new Error(error.message);
+        for (const row of inserted ?? []) {
+          const match = pending.find((p) => p.employee_id === row.employee_id && p.event_id === row.event_id);
+          if (match) await admin.from("event_staff").update({ timesheet_payable_id: row.id }).eq("id", match.es);
+        }
+      }
+      return { inserted: toInsert.length, skipped_unapproved_hourly: skippedHourly };
     },
   },
   {

@@ -263,6 +263,33 @@ export default async function EventDetailPage({
 
   if (!event) notFound();
 
+  // Time-clock punches for the Staff tab (admin timeline / map pins).
+  // Soft-fail before migration 00230 is applied.
+  const punchRes = await supabase
+    .from("time_punches")
+    .select("id, event_staff_id, punch_type, punched_at, lat, lng, accuracy_m, distance_m, location_missing, source, note, deleted_at")
+    .eq("event_id", id)
+    .order("punched_at");
+  const punchRows = punchRes.error ? [] : punchRes.data ?? [];
+  const punchesByStaff: Record<string, import("@/components/AdminPunchPanel").PunchRow[]> = {};
+  for (const p of punchRows) {
+    const sid = p.event_staff_id as string;
+    if (!punchesByStaff[sid]) punchesByStaff[sid] = [];
+    punchesByStaff[sid].push({
+      id: p.id as string,
+      punch_type: p.punch_type as string,
+      punched_at: p.punched_at as string,
+      lat: p.lat != null ? Number(p.lat) : null,
+      lng: p.lng != null ? Number(p.lng) : null,
+      accuracy_m: p.accuracy_m != null ? Number(p.accuracy_m) : null,
+      distance_m: p.distance_m != null ? Number(p.distance_m) : null,
+      location_missing: Boolean(p.location_missing),
+      source: p.source as string,
+      note: (p.note as string | null) ?? null,
+      deleted_at: (p.deleted_at as string | null) ?? null,
+    });
+  }
+
   const docIds = (eventDocs ?? []).map((d) => d.id);
   const linkedClientIds = (eventClients ?? []).map((ec) => ec.client_id);
   const convOr: string[] = [];
@@ -2284,7 +2311,15 @@ export default async function EventDetailPage({
   );
 
   /* ---------- TAB: Staff ---------- */
-  const staffTab = <StaffSection eventId={id} staff={staff ?? []} employees={employees ?? []} />;
+  const staffTab = (
+    <StaffSection
+      eventId={id}
+      staff={staff ?? []}
+      employees={employees ?? []}
+      punchesByStaff={punchesByStaff}
+      canEditPunches={viewer?.can?.payroll === "edit" || viewer?.role === "master_admin" || viewer?.role === "admin"}
+    />
+  );
 
   /* ---------- TAB: Notes ---------- */
   // ---- Planning / Notes hub data ----

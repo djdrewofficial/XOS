@@ -480,11 +480,21 @@ export async function assignStaff(eventId: string, formData: FormData) {
   const supabase = await createClient();
   const employeeId = clean(formData.get("employee_id"));
   if (!employeeId) return;
+  const { data: emp } = await supabase.from("employees").select("hourly_rate").eq("id", employeeId).maybeSingle();
+  let payType = clean(formData.get("pay_type")) as "flat" | "hourly" | null;
+  if (payType !== "flat" && payType !== "hourly") {
+    // Default hourly when the employee has an hourly rate and no flat wage was entered.
+    const flat = num(formData.get("flat_wage"));
+    payType = emp?.hourly_rate != null && Number(emp.hourly_rate) > 0 && flat === 0 ? "hourly" : "flat";
+  }
+  const overrideRaw = clean(formData.get("hourly_rate_override"));
   const { error } = await supabase.from("event_staff").insert({
     event_id: eventId,
     employee_id: employeeId,
     role: clean(formData.get("role")) ?? "DJ",
-    flat_wage: num(formData.get("flat_wage")),
+    pay_type: payType,
+    flat_wage: payType === "flat" ? num(formData.get("flat_wage")) : 0,
+    hourly_rate_override: payType === "hourly" && overrideRaw != null ? num(formData.get("hourly_rate_override")) : null,
   });
   if (error) throw new Error(error.message);
   await dispatchNotification(supabase, "staff_assigned", { eventId, employeeIds: [employeeId] });
@@ -745,11 +755,15 @@ export async function updateStaffDetails(eventId: string, staffId: string, formD
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const supabase = await createClient();
+  const payType = (clean(formData.get("pay_type")) === "hourly" ? "hourly" : "flat") as "flat" | "hourly";
+  const overrideRaw = clean(formData.get("hourly_rate_override"));
   const { error } = await supabase
     .from("event_staff")
     .update({
       role: clean(formData.get("role")) ?? "DJ",
-      flat_wage: num(formData.get("flat_wage")),
+      pay_type: payType,
+      flat_wage: payType === "flat" ? num(formData.get("flat_wage")) : num(formData.get("flat_wage")),
+      hourly_rate_override: overrideRaw != null ? num(formData.get("hourly_rate_override")) : null,
       start_time: clean(formData.get("start_time")),
       end_time: clean(formData.get("end_time")),
       notes: clean(formData.get("notes")),

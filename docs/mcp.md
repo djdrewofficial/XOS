@@ -131,6 +131,11 @@ Built in, any valid token:
 | reports_outstanding | read.reports, money | |
 | payroll_generate | money.payroll | yes |
 | payroll_log_payment | money.payroll | yes |
+| time_punches_list | money.payroll | |
+| event_staff_time_pay | money.payroll | |
+| timesheet_approve | money.payroll | yes |
+| timesheet_unlock | money.payroll | yes |
+| time_punch_admin_upsert | money.payroll | yes |
 | helpers_list | read.settings | |
 | helpers_preview | helpers.run | |
 | helpers_run | helpers.run, plus comms scopes the helper needs | yes |
@@ -251,6 +256,6 @@ Still not tools, on purpose:
 - The permission grid and staff-settings permission checkboxes. An agent must not grant itself access.
 - Spotify export and playlist import. Those use the signed-in staff member's own Spotify login.
 - HighLevel and other OAuth connect buttons. Those are browser redirects.
-- Employee self check-in and an employee filing their own timesheet. Those actions are bound to the signed-in person, not to an office token. Approving a timesheet is `timesheet_requests`.
+- Employee self check-in and an employee filing their own timesheet. Those actions are bound to the signed-in person, not to an office token. Office approval of a correction request is `timesheet_requests`. Approving/locking hourly punch timesheets for payroll is `timesheet_approve` / `timesheet_unlock`; punch ledger reads are `time_punches_list` and `event_staff_time_pay`.
 
 A dropped response can be retried with the same `Idempotency-Key`. Do not reuse a key for a different action.

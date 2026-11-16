@@ -152,6 +152,40 @@ export async function updateVenue(id: string, formData: FormData) {
   revalidatePath("/settings/expenses");
 }
 
+/** Geocode a venue address into lat/lng via Google Geocoding (same API key as Places). */
+export async function geocodeVenue(id: string) {
+  await requireModule("venues", "edit", { mode: "throw" });
+  const KEY = process.env.GOOGLE_MAPS_API_KEY;
+  if (!KEY) throw new Error("GOOGLE_MAPS_API_KEY is not configured.");
+  const supabase = await createClient();
+  const { data: venue } = await supabase.from("venues").select("id, name, address, city, state, zip, lat, lng").eq("id", id).maybeSingle();
+  if (!venue) throw new Error("Venue not found.");
+  const q = [venue.address, venue.city, venue.state, venue.zip].filter(Boolean).join(", ");
+  if (!q.trim()) throw new Error("Add an address before geocoding.");
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Geocoding request failed.");
+  const body = (await res.json()) as {
+    status: string;
+    results?: { geometry?: { location?: { lat?: number; lng?: number } }; place_id?: string }[];
+  };
+  if (body.status !== "OK" || !body.results?.[0]?.geometry?.location) {
+    throw new Error(`Geocoding returned ${body.status}. Check the address.`);
+  }
+  const loc = body.results[0].geometry.location!;
+  const { error } = await supabase
+    .from("venues")
+    .update({
+      lat: loc.lat,
+      lng: loc.lng,
+      google_place_id: body.results[0].place_id ?? null,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/venues/${id}`);
+  revalidatePath("/venues");
+}
+
 export async function addVenueContact(venueId: string, formData: FormData) {
   await requireModule("venues", "edit", { mode: "throw" });
   const supabase = await createClient();
