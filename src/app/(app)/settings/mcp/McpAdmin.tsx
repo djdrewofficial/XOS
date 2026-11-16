@@ -18,6 +18,7 @@ import {
   rejectMcpPreview,
   rotateMcpToken,
   revokeMcpToken,
+  setAutoApprove,
   setHelpersSkipXosApproval,
 } from "./actions";
 
@@ -133,6 +134,32 @@ export function HelpersSkipToggle({ id, enabled }: { id: string; enabled: boolea
   );
 }
 
+/** Master-admin toggle. On = Trusted agent: most gated tools run immediately and are audited. */
+export function TrustedAgentToggle({ id, enabled }: { id: string; enabled: boolean }) {
+  return (
+    <form action={setAutoApprove} className="max-w-[16rem] space-y-1">
+      <input type="hidden" name="token_id" value={id} />
+      <input type="hidden" name="auto_approve" value={enabled ? "false" : "true"} />
+      <button
+        type="submit"
+        className={
+          enabled
+            ? "rounded border border-amber-400 bg-amber-50 px-2 py-1 text-left text-xs font-medium text-amber-950"
+            : "btn-ghost px-2 py-1 text-left text-xs"
+        }
+        title="When on, payments, status changes, sends, and most other gated tools run immediately. Deletes and anonymize still need your approval. Every run is logged."
+      >
+        {enabled ? "Trusted agent (on)" : "Trusted agent"}
+      </button>
+      {enabled ? (
+        <p className="text-[11px] leading-snug text-amber-900">
+          This agent runs gated tools without waiting for you. Hard deletes and anonymize still need approval. Every action is written to the activity log.
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
 function ScopePicker({
   selected,
   setSelected,
@@ -179,7 +206,7 @@ function ScopePicker({
       </div>
       {hasHighRiskMcpScope(selected) ? (
         <p className="mt-2 text-xs text-amber-800">
-          High-risk scopes are checked (delete, payments, payroll, or communications). Those still need a person to approve each send or change in Agent Access, except helpers_run when that token later has “Run helpers without XOS approval” turned on.
+          High-risk scopes are checked (delete, payments, payroll, or communications). By default those need a person to approve each send or change in Agent Access. A Trusted agent token skips that wait for most tools (not hard deletes or anonymize). Helpers can also skip with the helpers toggle alone.
         </p>
       ) : null}
     </fieldset>

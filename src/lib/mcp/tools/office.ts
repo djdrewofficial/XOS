@@ -1359,7 +1359,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "helpers_run",
-    description: "Run a booking helper the way the event-page button does: the database queues its actions, then the app outbox fills contract merge tags and sends. Event-type limits still apply. If the helper emails or texts, the token also needs those comms scopes. By default this returns an Agent Access receipt for a master admin to approve. When that token has “Run helpers without XOS approval” on, this tool runs immediately with no receipt (chat approval is still expected). Contracts still only go out through the app Send Contract path or a dedicated contract tool.",
+    description: "Run a booking helper the way the event-page button does: the database queues its actions, then the app outbox fills contract merge tags and sends. Event-type limits still apply. If the helper emails or texts, the token also needs those comms scopes. By default this returns an Agent Access receipt for a master admin to approve. When that token has “Run helpers without XOS approval” or Trusted agent on, this tool runs immediately with no receipt (chat approval is still expected). Contracts still only go out through the app Send Contract path or a dedicated contract tool.",
     scopes: ["helpers.run"],
     confirm: true,
     inputSchema: obj({
@@ -1392,9 +1392,9 @@ export const officeTools: LiveTool[] = [
       const eventId = s(args, "event_id")!;
       const helperId = s(args, "helper_id")!;
 
-      // Server-side token flag only (never a client argument). Same path as the
+      // Server-side token flags only (never a client argument). Same path as the
       // event-page helper button: run_booking_helper + drainEventOutbox, no hold GUC.
-      if (ctx.token.helpersSkipXosApproval === true) {
+      if (ctx.token.helpersSkipXosApproval === true || ctx.token.autoApprove === true) {
         const ran = await executeBookingHelper(admin, {
           eventId,
           helperId,
@@ -1408,7 +1408,8 @@ export const officeTools: LiveTool[] = [
           helper_id: helperId,
           event_id: eventId,
           title: ran.title,
-          helpers_skip_xos_approval: true,
+          helpers_skip_xos_approval: ctx.token.helpersSkipXosApproval === true,
+          auto_approve: ctx.token.autoApprove === true,
         };
       }
 
