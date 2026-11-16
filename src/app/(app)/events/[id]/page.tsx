@@ -759,7 +759,9 @@ export default async function EventDetailPage({
         Number(ev.discount1_amount) -
         Number(ev.discount2_amount),
       paymentsSum: ((schedPaymentAmounts ?? []) as { amount: number | string }[]).reduce((sum, row) => sum + Number(row.amount), 0),
-      staffEmployeeIds: staffRows.map((row) => row.employee_id).filter((employeeId): employeeId is string => !!employeeId),
+      djEmployeeIds: staffRows
+        .filter((row) => (row.role ?? "").toLowerCase().includes("dj") && row.employee_id)
+        .map((row) => row.employee_id as string),
     };
 
     scheduledItems = buildScheduledComms({

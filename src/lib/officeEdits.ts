@@ -24,6 +24,8 @@ export const SCHEDULE_SEND_TO = [
 export const SCHEDULE_FROM = ["company", "salesperson", "primary_dj", "point_of_contact", "master_admin"] as const;
 export const PAYMENT_FILTERS = ["any", "none", "partial", "paid_full"] as const;
 export const ADDON_MODES = ["all", "assigned", "not_assigned"] as const;
+/** Scheduler DJ filter on email_templates.sched_employee_mode. */
+export const EMPLOYEE_MODES = ["any", "selected", "excluded"] as const;
 export const ANSWER_TYPES = ["short", "long", "yesno", "scale", "select", "multiselect", "image_select"] as const;
 export const SECTION_TYPES = ["info", "timeline", "headline"] as const;
 
@@ -137,7 +139,11 @@ export function templateSchedulePatch(input: Record<string, unknown>): Row {
   if (days != null && (!Number.isInteger(days) || days < 0)) throw new Error("Schedule days must be a whole number or blank.");
   const packages = uuids(input.sched_package_ids ?? [], "Packages");
   const salespeople = uuids(input.sched_salesperson_ids ?? [], "Salespeople");
-  const employees = uuids(input.sched_employee_ids ?? [], "Employees");
+  const employees = uuids(input.sched_employee_ids ?? [], "Assigned DJs");
+  const employeeMode = oneOf(input.sched_employee_mode, EMPLOYEE_MODES, "Assigned DJ filter", "any");
+  if ((employeeMode === "selected" || employeeMode === "excluded") && employees.length === 0) {
+    throw new Error("Assigned DJ filter needs at least one employee when it is selected or excluded.");
+  }
   const visPackages = uuids(input.vis_package_ids ?? [], "Visibility packages");
   return {
     schedule_enabled: input.schedule_enabled === true,
@@ -154,8 +160,8 @@ export function templateSchedulePatch(input: Record<string, unknown>): Row {
     sched_payments: oneOf(input.sched_payments, PAYMENT_FILTERS, "Payment filter", "any"),
     sched_salesperson_mode: salespeople.length > 0 ? "selected" : "any",
     sched_salesperson_ids: salespeople,
-    sched_employee_mode: employees.length > 0 ? "selected" : "any",
-    sched_employee_ids: employees,
+    sched_employee_mode: employeeMode === "any" ? "any" : employeeMode,
+    sched_employee_ids: employeeMode === "any" ? [] : employees,
     schedule_from: oneOf(input.schedule_from, SCHEDULE_FROM, "Send from", "company"),
     sched_send_to: subset(input.sched_send_to, SCHEDULE_SEND_TO, "Send to"),
     sched_vendor_category_ids: uuids(input.sched_vendor_category_ids ?? [], "Vendor categories"),

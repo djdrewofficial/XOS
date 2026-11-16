@@ -358,8 +358,15 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
         <Row label="Assigned Salesperson">
           <RadioChecklist name="sched_salesperson_ids" items={employeeOptions} selected={(tpl.sched_salesperson_ids ?? []) as string[]} allLabel="Any Salesperson" onlyLabel="Selected Salesperson" />
         </Row>
-        <Row label="Assigned Employee">
-          <RadioChecklist name="sched_employee_ids" items={employeeOptions} selected={(tpl.sched_employee_ids ?? []) as string[]} allLabel="Any Employee" onlyLabel="Selected Employees" />
+        <Row label="Assigned DJ" hint="Uses DJ-role staff only (role contains DJ). Events with no DJ still match “is not any of”.">
+          <div className="space-y-2">
+            <select name="sched_employee_mode" defaultValue={tpl.sched_employee_mode ?? "any"} className="input w-full max-w-xs">
+              <option value="any">Any Assigned DJ</option>
+              <option value="selected">Assigned DJ is any of</option>
+              <option value="excluded">Assigned DJ is not any of</option>
+            </select>
+            <Checklist name="sched_employee_ids" items={employeeOptions} selected={(tpl.sched_employee_ids ?? []) as string[]} />
+          </div>
         </Row>
       </Section>
 

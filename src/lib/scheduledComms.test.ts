@@ -68,7 +68,7 @@ function facts(partial: Partial<ScheduleEventFacts> = {}): ScheduleEventFacts {
     addonIds: [],
     schedulerTotal: 1000,
     paymentsSum: 0,
-    staffEmployeeIds: [],
+    djEmployeeIds: [],
     ...partial,
   };
 }
@@ -173,8 +173,25 @@ describe("template match gates", () => {
       false,
     );
     assert.equal(
-      templateMatchesEvent(template({ schedEmployeeMode: "selected", schedEmployeeIds: ["dj"] }), facts({ staffEmployeeIds: ["photo"] })),
+      templateMatchesEvent(template({ schedEmployeeMode: "selected", schedEmployeeIds: ["dj"] }), facts({ djEmployeeIds: ["photo"] })),
       false,
+    );
+    assert.equal(
+      templateMatchesEvent(template({ schedEmployeeMode: "selected", schedEmployeeIds: ["drew"] }), facts({ djEmployeeIds: ["drew"] })),
+      true,
+    );
+    // excluded: skip when a listed DJ is assigned; no DJ still matches
+    assert.equal(
+      templateMatchesEvent(template({ schedEmployeeMode: "excluded", schedEmployeeIds: ["drew"] }), facts({ djEmployeeIds: ["drew"] })),
+      false,
+    );
+    assert.equal(
+      templateMatchesEvent(template({ schedEmployeeMode: "excluded", schedEmployeeIds: ["drew"] }), facts({ djEmployeeIds: ["atomic"] })),
+      true,
+    );
+    assert.equal(
+      templateMatchesEvent(template({ schedEmployeeMode: "excluded", schedEmployeeIds: ["drew"] }), facts({ djEmployeeIds: [] })),
+      true,
     );
   });
 
@@ -473,6 +490,10 @@ describe("row mapping", () => {
 
 describe("scheduler SQL", () => {
   const sql = readFileSync(join(root, "supabase/migrations/00206_scheduled_comm_controls.sql"), "utf8");
+  const employeeModeSql = readFileSync(
+    join(root, "supabase/migrations/00228_sched_employee_mode_excluded.sql"),
+    "utf8",
+  );
 
   it("keeps the lock, the holiday window, and the helper failure log", () => {
     assert.match(sql, /pg_advisory_xact_lock\(4771001\)/);
@@ -497,6 +518,17 @@ describe("scheduler SQL", () => {
     assert.match(sql, /xos_html_to_sms\(render_merge_tags\(e\.id, coalesce\(v_override_body, t\.body_html\)\)\)/);
     assert.match(sql, /insert into sms_log \(event_id, client_id, to_number, body, status, is_marketing\)/);
     assert.match(sql, /coalesce\(t\.is_sms, false\)/);
+  });
+
+  it("adds excluded mode and limits selected/excluded to DJ-role staff", () => {
+    assert.match(employeeModeSql, /email_templates_sched_employee_mode_check/);
+    assert.match(employeeModeSql, /'any',\s*'selected',\s*'excluded'/);
+    assert.match(employeeModeSql, /create or replace function public\.run_scheduled_emails/);
+    assert.doesNotMatch(employeeModeSql, /insert into email_templates/);
+    assert.match(
+      employeeModeSql,
+      /sched_employee_mode = 'selected'[\s\S]*?es\.role ilike '%dj%'[\s\S]*?sched_employee_mode = 'excluded'[\s\S]*?es\.role ilike '%dj%'/,
+    );
   });
 
   it("records who acted, and does not hand the function back to signed-in clients", () => {

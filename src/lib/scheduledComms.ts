@@ -81,8 +81,14 @@ export type ScheduleEventFacts = AnchorDates & {
   addonIds: string[];
   schedulerTotal: number;
   paymentsSum: number;
-  staffEmployeeIds: string[];
+  /** employee_ids from event_staff rows whose role ILIKE '%dj%' (same as SQL). */
+  djEmployeeIds: string[];
 };
+
+/** Matches the scheduler's DJ-role filter (event_staff.role ILIKE '%dj%'). */
+export function isDjStaffRole(role: string | null | undefined): boolean {
+  return (role ?? "").toLowerCase().includes("dj");
+}
 
 export type ScheduleRunStatus = "pending" | "sent" | "skipped" | "marked_sent";
 
@@ -265,11 +271,11 @@ export function templateMatchesEvent(template: ScheduleTemplate, event: Schedule
   ) {
     return false;
   }
-  if (
-    template.schedEmployeeMode === "selected" &&
-    !event.staffEmployeeIds.some((id) => template.schedEmployeeIds.includes(id))
-  ) {
-    return false;
+  if (template.schedEmployeeMode === "selected") {
+    if (!event.djEmployeeIds.some((id) => template.schedEmployeeIds.includes(id))) return false;
+  }
+  if (template.schedEmployeeMode === "excluded") {
+    if (event.djEmployeeIds.some((id) => template.schedEmployeeIds.includes(id))) return false;
   }
   if (template.schedPayments === "none" && event.paymentsSum !== 0) return false;
   if (template.schedPayments === "partial" && !(event.paymentsSum > 0 && event.paymentsSum < event.schedulerTotal)) {

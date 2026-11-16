@@ -76,7 +76,7 @@ async function dueScheduledMessages(admin: SupabaseClient, eventId: string) {
     admin.from("email_templates").select(`${SCHEDULE_TEMPLATE_COLUMNS}, schedule_enabled`).eq("is_active", true).eq("schedule_enabled", true),
     admin.from("company_settings").select("timezone").eq("id", true).maybeSingle(),
     admin.from("event_addons").select("addon_id").eq("event_id", eventId),
-    admin.from("event_staff").select("employee_id").eq("event_id", eventId),
+    admin.from("event_staff").select("employee_id, role").eq("event_id", eventId),
     admin.from("payments").select("amount").eq("event_id", eventId).is("deleted_at", null),
   ]);
   if (eventError) throw new Error(eventError.message);
@@ -97,7 +97,9 @@ async function dueScheduledMessages(admin: SupabaseClient, eventId: string) {
     packageId: event.package_id,
     salespersonId: event.salesperson_id,
     addonIds: (addons ?? []).map((row) => row.addon_id as string),
-    staffEmployeeIds: (staff ?? []).map((row) => row.employee_id as string),
+    djEmployeeIds: (staff ?? [])
+      .filter((row) => String(row.role ?? "").toLowerCase().includes("dj") && row.employee_id)
+      .map((row) => row.employee_id as string),
     schedulerTotal: bundle?.total ?? 0,
     paymentsSum: (payments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0),
   };
