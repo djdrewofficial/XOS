@@ -5,16 +5,13 @@ import type {
   OAuthAuthCodeRow,
   OAuthClientRow,
   OAuthGrantTokenRow,
-  OAuthPendingRow,
   OAuthRefreshTokenRow,
 } from "./types";
 
 export type OAuthStore = {
   findClient(clientId: string): Promise<OAuthClientRow | null>;
   insertClient(row: Omit<OAuthClientRow, "id" | "created_at" | "revoked_at"> & { id?: string }): Promise<OAuthClientRow>;
-  insertPending(row: Omit<OAuthPendingRow, "id" | "created_at" | "consumed_at"> & { id?: string }): Promise<OAuthPendingRow>;
-  findPending(id: string): Promise<OAuthPendingRow | null>;
-  consumePending(id: string, now: Date): Promise<OAuthPendingRow | null>;
+  findActiveGrant(userId: string, clientId: string): Promise<OAuthGrantTokenRow | null>;
   insertGrant(row: {
     name: string;
     scopes: string[];
@@ -28,8 +25,6 @@ export type OAuthStore = {
   insertAuthCode(row: Omit<OAuthAuthCodeRow, "id" | "created_at" | "used_at"> & { id?: string }): Promise<OAuthAuthCodeRow>;
   findAuthCodeByHash(hash: string): Promise<OAuthAuthCodeRow | null>;
   markAuthCodeUsed(id: string, now: Date): Promise<OAuthAuthCodeRow | null>;
-  /** Returns the previous used_at row without changing it (for reuse detection). */
-  getAuthCode(id: string): Promise<OAuthAuthCodeRow | null>;
   insertAccessToken(row: Omit<OAuthAccessTokenRow, "id" | "created_at" | "revoked_at"> & { id?: string }): Promise<OAuthAccessTokenRow>;
   findAccessByHash(hash: string): Promise<OAuthAccessTokenRow | null>;
   revokeAccessForGrant(grantTokenId: string, now: Date): Promise<void>;
@@ -37,10 +32,9 @@ export type OAuthStore = {
   findRefreshByHash(hash: string): Promise<OAuthRefreshTokenRow | null>;
   revokeRefresh(id: string, now: Date, replacedById?: string | null): Promise<void>;
   revokeRefreshForGrant(grantTokenId: string, now: Date): Promise<void>;
-  getApproverRoles(): Promise<string[]>;
 };
 
-export function memoryOAuthStore(seed?: { approverRoles?: string[] }): {
+export function memoryOAuthStore(): {
   store: OAuthStore;
   grants: OAuthGrantTokenRow[];
   clients: OAuthClientRow[];
@@ -49,12 +43,10 @@ export function memoryOAuthStore(seed?: { approverRoles?: string[] }): {
   codes: OAuthAuthCodeRow[];
 } {
   const clients: OAuthClientRow[] = [];
-  const pending: OAuthPendingRow[] = [];
   const grants: OAuthGrantTokenRow[] = [];
   const codes: OAuthAuthCodeRow[] = [];
   const access: OAuthAccessTokenRow[] = [];
   const refresh: OAuthRefreshTokenRow[] = [];
-  const approverRoles = seed?.approverRoles ?? ["master_admin"];
 
   const store: OAuthStore = {
     async findClient(clientId) {
@@ -76,32 +68,12 @@ export function memoryOAuthStore(seed?: { approverRoles?: string[] }): {
       clients.push(created);
       return created;
     },
-    async insertPending(row) {
-      const created: OAuthPendingRow = {
-        id: row.id ?? randomUUID(),
-        client_id: row.client_id,
-        redirect_uri: row.redirect_uri,
-        scope: row.scope,
-        state: row.state,
-        code_challenge: row.code_challenge,
-        code_challenge_method: row.code_challenge_method,
-        resource: row.resource,
-        created_at: new Date().toISOString(),
-        expires_at: row.expires_at,
-        consumed_at: null,
-      };
-      pending.push(created);
-      return created;
-    },
-    async findPending(id) {
-      return pending.find((p) => p.id === id) ?? null;
-    },
-    async consumePending(id, now) {
-      const row = pending.find((p) => p.id === id);
-      if (!row || row.consumed_at) return null;
-      if (Date.parse(row.expires_at) <= now.getTime()) return null;
-      row.consumed_at = now.toISOString();
-      return row;
+    async findActiveGrant(userId, clientId) {
+      return (
+        grants.find(
+          (g) => g.approved_by === userId && g.oauth_client_id === clientId && !g.revoked_at,
+        ) ?? null
+      );
     },
     async insertGrant(row) {
       const created: OAuthGrantTokenRow = {
@@ -158,9 +130,6 @@ export function memoryOAuthStore(seed?: { approverRoles?: string[] }): {
       if (!row || row.used_at) return null;
       row.used_at = now.toISOString();
       return row;
-    },
-    async getAuthCode(id) {
-      return codes.find((c) => c.id === id) ?? null;
     },
     async insertAccessToken(row) {
       const created: OAuthAccessTokenRow = {
@@ -220,15 +189,7 @@ export function memoryOAuthStore(seed?: { approverRoles?: string[] }): {
         }
       }
     },
-    async getApproverRoles() {
-      return [...approverRoles];
-    },
   };
 
   return { store, grants, clients, access, refresh, codes };
-}
-
-/** Mutate approver roles in a memory store (tests / seed helpers). */
-export function setMemoryApproverRoles(store: OAuthStore, roles: string[]) {
-  (store as { getApproverRoles: () => Promise<string[]> }).getApproverRoles = async () => [...roles];
 }

@@ -34,16 +34,14 @@ export function ssoNeedsStaffGate(input: {
   return input.emailMfa || input.passkeyMfa;
 }
 
-/** Staff return paths stay on this site. Allowed: /sso/* and MCP OAuth consent
-    (so Connect → sign-in can return to the consent screen). Still a local path. */
+/** Staff return paths stay on this site. Allowed: /sso/* and MCP OAuth authorize
+    (so Connect → sign-in returns to finish the code redirect). Still a local path. */
 export function safeStaffNext(raw: string | null | undefined): string | null {
   if (!raw) return null;
   if (raw.startsWith("//") || raw.includes("\\") || raw.includes("://")) return null;
   if (/[\u0000-\u001F\u007F]/.test(raw)) return null;
   const pathOnly = raw.split("?")[0] ?? raw;
-  const mcpOAuth =
-    pathOnly === "/oauth/mcp/consent" ||
-    pathOnly === "/api/mcp/oauth/authorize";
+  const mcpOAuth = pathOnly === "/api/mcp/oauth/authorize";
   if (!raw.startsWith("/sso/") && !mcpOAuth) return null;
   if (raw.length > (mcpOAuth ? 2000 : 200)) return null;
   return raw;

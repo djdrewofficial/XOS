@@ -1,5 +1,3 @@
-import type { McpScope } from "../scopes";
-
 export type OAuthClientRow = {
   id: string;
   client_id: string;
@@ -11,20 +9,6 @@ export type OAuthClientRow = {
   token_endpoint_auth_method: "none" | "client_secret_post" | "client_secret_basic";
   created_at: string;
   revoked_at: string | null;
-};
-
-export type OAuthPendingRow = {
-  id: string;
-  client_id: string;
-  redirect_uri: string;
-  scope: string;
-  state: string | null;
-  code_challenge: string;
-  code_challenge_method: "S256";
-  resource: string;
-  created_at: string;
-  expires_at: string;
-  consumed_at: string | null;
 };
 
 export type OAuthAuthCodeRow = {
@@ -107,17 +91,17 @@ export type OAuthErrorCode =
   | "unauthorized_client"
   | "unsupported_grant_type"
   | "invalid_scope"
-  | "server_error";
+  | "server_error"
+  | "access_denied"
+  | "login_required";
 
 export type OAuthErrorBody = {
   error: OAuthErrorCode;
   error_description?: string;
 };
 
-export type ConsentDecision = {
-  pendingId: string;
-  connectionName: string;
-  scopes: McpScope[];
-  approvedBy: string;
-  now: Date;
+export type AuthorizeUser = {
+  userId: string;
+  displayName: string;
+  scopes: string[];
 };

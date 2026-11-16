@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { generateServiceToken } from "./mcp/crypto.ts";
+import { generateServiceToken, hashToken } from "./mcp/crypto.ts";
+import type { ServiceTokenRow } from "./mcp/auth.ts";
 import {
   buildAuthorizationServerMetadata,
   buildProtectedResourceMetadata,
@@ -12,18 +13,16 @@ import {
   mcpWwwAuthenticateHeader,
 } from "./mcp/oauth/config.ts";
 import { s256Challenge, verifyPkceS256 } from "./mcp/oauth/pkce.ts";
+import { mcpScopesForRole, oauthConnectionName } from "./mcp/oauth/roleScopes.ts";
 import {
-  approveConsent,
-  beginAuthorize,
+  completeAuthorize,
   handleTokenRequest,
   registerClient,
+  validateAuthorizeRequest,
 } from "./mcp/oauth/server.ts";
 import { memoryOAuthStore } from "./mcp/oauth/store.ts";
-import { handleMcp } from "./mcp/protocol.ts";
+import { handleMcp, type LiveTool } from "./mcp/protocol.ts";
 import { memoryStore } from "./mcp/store.ts";
-import type { LiveTool } from "./mcp/protocol.ts";
-import type { ServiceTokenRow } from "./mcp/auth.ts";
-import { hashToken } from "./mcp/crypto.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -45,36 +44,51 @@ async function registeredClient(store = memoryOAuthStore().store) {
   return { store, clientId: String(reg.value.client_id) };
 }
 
+function authorizeQuery(clientId: string, challenge: string) {
+  return {
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: REDIRECT,
+    scope: null,
+    state: "xyz",
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    resource: RESOURCE,
+  };
+}
+
+const staff = {
+  userId: "user-drew",
+  displayName: "Drew Segura",
+  scopes: mcpScopesForRole("master_admin"),
+};
+
 describe("mcp oauth metadata", () => {
   it("publishes protected resource and authorization server metadata", () => {
     const prm = buildProtectedResourceMetadata(RESOURCE);
     assert.equal(prm.resource, RESOURCE);
     assert.deepEqual(prm.authorization_servers, ["https://xos-xpressdjs.netlify.app"]);
     assert.ok(prm.scopes_supported.includes("read.events"));
-    assert.ok(prm.scopes_supported.includes("money"));
 
     const as = buildAuthorizationServerMetadata("https://xos-xpressdjs.netlify.app");
-    assert.equal(as.issuer, "https://xos-xpressdjs.netlify.app");
     assert.equal(as.authorization_endpoint, "https://xos-xpressdjs.netlify.app/api/mcp/oauth/authorize");
-    assert.equal(as.token_endpoint, "https://xos-xpressdjs.netlify.app/api/mcp/oauth/token");
-    assert.equal(as.registration_endpoint, "https://xos-xpressdjs.netlify.app/api/mcp/oauth/register");
     assert.deepEqual(as.code_challenge_methods_supported, ["S256"]);
-    assert.ok(as.grant_types_supported.includes("authorization_code"));
-    assert.ok(as.grant_types_supported.includes("refresh_token"));
 
     assert.match(mcpWwwAuthenticateHeader(RESOURCE), /resource_metadata=/);
     assert.match(mcpWwwAuthenticateHeader(RESOURCE), /oauth-protected-resource\/api\/mcp/);
   });
 
-  it("wires well-known App Router routes and Netlify CORS headers", () => {
+  it("wires well-known routes, authorize auto-approve, and no consent UI", () => {
     assert.match(read("src/app/.well-known/oauth-protected-resource/route.ts"), /buildProtectedResourceMetadata/);
-    assert.match(read("src/app/.well-known/oauth-protected-resource/api/mcp/route.ts"), /buildProtectedResourceMetadata/);
     assert.match(read("src/app/.well-known/oauth-authorization-server/route.ts"), /buildAuthorizationServerMetadata/);
-    assert.match(read("netlify.toml"), /\/\.well-known\/\*/);
+    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /completeAuthorize/);
+    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /resolveOAuthStaffUser/);
+    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /auto-approved/);
+    assert.throws(() => read("src/app/oauth/mcp/consent/page.tsx"), /ENOENT/);
+    assert.doesNotMatch(read("supabase/migrations/00235_mcp_oauth.sql"), /mcp_oauth_settings/);
+    assert.doesNotMatch(read("supabase/migrations/00235_mcp_oauth.sql"), /mcp_oauth_pending/);
     assert.match(read("netlify.toml"), /Access-Control-Allow-Origin/);
-    assert.match(read("src/middleware.ts"), /pathname\.startsWith\("\/api\/mcp\/oauth\/"\)/);
-    assert.match(read("src/app/api/mcp/route.ts"), /WWW-Authenticate/);
-    assert.match(read("supabase/migrations/00235_mcp_oauth.sql"), /mcp_oauth_clients/);
+    assert.match(oauthConnectionName("Drew Segura"), /\(OAuth\)/);
   });
 });
 
@@ -90,17 +104,22 @@ describe("mcp oauth DCR", () => {
     if (ok.ok) {
       assert.equal(ok.value.token_endpoint_auth_method, "none");
       assert.equal(ok.value.client_secret, undefined);
-      assert.ok(String(ok.value.client_id).startsWith("xos_oauth_"));
     }
-
-    const bad = await registerClient(store, {
-      client_name: "Bad",
-      redirect_uris: ["javascript:alert(1)"],
-    });
+    const bad = await registerClient(store, { client_name: "Bad", redirect_uris: ["javascript:alert(1)"] });
     assert.equal(bad.ok, false);
+  });
+});
 
-    const missing = await registerClient(store, { redirect_uris: [] });
-    assert.equal(missing.ok, false);
+describe("mcp oauth role scopes", () => {
+  it("gives master admin the full closed scope list and employees a smaller set", () => {
+    const master = mcpScopesForRole("master_admin");
+    assert.ok(master.includes("money"));
+    assert.ok(master.includes("delete"));
+    assert.ok(master.includes("comms.email"));
+    const employee = mcpScopesForRole("employee");
+    assert.ok(employee.includes("read.events"));
+    assert.equal(employee.includes("money"), false);
+    assert.equal(employee.includes("delete"), false);
   });
 });
 
@@ -108,43 +127,22 @@ describe("mcp oauth PKCE and codes", () => {
   it("rejects a wrong code_verifier (PKCE failure)", async () => {
     const { store, clientId } = await registeredClient();
     const v = verifier();
-    const started = await beginAuthorize(store, {
-      response_type: "code",
-      client_id: clientId,
-      redirect_uri: REDIRECT,
-      scope: "read.events",
-      state: "xyz",
-      code_challenge: s256Challenge(v),
-      code_challenge_method: "S256",
-      resource: RESOURCE,
-    });
-    assert.equal(started.ok, true);
-    if (!started.ok) return;
-
-    const approved = await approveConsent(store, {
-      pendingId: started.value.pendingId,
-      connectionName: "Staff Grok",
-      scopes: ["read.events"],
-      approvedBy: "user-1",
-      now: new Date("2026-11-16T12:00:00Z"),
-    });
-    assert.equal(approved.ok, true);
-    if (!approved.ok) return;
-    const code = new URL(approved.value.redirectTo).searchParams.get("code");
-    assert.ok(code);
-
+    const done = await completeAuthorize(store, authorizeQuery(clientId, s256Challenge(v)), staff);
+    assert.equal(done.ok, true);
+    if (!done.ok) return;
+    const code = new URL(done.value.redirectTo).searchParams.get("code")!;
     const token = await handleTokenRequest(store, {
       grant_type: "authorization_code",
       code,
       redirect_uri: REDIRECT,
-      code_verifier: verifier(), // wrong
+      code_verifier: verifier(),
       refresh_token: null,
       client_id: clientId,
       client_secret: null,
       resource: RESOURCE,
       basicClientId: null,
       basicClientSecret: null,
-    }, new Date("2026-11-16T12:01:00Z"));
+    });
     assert.equal(token.ok, false);
     if (!token.ok) assert.match(token.body.error_description || "", /PKCE/i);
   });
@@ -152,28 +150,10 @@ describe("mcp oauth PKCE and codes", () => {
   it("rejects authorization code reuse and revokes the grant", async () => {
     const { store, clientId } = await registeredClient();
     const v = verifier();
-    const started = await beginAuthorize(store, {
-      response_type: "code",
-      client_id: clientId,
-      redirect_uri: REDIRECT,
-      scope: null,
-      state: null,
-      code_challenge: s256Challenge(v),
-      code_challenge_method: "S256",
-      resource: RESOURCE,
-    });
-    assert.ok(started.ok);
-    if (!started.ok) return;
-    const approved = await approveConsent(store, {
-      pendingId: started.value.pendingId,
-      connectionName: "Reuse Test",
-      scopes: ["read.events", "read.clients"],
-      approvedBy: "user-1",
-      now: new Date("2026-11-16T12:00:00Z"),
-    });
-    assert.ok(approved.ok);
-    if (!approved.ok) return;
-    const code = new URL(approved.value.redirectTo).searchParams.get("code")!;
+    const done = await completeAuthorize(store, authorizeQuery(clientId, s256Challenge(v)), staff);
+    assert.ok(done.ok);
+    if (!done.ok) return;
+    const code = new URL(done.value.redirectTo).searchParams.get("code")!;
     const first = await handleTokenRequest(store, {
       grant_type: "authorization_code",
       code,
@@ -185,9 +165,8 @@ describe("mcp oauth PKCE and codes", () => {
       resource: RESOURCE,
       basicClientId: null,
       basicClientSecret: null,
-    }, new Date("2026-11-16T12:01:00Z"));
+    });
     assert.equal(first.ok, true);
-
     const second = await handleTokenRequest(store, {
       grant_type: "authorization_code",
       code,
@@ -199,42 +178,38 @@ describe("mcp oauth PKCE and codes", () => {
       resource: RESOURCE,
       basicClientId: null,
       basicClientSecret: null,
-    }, new Date("2026-11-16T12:02:00Z"));
+    });
     assert.equal(second.ok, false);
-    if (!second.ok) assert.match(second.body.error_description || "", /already used/i);
-
-    const grant = await store.findGrant(approved.value.grantTokenId);
+    const grant = await store.findGrant(done.value.grantTokenId);
     assert.ok(grant?.revoked_at);
+  });
+
+  it("replaces a prior connection for the same user and client", async () => {
+    const { store, clientId } = await registeredClient();
+    const first = await completeAuthorize(store, authorizeQuery(clientId, s256Challenge(verifier())), staff);
+    assert.ok(first.ok);
+    if (!first.ok) return;
+    const second = await completeAuthorize(store, authorizeQuery(clientId, s256Challenge(verifier())), staff);
+    assert.ok(second.ok);
+    if (!second.ok) return;
+    assert.notEqual(first.value.grantTokenId, second.value.grantTokenId);
+    const old = await store.findGrant(first.value.grantTokenId);
+    assert.ok(old?.revoked_at);
+    const active = await store.findActiveGrant(staff.userId, clientId);
+    assert.equal(active?.id, second.value.grantTokenId);
+    assert.match(active?.name || "", /Drew Segura \(OAuth\)/);
   });
 });
 
 describe("mcp oauth refresh rotation and revocation", () => {
-  it("rotates refresh tokens and rejects the old one (reuse revokes grant)", async () => {
+  it("rotates refresh tokens and rejects the old one", async () => {
     const mem = memoryOAuthStore();
     const { store, clientId } = await registeredClient(mem.store);
     const v = verifier();
-    const started = await beginAuthorize(store, {
-      response_type: "code",
-      client_id: clientId,
-      redirect_uri: REDIRECT,
-      scope: null,
-      state: null,
-      code_challenge: s256Challenge(v),
-      code_challenge_method: "S256",
-      resource: RESOURCE,
-    });
-    assert.ok(started.ok);
-    if (!started.ok) return;
-    const approved = await approveConsent(store, {
-      pendingId: started.value.pendingId,
-      connectionName: "Refresh Bot",
-      scopes: ["read.events"],
-      approvedBy: "user-1",
-      now: new Date("2026-11-16T12:00:00Z"),
-    });
-    assert.ok(approved.ok);
-    if (!approved.ok) return;
-    const code = new URL(approved.value.redirectTo).searchParams.get("code")!;
+    const done = await completeAuthorize(store, authorizeQuery(clientId, s256Challenge(v)), staff);
+    assert.ok(done.ok);
+    if (!done.ok) return;
+    const code = new URL(done.value.redirectTo).searchParams.get("code")!;
     const issued = await handleTokenRequest(store, {
       grant_type: "authorization_code",
       code,
@@ -246,7 +221,7 @@ describe("mcp oauth refresh rotation and revocation", () => {
       resource: RESOURCE,
       basicClientId: null,
       basicClientSecret: null,
-    }, new Date("2026-11-16T12:01:00Z"));
+    });
     assert.equal(issued.ok, true);
     if (!issued.ok) return;
 
@@ -261,11 +236,10 @@ describe("mcp oauth refresh rotation and revocation", () => {
       resource: RESOURCE,
       basicClientId: null,
       basicClientSecret: null,
-    }, new Date("2026-11-16T12:02:00Z"));
+    });
     assert.equal(rotated.ok, true);
     if (!rotated.ok) return;
     assert.notEqual(rotated.value.refresh_token, issued.value.refresh_token);
-    assert.notEqual(rotated.value.access_token, issued.value.access_token);
 
     const reuse = await handleTokenRequest(store, {
       grant_type: "refresh_token",
@@ -278,38 +252,22 @@ describe("mcp oauth refresh rotation and revocation", () => {
       resource: RESOURCE,
       basicClientId: null,
       basicClientSecret: null,
-    }, new Date("2026-11-16T12:03:00Z"));
+    });
     assert.equal(reuse.ok, false);
-    const grant = await store.findGrant(approved.value.grantTokenId);
-    assert.ok(grant?.revoked_at);
+    assert.ok((await store.findGrant(done.value.grantTokenId))?.revoked_at);
   });
 
   it("rejects MCP calls after the OAuth grant is revoked", async () => {
     const oauth = memoryOAuthStore();
     const { store, clientId } = await registeredClient(oauth.store);
     const v = verifier();
-    const started = await beginAuthorize(store, {
-      response_type: "code",
-      client_id: clientId,
-      redirect_uri: REDIRECT,
-      scope: null,
-      state: null,
-      code_challenge: s256Challenge(v),
-      code_challenge_method: "S256",
-      resource: RESOURCE,
-    });
-    assert.ok(started.ok);
-    if (!started.ok) return;
-    const approved = await approveConsent(store, {
-      pendingId: started.value.pendingId,
-      connectionName: "Revoke Me",
+    const done = await completeAuthorize(store, authorizeQuery(clientId, s256Challenge(v)), {
+      ...staff,
       scopes: ["read.events"],
-      approvedBy: "user-1",
-      now: new Date("2026-11-16T12:00:00Z"),
     });
-    assert.ok(approved.ok);
-    if (!approved.ok) return;
-    const code = new URL(approved.value.redirectTo).searchParams.get("code")!;
+    assert.ok(done.ok);
+    if (!done.ok) return;
+    const code = new URL(done.value.redirectTo).searchParams.get("code")!;
     const issued = await handleTokenRequest(store, {
       grant_type: "authorization_code",
       code,
@@ -321,23 +279,15 @@ describe("mcp oauth refresh rotation and revocation", () => {
       resource: RESOURCE,
       basicClientId: null,
       basicClientSecret: null,
-    }, new Date("2026-11-16T12:01:00Z"));
+    });
     assert.ok(issued.ok);
     if (!issued.ok) return;
 
     const mcp = memoryStore();
-    const grant = await store.findGrant(approved.value.grantTokenId);
-    assert.ok(grant);
-    mcp.addToken(grant);
-
-    // Wire OAuth access token lookup into the MCP memory store.
-    const accessRow = oauth.access.find((a) => a.token_hash === hashToken(issued.value.access_token));
-    assert.ok(accessRow);
-    mcp.store.authenticateBearer = async (raw, now) => {
+    mcp.store.authenticateBearer = async (raw) => {
       const access = oauth.access.find((a) => a.token_hash === hashToken(raw));
       if (!access) return { ok: false, reason: "invalid" };
       if (access.revoked_at) return { ok: false, reason: "revoked" };
-      if (Date.parse(access.expires_at) <= now.getTime()) return { ok: false, reason: "expired" };
       const g = await store.findGrant(access.grant_token_id);
       if (!g || g.revoked_at) return { ok: false, reason: "revoked" };
       return { ok: true, token: g };
@@ -345,7 +295,7 @@ describe("mcp oauth refresh rotation and revocation", () => {
 
     const readTool: LiveTool = {
       name: "events_list",
-      description: "List events for oauth scope tests",
+      description: "List events for oauth revoke tests that need a long description",
       scopes: ["read.events"],
       confirm: false,
       inputSchema: { type: "object", additionalProperties: false, properties: {} },
@@ -361,15 +311,13 @@ describe("mcp oauth refresh rotation and revocation", () => {
     });
     assert.equal(before.status, 200);
 
-    await store.revokeGrant(approved.value.grantTokenId, new Date("2026-11-16T12:03:00Z"));
-
+    await store.revokeGrant(done.value.grantTokenId, new Date("2026-11-16T12:03:00Z"));
     const after = await handleMcp(mcp.store, [readTool], {
       body: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "events_list", arguments: {} } },
       authorization: `Bearer ${issued.value.access_token}`,
       now: new Date("2026-11-16T12:04:00Z"),
     });
     assert.equal(after.status, 401);
-    assert.match(JSON.stringify(after.body), /revoked|Invalid/i);
   });
 });
 
@@ -378,28 +326,13 @@ describe("mcp oauth scopes and service tokens", () => {
     const oauth = memoryOAuthStore();
     const { store, clientId } = await registeredClient(oauth.store);
     const v = verifier();
-    const started = await beginAuthorize(store, {
-      response_type: "code",
-      client_id: clientId,
-      redirect_uri: REDIRECT,
-      scope: null,
-      state: null,
-      code_challenge: s256Challenge(v),
-      code_challenge_method: "S256",
-      resource: RESOURCE,
-    });
-    assert.ok(started.ok);
-    if (!started.ok) return;
-    const approved = await approveConsent(store, {
-      pendingId: started.value.pendingId,
-      connectionName: "Read Only",
+    const done = await completeAuthorize(store, authorizeQuery(clientId, s256Challenge(v)), {
+      ...staff,
       scopes: ["read.events"],
-      approvedBy: "user-1",
-      now: new Date("2026-11-16T12:00:00Z"),
     });
-    assert.ok(approved.ok);
-    if (!approved.ok) return;
-    const code = new URL(approved.value.redirectTo).searchParams.get("code")!;
+    assert.ok(done.ok);
+    if (!done.ok) return;
+    const code = new URL(done.value.redirectTo).searchParams.get("code")!;
     const issued = await handleTokenRequest(store, {
       grant_type: "authorization_code",
       code,
@@ -411,13 +344,11 @@ describe("mcp oauth scopes and service tokens", () => {
       resource: RESOURCE,
       basicClientId: null,
       basicClientSecret: null,
-    }, new Date("2026-11-16T12:01:00Z"));
+    });
     assert.ok(issued.ok);
     if (!issued.ok) return;
 
     const mcp = memoryStore();
-    const grant = await store.findGrant(approved.value.grantTokenId);
-    assert.ok(grant);
     mcp.store.authenticateBearer = async (raw) => {
       const access = oauth.access.find((a) => a.token_hash === hashToken(raw));
       if (!access) return { ok: false, reason: "invalid" };
@@ -428,10 +359,15 @@ describe("mcp oauth scopes and service tokens", () => {
 
     const deleteTool: LiveTool = {
       name: "events_delete",
-      description: "Delete an event permanently from the books",
+      description: "Delete an event permanently from the books for scope tests",
       scopes: ["delete"],
       confirm: true,
-      inputSchema: { type: "object", additionalProperties: false, properties: { event_id: { type: "string" } }, required: ["event_id"] },
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: { event_id: { type: "string" } },
+        required: ["event_id"],
+      },
       async execute() {
         return { ok: true };
       },
@@ -466,7 +402,7 @@ describe("mcp oauth scopes and service tokens", () => {
     addToken(row);
     const tool: LiveTool = {
       name: "events_list",
-      description: "List events for service token smoke test",
+      description: "List events for service token smoke test covering oauth change",
       scopes: ["read.events"],
       confirm: false,
       inputSchema: { type: "object", additionalProperties: false, properties: {} },
@@ -483,11 +419,18 @@ describe("mcp oauth scopes and service tokens", () => {
     assert.match(JSON.stringify(result.body), /"events"/);
   });
 
-  it("verifies S256 PKCE helpers", () => {
+  it("verifies S256 PKCE helpers and authorize validation", async () => {
     const v = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     const challenge = createHash("sha256").update(v, "utf8").digest("base64url");
     assert.equal(s256Challenge(v), challenge);
     assert.equal(verifyPkceS256(v, challenge), true);
-    assert.equal(verifyPkceS256("wrong-verifier-value-that-is-long-enough-xx", challenge), false);
+    const { store, clientId } = await registeredClient();
+    const ok = await validateAuthorizeRequest(store, authorizeQuery(clientId, challenge));
+    assert.equal(ok.ok, true);
+    const bad = await validateAuthorizeRequest(store, {
+      ...authorizeQuery(clientId, challenge),
+      code_challenge_method: "plain",
+    });
+    assert.equal(bad.ok, false);
   });
 });

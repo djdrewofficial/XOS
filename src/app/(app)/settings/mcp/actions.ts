@@ -181,7 +181,7 @@ export async function revokeMcpToken(formData: FormData) {
   revalidatePath("/settings/mcp");
 }
 
-/** Master admin: change scopes on an active service token or OAuth grant. */
+/** Master admin: change scopes on an active service token (not OAuth — those follow the user's role). */
 export async function updateMcpTokenScopes(formData: FormData) {
   await requireMaster();
   const id = String(formData.get("token_id") ?? "").trim();
@@ -193,7 +193,12 @@ export async function updateMcpTokenScopes(formData: FormData) {
     throw new Error(error instanceof Error ? error.message : "Those scopes are not valid.");
   }
   if (!scopes.length) throw new Error("Pick at least one scope.");
-  const { data, error } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data: row } = await admin.from("mcp_service_tokens").select("auth_kind").eq("id", id).maybeSingle();
+  if (row && (row as { auth_kind?: string }).auth_kind === "oauth") {
+    throw new Error("OAuth connections follow the person's XOS role. Revoke and reconnect to refresh.");
+  }
+  const { data, error } = await admin
     .from("mcp_service_tokens")
     .update({ scopes })
     .eq("id", id)
@@ -202,24 +207,6 @@ export async function updateMcpTokenScopes(formData: FormData) {
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("That token is not active.");
-  revalidatePath("/settings/mcp");
-}
-
-/** Master admin: which staff roles may approve MCP OAuth consent (master_admin always can). */
-export async function saveMcpOAuthApproverRoles(formData: FormData) {
-  await requireMaster();
-  const roles = formData.getAll("approver_role").map(String).filter(Boolean);
-  const allowed = new Set(["master_admin", "admin", "salesperson", "employee", "marketing"]);
-  const cleaned = Array.from(new Set(["master_admin", ...roles.filter((r) => allowed.has(r))]));
-  const { error } = await createAdminClient()
-    .from("mcp_oauth_settings")
-    .upsert({ id: true, approver_roles: cleaned, updated_at: new Date().toISOString() });
-  if (error) {
-    if (/mcp_oauth_settings|schema cache|relation/i.test(error.message)) {
-      throw new Error("Apply migration 00235 before changing OAuth approver roles.");
-    }
-    throw new Error(error.message);
-  }
   revalidatePath("/settings/mcp");
 }
 

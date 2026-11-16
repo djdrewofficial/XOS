@@ -6,14 +6,11 @@ import type {
   OAuthAuthCodeRow,
   OAuthClientRow,
   OAuthGrantTokenRow,
-  OAuthPendingRow,
   OAuthRefreshTokenRow,
 } from "./types";
 
 const CLIENT_COLS =
   "id, client_id, client_secret_hash, client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method, created_at, revoked_at";
-const PENDING_COLS =
-  "id, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, resource, created_at, expires_at, consumed_at";
 const CODE_COLS =
   "id, code_hash, client_id, redirect_uri, scopes, code_challenge, code_challenge_method, resource, grant_token_id, created_at, expires_at, used_at";
 const ACCESS_COLS =
@@ -54,42 +51,19 @@ export function supabaseOAuthStore(admin: SupabaseClient): OAuthStore {
       return data as OAuthClientRow;
     },
 
-    async insertPending(row) {
+    async findActiveGrant(userId, clientId) {
       const { data, error } = await admin
-        .from("mcp_oauth_pending")
-        .insert({
-          client_id: row.client_id,
-          redirect_uri: row.redirect_uri,
-          scope: row.scope,
-          state: row.state,
-          code_challenge: row.code_challenge,
-          code_challenge_method: row.code_challenge_method,
-          resource: row.resource,
-          expires_at: row.expires_at,
-        })
-        .select(PENDING_COLS)
-        .single();
-      if (error || !data) throw new Error("Could not store the authorization request.");
-      return data as OAuthPendingRow;
-    },
-
-    async findPending(id) {
-      const { data, error } = await admin.from("mcp_oauth_pending").select(PENDING_COLS).eq("id", id).maybeSingle();
-      if (error) throw new Error("Could not read the authorization request.");
-      return (data as OAuthPendingRow | null) ?? null;
-    },
-
-    async consumePending(id, now) {
-      const { data, error } = await admin
-        .from("mcp_oauth_pending")
-        .update({ consumed_at: now.toISOString() })
-        .eq("id", id)
-        .is("consumed_at", null)
-        .gt("expires_at", now.toISOString())
-        .select(PENDING_COLS)
+        .from("mcp_service_tokens")
+        .select(GRANT_COLS)
+        .eq("auth_kind", "oauth")
+        .eq("approved_by", userId)
+        .eq("oauth_client_id", clientId)
+        .is("revoked_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
-      if (error) throw new Error("Could not consume the authorization request.");
-      return (data as OAuthPendingRow | null) ?? null;
+      if (error) throw new Error("Could not look up the OAuth grant.");
+      return (data as OAuthGrantTokenRow | null) ?? null;
     },
 
     async insertGrant(row) {
@@ -173,12 +147,6 @@ export function supabaseOAuthStore(admin: SupabaseClient): OAuthStore {
       return (data as OAuthAuthCodeRow | null) ?? null;
     },
 
-    async getAuthCode(id) {
-      const { data, error } = await admin.from("mcp_oauth_auth_codes").select(CODE_COLS).eq("id", id).maybeSingle();
-      if (error) throw new Error("Could not read the authorization code.");
-      return (data as OAuthAuthCodeRow | null) ?? null;
-    },
-
     async insertAccessToken(row) {
       const { data, error } = await admin
         .from("mcp_oauth_access_tokens")
@@ -249,13 +217,6 @@ export function supabaseOAuthStore(admin: SupabaseClient): OAuthStore {
         .eq("grant_token_id", grantTokenId)
         .is("revoked_at", null);
       if (error) throw new Error("Could not revoke refresh tokens.");
-    },
-
-    async getApproverRoles() {
-      const { data, error } = await admin.from("mcp_oauth_settings").select("approver_roles").eq("id", true).maybeSingle();
-      if (error || !data) return ["master_admin"];
-      const roles = (data.approver_roles as string[] | null) ?? [];
-      return roles.length ? roles : ["master_admin"];
     },
   };
 }

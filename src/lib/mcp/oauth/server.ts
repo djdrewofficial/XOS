@@ -1,18 +1,17 @@
 import { randomBytes } from "node:crypto";
 import type { ServiceTokenRow } from "../auth";
 import { hashToken, hashesEqual, looksLikeServiceToken } from "../crypto";
-import { assertScopes, isMcpScope, type McpScope } from "../scopes";
 import {
   ACCESS_TOKEN_TTL_SEC,
   AUTH_CODE_TTL_SEC,
-  PENDING_AUTH_TTL_SEC,
   REFRESH_TOKEN_TTL_SEC,
   mcpResourceUrl,
 } from "./config";
 import { isS256Method, verifyPkceS256 } from "./pkce";
+import { oauthConnectionName } from "./roleScopes";
 import type { OAuthStore } from "./store";
 import type {
-  ConsentDecision,
+  AuthorizeUser,
   OAuthErrorBody,
   RegisteredClientInput,
   TokenSuccess,
@@ -49,12 +48,6 @@ function resourcesEqual(a: string, b: string): boolean {
   }
 }
 
-function parseScopeList(scope: string | null | undefined): McpScope[] {
-  if (!scope || !scope.trim()) return [];
-  const parts = scope.split(/[\s+]+/).map((s) => s.trim()).filter(Boolean);
-  return assertScopes(parts);
-}
-
 export function generateClientId(): string {
   return `xos_oauth_${randomBytes(16).toString("base64url")}`;
 }
@@ -81,7 +74,6 @@ export async function registerClient(
       if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
         return err(400, "invalid_request", "redirect_uris must be http(s)");
       }
-      // Block javascript: etc already via URL parse; disallow fragments.
       if (parsed.hash) return err(400, "invalid_request", "redirect_uris must not include a fragment");
     } catch {
       return err(400, "invalid_request", "redirect_uris contains an invalid URI");
@@ -149,12 +141,17 @@ export type AuthorizeQuery = {
   resource: string | null;
 };
 
-/** Validate authorize params and create a pending consent request. */
-export async function beginAuthorize(
+/**
+ * Validate authorize params and, for a signed-in staff user, immediately issue
+ * an authorization code (no scope picker / no connection name). Scopes come from
+ * the user's XOS role permissions. One active grant per user+client; reconnect replaces.
+ */
+export async function completeAuthorize(
   store: OAuthStore,
   query: AuthorizeQuery,
+  user: AuthorizeUser,
   now = new Date(),
-): Promise<OAuthResult<{ pendingId: string; clientName: string; redirectUri: string; resource: string }>> {
+): Promise<OAuthResult<{ redirectTo: string; grantTokenId: string }>> {
   if (query.response_type !== "code") return err(400, "invalid_request", "response_type must be code");
   if (!query.client_id) return err(400, "invalid_request", "client_id is required");
   if (!query.redirect_uri) return err(400, "invalid_request", "redirect_uri is required");
@@ -174,101 +171,63 @@ export async function beginAuthorize(
     return err(400, "invalid_request", "resource must be the XOS MCP URL");
   }
 
-  // Scope string is advisory at authorize time; consent screen picks final scopes.
-  if (query.scope) {
-    try {
-      parseScopeList(query.scope);
-    } catch {
-      return err(400, "invalid_scope", "One or more requested scopes are unknown");
-    }
+  if (!user.scopes.length) {
+    return err(403, "access_denied", "This XOS account has no MCP permissions");
   }
 
-  const pending = await store.insertPending({
-    client_id: client.client_id,
-    redirect_uri: query.redirect_uri,
-    scope: query.scope ?? "",
-    state: query.state,
-    code_challenge: query.code_challenge,
-    code_challenge_method: "S256",
-    resource,
-    expires_at: isoPlus(now, PENDING_AUTH_TTL_SEC),
-  });
-
-  return ok({
-    pendingId: pending.id,
-    clientName: client.client_name,
-    redirectUri: query.redirect_uri,
-    resource,
-  });
-}
-
-export function canApproveOAuth(role: string, approverRoles: readonly string[]): boolean {
-  if (role === "master_admin") return true;
-  return approverRoles.includes(role);
-}
-
-/** Approve consent: create grant identity + authorization code, return redirect. */
-export async function approveConsent(
-  store: OAuthStore,
-  decision: ConsentDecision,
-): Promise<OAuthResult<{ redirectTo: string; grantTokenId: string }>> {
-  const pending = await store.consumePending(decision.pendingId, decision.now);
-  if (!pending) return err(400, "invalid_request", "This authorization request is expired or already used");
-
-  const client = await store.findClient(pending.client_id);
-  if (!client) return err(400, "invalid_client", "Unknown client");
-
-  let scopes: McpScope[];
-  try {
-    scopes = assertScopes(decision.scopes);
-  } catch {
-    return err(400, "invalid_scope", "Invalid scopes");
-  }
-  if (!scopes.length) return err(400, "invalid_scope", "Pick at least one scope");
-
-  const name = decision.connectionName.trim().slice(0, 80);
-  if (!name) return err(400, "invalid_request", "Give the connection a name");
+  const existing = await store.findActiveGrant(user.userId, client.client_id);
+  if (existing) await store.revokeGrant(existing.id, now);
 
   const grant = await store.insertGrant({
-    name,
-    scopes,
+    name: oauthConnectionName(user.displayName),
+    scopes: user.scopes,
     oauthClientId: client.client_id,
     oauthClientName: client.client_name,
-    approvedBy: decision.approvedBy,
-    now: decision.now,
+    approvedBy: user.userId,
+    now,
   });
 
   const code = generateOpaqueToken("xos_ac_");
   await store.insertAuthCode({
     code_hash: code.hash,
     client_id: client.client_id,
-    redirect_uri: pending.redirect_uri,
-    scopes,
-    code_challenge: pending.code_challenge,
+    redirect_uri: query.redirect_uri,
+    scopes: user.scopes,
+    code_challenge: query.code_challenge,
     code_challenge_method: "S256",
-    resource: pending.resource,
+    resource,
     grant_token_id: grant.id,
-    expires_at: isoPlus(decision.now, AUTH_CODE_TTL_SEC),
+    expires_at: isoPlus(now, AUTH_CODE_TTL_SEC),
   });
 
-  const redirect = new URL(pending.redirect_uri);
+  const redirect = new URL(query.redirect_uri);
   redirect.searchParams.set("code", code.raw);
-  if (pending.state) redirect.searchParams.set("state", pending.state);
+  if (query.state) redirect.searchParams.set("state", query.state);
   return ok({ redirectTo: redirect.toString(), grantTokenId: grant.id });
 }
 
-export async function denyConsent(
+/** Validate authorize params alone (for login_required redirects before a session exists). */
+export async function validateAuthorizeRequest(
   store: OAuthStore,
-  pendingId: string,
-  now = new Date(),
-): Promise<OAuthResult<{ redirectTo: string }>> {
-  const pending = await store.consumePending(pendingId, now);
-  if (!pending) return err(400, "invalid_request", "This authorization request is expired or already used");
-  const redirect = new URL(pending.redirect_uri);
-  redirect.searchParams.set("error", "access_denied");
-  redirect.searchParams.set("error_description", "The user denied the request");
-  if (pending.state) redirect.searchParams.set("state", pending.state);
-  return ok({ redirectTo: redirect.toString() });
+  query: AuthorizeQuery,
+): Promise<OAuthResult<{ clientName: string; redirectUri: string }>> {
+  if (query.response_type !== "code") return err(400, "invalid_request", "response_type must be code");
+  if (!query.client_id) return err(400, "invalid_request", "client_id is required");
+  if (!query.redirect_uri) return err(400, "invalid_request", "redirect_uri is required");
+  if (!query.code_challenge) return err(400, "invalid_request", "code_challenge is required");
+  if (!isS256Method(query.code_challenge_method)) {
+    return err(400, "invalid_request", "code_challenge_method must be S256");
+  }
+  const client = await store.findClient(query.client_id);
+  if (!client) return err(400, "invalid_client", "Unknown client_id");
+  if (!client.redirect_uris.includes(query.redirect_uri)) {
+    return err(400, "invalid_request", "redirect_uri is not registered for this client");
+  }
+  const resource = normalizeResource(query.resource);
+  if (!resource || !resourcesEqual(resource, mcpResourceUrl())) {
+    return err(400, "invalid_request", "resource must be the XOS MCP URL");
+  }
+  return ok({ clientName: client.client_name, redirectUri: query.redirect_uri });
 }
 
 async function authenticateClient(
@@ -279,7 +238,7 @@ async function authenticateClient(
     basicClientId: string | null;
     basicClientSecret: string | null;
   },
-): Promise<OAuthResult<Awaited<ReturnType<OAuthStore["findClient"]>>>> {
+): Promise<OAuthResult<NonNullable<Awaited<ReturnType<OAuthStore["findClient"]>>>>> {
   const clientId = params.basicClientId || params.client_id;
   if (!clientId) return err(401, "invalid_client", "client_id is required");
   const client = await store.findClient(clientId);
@@ -354,7 +313,7 @@ export async function handleTokenRequest(
 ): Promise<OAuthResult<TokenSuccess>> {
   const clientResult = await authenticateClient(store, req);
   if (!clientResult.ok) return clientResult;
-  const client = clientResult.value!;
+  const client = clientResult.value;
 
   if (req.grant_type === "authorization_code") {
     return exchangeAuthorizationCode(store, client.client_id, req, now);
@@ -379,7 +338,6 @@ async function exchangeAuthorizationCode(
   const codeRow = await store.findAuthCodeByHash(codeHash);
   if (!codeRow) return err(400, "invalid_grant", "Invalid authorization code");
 
-  // Code reuse: if already used, revoke the grant and reject.
   if (codeRow.used_at) {
     await store.revokeGrant(codeRow.grant_token_id, now);
     return err(400, "invalid_grant", "Authorization code already used");
@@ -407,7 +365,6 @@ async function exchangeAuthorizationCode(
 
   const marked = await store.markAuthCodeUsed(codeRow.id, now);
   if (!marked) {
-    // Race: another exchange won — treat as reuse.
     await store.revokeGrant(codeRow.grant_token_id, now);
     return err(400, "invalid_grant", "Authorization code already used");
   }
@@ -435,7 +392,6 @@ async function rotateRefreshToken(
   if (!row) return err(400, "invalid_grant", "Invalid refresh token");
 
   if (row.revoked_at) {
-    // Refresh reuse after rotation → revoke the whole grant.
     await store.revokeGrant(row.grant_token_id, now);
     return err(400, "invalid_grant", "Refresh token revoked");
   }
@@ -452,7 +408,6 @@ async function rotateRefreshToken(
     return err(400, "invalid_grant", "resource does not match the authorized audience");
   }
 
-  // Rotate: revoke old refresh + all access for this grant, then issue new pair.
   await store.revokeAccessForGrant(grant.id, now);
   const access = generateOpaqueToken("xos_at_");
   const nextRefresh = generateOpaqueToken("xos_rt_");
@@ -483,28 +438,40 @@ async function rotateRefreshToken(
   });
 }
 
+export function parseBasicAuth(header: string | null): { clientId: string; clientSecret: string } | null {
+  if (!header || !header.startsWith("Basic ")) return null;
+  try {
+    const decoded = Buffer.from(header.slice(6), "base64").toString("utf8");
+    const idx = decoded.indexOf(":");
+    if (idx < 0) return null;
+    return { clientId: decoded.slice(0, idx), clientSecret: decoded.slice(idx + 1) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve a bearer into a service-token-shaped identity.
  * Service tokens (xos_mcp_*) keep the existing hash lookup.
  * OAuth access tokens map to their grant row and must match the MCP audience.
  */
-export async function resolveBearerIdentity(
-  args: {
-    raw: string;
-    findServiceTokenByHash: (hash: string) => Promise<ServiceTokenRow | null>;
-    findAccessByHash: (hash: string) => Promise<{
-      token_hash: string;
-      grant_token_id: string;
-      scopes: string[];
-      resource: string;
-      expires_at: string;
-      revoked_at: string | null;
-    } | null>;
-    findGrant: (id: string) => Promise<ServiceTokenRow | null>;
-    expectedResource?: string;
-    now?: Date;
-  },
-): Promise<
+export async function resolveBearerIdentity(args: {
+  raw: string;
+  findServiceTokenByHash: (hash: string) => Promise<ServiceTokenRow | null>;
+  findAccessByHash: (hash: string) => Promise<{
+    token_hash: string;
+    grant_token_id: string;
+    scopes: string[];
+    resource: string;
+    expires_at: string;
+    revoked_at: string | null;
+  } | null>;
+  findGrant: (id: string) => Promise<ServiceTokenRow | null>;
+  /** Optional: recompute scopes from the connected user's live XOS role. */
+  liveScopesForUser?: (userId: string) => Promise<string[] | null>;
+  expectedResource?: string;
+  now?: Date;
+}): Promise<
   | { ok: true; token: ServiceTokenRow }
   | { ok: false; reason: "invalid" | "revoked" | "expired" | "audience" }
 > {
@@ -526,32 +493,13 @@ export async function resolveBearerIdentity(
   const grant = await args.findGrant(access.grant_token_id);
   if (!grant) return { ok: false, reason: "invalid" };
   if (grant.revoked_at) return { ok: false, reason: "revoked" };
-  // Prefer live grant scopes (editable in Agent Access) over the frozen access-token copy.
-  return {
-    ok: true,
-    token: {
-      ...grant,
-      scopes: grant.scopes,
-    },
-  };
-}
 
-export function parseBasicAuth(header: string | null): { clientId: string; clientSecret: string } | null {
-  if (!header || !header.startsWith("Basic ")) return null;
-  try {
-    const decoded = Buffer.from(header.slice(6), "base64").toString("utf8");
-    const idx = decoded.indexOf(":");
-    if (idx < 0) return null;
-    return { clientId: decoded.slice(0, idx), clientSecret: decoded.slice(idx + 1) };
-  } catch {
-    return null;
+  let scopes = grant.scopes;
+  const approvedBy = (grant as ServiceTokenRow & { approved_by?: string | null }).approved_by;
+  if (args.liveScopesForUser && approvedBy) {
+    const live = await args.liveScopesForUser(approvedBy);
+    if (live) scopes = live;
   }
-}
 
-export function requestedScopesFromPending(scope: string): McpScope[] {
-  if (!scope.trim()) return [];
-  return scope
-    .split(/[\s+]+/)
-    .map((s) => s.trim())
-    .filter((s): s is McpScope => isMcpScope(s));
+  return { ok: true, token: { ...grant, scopes } };
 }

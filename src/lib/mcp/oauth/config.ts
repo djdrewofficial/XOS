@@ -1,4 +1,4 @@
-import { MCP_SCOPES, readMcpScopes, type McpScope } from "../scopes";
+import { MCP_SCOPES } from "../scopes";
 
 /** Canonical MCP resource URL agents connect to (Netlify origin, not Cloudflare). */
 export const DEFAULT_MCP_RESOURCE_URL = "https://xos-xpressdjs.netlify.app/api/mcp";
@@ -6,12 +6,6 @@ export const DEFAULT_MCP_RESOURCE_URL = "https://xos-xpressdjs.netlify.app/api/m
 export const ACCESS_TOKEN_TTL_SEC = 60 * 60; // 1 hour
 export const REFRESH_TOKEN_TTL_SEC = 60 * 60 * 24 * 90; // 90 days
 export const AUTH_CODE_TTL_SEC = 10 * 60;
-export const PENDING_AUTH_TTL_SEC = 15 * 60;
-
-/** Default consent scopes: all read.* only. Money, payroll, delete, and comms stay unticked. */
-export function defaultOAuthScopes(): McpScope[] {
-  return readMcpScopes();
-}
 
 export function mcpResourceUrl(): string {
   const fromEnv = process.env.MCP_RESOURCE_URL?.trim() || process.env.NEXT_PUBLIC_MCP_URL?.trim();
@@ -32,7 +26,6 @@ export function mcpIssuer(): string {
 
 export function protectedResourceMetadataUrl(resourceUrl = mcpResourceUrl()): string {
   const url = new URL(resourceUrl);
-  // RFC 9728 path insertion: /.well-known/oauth-protected-resource + path
   return `${url.origin}/.well-known/oauth-protected-resource${url.pathname}`;
 }
 
@@ -54,10 +47,6 @@ export function tokenEndpoint(issuer = mcpIssuer()): string {
 
 export function registrationEndpoint(issuer = mcpIssuer()): string {
   return `${issuer}/api/mcp/oauth/register`;
-}
-
-export function consentPath(): string {
-  return "/oauth/mcp/consent";
 }
 
 /** RFC 9728 protected resource metadata for the MCP endpoint. */
@@ -91,5 +80,5 @@ export function buildAuthorizationServerMetadata(issuer = mcpIssuer()) {
 /** WWW-Authenticate challenge pointing at path-specific protected resource metadata. */
 export function mcpWwwAuthenticateHeader(resourceUrl = mcpResourceUrl()): string {
   const meta = protectedResourceMetadataUrl(resourceUrl);
-  return `Bearer realm="xos-mcp", resource_metadata="${meta}", scope="read.events"`;
+  return `Bearer realm="xos-mcp", resource_metadata="${meta}"`;
 }

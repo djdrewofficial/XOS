@@ -19,7 +19,6 @@ import {
   rejectMcpPreview,
   rotateMcpToken,
   revokeMcpToken,
-  saveMcpOAuthApproverRoles,
   setAutoApprove,
   setHelpersSkipXosApproval,
   updateMcpTokenScopes,
@@ -111,7 +110,7 @@ export function RevokeButton({ id }: { id: string }) {
   );
 }
 
-/** Edit scopes on an active service token or OAuth grant. */
+/** Edit scopes on an active service token (OAuth follows the person's role). */
 export function EditScopesForm({ id, scopes }: { id: string; scopes: string[] }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<McpScope[]>(() => scopes.filter(isMcpScope));
@@ -130,44 +129,6 @@ export function EditScopesForm({ id, scopes }: { id: string; scopes: string[] })
         <button type="submit" className="btn-primary text-xs">Save scopes</button>
         <button type="button" className="btn-ghost text-xs" onClick={() => setOpen(false)}>Cancel</button>
       </div>
-    </form>
-  );
-}
-
-export function OAuthApproverRolesForm({ roles }: { roles: string[] }) {
-  const options = [
-    { value: "master_admin", label: "Master Admin (always)" },
-    { value: "admin", label: "Admin" },
-    { value: "salesperson", label: "Salesperson" },
-    { value: "employee", label: "Employee" },
-    { value: "marketing", label: "Marketing" },
-  ];
-  const set = new Set(roles);
-  return (
-    <form action={saveMcpOAuthApproverRoles} className="card space-y-3 p-5">
-      <h2 className="card-title">OAuth approvers</h2>
-      <p className="text-sm text-zinc-500">
-        Who may approve an agent Connect consent screen. Master Admin always can. Add other staff roles only if you want them to grant agent access.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {options.map((opt) => (
-          <label
-            key={opt.value}
-            className="flex cursor-pointer items-center gap-2 rounded-md border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm"
-          >
-            <input
-              type="checkbox"
-              name="approver_role"
-              value={opt.value}
-              defaultChecked={set.has(opt.value) || opt.value === "master_admin"}
-              disabled={opt.value === "master_admin"}
-              className="size-4 accent-brand-light"
-            />
-            {opt.label}
-          </label>
-        ))}
-      </div>
-      <button type="submit" className="btn-primary">Save approvers</button>
     </form>
   );
 }

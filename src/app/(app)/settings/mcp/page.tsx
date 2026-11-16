@@ -7,7 +7,6 @@ import {
   EditScopesForm,
   HelpersSkipToggle,
   MintForm,
-  OAuthApproverRolesForm,
   RevokeButton,
   RotateForm,
   TrustedAgentToggle,
@@ -56,7 +55,6 @@ export default async function McpSettingsPage() {
   let helpersSkipReady = false;
   let autoApproveReady = false;
   let oauthReady = false;
-  let approverRoles: string[] = ["master_admin"];
   try {
     const admin = createAdminClient();
     const withOauth = await admin
@@ -95,17 +93,14 @@ export default async function McpSettingsPage() {
         }
       }
     }
-    if (oauthReady) {
-      const settings = await admin.from("mcp_oauth_settings").select("approver_roles").eq("id", true).maybeSingle();
-      if (!settings.error && settings.data?.approver_roles) {
-        approverRoles = settings.data.approver_roles as string[];
-      }
-    }
   } catch {
     setupNeeded = true;
   }
 
-  const active = tokens.filter((token) => !token.revoked_at && (token.auth_kind ?? "service") === "service");
+  const serviceTokens = tokens.filter((token) => (token.auth_kind ?? "service") === "service");
+  const oauthConnections = tokens.filter((token) => token.auth_kind === "oauth");
+  const activeService = serviceTokens.filter((token) => !token.revoked_at);
+
   let pending: { id: string; tool_name: string; preview: unknown }[] = [];
   let approvalReady = !setupNeeded;
   if (!setupNeeded) {
@@ -137,31 +132,12 @@ export default async function McpSettingsPage() {
     }).slice(0, 25);
   }
 
-  const approverEmails = new Map<string, string>();
-  if (oauthReady) {
-    const ids = [...new Set(tokens.map((t) => t.approved_by).filter(Boolean))] as string[];
-    if (ids.length) {
-      const { data } = await createAdminClient()
-        .from("employees")
-        .select("auth_user_id, email, first_name, last_name")
-        .in("auth_user_id", ids);
-      for (const row of data ?? []) {
-        if (!row.auth_user_id) continue;
-        const label =
-          (row.email as string) ||
-          [row.first_name, row.last_name].filter(Boolean).join(" ") ||
-          (row.auth_user_id as string);
-        approverEmails.set(row.auth_user_id as string, label);
-      }
-    }
-  }
-
   return (
     <div className="max-w-4xl space-y-6">
       <div>
         <h1 className="page-title mb-1">Agent Access</h1>
         <p className="text-sm text-zinc-500">
-          Service tokens and OAuth agent connections. Secrets and codes are stored only as hashes. Every MCP call is audited under the identity name.
+          Service tokens for bots, and OAuth connections from staff sign-in (Connect in an AI app). OAuth acts as that person&apos;s XOS role. Secrets and codes are stored only as hashes.
         </p>
       </div>
 
@@ -186,17 +162,60 @@ export default async function McpSettingsPage() {
           ) : null}
           {!oauthReady ? (
             <div className="card p-4 text-sm text-zinc-600">
-              OAuth Connect needs migration <code>00235_mcp_oauth.sql</code> before OAuth grants and approver settings appear. This page does not apply it.
+              OAuth Connect needs migration <code>00235_mcp_oauth.sql</code>. This page does not apply it.
             </div>
           ) : (
-            <OAuthApproverRolesForm roles={approverRoles} />
+            <div className="card overflow-hidden">
+              <div className="border-b border-zinc-200 px-4 py-3">
+                <h2 className="card-title">OAuth connections</h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Each row is a staff member who clicked Connect in an AI app. Permissions match their XOS role. Revoke ends access immediately.
+                </p>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="table-head text-left">
+                  <tr>
+                    <th className="px-3 py-2">Person</th>
+                    <th className="px-3 py-2">Client</th>
+                    <th className="px-3 py-2">Last used</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {oauthConnections.map((token) => (
+                    <tr key={token.id} className="border-t border-zinc-200 align-top">
+                      <td className="px-3 py-2">
+                        <div>{token.name}</div>
+                        <div className="mt-1 text-[11px] text-zinc-400">
+                          Connected {new Date(token.created_at).toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-xs">{token.oauth_client_name || token.oauth_client_id || "—"}</td>
+                      <td className="px-3 py-2">{token.last_used_at ? new Date(token.last_used_at).toLocaleString() : "Never"}</td>
+                      <td className="px-3 py-2">{statusLabel(token)}</td>
+                      <td className="px-3 py-2">{token.revoked_at ? null : <RevokeButton id={token.id} />}</td>
+                    </tr>
+                  ))}
+                  {oauthConnections.length === 0 ? (
+                    <tr><td colSpan={5} className="px-3 py-4 text-zinc-500">No OAuth connections yet.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           )}
+
           <div className="card overflow-hidden">
+            <div className="border-b border-zinc-200 px-4 py-3">
+              <h2 className="card-title">Service tokens</h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                Long-lived bearer secrets for bots that cannot do OAuth Connect. Shown once at mint.
+              </p>
+            </div>
             <table className="w-full text-sm">
               <thead className="table-head text-left">
                 <tr>
                   <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">Type</th>
                   <th className="px-3 py-2">Scopes</th>
                   <th className="px-3 py-2">Trust</th>
                   <th className="px-3 py-2">Helpers</th>
@@ -206,63 +225,50 @@ export default async function McpSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {tokens.map((token) => {
-                  const isOauth = (token.auth_kind ?? "service") === "oauth";
-                  return (
-                    <tr key={token.id} className="border-t border-zinc-200 align-top">
-                      <td className="px-3 py-2">
-                        <div>{token.name}</div>
-                        {isOauth ? (
-                          <div className="mt-1 text-[11px] text-zinc-500">
-                            Client: {token.oauth_client_name || token.oauth_client_id || "—"}
-                            {token.approved_by ? (
-                              <> · Approved by {approverEmails.get(token.approved_by) || "staff"}</>
-                            ) : null}
-                            <div>Created {new Date(token.created_at).toLocaleString()}</div>
-                          </div>
-                        ) : (
-                          <div className="mt-1 font-mono text-[11px] text-zinc-400">{token.token_prefix}…</div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-xs">{isOauth ? "OAuth" : "Service token"}</td>
-                      <td className="px-3 py-2 text-xs">
-                        <div>{formatMcpScopeLabels(token.scopes ?? [])}</div>
-                        {!token.revoked_at ? (
-                          <div className="mt-2">
-                            <EditScopesForm id={token.id} scopes={token.scopes ?? []} />
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2">
-                        {!token.revoked_at && autoApproveReady ? (
-                          <TrustedAgentToggle id={token.id} enabled={token.auto_approve === true} />
-                        ) : token.auto_approve ? (
-                          <span className="text-xs text-amber-800">Trusted</span>
-                        ) : (
-                          <span className="text-xs text-zinc-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {!token.revoked_at && helpersSkipReady ? (
-                          <HelpersSkipToggle id={token.id} enabled={token.helpers_skip_xos_approval === true} />
-                        ) : token.helpers_skip_xos_approval ? (
-                          <span className="text-xs text-amber-800">Skip XOS approval</span>
-                        ) : (
-                          <span className="text-xs text-zinc-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">{token.last_used_at ? new Date(token.last_used_at).toLocaleString() : "Never"}</td>
-                      <td className="px-3 py-2">{statusLabel(token)}</td>
-                      <td className="px-3 py-2">{token.revoked_at ? null : <RevokeButton id={token.id} />}</td>
-                    </tr>
-                  );
-                })}
-                {tokens.length === 0 ? (
-                  <tr><td colSpan={8} className="px-3 py-4 text-zinc-500">No tokens yet.</td></tr>
+                {serviceTokens.map((token) => (
+                  <tr key={token.id} className="border-t border-zinc-200 align-top">
+                    <td className="px-3 py-2">
+                      <div>{token.name}</div>
+                      <div className="mt-1 font-mono text-[11px] text-zinc-400">{token.token_prefix}…</div>
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      <div>{formatMcpScopeLabels(token.scopes ?? [])}</div>
+                      {!token.revoked_at ? (
+                        <div className="mt-2">
+                          <EditScopesForm id={token.id} scopes={token.scopes ?? []} />
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2">
+                      {!token.revoked_at && autoApproveReady ? (
+                        <TrustedAgentToggle id={token.id} enabled={token.auto_approve === true} />
+                      ) : token.auto_approve ? (
+                        <span className="text-xs text-amber-800">Trusted</span>
+                      ) : (
+                        <span className="text-xs text-zinc-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {!token.revoked_at && helpersSkipReady ? (
+                        <HelpersSkipToggle id={token.id} enabled={token.helpers_skip_xos_approval === true} />
+                      ) : token.helpers_skip_xos_approval ? (
+                        <span className="text-xs text-amber-800">Skip XOS approval</span>
+                      ) : (
+                        <span className="text-xs text-zinc-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">{token.last_used_at ? new Date(token.last_used_at).toLocaleString() : "Never"}</td>
+                    <td className="px-3 py-2">{statusLabel(token)}</td>
+                    <td className="px-3 py-2">{token.revoked_at ? null : <RevokeButton id={token.id} />}</td>
+                  </tr>
+                ))}
+                {serviceTokens.length === 0 ? (
+                  <tr><td colSpan={7} className="px-3 py-4 text-zinc-500">No service tokens yet.</td></tr>
                 ) : null}
               </tbody>
             </table>
           </div>
+
           {approvalReady ? pending.map((item) => {
             const preview = item.preview as { receipt?: unknown; effect_snapshot?: unknown; effect_hash?: string } | null;
             return (
@@ -311,7 +317,7 @@ export default async function McpSettingsPage() {
             </div>
           ) : null}
           <MintForm />
-          <RotateForm tokens={active.map((token) => ({ id: token.id, name: token.name, token_prefix: token.token_prefix }))} />
+          <RotateForm tokens={activeService.map((token) => ({ id: token.id, name: token.name, token_prefix: token.token_prefix }))} />
         </>
       )}
     </div>

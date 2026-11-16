@@ -1,23 +1,8 @@
 -- MCP OAuth 2.1 for the remote connector (authorization code + PKCE S256).
--- Each approved grant is a named row in mcp_service_tokens (auth_kind = oauth)
--- so audit, scopes, confirmations, and idempotency stay on the same identity.
+-- Each connection is per signed-in XOS user (not a separate agent scope model).
+-- Reconnecting the same user + client replaces the previous grant.
 -- Raw codes and tokens are never stored — only SHA-256 hex hashes.
 -- Do not apply this file from the app. Drew reviews it and applies it.
-
--- Who may approve OAuth connections. Master admin is always allowed in app code;
--- this list adds more staff roles (editable in Settings → Agent Access).
-create table if not exists public.mcp_oauth_settings (
-  id boolean primary key default true check (id),
-  approver_roles text[] not null default array['master_admin']::text[],
-  updated_at timestamptz not null default now()
-);
-
-comment on table public.mcp_oauth_settings is
-  'Single-row MCP OAuth settings. approver_roles lists staff permission tiers that may approve a connection (master_admin is always allowed).';
-
-insert into public.mcp_oauth_settings (id, approver_roles)
-values (true, array['master_admin']::text[])
-on conflict (id) do nothing;
 
 alter table public.mcp_service_tokens
   add column if not exists auth_kind text not null default 'service'
@@ -27,14 +12,18 @@ alter table public.mcp_service_tokens
   add column if not exists approved_by uuid;
 
 comment on column public.mcp_service_tokens.auth_kind is
-  'service = mint/rotate bearer secret; oauth = named grant from the consent screen.';
+  'service = mint/rotate bearer secret; oauth = per-user Connect grant.';
 comment on column public.mcp_service_tokens.oauth_client_id is
   'RFC 7591 client_id for oauth grants. Null for service tokens.';
 comment on column public.mcp_service_tokens.approved_by is
-  'Staff user who approved an oauth grant. Null for service tokens.';
+  'Auth user id of the signed-in staff member for an oauth grant.';
 
 create index if not exists mcp_service_tokens_auth_kind_idx
   on public.mcp_service_tokens (auth_kind, revoked_at);
+
+create index if not exists mcp_service_tokens_oauth_user_client_idx
+  on public.mcp_service_tokens (approved_by, oauth_client_id)
+  where auth_kind = 'oauth' and revoked_at is null;
 
 -- Dynamically registered OAuth clients (RFC 7591).
 create table if not exists public.mcp_oauth_clients (
@@ -56,27 +45,6 @@ comment on table public.mcp_oauth_clients is
 
 create index if not exists mcp_oauth_clients_active_idx
   on public.mcp_oauth_clients (revoked_at);
-
--- Pending authorize requests shown on the consent screen.
-create table if not exists public.mcp_oauth_pending (
-  id uuid primary key default gen_random_uuid(),
-  client_id text not null references public.mcp_oauth_clients (client_id) on delete cascade,
-  redirect_uri text not null,
-  scope text not null default '',
-  state text,
-  code_challenge text not null,
-  code_challenge_method text not null default 'S256' check (code_challenge_method = 'S256'),
-  resource text not null,
-  created_at timestamptz not null default now(),
-  expires_at timestamptz not null,
-  consumed_at timestamptz
-);
-
-comment on table public.mcp_oauth_pending is
-  'Short-lived authorize requests waiting for a signed-in approver on the consent screen.';
-
-create index if not exists mcp_oauth_pending_expires_idx
-  on public.mcp_oauth_pending (expires_at);
 
 -- Authorization codes (hashed). Single-use; reuse revokes the grant.
 create table if not exists public.mcp_oauth_auth_codes (
@@ -143,23 +111,17 @@ create index if not exists mcp_oauth_refresh_tokens_grant_idx
 create index if not exists mcp_oauth_refresh_tokens_lookup_idx
   on public.mcp_oauth_refresh_tokens (token_hash);
 
-alter table public.mcp_oauth_settings enable row level security;
 alter table public.mcp_oauth_clients enable row level security;
-alter table public.mcp_oauth_pending enable row level security;
 alter table public.mcp_oauth_auth_codes enable row level security;
 alter table public.mcp_oauth_access_tokens enable row level security;
 alter table public.mcp_oauth_refresh_tokens enable row level security;
 
-revoke all on public.mcp_oauth_settings from public, anon, authenticated;
 revoke all on public.mcp_oauth_clients from public, anon, authenticated;
-revoke all on public.mcp_oauth_pending from public, anon, authenticated;
 revoke all on public.mcp_oauth_auth_codes from public, anon, authenticated;
 revoke all on public.mcp_oauth_access_tokens from public, anon, authenticated;
 revoke all on public.mcp_oauth_refresh_tokens from public, anon, authenticated;
 
-grant all on public.mcp_oauth_settings to service_role;
 grant all on public.mcp_oauth_clients to service_role;
-grant all on public.mcp_oauth_pending to service_role;
 grant all on public.mcp_oauth_auth_codes to service_role;
 grant all on public.mcp_oauth_access_tokens to service_role;
 grant all on public.mcp_oauth_refresh_tokens to service_role;

@@ -3,13 +3,14 @@ import { tokenDecision, type ServiceTokenRow } from "./auth";
 import { hashToken, hashesEqual, looksLikeServiceToken } from "./crypto";
 import { decideIdempotency, idempotencyKeyError, type IdempotencyStatus } from "./idempotency";
 import { mcpResourceUrl } from "./oauth/config";
+import { liveMcpScopesForUser } from "./oauth/staffUser";
 import type { AuditRow, ConfirmationRow, IdempotencyRow, McpStore } from "./store";
 
 const CONFIRMATION_COLUMNS =
   "id, token_id, tool_name, args_hash, args, preview, expires_at, used_at, approved_at, approved_by, rejected_at, rejected_by, result, status, idempotency_key";
 
 const TOKEN_COLS =
-  "id, name, scopes, expires_at, revoked_at, overlap_until, token_hash, helpers_skip_xos_approval, auto_approve";
+  "id, name, scopes, expires_at, revoked_at, overlap_until, token_hash, helpers_skip_xos_approval, auto_approve, approved_by, auth_kind";
 
 /** Service-role access to the MCP tables. The raw bearer token is never written.
     Rate-limit and audit errors throw so the caller can fail closed. */
@@ -60,7 +61,17 @@ export function supabaseStore(admin: SupabaseClient): McpStore {
       if (!grant) return { ok: false, reason: "invalid" };
       const decision = tokenDecision(grant as ServiceTokenRow, now);
       if (!decision.ok) return { ok: false, reason: decision.reason };
-      return { ok: true, token: grant as ServiceTokenRow };
+      const token = { ...(grant as ServiceTokenRow) };
+      const approvedBy = (grant as { approved_by?: string | null }).approved_by;
+      if (approvedBy) {
+        try {
+          const live = await liveMcpScopesForUser(admin, approvedBy);
+          if (live) token.scopes = live;
+        } catch {
+          // Keep frozen grant scopes if live lookup fails.
+        }
+      }
+      return { ok: true, token };
     },
     async touchToken(id, at) {
       await admin.from("mcp_service_tokens").update({ last_used_at: at.toISOString() }).eq("id", id);
