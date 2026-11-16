@@ -6,11 +6,16 @@ import {
   renderPaymentSchedule,
   renderPaymentsReceived,
   renderSummaryBox,
+  scheduleRowLabel,
+  textBlockTemplateHtml,
   unpaidScheduleRows,
   type EventBundle,
 } from "./documentRender.ts";
 import { XDOC_CSS } from "./documentShellCss.ts";
 import type { ReceiptPayment } from "./paymentReceiptMerge.ts";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function bundle(
   partial: Partial<EventBundle> & Pick<EventBundle, "payments" | "total" | "financialsHidden">,
@@ -223,10 +228,25 @@ describe("renderSummaryBox", () => {
 
     const settled = renderSummaryBox(
       bundle({ financialsHidden: false, total: 2700, payments: fullPay }),
-      { paidInFullLabel: "Paid in full" },
+      { balanceLabel: "Balance due", paidInFullLabel: "Paid in full" },
     );
+    // One clean row: Balance due | Paid in full (never "Paid in full | Paid in full")
+    assert.match(settled, /Balance due/);
     assert.match(settled, /Paid in full/);
-    assert.doesNotMatch(settled, /Balance due/);
+    assert.equal((settled.match(/Paid in full/g) ?? []).length, 1);
+    assert.match(
+      settled,
+      /xdoc-summary-paid"><span>Balance due<\/span><span class="xdoc-amount">Paid in full<\/span>/,
+    );
+  });
+
+  it("honors custom balance and paid-in-full labels without duplicating the value as the label", () => {
+    const settled = renderSummaryBox(
+      bundle({ financialsHidden: false, total: 2700, payments: fullPay }),
+      { balanceLabel: "Remaining", paidInFullLabel: "All set" },
+    );
+    assert.match(settled, /<span>Remaining<\/span><span class="xdoc-amount">All set<\/span>/);
+    assert.doesNotMatch(settled, /<span>All set<\/span><span class="xdoc-amount">All set<\/span>/);
   });
 
   it("hides entirely (labels and heading too) when financials are hidden", () => {
@@ -289,6 +309,30 @@ describe("renderPaymentSchedule options", () => {
     assert.equal(hidden, "");
   });
 
+  it("keeps stored schedule labels after onlyUnpaid netting (never renumbers)", () => {
+    // Dulce-style: Payment 1 / Payment 2 / Payment 3 — after $750, remaining stay Payment 2 + Payment 3
+    // (not renumbered to Payment 1 / Final Payment).
+    const html = renderPaymentSchedule(
+      bundle({
+        financialsHidden: false,
+        total: 2500,
+        payments: [{ amount: 750, method: "zelle", paidAt: "2026-04-10T00:00:00Z", scheduledPaymentId: null }],
+        schedule: [
+          { id: "a", seq: 1, due_date: "2026-04-10", amount: 750, label: "Payment 1" },
+          { id: "b", seq: 2, due_date: "2027-02-23", amount: 875, label: "Payment 2" },
+          { id: "c", seq: 3, due_date: "2027-03-25", amount: 875, label: "Payment 3" },
+        ],
+      }),
+      { onlyUnpaid: true },
+    );
+    assert.match(html, /<td>Payment 2<\/td>/);
+    assert.match(html, /<td>Payment 3<\/td>/);
+    assert.doesNotMatch(html, /Payment 1/);
+    assert.doesNotMatch(html, /Final Payment/);
+    assert.equal(scheduleRowLabel({ seq: 2, label: "Payment 2" }), "Payment 2");
+    assert.equal(scheduleRowLabel({ seq: 9, label: null }), "Payment 9");
+  });
+
   it("returns empty when financials are hidden", () => {
     assert.equal(
       renderPaymentSchedule(bundle({ financialsHidden: true, total: 2700, payments: [] }), {
@@ -300,11 +344,35 @@ describe("renderPaymentSchedule options", () => {
   });
 });
 
+describe("textBlockTemplateHtml financials-hidden options", () => {
+  it("uses alternate wording, or hides, when financials are hidden", () => {
+    const normal = "<p>Thanks, &lt;first_name&gt;! Here is a summary of your booking and payments.</p>";
+    const alt = "<p>Thanks, &lt;first_name&gt;! Here is a summary of the services for your event.</p>";
+    assert.equal(textBlockTemplateHtml({ html: normal }, false), normal);
+    assert.equal(
+      textBlockTemplateHtml({ html: normal, options: { financialsHiddenHtml: alt } }, true),
+      alt,
+    );
+    assert.equal(
+      textBlockTemplateHtml({ html: normal, options: { hideWhenFinancialsHidden: true, financialsHiddenHtml: alt } }, true),
+      null,
+    );
+    assert.equal(textBlockTemplateHtml({ html: normal }, true), normal);
+    assert.doesNotMatch(alt, /—/);
+  });
+});
+
 describe("PDF print CSS for money tables", () => {
-  it("allows tables to split across pages with repeating headers and keeps footer attached", () => {
+  it("allows tables to split across pages with repeating headers, keeps rows together, and avoids stacked page margins", () => {
     assert.match(XDOC_CSS, /\.xdoc-table \{[^}]*break-inside: auto/);
     assert.match(XDOC_CSS, /thead \{ display: table-header-group/);
+    assert.match(XDOC_CSS, /\.xdoc-table tr, \.xdoc-table td, \.xdoc-desc \{[^}]*break-inside: avoid/);
     assert.match(XDOC_CSS, /\.xdoc-footer \{[^}]*break-before: avoid/);
+    assert.match(XDOC_CSS, /@page \{ margin: 0\.4in/);
+    assert.match(XDOC_CSS, /\.xdoc \{[^}]*margin: 0 !important/);
     assert.doesNotMatch(XDOC_CSS, /\.xdoc-table, .xdoc-details/);
+    const pdfSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pdf.ts"), "utf8");
+    assert.match(pdfSrc, /preferCSSPageSize:\s*true/);
+    assert.match(pdfSrc, /margin:\s*\{\s*top:\s*"0in"/);
   });
 });

@@ -24,7 +24,18 @@ function blocksFromForm(formData: FormData): DocBlock[] {
   }
   return sanitizeBlocks(manifest).map((b) => {
     if (b.type === "text") {
-      return { ...b, html: (formData.get(`block_html_${b.id}`) ?? "").toString() };
+      const html = (formData.get(`block_html_${b.id}`) ?? "").toString();
+      // Alternate copy when financials are hidden (Villa Toscana). Separate field so
+      // large HTML is not only stuck inside the JSON manifest. When the alternate
+      // editor is omitted (hide-block checked), keep whatever is already in options.
+      const options = { ...(b.options ?? {}) };
+      const altField = formData.get(`block_financials_hidden_html_${b.id}`);
+      if (altField != null) {
+        const altRaw = altField.toString();
+        if (altRaw.trim()) options.financialsHiddenHtml = altRaw;
+        else delete options.financialsHiddenHtml;
+      }
+      return Object.keys(options).length ? { ...b, html, options } : { ...b, html, options: undefined };
     }
     if (b.type === "section") {
       return {

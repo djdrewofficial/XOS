@@ -6,6 +6,7 @@ import SaveButton from "@/components/SaveButton";
 import {
   BLOCK_NAMES,
   DEFAULT_FEE_TOTAL_LABEL,
+  DEFAULT_RECEIPT_FINANCIALS_HIDDEN_HTML,
   DEFAULT_SUMMARY_BALANCE_LABEL,
   DEFAULT_SUMMARY_PAID_IN_FULL_LABEL,
   DEFAULT_SUMMARY_PAID_LABEL,
@@ -132,8 +133,8 @@ function SmartBlockSettings({
           [
             ["totalLabel", "Total label", DEFAULT_SUMMARY_TOTAL_LABEL],
             ["paidLabel", "Paid label", DEFAULT_SUMMARY_PAID_LABEL],
-            ["balanceLabel", "Balance label", DEFAULT_SUMMARY_BALANCE_LABEL],
-            ["paidInFullLabel", "Paid in full label", DEFAULT_SUMMARY_PAID_IN_FULL_LABEL],
+            ["balanceLabel", "Balance row label", DEFAULT_SUMMARY_BALANCE_LABEL],
+            ["paidInFullLabel", "Paid-in-full value", DEFAULT_SUMMARY_PAID_IN_FULL_LABEL],
           ] as const
         ).map(([key, label, fallback]) => (
           <label key={key} className="block text-xs text-zinc-500">
@@ -146,6 +147,66 @@ function SmartBlockSettings({
             />
           </label>
         ))}
+      {block.type === "summary_box" && (
+        <p className="text-[11px] text-zinc-400">
+          Paid-in-full receipts show one balance row: Balance row label on the left, Paid-in-full value on the right.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TextBlockSettings({
+  block,
+  onChange,
+}: {
+  block: DocBlock;
+  onChange: (next: DocBlock) => void;
+}) {
+  const o = block.options ?? {};
+  const hide = o.hideWhenFinancialsHidden === true;
+  const alt = o.financialsHiddenHtml ?? "";
+  const [editorKey, setEditorKey] = useState(0);
+  return (
+    <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">When financials are hidden</p>
+      <p className="text-[11px] text-zinc-400">
+        Villa Toscana / venue-paid events hide money blocks. Use alternate wording here, or hide this text block.
+      </p>
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={hide}
+          onChange={(e) => onChange(updateOptions(block, { hideWhenFinancialsHidden: e.target.checked }))}
+        />
+        Hide this block when financials are hidden
+      </label>
+      {!hide && (
+        <div>
+          <p className="mb-1 text-xs text-zinc-500">Alternate wording (merge tags OK)</p>
+          <RichTextEditor
+            key={`alt-${block.id}-${editorKey}`}
+            name={`block_financials_hidden_html_${block.id}`}
+            defaultValue={alt}
+            onChange={(html) => onChange(updateOptions(block, { financialsHiddenHtml: html }))}
+          />
+          <p className="mt-1 text-[11px] text-zinc-400">
+            Leave blank to keep the normal wording. Suggested default summarizes services without payment language.
+          </p>
+          {!alt.trim() && (
+            <button
+              type="button"
+              className="btn-ghost mt-1 px-2 py-0.5 text-[11px]"
+              onClick={() => {
+                onChange(updateOptions(block, { financialsHiddenHtml: DEFAULT_RECEIPT_FINANCIALS_HIDDEN_HTML }));
+                setEditorKey((k) => k + 1);
+              }}
+            >
+              Insert suggested alternate
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -244,8 +305,11 @@ export default function DocumentBuilder({
           </div>
 
           {b.type === "text" ? (
-            <div className="p-3">
-              <RichTextEditor name={`block_html_${b.id}`} defaultValue={b.html ?? ""} />
+            <div>
+              <div className="p-3">
+                <RichTextEditor name={`block_html_${b.id}`} defaultValue={b.html ?? ""} />
+              </div>
+              {mode === "template" && <TextBlockSettings block={b} onChange={(next) => setBlock(i, next)} />}
             </div>
           ) : b.type === "section" && mode === "template" ? (
             <div className="space-y-2 p-3">
