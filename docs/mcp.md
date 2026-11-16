@@ -6,9 +6,9 @@ This is not a second copy of the business rules. Contract email, booking helpers
 
 ## Why it is hosted in the Next.js app
 
-The public site `https://xos.xpressdjs.com` sits behind Cloudflare, which has rejected automated clients. The connector must not depend on passing that check.
+The public site `https://xos.xpressdjs.com` sits behind Cloudflare. OAuth Connect (browser authorize, `.well-known` metadata, `/login`) must use that custom domain — the raw Netlify hostname origin-locks ordinary GETs.
 
-XOS already treats a few `/api` routes as machine endpoints. They authenticate themselves, and the Cloudflare origin lock skips them, so they answer on the raw Netlify hostname (`*.netlify.app`) where Cloudflare is not in front.
+XOS already treats a few `/api` routes as machine endpoints. They authenticate themselves, and the origin lock skips them, so `POST /api/mcp` still answers on both the custom domain and the raw Netlify hostname for Bearer service tokens.
 
 The MCP route is one of those endpoints: `POST /api/mcp`.
 
@@ -199,15 +199,9 @@ Do these in order. Each step waits for your approval. Do not mint a token or reg
 
 Deploying this code before `00220` makes Remove client on the event page fail closed, because that button calls `mcp_remove_event_client`. Deploying it before `00221` makes Choose primary client, Add client, the contract-holder toggle, and Merge venues fail closed the same way, and agent approvals cannot be claimed. Those buttons are coupled to the migrations. The connector stays unregistered until you approve step 4.
 
-The connector URL is the Netlify hostname, not `https://xos.xpressdjs.com`.
+OAuth Connect and its metadata use the public custom domain `https://xos.xpressdjs.com` (issuer, protected-resource metadata, authorize/token/register, and the WWW-Authenticate `resource_metadata` URL). The raw `*.netlify.app` host origin-locks ordinary GETs (`/login`, `/.well-known/*`) with 403, so browser authorize cannot run there.
 
-In Netlify: Domain management → the `*.netlify.app` address. The path is `/api/mcp`.
-
-Example shape, with the real site name filled in:
-
-`https://<your-site>.netlify.app/api/mcp`
-
-If that hostname is ever turned off, add a DNS-only name (Cloudflare grey cloud, not proxied) such as `mcp.xpressdjs.com` pointing at Netlify, and use `https://mcp.xpressdjs.com/api/mcp`. Do not orange-cloud it. An orange-cloud name puts the bot check back in front.
+`POST /api/mcp` still works on both hosts for existing Bearer service tokens. Prefer the custom domain for new connectors.
 
 ## Register the connector
 
@@ -215,7 +209,7 @@ If that hostname is ever turned off, add a DNS-only name (Cloudflare grey cloud,
 
 Agents that support MCP OAuth (Notion/Slack-style Connect) do not need a pasted token:
 
-1. Add a custom connector with URL `https://xos-xpressdjs.netlify.app/api/mcp` and **no** auth header.
+1. Add a custom connector with URL `https://xos.xpressdjs.com/api/mcp` and **no** auth header.
 2. Click Connect. Sign in to XOS if prompted — that is the whole flow (no scope picker).
 3. The connection uses that staff member’s existing XOS role permissions. Audit log shows e.g. `Drew Segura (OAuth)`.
 4. Revoke later in Settings → Agent Access under OAuth connections.
@@ -226,7 +220,7 @@ Service tokens still work for clients that only support a static Bearer header.
 
 Use streamable HTTP (also called HTTP), not stdio.
 
-- URL: `https://<your-site>.netlify.app/api/mcp`
+- URL: `https://xos.xpressdjs.com/api/mcp` (also accepted on the Netlify hostname for older setups)
 - Header name: `Authorization`
 - Header value: `Bearer <the token from Agent Access>`
 
@@ -238,7 +232,7 @@ Cursor custom MCP server, or any client that speaks remote MCP:
 {
   "mcpServers": {
     "xos": {
-      "url": "https://<your-site>.netlify.app/api/mcp",
+      "url": "https://xos.xpressdjs.com/api/mcp",
       "headers": {
         "Authorization": "Bearer <paste the token here>"
       }

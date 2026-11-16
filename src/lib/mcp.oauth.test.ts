@@ -7,9 +7,15 @@ import { fileURLToPath } from "node:url";
 import { generateServiceToken, hashToken } from "./mcp/crypto.ts";
 import type { ServiceTokenRow } from "./mcp/auth.ts";
 import {
+  acceptedMcpResourceUrls,
   buildAuthorizationServerMetadata,
   buildProtectedResourceMetadata,
   DEFAULT_MCP_RESOURCE_URL,
+  DEFAULT_PUBLIC_ORIGIN,
+  isAcceptedMcpResource,
+  LEGACY_MCP_RESOURCE_URL,
+  mcpIssuer,
+  mcpResourceUrl,
   mcpWwwAuthenticateHeader,
 } from "./mcp/oauth/config.ts";
 import { s256Challenge, verifyPkceS256 } from "./mcp/oauth/pkce.ts";
@@ -18,6 +24,7 @@ import {
   completeAuthorize,
   handleTokenRequest,
   registerClient,
+  resolveBearerIdentity,
   validateAuthorizeRequest,
 } from "./mcp/oauth/server.ts";
 import { memoryOAuthStore } from "./mcp/oauth/store.ts";
@@ -27,6 +34,7 @@ import { memoryStore } from "./mcp/store.ts";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 const RESOURCE = DEFAULT_MCP_RESOURCE_URL;
+const LEGACY = LEGACY_MCP_RESOURCE_URL;
 const REDIRECT = "https://agent.example/callback";
 
 function verifier(): string {
@@ -64,18 +72,51 @@ const staff = {
 };
 
 describe("mcp oauth metadata", () => {
-  it("publishes protected resource and authorization server metadata", () => {
+  it("publishes protected resource and authorization server metadata on the public origin", () => {
+    assert.equal(DEFAULT_MCP_RESOURCE_URL, "https://xos.xpressdjs.com/api/mcp");
+    assert.equal(mcpResourceUrl(), RESOURCE);
+    assert.equal(mcpIssuer(), DEFAULT_PUBLIC_ORIGIN);
+
     const prm = buildProtectedResourceMetadata(RESOURCE);
     assert.equal(prm.resource, RESOURCE);
-    assert.deepEqual(prm.authorization_servers, ["https://xos-xpressdjs.netlify.app"]);
+    assert.deepEqual(prm.authorization_servers, [DEFAULT_PUBLIC_ORIGIN]);
     assert.ok(prm.scopes_supported.includes("read.events"));
 
-    const as = buildAuthorizationServerMetadata("https://xos-xpressdjs.netlify.app");
-    assert.equal(as.authorization_endpoint, "https://xos-xpressdjs.netlify.app/api/mcp/oauth/authorize");
+    const as = buildAuthorizationServerMetadata(DEFAULT_PUBLIC_ORIGIN);
+    assert.equal(as.authorization_endpoint, "https://xos.xpressdjs.com/api/mcp/oauth/authorize");
+    assert.equal(as.token_endpoint, "https://xos.xpressdjs.com/api/mcp/oauth/token");
+    assert.equal(as.registration_endpoint, "https://xos.xpressdjs.com/api/mcp/oauth/register");
     assert.deepEqual(as.code_challenge_methods_supported, ["S256"]);
 
     assert.match(mcpWwwAuthenticateHeader(RESOURCE), /resource_metadata=/);
-    assert.match(mcpWwwAuthenticateHeader(RESOURCE), /oauth-protected-resource\/api\/mcp/);
+    assert.match(
+      mcpWwwAuthenticateHeader(RESOURCE),
+      /https:\/\/xos\.xpressdjs\.com\/\.well-known\/oauth-protected-resource\/api\/mcp/,
+    );
+    assert.ok(isAcceptedMcpResource(RESOURCE));
+    assert.ok(isAcceptedMcpResource(LEGACY));
+    assert.ok(acceptedMcpResourceUrls().includes(RESOURCE));
+    assert.ok(acceptedMcpResourceUrls().includes(LEGACY));
+  });
+
+  it("derives the resource URL from NEXT_PUBLIC_APP_URL when MCP overrides are unset", () => {
+    const prevApp = process.env.NEXT_PUBLIC_APP_URL;
+    const prevMcp = process.env.MCP_RESOURCE_URL;
+    const prevPublicMcp = process.env.NEXT_PUBLIC_MCP_URL;
+    delete process.env.MCP_RESOURCE_URL;
+    delete process.env.NEXT_PUBLIC_MCP_URL;
+    process.env.NEXT_PUBLIC_APP_URL = "https://xos.xpressdjs.com/";
+    try {
+      assert.equal(mcpResourceUrl(), "https://xos.xpressdjs.com/api/mcp");
+      assert.equal(mcpIssuer(), "https://xos.xpressdjs.com");
+    } finally {
+      if (prevApp === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+      else process.env.NEXT_PUBLIC_APP_URL = prevApp;
+      if (prevMcp === undefined) delete process.env.MCP_RESOURCE_URL;
+      else process.env.MCP_RESOURCE_URL = prevMcp;
+      if (prevPublicMcp === undefined) delete process.env.NEXT_PUBLIC_MCP_URL;
+      else process.env.NEXT_PUBLIC_MCP_URL = prevPublicMcp;
+    }
   });
 
   it("wires well-known routes, authorize auto-approve, and no consent UI", () => {
@@ -84,11 +125,13 @@ describe("mcp oauth metadata", () => {
     assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /completeAuthorize/);
     assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /resolveOAuthStaffUser/);
     assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /auto-approved/);
+    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /mcpIssuer/);
     assert.throws(() => read("src/app/oauth/mcp/consent/page.tsx"), /ENOENT/);
     assert.doesNotMatch(read("supabase/migrations/00235_mcp_oauth.sql"), /mcp_oauth_settings/);
     assert.doesNotMatch(read("supabase/migrations/00235_mcp_oauth.sql"), /mcp_oauth_pending/);
     assert.match(read("netlify.toml"), /Access-Control-Allow-Origin/);
     assert.match(oauthConnectionName("Drew Segura"), /\(OAuth\)/);
+    assert.match(read("docs/mcp.md"), /https:\/\/xos\.xpressdjs\.com\/api\/mcp/);
   });
 });
 
@@ -427,10 +470,55 @@ describe("mcp oauth scopes and service tokens", () => {
     const { store, clientId } = await registeredClient();
     const ok = await validateAuthorizeRequest(store, authorizeQuery(clientId, challenge));
     assert.equal(ok.ok, true);
+    const legacyOk = await validateAuthorizeRequest(store, {
+      ...authorizeQuery(clientId, challenge),
+      resource: LEGACY,
+    });
+    assert.equal(legacyOk.ok, true);
     const bad = await validateAuthorizeRequest(store, {
       ...authorizeQuery(clientId, challenge),
       code_challenge_method: "plain",
     });
     assert.equal(bad.ok, false);
   });
+
+  it("accepts a legacy netlify.app audience on token exchange and MCP bearer checks", async () => {
+    const oauth = memoryOAuthStore();
+    const { store, clientId } = await registeredClient(oauth.store);
+    const v = verifier();
+    const done = await completeAuthorize(
+      store,
+      { ...authorizeQuery(clientId, s256Challenge(v)), resource: LEGACY },
+      { ...staff, scopes: ["read.events"] },
+    );
+    assert.ok(done.ok);
+    if (!done.ok) return;
+    const code = new URL(done.value.redirectTo).searchParams.get("code")!;
+    const issued = await handleTokenRequest(store, {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: REDIRECT,
+      code_verifier: v,
+      refresh_token: null,
+      client_id: clientId,
+      client_secret: null,
+      resource: LEGACY,
+      basicClientId: null,
+      basicClientSecret: null,
+    });
+    assert.equal(issued.ok, true);
+    if (!issued.ok) return;
+
+    const access = oauth.access.find((a) => a.token_hash === hashToken(issued.value.access_token));
+    assert.equal(access?.resource, LEGACY);
+
+    const identity = await resolveBearerIdentity({
+      raw: issued.value.access_token,
+      findServiceTokenByHash: async () => null,
+      findAccessByHash: async (hash) => oauth.access.find((a) => a.token_hash === hash) ?? null,
+      findGrant: async (id) => (await store.findGrant(id)),
+    });
+    assert.equal(identity.ok, true);
+  });
 });
+

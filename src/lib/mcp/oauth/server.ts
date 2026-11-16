@@ -5,6 +5,7 @@ import {
   ACCESS_TOKEN_TTL_SEC,
   AUTH_CODE_TTL_SEC,
   REFRESH_TOKEN_TTL_SEC,
+  isAcceptedMcpResource,
   mcpResourceUrl,
 } from "./config";
 import { isS256Method, verifyPkceS256 } from "./pkce";
@@ -167,7 +168,7 @@ export async function completeAuthorize(
   }
 
   const resource = normalizeResource(query.resource);
-  if (!resource || !resourcesEqual(resource, mcpResourceUrl())) {
+  if (!resource || !isAcceptedMcpResource(resource)) {
     return err(400, "invalid_request", "resource must be the XOS MCP URL");
   }
 
@@ -224,7 +225,7 @@ export async function validateAuthorizeRequest(
     return err(400, "invalid_request", "redirect_uri is not registered for this client");
   }
   const resource = normalizeResource(query.resource);
-  if (!resource || !resourcesEqual(resource, mcpResourceUrl())) {
+  if (!resource || !isAcceptedMcpResource(resource)) {
     return err(400, "invalid_request", "resource must be the XOS MCP URL");
   }
   return ok({ clientName: client.client_name, redirectUri: query.redirect_uri });
@@ -476,7 +477,6 @@ export async function resolveBearerIdentity(args: {
   | { ok: false; reason: "invalid" | "revoked" | "expired" | "audience" }
 > {
   const now = args.now ?? new Date();
-  const expected = args.expectedResource ?? mcpResourceUrl();
 
   if (looksLikeServiceToken(args.raw)) {
     const token = await args.findServiceTokenByHash(hashToken(args.raw));
@@ -488,7 +488,10 @@ export async function resolveBearerIdentity(args: {
   if (!access) return { ok: false, reason: "invalid" };
   if (access.revoked_at) return { ok: false, reason: "revoked" };
   if (Date.parse(access.expires_at) <= now.getTime()) return { ok: false, reason: "expired" };
-  if (!resourcesEqual(access.resource, expected)) return { ok: false, reason: "audience" };
+  const audienceOk = args.expectedResource
+    ? resourcesEqual(access.resource, args.expectedResource)
+    : isAcceptedMcpResource(access.resource);
+  if (!audienceOk) return { ok: false, reason: "audience" };
 
   const grant = await args.findGrant(access.grant_token_id);
   if (!grant) return { ok: false, reason: "invalid" };
