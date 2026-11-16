@@ -80,6 +80,8 @@ describe("mcp tool catalog", () => {
     const middleware = read("src/middleware.ts");
     assert.match(middleware, /pathname === "\/api\/mcp"/);
     assert.match(middleware, /p === "\/api\/mcp"/);
+    assert.match(middleware, /pathname\.startsWith\("\/api\/mcp\/oauth\/"\)/);
+    assert.match(middleware, /p\.startsWith\("\/api\/mcp\/oauth\/"\)/);
   });
 
   it("negotiates protocol versions instead of rejecting unknown MCP-Protocol-Version dates", () => {

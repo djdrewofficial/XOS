@@ -1,10 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ServiceTokenRow } from "./auth";
+import { tokenDecision, type ServiceTokenRow } from "./auth";
+import { hashToken, hashesEqual, looksLikeServiceToken } from "./crypto";
 import { decideIdempotency, idempotencyKeyError, type IdempotencyStatus } from "./idempotency";
+import { mcpResourceUrl } from "./oauth/config";
 import type { AuditRow, ConfirmationRow, IdempotencyRow, McpStore } from "./store";
 
 const CONFIRMATION_COLUMNS =
   "id, token_id, tool_name, args_hash, args, preview, expires_at, used_at, approved_at, approved_by, rejected_at, rejected_by, result, status, idempotency_key";
+
+const TOKEN_COLS =
+  "id, name, scopes, expires_at, revoked_at, overlap_until, token_hash, helpers_skip_xos_approval, auto_approve";
 
 /** Service-role access to the MCP tables. The raw bearer token is never written.
     Rate-limit and audit errors throw so the caller can fail closed. */
@@ -13,11 +18,49 @@ export function supabaseStore(admin: SupabaseClient): McpStore {
     async findTokenByHash(hash) {
       const { data, error } = await admin
         .from("mcp_service_tokens")
-        .select("id, name, scopes, expires_at, revoked_at, overlap_until, token_hash, helpers_skip_xos_approval, auto_approve")
+        .select(TOKEN_COLS)
         .eq("token_hash", hash)
         .maybeSingle();
       if (error) throw new Error("Could not look up the service token.");
       return (data as ServiceTokenRow | null) ?? null;
+    },
+    async authenticateBearer(raw, now) {
+      if (looksLikeServiceToken(raw)) {
+        const token = await this.findTokenByHash(hashToken(raw));
+        if (!token || !hashesEqual(token.token_hash, hashToken(raw))) return { ok: false, reason: "invalid" };
+        const decision = tokenDecision(token, now);
+        if (!decision.ok) return { ok: false, reason: decision.reason };
+        return { ok: true, token };
+      }
+
+      const accessHash = hashToken(raw);
+      const { data: access, error: accessError } = await admin
+        .from("mcp_oauth_access_tokens")
+        .select("token_hash, grant_token_id, scopes, resource, expires_at, revoked_at")
+        .eq("token_hash", accessHash)
+        .maybeSingle();
+      if (accessError) throw new Error("Could not look up the access token.");
+      if (!access) return { ok: false, reason: "invalid" };
+      if (access.revoked_at) return { ok: false, reason: "revoked" };
+      if (Date.parse(access.expires_at as string) <= now.getTime()) return { ok: false, reason: "expired" };
+      try {
+        const expected = new URL(mcpResourceUrl()).toString().replace(/\/$/, "");
+        const got = new URL(access.resource as string).toString().replace(/\/$/, "");
+        if (expected !== got) return { ok: false, reason: "audience" };
+      } catch {
+        return { ok: false, reason: "audience" };
+      }
+
+      const { data: grant, error: grantError } = await admin
+        .from("mcp_service_tokens")
+        .select(TOKEN_COLS)
+        .eq("id", access.grant_token_id)
+        .maybeSingle();
+      if (grantError) throw new Error("Could not look up the OAuth grant.");
+      if (!grant) return { ok: false, reason: "invalid" };
+      const decision = tokenDecision(grant as ServiceTokenRow, now);
+      if (!decision.ok) return { ok: false, reason: decision.reason };
+      return { ok: true, token: grant as ServiceTokenRow };
     },
     async touchToken(id, at) {
       await admin.from("mcp_service_tokens").update({ last_used_at: at.toISOString() }).eq("id", id);

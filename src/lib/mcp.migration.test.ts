@@ -50,6 +50,7 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     await db.exec(read("supabase/migrations/00224_mcp_runtime_guards.sql"));
     await db.exec(read("supabase/migrations/00225_mcp_helpers_skip_xos_approval.sql"));
     await db.exec(read("supabase/migrations/00227_mcp_auto_approve.sql"));
+    await db.exec(read("supabase/migrations/00235_mcp_oauth.sql"));
   });
 
   it("rejects an idempotency key shorter than 8 characters", async () => {
@@ -236,5 +237,22 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     const migration = read("supabase/migrations/00227_mcp_auto_approve.sql");
     assert.match(migration, /auto_approve boolean not null default false/);
     assert.doesNotMatch(migration, /update\s+public\.mcp_service_tokens/i);
+  });
+
+  it("adds OAuth tables and keeps service-role-only access", async () => {
+    const settings = await db.query(`select approver_roles from public.mcp_oauth_settings where id = true`);
+    assert.deepEqual((settings.rows[0] as { approver_roles: string[] }).approver_roles, ["master_admin"]);
+    await db.exec(`
+      insert into public.mcp_oauth_clients (client_id, client_name, redirect_uris)
+      values ('xos_oauth_test', 'Test', array['https://agent.example/callback'])
+    `);
+    const cols = await db.query(`select auth_kind from public.mcp_service_tokens limit 0`);
+    assert.ok(cols.fields.some((f: { name: string }) => f.name === "auth_kind"));
+    await db.exec("set role anon");
+    try {
+      await assert.rejects(() => db.query("select * from public.mcp_oauth_clients"), /permission denied/i);
+    } finally {
+      await db.exec("reset role");
+    }
   });
 });

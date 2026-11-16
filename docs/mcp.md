@@ -211,6 +211,19 @@ If that hostname is ever turned off, add a DNS-only name (Cloudflare grey cloud,
 
 ## Register the connector
 
+### OAuth Connect (preferred)
+
+Agents that support MCP OAuth (Notion/Slack-style Connect) do not need a pasted token:
+
+1. Add a custom connector with URL `https://xos-xpressdjs.netlify.app/api/mcp` and **no** auth header.
+2. Click Connect. The client discovers `/.well-known/oauth-protected-resource` (and the path-specific variant), registers via DCR if needed, and opens the authorize URL.
+3. Sign in to XOS, name the connection, pick scopes (defaults are read-only), Allow or Deny.
+4. Revoke or edit scopes later in Settings → Agent Access (rows marked OAuth).
+
+Service tokens still work for clients that only support a static Bearer header.
+
+### Service token (Bearer)
+
 Use streamable HTTP (also called HTTP), not stdio.
 
 - URL: `https://<your-site>.netlify.app/api/mcp`

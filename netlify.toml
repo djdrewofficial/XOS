@@ -11,3 +11,21 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# MCP OAuth discovery (RFC 9728 / RFC 8414) is served by Next.js App Router:
+#   src/app/.well-known/oauth-protected-resource/**
+#   src/app/.well-known/oauth-authorization-server/**
+# Allow cross-origin metadata reads from agent hosts.
+[[headers]]
+  for = "/.well-known/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+
+[[headers]]
+  for = "/api/mcp/oauth/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"

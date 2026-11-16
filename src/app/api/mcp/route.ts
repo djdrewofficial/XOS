@@ -1,3 +1,4 @@
+import { mcpWwwAuthenticateHeader } from "@/lib/mcp/oauth/config";
 import { mcpTools } from "@/lib/mcp/tools";
 import { handleMcp, isInvalidMcpProtocolVersionHeader } from "@/lib/mcp/protocol";
 import { secretValuesFromEnv } from "@/lib/mcp/redact";
@@ -11,6 +12,11 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
   "content-type": "application/json",
 };
+
+function mcpResponseHeaders(status: number): Record<string, string> {
+  if (status !== 401) return { ...JSON_HEADERS };
+  return { ...JSON_HEADERS, "WWW-Authenticate": mcpWwwAuthenticateHeader() };
+}
 
 const MAX_BODY_BYTES = 256 * 1024;
 
@@ -88,7 +94,7 @@ export async function POST(req: Request) {
     );
   }
   if (result.status === 202) return new Response(null, { status: 202 });
-  return Response.json(result.body, { status: result.status, headers: JSON_HEADERS });
+  return Response.json(result.body, { status: result.status, headers: mcpResponseHeaders(result.status) });
 }
 
 export function GET() {

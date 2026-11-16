@@ -162,9 +162,64 @@ export async function rejectMcpPreview(formData: FormData) {
 export async function revokeMcpToken(formData: FormData) {
   await requireMaster();
   const id = String(formData.get("token_id") ?? "");
-  const now = new Date().toISOString();
-  const { error } = await createAdminClient().from("mcp_service_tokens").update({ revoked_at: now, overlap_until: now }).eq("id", id);
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
+  const admin = createAdminClient();
+  const { data: row } = await admin.from("mcp_service_tokens").select("id, auth_kind").eq("id", id).maybeSingle();
+  const { error } = await admin.from("mcp_service_tokens").update({ revoked_at: now, overlap_until: now }).eq("id", id);
   if (error) throw new Error(error.message);
+  // OAuth grants: kill access + refresh tokens immediately (migration 00235).
+  if (row && (row as { auth_kind?: string }).auth_kind === "oauth") {
+    try {
+      const { supabaseOAuthStore } = await import("@/lib/mcp/oauth/supabaseOAuthStore");
+      await supabaseOAuthStore(admin).revokeAccessForGrant(id, nowDate);
+      await supabaseOAuthStore(admin).revokeRefreshForGrant(id, nowDate);
+    } catch {
+      // Tables may not exist yet; the grant row is already revoked.
+    }
+  }
+  revalidatePath("/settings/mcp");
+}
+
+/** Master admin: change scopes on an active service token or OAuth grant. */
+export async function updateMcpTokenScopes(formData: FormData) {
+  await requireMaster();
+  const id = String(formData.get("token_id") ?? "").trim();
+  if (!id) throw new Error("Missing token.");
+  let scopes;
+  try {
+    scopes = assertScopes(formData.getAll("scope").map(String));
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "Those scopes are not valid.");
+  }
+  if (!scopes.length) throw new Error("Pick at least one scope.");
+  const { data, error } = await createAdminClient()
+    .from("mcp_service_tokens")
+    .update({ scopes })
+    .eq("id", id)
+    .is("revoked_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("That token is not active.");
+  revalidatePath("/settings/mcp");
+}
+
+/** Master admin: which staff roles may approve MCP OAuth consent (master_admin always can). */
+export async function saveMcpOAuthApproverRoles(formData: FormData) {
+  await requireMaster();
+  const roles = formData.getAll("approver_role").map(String).filter(Boolean);
+  const allowed = new Set(["master_admin", "admin", "salesperson", "employee", "marketing"]);
+  const cleaned = Array.from(new Set(["master_admin", ...roles.filter((r) => allowed.has(r))]));
+  const { error } = await createAdminClient()
+    .from("mcp_oauth_settings")
+    .upsert({ id: true, approver_roles: cleaned, updated_at: new Date().toISOString() });
+  if (error) {
+    if (/mcp_oauth_settings|schema cache|relation/i.test(error.message)) {
+      throw new Error("Apply migration 00235 before changing OAuth approver roles.");
+    }
+    throw new Error(error.message);
+  }
   revalidatePath("/settings/mcp");
 }
 
