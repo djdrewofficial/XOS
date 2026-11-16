@@ -70,18 +70,21 @@ export const XDOC_CSS = `
   justify-content: space-between; gap: 12px; font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 12px; color: #8a8a94; }
 @media print {
-  @page { margin: 0.45in; }
-  html, body { background: #fff !important; }
-  .xdoc { box-shadow: none; border-radius: 0; max-width: none; overflow: visible; }
+  /* Single margin source for PDF (puppeteer page.pdf margins are 0).
+     Double @page + puppeteer margins were leaving an empty trailing page with only the doc footer. */
+  @page { margin: 0.4in; }
+  html, body { background: #fff !important; margin: 0 !important; }
+  .xdoc { box-shadow: none; border-radius: 0; max-width: none; overflow: visible; margin: 0 !important; }
   .xdoc-noprint { display: none !important; }
-  .xdoc-header { border-radius: 0; padding: 34px 44px 28px; }
-  .xdoc-body { padding: 32px 44px; }
-  /* Tall tables must split across pages (repeat thead). Avoid blank page-1 gaps.
-     Keep compact cards/boxes and individual rows together; keep doc footer with prior content. */
+  .xdoc-header { border-radius: 0; padding: 28px 36px 22px; }
+  .xdoc-header img { width: 160px; margin-bottom: 12px; }
+  .xdoc-body { padding: 24px 36px 8px; }
+  /* Tall tables split across pages (repeat thead). Individual line-item rows
+     (name + description) stay together so a description never straddles a page break. */
   .xdoc-table { break-inside: auto; page-break-inside: auto; }
   .xdoc-table thead { display: table-header-group; }
   .xdoc-table tfoot { display: table-row-group; } /* total stays at end of table, not every page */
-  .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-table tr, .xdoc-table td, .xdoc-desc { break-inside: avoid; page-break-inside: avoid; }
   .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-summary { break-inside: avoid; page-break-inside: avoid; }
   .xdoc-sec { border: none; border-radius: 0; }
   .xdoc-sec summary { background: none; padding: 8px 0 2px; }
@@ -89,6 +92,9 @@ export const XDOC_CSS = `
   .xdoc-sec-body { padding: 4px 0 10px; }
   .xdoc-body h1, .xdoc-body h2, .xdoc-body h3, .xdoc-block-heading { break-after: avoid; page-break-after: avoid; }
   .xdoc-divider { break-after: avoid; }
-  .xdoc-footer { border-top: 1px solid #ece9f4; break-before: avoid; page-break-before: avoid; }
+  /* Keep footer with preceding content when it fits; compact padding so it rarely orphans alone. */
+  .xdoc-body > .xdoc-block:last-child { break-after: avoid; page-break-after: avoid; }
+  .xdoc-footer { border-top: 1px solid #ece9f4; padding: 12px 36px 14px;
+    break-before: avoid; page-break-before: avoid; break-inside: avoid; page-break-inside: avoid; }
 }
 `;

@@ -43,19 +43,30 @@ describe("documentBlocks receipt helpers", () => {
       { id: "3", type: "fee_table", options: { showQty: true, showDescriptions: false, totalLabel: "Total Investment" } },
       { id: "4", type: "payment_schedule", options: { onlyUnpaid: true, hideWhenPaidInFull: true } },
       { id: "5", type: "signature" },
+      {
+        id: "6",
+        type: "text",
+        html: "<p>Hi</p>",
+        options: { hideWhenFinancialsHidden: false, financialsHiddenHtml: "<p>Services only</p>" },
+      },
     ]);
-    assert.equal(blocks.length, 5);
+    assert.equal(blocks.length, 6);
     assert.equal(blocks[0].type, "payments_received");
     assert.equal(blocks[0].options?.showNotes, true);
     assert.equal(blocks[1].type, "summary_box");
     assert.equal(blocks[1].options?.totalLabel, "Total investment");
     assert.equal(blocks[2].options?.showQty, true);
     assert.equal(blocks[3].options?.onlyUnpaid, true);
+    assert.equal(blocks[5].options?.financialsHiddenHtml, "<p>Services only</p>");
+    assert.equal(blocks[5].options?.hideWhenFinancialsHidden, false);
   });
 
   it("ships the recommended Payment Receipt invoice-style block config", () => {
     const blocks = paymentReceiptInvoiceBlocks();
     assert.equal(blocks.map((b) => b.type).join(","), "text,fee_table,payments_received,summary_box,payment_schedule");
+    assert.equal(blocks[0].options?.hideWhenFinancialsHidden, false);
+    assert.match(blocks[0].options?.financialsHiddenHtml ?? "", /services for your event/);
+    assert.doesNotMatch(blocks[0].options?.financialsHiddenHtml ?? "", /—/);
     assert.equal(blocks[1].options?.showQty, true);
     assert.equal(blocks[1].options?.heading, "Line Items");
     assert.equal(blocks[2].options?.showNotes, false);

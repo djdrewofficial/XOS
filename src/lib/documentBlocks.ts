@@ -29,8 +29,18 @@ export type PaymentScheduleOptions = {
 export type SummaryBoxOptions = {
   totalLabel?: string;
   paidLabel?: string;
+  /** Left-side label for the balance row (always). Default "Balance due". */
   balanceLabel?: string;
+  /** Right-side value when balance is zero. Default "Paid in full". */
   paidInFullLabel?: string;
+};
+
+/** Text blocks: alternate / hide when venue-paid (financials hidden). */
+export type TextBlockOptions = {
+  /** Omit this text block entirely on financials-hidden events. Default false. */
+  hideWhenFinancialsHidden?: boolean;
+  /** Alternate HTML (merge tags OK) used instead of `html` when financials are hidden. */
+  financialsHiddenHtml?: string;
 };
 
 /** Optional heading printed above a smart block (e.g. "Line Items"). */
@@ -42,6 +52,7 @@ export type DocBlockOptions = FeeTableOptions &
   PaymentsReceivedOptions &
   PaymentScheduleOptions &
   SummaryBoxOptions &
+  TextBlockOptions &
   BlockHeadingOptions;
 
 export type DocBlock = {
@@ -80,7 +91,7 @@ export const SMART_BLOCKS: { type: DocBlock["type"]; name: string; description: 
   {
     type: "summary_box",
     name: "Payment Summary",
-    description: "Highlighted box: total investment, already paid, balance due (or paid in full). Labels editable.",
+    description: "Highlighted box: total investment, already paid, balance due (value can say paid in full). Labels editable.",
   },
   { type: "event_details", name: "Event Details", description: "Date, times, venue, guest count card" },
   { type: "signature", name: "Signature Block", description: "Client signature area (e-sign)" },
@@ -179,6 +190,15 @@ export function sanitizeBlockOptions(type: DocBlock["type"], raw: unknown): DocB
     if (paidInFullLabel !== undefined) out.paidInFullLabel = paidInFullLabel.slice(0, 80);
     return Object.keys(out).length ? out : undefined;
   }
+  if (type === "text") {
+    const hideWhenFinancialsHidden = bool("hideWhenFinancialsHidden");
+    if (hideWhenFinancialsHidden !== undefined) out.hideWhenFinancialsHidden = hideWhenFinancialsHidden;
+    if (typeof o.financialsHiddenHtml === "string") {
+      const alt = sanitizeDocumentHtml(o.financialsHiddenHtml);
+      if (alt.trim()) out.financialsHiddenHtml = alt;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
   // heading-only is only meaningful on money smart blocks above
   return undefined;
 }
@@ -237,18 +257,26 @@ export function formatDocumentTitle(
     .trim();
 }
 
+/** Default alternate intro when venue-paid / financials are hidden (no em dash). */
+export const DEFAULT_RECEIPT_FINANCIALS_HIDDEN_HTML = `<p>Thanks, &lt;first_name&gt;! Here is a summary of the services for your event.</p>
+<p><strong>Event:</strong> &lt;event_name&gt;<br>
+<strong>Date:</strong> &lt;event_date_long&gt;<br>
+<strong>Venue:</strong> &lt;venue_name&gt;</p>`;
+
 /** Recommended Payment Receipt template blocks (invoice-style layout). */
 export function paymentReceiptInvoiceBlocks(): DocBlock[] {
   return [
     {
       id: "receipt-intro",
       type: "text",
-      html: `<p>Thank you for your payment. This receipt relates to your booking agreement with Xpress Entertainment.</p>
-<p><strong>Client:</strong> &lt;client_name&gt;<br>
-<strong>Event:</strong> &lt;event_name&gt;<br>
-<strong>Event number:</strong> &lt;event_number&gt;<br>
-<strong>Event date:</strong> &lt;event_date_long&gt;<br>
-<strong>Date issued:</strong> &lt;current_date&gt;</p>`,
+      html: `<p>Thanks, &lt;first_name&gt;! Here is a summary of your booking and payments.</p>
+<p><strong>Event:</strong> &lt;event_name&gt;<br>
+<strong>Date:</strong> &lt;event_date_long&gt;<br>
+<strong>Venue:</strong> &lt;venue_name&gt;</p>`,
+      options: {
+        hideWhenFinancialsHidden: false,
+        financialsHiddenHtml: DEFAULT_RECEIPT_FINANCIALS_HIDDEN_HTML,
+      },
     },
     {
       id: "receipt-fees",

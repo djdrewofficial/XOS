@@ -73,10 +73,13 @@ export async function htmlToPdf(html: string): Promise<Buffer> {
           setTimeout(() => resolve(), 5000);
         })
     );
+    // Margins come from XDOC_CSS `@page` only. Setting both puppeteer margins and
+    // @page margins stacked insets and produced a blank trailing page (footer only).
     const pdf = await page.pdf({
       format: "letter",
       printBackground: true,
-      margin: { top: "0.45in", bottom: "0.45in", left: "0.45in", right: "0.45in" },
+      preferCSSPageSize: true,
+      margin: { top: "0in", bottom: "0in", left: "0in", right: "0in" },
     });
     return Buffer.from(pdf);
   } finally {

@@ -384,6 +384,16 @@ export function renderFeeTable(b: EventBundle, options?: DocBlockOptions): strin
   );
 }
 
+/** Label for a schedule row on client docs.
+    Always prefers the stored label; fallback uses the row's original `seq`
+    (full-schedule numbering). Never renumber by filtered/unpaid index. */
+export function scheduleRowLabel(sp: Pick<SchedRow, "seq" | "label">): string {
+  const stored = (sp.label ?? "").trim();
+  if (stored) return stored;
+  if (Number(sp.seq) === 1) return "Retainer";
+  return `Payment ${sp.seq}`;
+}
+
 export function renderPaymentSchedule(b: EventBundle, options?: DocBlockOptions): string {
   if (b.financialsHidden) return "";
   if (options?.hideWhenPaidInFull && balanceDue(b.total, b.payments) <= 0) return "";
@@ -402,7 +412,7 @@ export function renderPaymentSchedule(b: EventBundle, options?: DocBlockOptions)
   const body = rows
     .map(
       (sp) =>
-        `<tr><td>${esc(sp.label || (sp.seq === 1 ? "Retainer" : `Payment ${sp.seq}`))}</td><td>${
+        `<tr><td>${esc(scheduleRowLabel(sp))}</td><td>${
           sp.due_date ? fmtDate(sp.due_date) : "TBD"
         }</td><td class="xdoc-amount">${money(Number(sp.amount))}</td></tr>`,
     )
@@ -446,7 +456,8 @@ export function renderPaymentsReceived(b: EventBundle, options?: DocBlockOptions
   );
 }
 
-/** Highlighted summary: total investment, already paid, balance due / paid in full. */
+/** Highlighted summary: total investment, already paid, balance due / paid in full.
+    Balance row always uses balanceLabel on the left; paidInFullLabel is the value only. */
 export function renderSummaryBox(b: EventBundle, options?: DocBlockOptions): string {
   if (b.financialsHidden) return "";
   const totalLabel = (options?.totalLabel ?? "").trim() || DEFAULT_SUMMARY_TOTAL_LABEL;
@@ -464,9 +475,22 @@ export function renderSummaryBox(b: EventBundle, options?: DocBlockOptions): str
     )}</span></div><div class="xdoc-summary-row"><span>${esc(paidLabel)}</span><span class="xdoc-amount">${money(
       paid,
     )}</span></div><div class="xdoc-summary-row ${balanceClass}"><span>${esc(
-      bal <= 0 ? paidInFullLabel : balanceLabel,
+      balanceLabel,
     )}</span><span class="xdoc-amount">${esc(balanceValue)}</span></div></div>`,
   );
+}
+
+/** Pick which authored HTML a text block should merge for this event. */
+export function textBlockTemplateHtml(
+  block: Pick<DocBlock, "html" | "options">,
+  financialsHidden: boolean,
+): string | null {
+  if (financialsHidden) {
+    if (block.options?.hideWhenFinancialsHidden) return null;
+    const alt = (block.options?.financialsHiddenHtml ?? "").trim();
+    if (alt) return alt;
+  }
+  return block.html ?? "";
 }
 
 export function renderEventDetails(b: EventBundle): string {
@@ -549,11 +573,16 @@ export async function renderBlocks(supabase: SupabaseClient, eventId: string, bl
   const out: DocBlock[] = [];
   for (const block of blocks) {
     if (block.type === "text") {
+      const template = textBlockTemplateHtml(block, bundle.financialsHidden);
+      if (template == null) {
+        out.push({ ...block, html: "" });
+        continue;
+      }
       const { data: merged } = await supabase.rpc("render_merge_tags", {
         p_event_id: eventId,
-        p_template: block.html ?? "",
+        p_template: template,
       });
-      out.push({ ...block, html: (merged as string | null) ?? block.html ?? "" });
+      out.push({ ...block, html: (merged as string | null) ?? template });
     } else if (block.type === "section") {
       // collapsible chapter: merged title + body wrapped in a <details> the
       // shell styles (smaller legal text, auto-expands for print)
