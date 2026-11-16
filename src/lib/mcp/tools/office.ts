@@ -1051,6 +1051,33 @@ export const officeTools: LiveTool[] = [
     },
   },
   {
+    name: "documents_download_pdf",
+    description:
+      "Render a generated document to a branded PDF and return base64 bytes plus a suggested filename. Read-only; does not email or create a signing request.",
+    scopes: ["read.documents"],
+    confirm: false,
+    inputSchema: obj({ document_id: UUID }, ["document_id"]),
+    async execute(args, ctx) {
+      const admin = adminOf(ctx);
+      const id = s(args, "document_id")!;
+      const { data: doc } = await admin.from("documents").select("id, title").eq("id", id).maybeSingle();
+      if (!doc) throw new Error("Document not found.");
+      const { buildDocumentHtml } = await import("@/lib/documentHtml");
+      const { htmlToPdf } = await import("@/lib/pdf");
+      const built = await buildDocumentHtml(admin, id);
+      if (!built) throw new Error("Could not render that document.");
+      const pdf = await htmlToPdf(built.html);
+      const filename = `${built.title.replace(/[^\w\- &']+/g, "").trim() || "Document"}.pdf`;
+      return {
+        document_id: id,
+        filename,
+        content_type: "application/pdf",
+        bytes_base64: pdf.toString("base64"),
+        byte_length: pdf.length,
+      };
+    },
+  },
+  {
     name: "documents_generate",
     description: "Generate a document for an event from a template using the real renderer (merge tags included). Does not email it.",
     scopes: ["write.documents"],
@@ -1457,7 +1484,8 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "comms_send_email_template",
-    description: "Send one email template for an event. Database merge tags are filled first, then the outbox fills quote, payment-plan, and sign-link tags and attaches the contract when the template is set up that way. A template that attaches a document also needs comms.contract.",
+    description:
+      "Send one email template for an event. Database merge tags are filled first, then the outbox fills quote, payment-plan, and sign-link tags and may attach a document. E-sign / Booking Agreement attaches need comms.contract. PDF attaches of receipts (or other non-contract docs) only need comms.email.",
     scopes: ["comms.email"],
     confirm: true,
     inputSchema: obj({
@@ -1467,8 +1495,24 @@ export const officeTools: LiveTool[] = [
       address: { type: "string" },
     }, ["event_id", "template_id"]),
     async authorize(args, ctx) {
-      const { data } = await adminOf(ctx).from("email_templates").select("attach_template_id").eq("id", s(args, "template_id")).maybeSingle();
-      if (data?.attach_template_id && !ctx.token.scopes.includes("comms.contract")) {
+      const admin = adminOf(ctx);
+      const { data } = await admin
+        .from("email_templates")
+        .select("attach_template_id, attach_mode")
+        .eq("id", s(args, "template_id"))
+        .maybeSingle();
+      if (!data?.attach_template_id) return;
+      const mode = data.attach_mode ?? "esign_link";
+      if (mode === "pdf") {
+        const { data: docTpl } = await admin
+          .from("document_templates")
+          .select("doc_type")
+          .eq("id", data.attach_template_id)
+          .maybeSingle();
+        // Receipts and other non-contract PDFs do not need comms.contract.
+        if (docTpl?.doc_type && docTpl.doc_type !== "contract") return;
+      }
+      if (!ctx.token.scopes.includes("comms.contract")) {
         throw new McpScopeError("This template attaches a contract and needs comms.contract.");
       }
     },
@@ -1722,6 +1766,7 @@ const READ_ONLY_TOOLS = new Set([
   "equipment_list",
   "documents_list",
   "documents_get",
+  "documents_download_pdf",
   "payments_list",
   "payments_proposal_link",
   "reports_outstanding",

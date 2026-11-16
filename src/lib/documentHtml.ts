@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { XDOC_CSS } from "@/components/DocumentShell";
-import { sanitizeBlocks, docTypeClientLabel, sanitizeDocumentHtml } from "@/lib/documentBlocks";
+import { XDOC_CSS } from "@/lib/documentShellCss";
+import { sanitizeBlocks, defaultHeaderKicker, sanitizeDocumentHtml } from "@/lib/documentBlocks";
 import { renderBlocks } from "@/lib/documentRender";
 import { appUrl } from "@/lib/signing";
 
@@ -44,17 +44,20 @@ export async function buildDocumentHtml(
   const signedLine = doc.signed_at
     ? `Signed by ${esc(doc.signer_name)} on ${new Date(doc.signed_at).toLocaleString()}`
     : esc(cs?.from_email ?? "");
+  const kicker =
+    ((doc as { header_kicker?: string | null }).header_kicker ?? "").trim() ||
+    defaultHeaderKicker(doc.doc_type);
 
   return {
-    html: wrapDocHtml({ companyName, docType: doc.doc_type, title: doc.title, sub, signedLine, blocks }),
+    html: wrapDocHtml({ companyName, kicker, title: doc.title, sub, signedLine, blocks }),
     title: doc.title,
   };
 }
 
 /** Wrap rendered blocks in the branded standalone HTML page (PDF / preview). */
-function wrapDocHtml(opts: {
+export function wrapDocHtml(opts: {
   companyName: string;
-  docType: string;
+  kicker: string;
   title: string;
   sub: string;
   signedLine: string;
@@ -74,7 +77,7 @@ function wrapDocHtml(opts: {
   <div class="xdoc">
     <header class="xdoc-header">
       <img src="${appUrl()}/logo-dark.png" alt="${esc(opts.companyName)}" />
-      <div class="xdoc-kind">${esc(docTypeClientLabel(opts.docType))}</div>
+      <div class="xdoc-kind">${esc(opts.kicker)}</div>
       <div class="xdoc-title">${esc(opts.title)}</div>
       <div class="xdoc-sub">${esc(opts.sub)}</div>
     </header>
@@ -92,7 +95,7 @@ export async function buildTemplatePreviewHtml(
   templateId: string,
 ): Promise<{ html: string; title: string } | null> {
   const [{ data: tpl }, { data: cs }] = await Promise.all([
-    supabase.from("document_templates").select("name, doc_type, blocks").eq("id", templateId).single(),
+    supabase.from("document_templates").select("name, doc_type, header_kicker, blocks").eq("id", templateId).single(),
     supabase.from("company_settings").select("company_name, from_email, default_template_event_id").eq("id", true).maybeSingle(),
   ]);
   if (!tpl) return null;
@@ -111,7 +114,7 @@ export async function buildTemplatePreviewHtml(
   }
 
   let blocks = sanitizeBlocks(tpl.blocks);
-  let sub = "PREVIEW — no sample event found (merge tags shown raw)";
+  let sub = "PREVIEW - no sample event found (merge tags shown raw)";
   if (eventId) {
     const { data: ev } = await supabase
       .from("events")
@@ -125,8 +128,12 @@ export async function buildTemplatePreviewHtml(
     sub = ["PREVIEW", clientName, fmtDate((ev as { event_date?: string | null } | null)?.event_date)].filter(Boolean).join(" · ");
   }
 
+  const kicker =
+    ((tpl as { header_kicker?: string | null }).header_kicker ?? "").trim() ||
+    defaultHeaderKicker(tpl.doc_type);
+
   return {
-    html: wrapDocHtml({ companyName, docType: tpl.doc_type, title: tpl.name, sub, signedLine: esc(cs?.from_email ?? ""), blocks }),
+    html: wrapDocHtml({ companyName, kicker, title: tpl.name, sub, signedLine: esc(cs?.from_email ?? ""), blocks }),
     title: tpl.name,
   };
 }

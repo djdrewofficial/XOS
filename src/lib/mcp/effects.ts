@@ -119,11 +119,11 @@ export async function collectHelperEffects(
       if ((type === "send_email" || type === "send_email_staff" || type === "send_sms" || type === "send_sms_staff") && act.template_id) {
         const { data: tpl, error: tplError } = await admin
           .from("email_templates")
-          .select("id, name, subject, created_at, body_html, attach_template_id, is_sms, sms_marketing")
+          .select("id, name, subject, created_at, body_html, attach_template_id, attach_mode, is_sms, sms_marketing")
           .eq("id", act.template_id)
           .maybeSingle();
         if (tplError) throw new Error(tplError.message);
-        const template = tpl as TemplateRow | null;
+        const template = tpl as (TemplateRow & { attach_mode?: string | null }) | null;
         effect.template_name = template?.name ?? null;
         effect.template_updated_at = template?.created_at ?? null;
         effect.template_body_sha256 = sha256(template?.body_html ?? "");
@@ -133,7 +133,22 @@ export async function collectHelperEffects(
         effect.attaches_document = Boolean(template?.attach_template_id);
         if (type.startsWith("send_email")) scopes.add("comms.email");
         if (type.startsWith("send_sms")) scopes.add("comms.sms");
-        if (effect.attaches_document) scopes.add("comms.contract");
+        if (effect.attaches_document) {
+          const mode = template?.attach_mode ?? "esign_link";
+          let docType: string | null = null;
+          if (template?.attach_template_id) {
+            const { data: docTpl } = await admin
+              .from("document_templates")
+              .select("doc_type")
+              .eq("id", template.attach_template_id)
+              .maybeSingle();
+            docType = (docTpl as { doc_type?: string } | null)?.doc_type ?? null;
+          }
+          // PDF receipt (and other non-contract) attaches only need comms.email.
+          if (mode !== "pdf" || !docType || docType === "contract") {
+            scopes.add("comms.contract");
+          }
+        }
       } else if (type.startsWith("send_email")) {
         scopes.add("comms.email");
       } else if (type.startsWith("send_sms")) {

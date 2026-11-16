@@ -4,16 +4,17 @@
 
 export type DocBlock = {
   id: string;
-  type: "text" | "section" | "fee_table" | "payment_schedule" | "event_details" | "signature" | "divider";
+  type: "text" | "section" | "fee_table" | "payment_schedule" | "payments_received" | "event_details" | "signature" | "divider";
   title?: string; // section blocks: the chapter heading (collapsible on the client page)
   html?: string; // text/section blocks: authored html (template) or merged html (document snapshot)
 };
 
 export const SMART_BLOCKS: { type: DocBlock["type"]; name: string; description: string }[] = [
-  { type: "fee_table", name: "Fee Table", description: "Package (pinned version), add-ons, fees, discounts, total — from the event" },
+  { type: "fee_table", name: "Fee Table", description: "Package (pinned version), add-ons, fees, discounts, total from the event" },
   { type: "payment_schedule", name: "Payment Schedule", description: "The event's scheduled payments with due dates" },
+  { type: "payments_received", name: "Payments Received", description: "Actual payments: date, method, notes, amount, paid to date, remaining balance" },
   { type: "event_details", name: "Event Details", description: "Date, times, venue, guest count card" },
-  { type: "signature", name: "Signature Block", description: "Client signature area (e-sign in phase 2)" },
+  { type: "signature", name: "Signature Block", description: "Client signature area (e-sign)" },
   { type: "divider", name: "Divider", description: "A horizontal separator line" },
 ];
 
@@ -22,6 +23,7 @@ export const BLOCK_NAMES: Record<DocBlock["type"], string> = {
   section: "Section (collapsible chapter)",
   fee_table: "Fee Table",
   payment_schedule: "Payment Schedule",
+  payments_received: "Payments Received",
   event_details: "Event Details",
   signature: "Signature Block",
   divider: "Divider",
@@ -31,19 +33,27 @@ export const DOC_TYPES = [
   ["contract", "Contract"],
   ["quote", "Quote"],
   ["invoice", "Invoice"],
+  ["receipt", "Receipt"],
   ["other", "Other"],
 ] as const;
 
-/* Client-facing wording — we never say "contract" to clients; it's a Booking Agreement. */
+/* Client-facing wording. We never say "contract" to clients; it's a Booking Agreement.
+   Receipts show as Payment Receipt in the PDF header kicker unless overridden. */
 export const DOC_TYPE_CLIENT_LABELS: Record<string, string> = {
   contract: "Booking Agreement",
   quote: "Quote",
   invoice: "Invoice",
+  receipt: "Payment Receipt",
   other: "Document",
 };
 
 export function docTypeClientLabel(t: string | null | undefined): string {
   return DOC_TYPE_CLIENT_LABELS[t ?? "other"] ?? "Document";
+}
+
+/** Default PDF header kicker for a doc type (editable per template via header_kicker). */
+export function defaultHeaderKicker(docType: string | null | undefined): string {
+  return docTypeClientLabel(docType);
 }
 
 export function sanitizeDocumentHtml(html: string): string {
@@ -57,7 +67,16 @@ export function sanitizeDocumentHtml(html: string): string {
 
 export function sanitizeBlocks(value: unknown): DocBlock[] {
   if (!Array.isArray(value)) return [];
-  const valid = new Set(["text", "section", "fee_table", "payment_schedule", "event_details", "signature", "divider"]);
+  const valid = new Set([
+    "text",
+    "section",
+    "fee_table",
+    "payment_schedule",
+    "payments_received",
+    "event_details",
+    "signature",
+    "divider",
+  ]);
   return value
     .filter((b) => b && typeof b.id === "string" && valid.has(b.type))
     .map((b) => ({
@@ -66,4 +85,21 @@ export function sanitizeBlocks(value: unknown): DocBlock[] {
       title: typeof b.title === "string" ? b.title : undefined,
       html: typeof b.html === "string" ? sanitizeDocumentHtml(b.html) : undefined,
     }));
+}
+
+/** Build a generated document title from an editable template format.
+   Placeholders: {template}, {client}, {event}. Default uses a plain hyphen (no em dash). */
+export function formatDocumentTitle(
+  format: string | null | undefined,
+  parts: { template: string; client: string; event: string },
+): string {
+  const fallback = "{template} - {client}";
+  const raw = (format ?? "").trim() || fallback;
+  const clientOrEvent = parts.client || parts.event || "Event";
+  return raw
+    .replaceAll("{template}", parts.template)
+    .replaceAll("{client}", clientOrEvent)
+    .replaceAll("{event}", parts.event || parts.client || "Event")
+    .replace(/\s+/g, " ")
+    .trim();
 }

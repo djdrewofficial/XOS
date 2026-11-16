@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import DocumentShell from "@/components/DocumentShell";
 import DocumentBuilder from "@/components/DocumentBuilder";
-import { sanitizeBlocks, docTypeClientLabel } from "@/lib/documentBlocks";
+import { sanitizeBlocks, defaultHeaderKicker } from "@/lib/documentBlocks";
 import {
   updateDocumentBlocks,
   regenerateDocument,
@@ -69,15 +69,18 @@ export default async function DocumentDetailPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {!locked && (
+          {!locked && doc.doc_type !== "receipt" && (
             <form action={sendForSignature.bind(null, id)}>
               <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Sent">
                 ✉ Send To Client For Signature
               </SaveButton>
             </form>
           )}
+          <a href={`/api/documents/${doc.id}/pdf`} className="btn-primary px-4 py-2 text-xs">
+            Download PDF
+          </a>
           <a href={`/doc/${doc.id}`} target="_blank" className="btn-ghost px-4 py-2 text-xs">
-            Print / Save PDF
+            Print View
           </a>
           {!locked && (
             <>
@@ -104,16 +107,18 @@ export default async function DocumentDetailPage({
         </div>
       </div>
 
-      <div className="card mb-5 flex flex-wrap items-center gap-2 px-4 py-3 text-xs">
-        <span className="font-bold uppercase tracking-wide text-zinc-400">Client signing link</span>
-        <code className="rounded bg-black/5 px-2 py-1 text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
-          {appUrl()}/sign/{doc.access_token}
-        </code>
-        <a href={`/sign/${doc.access_token}`} target="_blank" className="font-semibold text-brand hover:underline dark:text-brand-lighter">
-          Open ↗
-        </a>
-        <span className="text-zinc-400">— every visit is logged in the tracking panel on the event&apos;s Documents tab</span>
-      </div>
+      {doc.doc_type !== "receipt" && (
+        <div className="card mb-5 flex flex-wrap items-center gap-2 px-4 py-3 text-xs">
+          <span className="font-bold uppercase tracking-wide text-zinc-400">Client signing link</span>
+          <code className="rounded bg-black/5 px-2 py-1 text-zinc-600 dark:bg-white/10 dark:text-zinc-300">
+            {appUrl()}/sign/{doc.access_token}
+          </code>
+          <a href={`/sign/${doc.access_token}`} target="_blank" className="font-semibold text-brand hover:underline dark:text-brand-lighter">
+            Open ↗
+          </a>
+          <span className="text-zinc-400">Every visit is logged in the tracking panel on the event&apos;s Documents tab</span>
+        </div>
+      )}
 
       {editing ? (
         <form action={updateDocumentBlocks.bind(null, id)}>
@@ -127,7 +132,10 @@ export default async function DocumentDetailPage({
         <div className="rounded-2xl bg-zinc-200/70 p-4 sm:p-8 dark:bg-black/40">
           <DocumentShell
             title={doc.title}
-            docType={docTypeClientLabel(doc.doc_type)}
+            docType={
+              ((doc as { header_kicker?: string | null }).header_kicker ?? "").trim() ||
+              defaultHeaderKicker(doc.doc_type)
+            }
             clientName={clientName}
             eventDateLabel={fmtDate(ev?.event_date)}
             companyName={cs?.company_name ?? "Xpress Entertainment"}
