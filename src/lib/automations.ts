@@ -5,13 +5,23 @@ import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
 import { reseedEventPlanning } from "@/lib/planning";
 import { dispatchNotification } from "@/lib/notify";
+import {
+  evaluateOnPaymentSkip,
+  isPaypalThankYouSubject,
+  onPaymentSkipLogAction,
+} from "@/lib/onPaymentHelperSkip";
 
 /* Automation dispatcher — the keystone of the trigger→action engine. Lifecycle
    moments (event created, proposal confirmed, document signed, payment received,
    status changed) call runAutomations(); it finds the booking helpers wired to
    that trigger (scoped by event type), runs each via the existing
    run_booking_helper() engine, then fires the helper's optional Zapier webhook.
-   Nothing about WHICH automations run is hardcoded — it's all helper config. */
+   Nothing about WHICH automations run is hardcoded — it's all helper config.
+
+   payment_received is only fired from new payment inserts / pending→approved
+   confirms (no backfill). On-payment skip flags (hidden financials / PayPal
+   thank-you already sent) apply here only — manual helper clicks use
+   executeBookingHelper / the 3-arg RPC and are never blocked by those flags. */
 
 export type AutomationTrigger =
   | "event_created"
@@ -22,6 +32,7 @@ export type AutomationTrigger =
 
 type HelperRow = {
   id: string;
+  title?: string | null;
   webhook_url: string | null;
   event_type_ids: string[] | null;
   auto_on_create: boolean;
@@ -29,6 +40,8 @@ type HelperRow = {
   auto_on_proposal_confirmed: boolean;
   auto_on_signed: boolean;
   auto_on_payment: boolean;
+  on_payment_skip_hidden_financials?: boolean | null;
+  on_payment_skip_paypal_thanked?: boolean | null;
   planning_template_id: string | null;
 };
 
@@ -36,7 +49,7 @@ export async function runAutomations(
   supabase: SupabaseClient,
   eventId: string,
   trigger: AutomationTrigger,
-  opts: { statusId?: string; drain?: "all" | "event" | "hold" } = {}
+  opts: { statusId?: string; paymentId?: string; drain?: "all" | "event" | "hold" } = {}
 ): Promise<void> {
   const { data: ev } = await supabase
     .from("events")
@@ -75,7 +88,7 @@ export async function runAutomations(
   const { data: helpers } = await supabase
     .from("booking_helpers")
     .select(
-      "id, webhook_url, event_type_ids, auto_on_create, auto_status_ids, auto_on_proposal_confirmed, auto_on_signed, auto_on_payment, planning_template_id"
+      "id, title, webhook_url, event_type_ids, auto_on_create, auto_status_ids, auto_on_proposal_confirmed, auto_on_signed, auto_on_payment, on_payment_skip_hidden_financials, on_payment_skip_paypal_thanked, planning_template_id"
     )
     .eq("is_active", true);
 
@@ -100,6 +113,17 @@ export async function runAutomations(
   });
   if (matched.length === 0) return;
 
+  // Resolve payment + skip context once for on-payment helpers (insert/confirm
+  // paths only — there is no payment backfill that calls this trigger).
+  let paymentCtx: {
+    financialsHidden: boolean;
+    payment: { id: string; method: string | null; paypal_capture_id?: string | null } | null;
+    paypalThankYouLogged: boolean;
+  } | null = null;
+  if (trigger === "payment_received") {
+    paymentCtx = await loadOnPaymentSkipContext(supabase, eventId, opts.paymentId);
+  }
+
   let ran = false;
   const queuedSince = new Date().toISOString();
   // A matched helper can assign a planning template. Apply once: only reseed when
@@ -119,6 +143,21 @@ export async function runAutomations(
   // both of which are already authorized before reaching here.
   const admin = createAdminClient();
   for (const h of matched) {
+    if (trigger === "payment_received" && paymentCtx) {
+      const decision = evaluateOnPaymentSkip(h, paymentCtx);
+      if (decision.skip && decision.reason) {
+        try {
+          await admin.from("event_logs").insert({
+            event_id: eventId,
+            actor: "system",
+            action: onPaymentSkipLogAction(h.title ?? "Helper", decision.reason),
+          });
+        } catch {
+          /* logging must not block the rest of the fan-out */
+        }
+        continue;
+      }
+    }
     try {
       // 2-arg form: this is an automation, so queued mail stays subject to
       // events.comms_paused. run_booking_helper enforces its own visibility +
@@ -204,6 +243,73 @@ export async function fireHelperWebhook(supabase: SupabaseClient, helperId: stri
       /* fire-and-forget */
     }
   }
+}
+
+/** Load the payment that just triggered payment_received and whether a PayPal
+    thank-you was already logged for it. Prefer opts.paymentId; otherwise the
+    latest approved payment on the event (same moment as the insert/confirm). */
+async function loadOnPaymentSkipContext(
+  supabase: SupabaseClient,
+  eventId: string,
+  paymentId?: string,
+): Promise<{
+  financialsHidden: boolean;
+  payment: { id: string; method: string | null; paypal_capture_id?: string | null } | null;
+  paypalThankYouLogged: boolean;
+}> {
+  const { data: hidden } = await supabase.rpc("event_financials_hidden", { p_event_id: eventId });
+  const financialsHidden = hidden === true;
+
+  type PayRow = { id: string; method: string | null; paypal_capture_id?: string | null; created_at?: string | null };
+  let payment: PayRow | null = null;
+  if (paymentId) {
+    const { data } = await supabase
+      .from("payments")
+      .select("id, method, paypal_capture_id, created_at")
+      .eq("id", paymentId)
+      .eq("event_id", eventId)
+      .maybeSingle();
+    payment = data;
+  }
+  if (!payment) {
+    const { data } = await supabase
+      .from("payments")
+      .select("id, method, paypal_capture_id, created_at")
+      .eq("event_id", eventId)
+      .eq("status", "approved")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    payment = data;
+  }
+
+  let paypalThankYouLogged = false;
+  if (payment?.id) {
+    const { data: byPayment } = await supabase
+      .from("email_log")
+      .select("id, subject")
+      .eq("payment_id", payment.id)
+      .limit(20);
+    paypalThankYouLogged = (byPayment ?? []).some((row) => isPaypalThankYouSubject(row.subject as string));
+
+    // Fallback for thank-yous logged before email_log.payment_id existed: same
+    // event, matching subject, no payment_id, created at/after this payment.
+    if (!paypalThankYouLogged && payment.created_at) {
+      const { data: recent } = await supabase
+        .from("email_log")
+        .select("id, subject, created_at, payment_id")
+        .eq("event_id", eventId)
+        .is("template_id", null)
+        .is("payment_id", null)
+        .gte("created_at", payment.created_at)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      paypalThankYouLogged = (recent ?? []).some((row) => isPaypalThankYouSubject(row.subject as string));
+    }
+  }
+
+  return { financialsHidden, payment, paypalThankYouLogged };
 }
 
 /** POST a useful event snapshot to a Zapier hook (powers Vibo, Drive, etc.). */

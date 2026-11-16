@@ -581,6 +581,22 @@ export default async function EditHelperPage({
         <Row label="When a payment is received">
           <EnabledToggle name="auto_on_payment" defaultChecked={helper.auto_on_payment ?? false} />
         </Row>
+        <Note>
+          These skip rules apply only to the automatic &quot;when a payment is received&quot; run.
+          The event-page button (Send Payment Receipt / Run) always runs — skips are logged on the event.
+        </Note>
+        <Row label="Skip events with hidden financials">
+          <EnabledToggle
+            name="on_payment_skip_hidden_financials"
+            defaultChecked={helper.on_payment_skip_hidden_financials ?? false}
+          />
+        </Row>
+        <Row label="Skip PayPal payments that already got a thank-you email">
+          <EnabledToggle
+            name="on_payment_skip_paypal_thanked"
+            defaultChecked={helper.on_payment_skip_paypal_thanked ?? false}
+          />
+        </Row>
         <Row label="Only for these event types">
           <RadioChecklist
             name="event_type_ids"

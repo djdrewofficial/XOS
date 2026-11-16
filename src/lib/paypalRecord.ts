@@ -53,26 +53,32 @@ export async function recordPaypalPayment(
   const taken = new Set((priorPayments ?? []).map((p) => p.scheduled_payment_id).filter(Boolean));
   const scheduledId = (scheduled ?? []).find((s) => !taken.has(s.id))?.id ?? null;
 
-  const { error } = await supabase.from("payments").insert({
-    event_id: params.eventId,
-    scheduled_payment_id: scheduledId,
-    amount: base,
-    processing_fee: fee,
-    method: "paypal",
-    status: "approved",
-    paypal_capture_id: params.captureId,
-    payer_name: params.payerName ?? null,
-    notes: params.payerEmail
-      ? `PayPal · ${params.payerEmail}${fee ? ` · +${fee.toFixed(2)} fee` : ""}`
-      : "PayPal",
-  });
+  const { data: paymentRow, error } = await supabase
+    .from("payments")
+    .insert({
+      event_id: params.eventId,
+      scheduled_payment_id: scheduledId,
+      amount: base,
+      processing_fee: fee,
+      method: "paypal",
+      status: "approved",
+      paypal_capture_id: params.captureId,
+      payer_name: params.payerName ?? null,
+      notes: params.payerEmail
+        ? `PayPal · ${params.payerEmail}${fee ? ` · +${fee.toFixed(2)} fee` : ""}`
+        : "PayPal",
+    })
+    .select("id")
+    .single();
   // a concurrent insert may win the unique index — treat as already-recorded
   if (error) {
     if (error.code === "23505") return { recorded: false, duplicate: true, base, fee };
     throw new Error(error.message);
   }
+  const paymentId = paymentRow?.id as string | undefined;
 
-  // receipt email to the client
+  // receipt email to the client (linked to payment_id so on-payment helpers can
+  // skip when this thank-you already went out for the same capture)
   const client = ev?.client as { first_name?: string; email?: string } | null;
   if (client?.email) {
     const { data: cs } = await supabase
@@ -89,6 +95,7 @@ export async function recordPaypalPayment(
     const payUrl = payToken ? `${appUrl()}/pay/${payToken}` : appUrl();
     await supabase.from("email_log").insert({
       event_id: params.eventId,
+      payment_id: paymentId ?? null,
       to_address: client.email,
       from_name: cs?.from_name ?? companyName,
       from_address: cs?.from_email ?? null,
@@ -108,7 +115,7 @@ export async function recordPaypalPayment(
   }
 
   // fire any "payment received" automations (welcome email, etc.)
-  await runAutomations(supabase, params.eventId, "payment_received");
+  await runAutomations(supabase, params.eventId, "payment_received", { paymentId });
 
   return { recorded: true, base, fee };
 }

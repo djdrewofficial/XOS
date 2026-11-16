@@ -279,19 +279,20 @@ async function handle(
       office(me);
       const amount = num(body.amount);
       if (!(amount > 0)) throw new HttpError("Enter a payment amount greater than $0.");
-      check(
-        (
-          await supabase.from("payments").insert({
-            event_id: eventId,
-            amount: round2(amount),
-            method: text(body.method, 40) ?? "other",
-            reason: text(body.reason, 200),
-            paid_at: text(body.paid_at, 40) ?? new Date().toISOString(),
-            notes: text(body.notes),
-          })
-        ).error,
-      );
-      await runAutomations(supabase, eventId, "payment_received");
+      const { data: inserted, error: insertErr } = await supabase
+        .from("payments")
+        .insert({
+          event_id: eventId,
+          amount: round2(amount),
+          method: text(body.method, 40) ?? "other",
+          reason: text(body.reason, 200),
+          paid_at: text(body.paid_at, 40) ?? new Date().toISOString(),
+          notes: text(body.notes),
+        })
+        .select("id")
+        .single();
+      check(insertErr);
+      await runAutomations(supabase, eventId, "payment_received", { paymentId: inserted?.id });
       return {};
     }
     case "confirm_payment": {
@@ -311,7 +312,7 @@ async function handle(
       const patch: Record<string, unknown> = { status: "approved", scheduled_payment_id: scheduledId, paid_at: new Date().toISOString() };
       if (note) patch.notes = note;
       check((await supabase.from("payments").update(patch).eq("id", paymentId).eq("event_id", eventId)).error);
-      await runAutomations(supabase, eventId, "payment_received");
+      await runAutomations(supabase, eventId, "payment_received", { paymentId });
       return {};
     }
     case "generate_schedule": {

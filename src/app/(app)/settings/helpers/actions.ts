@@ -167,6 +167,8 @@ function buildHelperPayload(formData: FormData) {
     auto_on_proposal_confirmed: formData.get("auto_on_proposal_confirmed") === "on",
     auto_on_signed: formData.get("auto_on_signed") === "on",
     auto_on_payment: formData.get("auto_on_payment") === "on",
+    on_payment_skip_hidden_financials: formData.get("on_payment_skip_hidden_financials") === "on",
+    on_payment_skip_paypal_thanked: formData.get("on_payment_skip_paypal_thanked") === "on",
     event_type_ids: formData.getAll("event_type_ids").map(String).filter(Boolean),
     webhook_url: (formData.get("webhook_url") ?? "").toString().trim() || null,
     planning_template_id: (formData.get("planning_template_id") ?? "").toString().trim() || null,
