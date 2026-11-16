@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildScheduleRows, type SchedulePlan } from "@/lib/paymentSchedule";
+import { splitSchedule, type SchedRow } from "@/lib/scheduleLock";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -14,11 +15,11 @@ type ScheduleParams = {
 
 /**
  * Write an event's payment schedule WITHOUT ever modifying or deleting an
- * already-paid installment. Payments link to the earliest unpaid installment
- * first, so paid installments are always a prefix (seq 1..k); we keep those rows
- * (and their payment links) untouched and only (re)generate the unpaid tail to
- * cover the remaining balance. When nothing is paid yet, this is a normal full
- * rebuild — identical to the old behavior.
+ * already-covered installment. Coverage nets ACTUAL approved payment amounts
+ * from the payments table (not only rows with scheduled_payment_id) against
+ * schedule rows in seq order via splitSchedule. Manual / unlinked payments
+ * still lock earlier installments. Locked rows stay put; only the open tail is
+ * (re)generated to cover the remaining balance.
  */
 export async function writeSchedulePreservingPaid(
   supabase: SupabaseClient,
@@ -28,40 +29,47 @@ export async function writeSchedulePreservingPaid(
   const today = new Date().toISOString().slice(0, 10);
 
   const [{ data: existing }, { data: approved }] = await Promise.all([
-    supabase.from("scheduled_payments").select("id, seq, amount").eq("event_id", eventId).order("seq"),
-    supabase.from("payments").select("scheduled_payment_id").eq("event_id", eventId).eq("status", "approved").is("deleted_at", null),
+    supabase.from("scheduled_payments").select("id, seq, amount, due_date, label").eq("event_id", eventId).order("seq"),
+    supabase
+      .from("payments")
+      .select("amount, scheduled_payment_id")
+      .eq("event_id", eventId)
+      .eq("status", "approved")
+      .is("deleted_at", null),
   ]);
 
-  const paidIds = new Set(
-    (approved ?? []).map((p) => (p as { scheduled_payment_id: string | null }).scheduled_payment_id).filter(Boolean) as string[],
-  );
-  const rowsAll = (existing ?? []) as { id: string; seq: number; amount: number }[];
-  const paidRows = rowsAll.filter((r) => paidIds.has(r.id));
-  const paidSum = round2(paidRows.reduce((s, r) => s + Number(r.amount), 0));
-  const maxPaidSeq = paidRows.reduce((m, r) => Math.max(m, r.seq), 0);
+  const rowsAll = (existing ?? []) as SchedRow[];
+  const approvedRefs = ((approved ?? []) as { amount: number; scheduled_payment_id: string | null }[]).map((p) => ({
+    amount: Number(p.amount || 0),
+    scheduled_payment_id: p.scheduled_payment_id,
+  }));
+  const { locked, open, lockedSum, received } = splitSchedule(rowsAll, approvedRefs, "seq");
+  // Prefer cash received when it exceeds locked installment totals (partial into next row).
+  const covered = Math.max(lockedSum, received);
 
-  // Only clear UNPAID installments — paid ones (and their payment links) stay put.
-  const unpaidIds = rowsAll.filter((r) => !paidIds.has(r.id)).map((r) => r.id);
+  // Only clear UNPAID installments — covered ones stay put (and keep any payment links).
+  const unpaidIds = open.map((r) => r.id);
   if (unpaidIds.length) {
     const { error } = await supabase.from("scheduled_payments").delete().in("id", unpaidIds);
     if (error) throw new Error(error.message);
   }
 
   let newRows: { seq: number; amount: number; label: string; due_date: string | null }[];
-  if (paidRows.length === 0) {
+  if (locked.length === 0 && received <= 0) {
     newRows = buildScheduleRows({ ...params, today });
   } else {
-    const remaining = round2(params.total - paidSum);
+    const remaining = round2(params.total - covered);
     if (remaining <= 0) {
-      newRows = []; // already fully covered by paid installments
+      newRows = []; // already fully covered by payments received
     } else {
-      // Re-split only the remaining balance: treat the paid amount as the
+      const maxPaidSeq = locked.reduce((m, r) => Math.max(m, r.seq), 0);
+      // Re-split only the remaining balance: treat covered cash as the
       // "deposit" so the generated payment rows sum to `remaining`, then drop
       // that synthetic deposit row and renumber the tail after the paid prefix.
       const splitPlan: SchedulePlan = params.plan.kind === "split" ? params.plan : { kind: "split", count: 1 };
       const gen = buildScheduleRows({
         total: params.total,
-        deposit: paidSum,
+        deposit: covered,
         eventDate: params.eventDate,
         terms: params.terms,
         termsDays: params.termsDays,

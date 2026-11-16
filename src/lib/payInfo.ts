@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { splitSchedule } from "@/lib/scheduleLock";
 import { eventTotal, type XEvent } from "@/lib/types";
 
 /* What a public pay page (and the create-order endpoint) needs: the event
@@ -97,17 +98,30 @@ export async function loadPayInfo(supabase: SupabaseClient, token: string): Prom
   const paid = (payments ?? []).reduce((s, p) => s + Number(p.amount), 0);
   const balance = Math.max(0, total - paid);
 
-  const taken = new Set((payments ?? []).map((p) => p.scheduled_payment_id).filter(Boolean));
-  const nextSched = (scheduled ?? []).find((s) => !taken.has(s.id));
-  const suggested = Math.min(balance, Number(nextSched?.amount ?? balance)) || balance;
-
-  const installments: PayInstallment[] = (scheduled ?? []).map((s) => ({
+  const schedRows = (scheduled ?? []).map((s) => ({
     id: s.id as string,
     seq: Number(s.seq ?? 0),
+    amount: Number(s.amount ?? 0),
+    due_date: (s.due_date as string) ?? null,
     label: (s.label as string) ?? null,
-    dueDate: (s.due_date as string) ?? null,
-    amount: round2(Number(s.amount ?? 0)),
-    paid: taken.has(s.id),
+  }));
+  const approvedRefs = (payments ?? []).map((p) => ({
+    amount: Number(p.amount ?? 0),
+    scheduled_payment_id: (p.scheduled_payment_id as string | null) ?? null,
+  }));
+  // Net actual approved payment amounts (including unlinked) against the schedule.
+  const { locked, open } = splitSchedule(schedRows, approvedRefs, "seq");
+  const lockedIds = new Set(locked.map((r) => r.id));
+  const nextSched = open[0] ?? null;
+  const suggested = Math.min(balance, Number(nextSched?.amount ?? balance)) || balance;
+
+  const installments: PayInstallment[] = schedRows.map((s) => ({
+    id: s.id,
+    seq: s.seq,
+    label: s.label,
+    dueDate: s.due_date,
+    amount: round2(s.amount),
+    paid: lockedIds.has(s.id),
   }));
 
   const client = event.client as { first_name?: string; last_name?: string; email?: string } | null;

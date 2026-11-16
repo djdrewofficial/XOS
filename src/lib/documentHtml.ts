@@ -64,7 +64,9 @@ export function wrapDocHtml(opts: {
   blocks: { html?: string | null }[];
 }): string {
   const body = opts.blocks
-    .map((b) => `<div class="xdoc-block">${sanitizeDocumentHtml(b.html ?? "").replace(/<details class="xdoc-sec">/g, '<details class="xdoc-sec" open>')}</div>`)
+    .map((b) => sanitizeDocumentHtml(b.html ?? "").replace(/<details class="xdoc-sec">/g, '<details class="xdoc-sec" open>').trim())
+    .filter(Boolean)
+    .map((html) => `<div class="xdoc-block">${html}</div>`)
     .join("");
   return `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><style>${XDOC_CSS}
   .xdoc { box-shadow: none; border-radius: 0; max-width: 820px; margin: 24px auto; }
@@ -72,7 +74,12 @@ export function wrapDocHtml(opts: {
   .xdoc-sec summary { background: none; padding: 8px 0 2px; }
   .xdoc-sec summary::before { display: none; }
   .xdoc-sec-body { padding: 4px 0 10px; }
-  .xdoc-table, .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-table { break-inside: auto; page-break-inside: auto; }
+  .xdoc-table thead { display: table-header-group; }
+  .xdoc-table tfoot { display: table-row-group; }
+  .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-summary { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-footer { break-before: avoid; page-break-before: avoid; }
   </style></head><body style="margin:0;background:#f4f4f7;">
   <div class="xdoc">
     <header class="xdoc-header">

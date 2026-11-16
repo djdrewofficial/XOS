@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlannerRole } from "@/lib/planning";
+import { splitSchedule } from "@/lib/scheduleLock";
 import { sanitizeEmailHtml } from "@/lib/sanitizeEmailHtml";
 
 /* Client-facing "My Event" data for the planner: package + add-ons + financials
@@ -125,9 +126,26 @@ export async function loadEventAccount(admin: SupabaseClient, eventId: string, r
   }));
   const paid = payments.filter((p) => !p.pending).reduce((s, p) => s + p.amount, 0);
   const balance = total - paid;
-  // An installment is "paid" once an approved payment is linked to it.
-  const takenSched = new Set((pays ?? []).filter((p) => p.status === "approved" && p.scheduled_payment_id).map((p) => p.scheduled_payment_id as string));
-  const schedule: AccountSchedule[] = (sched ?? []).map((s) => ({ id: s.id, label: s.label, dueDate: s.due_date, amount: num(s.amount), seq: s.seq ?? 0, paid: takenSched.has(s.id) }));
+  // Net actual approved payment amounts (linked or unlinked) against the schedule.
+  const schedRows = (sched ?? []).map((s) => ({
+    id: s.id as string,
+    seq: Number(s.seq ?? 0),
+    amount: num(s.amount),
+    due_date: (s.due_date as string) ?? null,
+    label: (s.label as string) ?? null,
+  }));
+  const approvedRefs = (pays ?? [])
+    .filter((p) => p.status === "approved")
+    .map((p) => ({ amount: num(p.amount), scheduled_payment_id: (p.scheduled_payment_id as string | null) ?? null }));
+  const lockedIds = new Set(splitSchedule(schedRows, approvedRefs, "seq").locked.map((r) => r.id));
+  const schedule: AccountSchedule[] = schedRows.map((s) => ({
+    id: s.id,
+    label: s.label,
+    dueDate: s.due_date,
+    amount: s.amount,
+    seq: s.seq,
+    paid: lockedIds.has(s.id),
+  }));
 
   return {
     financialsVisible, payToken: financialsVisible ? ((ev.pay_token as string) ?? null) : null, feePct, paypalEnabled, zelle,

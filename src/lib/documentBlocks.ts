@@ -1,18 +1,87 @@
 /* Document block registry — shared by the template builder, generator, and shell.
    Text blocks are written in the rich-text editor (merge tags supported).
-   Smart blocks render from live event data at generation time and freeze. */
+   Smart blocks render from live event data at generation time and freeze.
+   Money smart blocks accept optional UI-editable `options` (fee table columns,
+   payment notes, unpaid-only schedule, summary labels, etc.). */
+
+export type FeeTableOptions = {
+  /** Show package/add-on description under the name. Default true. */
+  showDescriptions?: boolean;
+  /** Separate Qty + Unit Price columns (invoice-style). Default false. */
+  showQty?: boolean;
+  /** Footer total label. Default "Total Investment". */
+  totalLabel?: string;
+};
+
+export type PaymentsReceivedOptions = {
+  /** Show a Notes column. Default false. When off, reason/bank-deposit fallbacks never print.
+      When on, only the notes field prints (DJEP/PayPal import noise stripped). */
+  showNotes?: boolean;
+};
+
+export type PaymentScheduleOptions = {
+  /** Only list unpaid / upcoming installments. Default false. */
+  onlyUnpaid?: boolean;
+  /** Omit the whole block when balance is paid in full. Default false. */
+  hideWhenPaidInFull?: boolean;
+};
+
+export type SummaryBoxOptions = {
+  totalLabel?: string;
+  paidLabel?: string;
+  balanceLabel?: string;
+  paidInFullLabel?: string;
+};
+
+/** Optional heading printed above a smart block (e.g. "Line Items"). */
+export type BlockHeadingOptions = {
+  heading?: string;
+};
+
+export type DocBlockOptions = FeeTableOptions &
+  PaymentsReceivedOptions &
+  PaymentScheduleOptions &
+  SummaryBoxOptions &
+  BlockHeadingOptions;
 
 export type DocBlock = {
   id: string;
-  type: "text" | "section" | "fee_table" | "payment_schedule" | "payments_received" | "event_details" | "signature" | "divider";
+  type:
+    | "text"
+    | "section"
+    | "fee_table"
+    | "payment_schedule"
+    | "payments_received"
+    | "summary_box"
+    | "event_details"
+    | "signature"
+    | "divider";
   title?: string; // section blocks: the chapter heading (collapsible on the client page)
   html?: string; // text/section blocks: authored html (template) or merged html (document snapshot)
+  options?: DocBlockOptions;
 };
 
 export const SMART_BLOCKS: { type: DocBlock["type"]; name: string; description: string }[] = [
-  { type: "fee_table", name: "Fee Table", description: "Package (pinned version), add-ons, fees, discounts, total from the event" },
-  { type: "payment_schedule", name: "Payment Schedule", description: "The event's scheduled payments with due dates" },
-  { type: "payments_received", name: "Payments Received", description: "Actual payments: date, method, notes, amount, paid to date, remaining balance" },
+  {
+    type: "fee_table",
+    name: "Fee Table",
+    description: "Package, add-ons, fees, discounts, and total. Options: descriptions, qty/unit columns, total label.",
+  },
+  {
+    type: "payment_schedule",
+    name: "Payment Schedule",
+    description: "Scheduled payments with due dates. Options: unpaid only, hide when paid in full.",
+  },
+  {
+    type: "payments_received",
+    name: "Payments Received",
+    description: "Actual payments: date, method, amount. Optional notes column (DJEP import noise stripped).",
+  },
+  {
+    type: "summary_box",
+    name: "Payment Summary",
+    description: "Highlighted box: total investment, already paid, balance due (or paid in full). Labels editable.",
+  },
   { type: "event_details", name: "Event Details", description: "Date, times, venue, guest count card" },
   { type: "signature", name: "Signature Block", description: "Client signature area (e-sign)" },
   { type: "divider", name: "Divider", description: "A horizontal separator line" },
@@ -24,6 +93,7 @@ export const BLOCK_NAMES: Record<DocBlock["type"], string> = {
   fee_table: "Fee Table",
   payment_schedule: "Payment Schedule",
   payments_received: "Payments Received",
+  summary_box: "Payment Summary",
   event_details: "Event Details",
   signature: "Signature Block",
   divider: "Divider",
@@ -56,6 +126,63 @@ export function defaultHeaderKicker(docType: string | null | undefined): string 
   return docTypeClientLabel(docType);
 }
 
+export const DEFAULT_FEE_TOTAL_LABEL = "Total Investment";
+export const DEFAULT_SUMMARY_TOTAL_LABEL = "Total investment";
+export const DEFAULT_SUMMARY_PAID_LABEL = "Already paid";
+export const DEFAULT_SUMMARY_BALANCE_LABEL = "Balance due";
+export const DEFAULT_SUMMARY_PAID_IN_FULL_LABEL = "Paid in full";
+
+/** Normalize / clamp smart-block options for a given type (unknown keys dropped). */
+export function sanitizeBlockOptions(type: DocBlock["type"], raw: unknown): DocBlockOptions | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const o = raw as Record<string, unknown>;
+  const out: DocBlockOptions = {};
+
+  const bool = (k: string) => (typeof o[k] === "boolean" ? (o[k] as boolean) : undefined);
+  const label = (k: string) => {
+    if (typeof o[k] !== "string") return undefined;
+    const t = (o[k] as string).trim();
+    return t || undefined;
+  };
+  const heading = label("heading");
+  if (heading !== undefined) out.heading = heading.slice(0, 120);
+
+  if (type === "fee_table") {
+    const showDescriptions = bool("showDescriptions");
+    const showQty = bool("showQty");
+    const totalLabel = label("totalLabel");
+    if (showDescriptions !== undefined) out.showDescriptions = showDescriptions;
+    if (showQty !== undefined) out.showQty = showQty;
+    if (totalLabel !== undefined) out.totalLabel = totalLabel.slice(0, 80);
+    return Object.keys(out).length ? out : undefined;
+  }
+  if (type === "payments_received") {
+    const showNotes = bool("showNotes");
+    if (showNotes !== undefined) out.showNotes = showNotes;
+    return Object.keys(out).length ? out : undefined;
+  }
+  if (type === "payment_schedule") {
+    const onlyUnpaid = bool("onlyUnpaid");
+    const hideWhenPaidInFull = bool("hideWhenPaidInFull");
+    if (onlyUnpaid !== undefined) out.onlyUnpaid = onlyUnpaid;
+    if (hideWhenPaidInFull !== undefined) out.hideWhenPaidInFull = hideWhenPaidInFull;
+    return Object.keys(out).length ? out : undefined;
+  }
+  if (type === "summary_box") {
+    const totalLabel = label("totalLabel");
+    const paidLabel = label("paidLabel");
+    const balanceLabel = label("balanceLabel");
+    const paidInFullLabel = label("paidInFullLabel");
+    if (totalLabel !== undefined) out.totalLabel = totalLabel.slice(0, 80);
+    if (paidLabel !== undefined) out.paidLabel = paidLabel.slice(0, 80);
+    if (balanceLabel !== undefined) out.balanceLabel = balanceLabel.slice(0, 80);
+    if (paidInFullLabel !== undefined) out.paidInFullLabel = paidInFullLabel.slice(0, 80);
+    return Object.keys(out).length ? out : undefined;
+  }
+  // heading-only is only meaningful on money smart blocks above
+  return undefined;
+}
+
 export function sanitizeDocumentHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -73,18 +200,24 @@ export function sanitizeBlocks(value: unknown): DocBlock[] {
     "fee_table",
     "payment_schedule",
     "payments_received",
+    "summary_box",
     "event_details",
     "signature",
     "divider",
   ]);
   return value
     .filter((b) => b && typeof b.id === "string" && valid.has(b.type))
-    .map((b) => ({
-      id: b.id,
-      type: b.type,
-      title: typeof b.title === "string" ? b.title : undefined,
-      html: typeof b.html === "string" ? sanitizeDocumentHtml(b.html) : undefined,
-    }));
+    .map((b) => {
+      const type = b.type as DocBlock["type"];
+      const options = sanitizeBlockOptions(type, b.options);
+      return {
+        id: b.id as string,
+        type,
+        title: typeof b.title === "string" ? b.title : undefined,
+        html: typeof b.html === "string" ? sanitizeDocumentHtml(b.html) : undefined,
+        ...(options ? { options } : {}),
+      };
+    });
 }
 
 /** Build a generated document title from an editable template format.
@@ -102,4 +235,55 @@ export function formatDocumentTitle(
     .replaceAll("{event}", parts.event || parts.client || "Event")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Recommended Payment Receipt template blocks (invoice-style layout). */
+export function paymentReceiptInvoiceBlocks(): DocBlock[] {
+  return [
+    {
+      id: "receipt-intro",
+      type: "text",
+      html: `<p>Thank you for your payment. This receipt relates to your booking agreement with Xpress Entertainment.</p>
+<p><strong>Client:</strong> &lt;client_name&gt;<br>
+<strong>Event:</strong> &lt;event_name&gt;<br>
+<strong>Event number:</strong> &lt;event_number&gt;<br>
+<strong>Event date:</strong> &lt;event_date_long&gt;<br>
+<strong>Date issued:</strong> &lt;current_date&gt;</p>`,
+    },
+    {
+      id: "receipt-fees",
+      type: "fee_table",
+      options: {
+        heading: "Line Items",
+        showDescriptions: true,
+        showQty: true,
+        totalLabel: "Total Investment",
+      },
+    },
+    {
+      id: "receipt-payments",
+      type: "payments_received",
+      options: { heading: "Payments Received", showNotes: false },
+    },
+    {
+      id: "receipt-summary",
+      type: "summary_box",
+      options: {
+        heading: "Summary",
+        totalLabel: "Total investment",
+        paidLabel: "Already paid",
+        balanceLabel: "Balance due",
+        paidInFullLabel: "Paid in full",
+      },
+    },
+    {
+      id: "receipt-schedule",
+      type: "payment_schedule",
+      options: {
+        heading: "Upcoming Payments",
+        onlyUnpaid: true,
+        hideWhenPaidInFull: true,
+      },
+    },
+  ];
 }

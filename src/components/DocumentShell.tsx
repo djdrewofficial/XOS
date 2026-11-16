@@ -46,9 +46,11 @@ export default function DocumentShell({
           </div>
         </header>
         <div className="xdoc-body">
-          {blocks.map((b) => (
-            <div key={b.id} className="xdoc-block" dangerouslySetInnerHTML={{ __html: b.html ?? "" }} />
-          ))}
+          {blocks
+            .filter((b) => (b.html ?? "").trim())
+            .map((b) => (
+              <div key={b.id} className="xdoc-block" dangerouslySetInnerHTML={{ __html: b.html ?? "" }} />
+            ))}
         </div>
         <footer className="xdoc-footer">
           <span>{companyName}</span>

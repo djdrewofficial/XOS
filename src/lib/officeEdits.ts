@@ -2,6 +2,8 @@
     Empty restriction lists mean "all", matching the helper and template checklists.
     "only" with no ids is rejected so a restriction cannot silently become "all". */
 
+import { sanitizeBlockOptions, type DocBlock } from "@/lib/documentBlocks";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const HELPER_ROLES = ["admin", "salesperson", "employee", "marketing"] as const;
@@ -394,7 +396,17 @@ export function onboardingEffects(input: { staff?: { flat_wage?: unknown }[]; ne
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
-const BLOCK_TYPES = ["text", "section", "fee_table", "payment_schedule", "event_details", "signature", "divider"] as const;
+const BLOCK_TYPES = [
+  "text",
+  "section",
+  "fee_table",
+  "payment_schedule",
+  "payments_received",
+  "summary_box",
+  "event_details",
+  "signature",
+  "divider",
+] as const;
 
 export function weekdayPrices(input: Record<string, unknown>): Record<string, number> {
   const prices: Record<string, number> = {};
@@ -434,14 +446,23 @@ export async function saveHelperButton(db: EditorDb, helperId: string, input: Re
   return patch;
 }
 
-export function documentBlocks(value: unknown): { id: string; type: string; title?: string; html?: string }[] {
+export function documentBlocks(value: unknown): {
+  id: string;
+  type: string;
+  title?: string;
+  html?: string;
+  options?: Record<string, unknown>;
+}[] {
   if (!Array.isArray(value) || value.length === 0) throw new Error("A document template needs at least one block.");
   return value.map((block, index) => {
     if (!block || typeof block !== "object") throw new Error(`Block ${index + 1} is invalid.`);
-    const row = block as { id?: string; type?: string; title?: string; html?: string };
+    const row = block as { id?: string; type?: string; title?: string; html?: string; options?: unknown };
     if (!row.type || !(BLOCK_TYPES as readonly string[]).includes(row.type)) throw new Error(`Block ${index + 1} has an unknown type.`);
     const id = row.id && UUID.test(row.id) ? row.id : crypto.randomUUID();
-    const next: { id: string; type: string; title?: string; html?: string } = { id, type: row.type };
+    const next: { id: string; type: string; title?: string; html?: string; options?: Record<string, unknown> } = {
+      id,
+      type: row.type,
+    };
     if (row.type === "section") {
       const title = String(row.title ?? "").trim();
       if (!title) throw new Error(`Section block ${index + 1} needs a title.`);
@@ -449,6 +470,8 @@ export function documentBlocks(value: unknown): { id: string; type: string; titl
       next.html = String(row.html ?? "");
     }
     if (row.type === "text") next.html = String(row.html ?? "");
+    const options = sanitizeBlockOptions(row.type as DocBlock["type"], row.options);
+    if (options) next.options = options;
     return next;
   });
 }
