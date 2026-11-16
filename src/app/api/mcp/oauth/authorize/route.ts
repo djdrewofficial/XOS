@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mcpIssuer } from "@/lib/mcp/oauth/config";
 import { completeAuthorize, validateAuthorizeRequest } from "@/lib/mcp/oauth/server";
 import { resolveOAuthStaffUser } from "@/lib/mcp/oauth/staffUser";
 import { supabaseOAuthStore } from "@/lib/mcp/oauth/supabaseOAuthStore";
@@ -38,8 +39,11 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    const login = new URL("/login", url.origin);
-    login.searchParams.set("next", `${url.pathname}${url.search}`);
+    // Always send humans to the canonical public origin (xos.xpressdjs.com).
+    // The raw *.netlify.app host 403s GETs (/login, .well-known) via origin lock.
+    const login = new URL("/login", mcpIssuer());
+    const returnPath = `${url.pathname}${url.search}`;
+    login.searchParams.set("next", returnPath);
     return NextResponse.redirect(login);
   }
 

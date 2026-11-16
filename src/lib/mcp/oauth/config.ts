@@ -1,27 +1,72 @@
 import { MCP_SCOPES } from "../scopes";
 
-/** Canonical MCP resource URL agents connect to (Netlify origin, not Cloudflare). */
-export const DEFAULT_MCP_RESOURCE_URL = "https://xos-xpressdjs.netlify.app/api/mcp";
+/** Production public site (Cloudflare custom domain). Browser OAuth + metadata live here. */
+export const DEFAULT_PUBLIC_ORIGIN = "https://xos.xpressdjs.com";
+
+/** Canonical MCP resource URL agents Connect to. */
+export const DEFAULT_MCP_RESOURCE_URL = `${DEFAULT_PUBLIC_ORIGIN}/api/mcp`;
+
+/**
+ * Pre-canonical audience from PR #79. Tokens issued with this resource keep working.
+ * POST /api/mcp on this host still accepts Bearer service tokens.
+ */
+export const LEGACY_MCP_RESOURCE_URL = "https://xos-xpressdjs.netlify.app/api/mcp";
 
 export const ACCESS_TOKEN_TTL_SEC = 60 * 60; // 1 hour
 export const REFRESH_TOKEN_TTL_SEC = 60 * 60 * 24 * 90; // 90 days
 export const AUTH_CODE_TTL_SEC = 10 * 60;
 
+function normalizeAbsoluteUrl(value: string): string | null {
+  try {
+    return new URL(value).toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/** Public site origin: NEXT_PUBLIC_APP_URL when set, else production. */
+export function publicAppOrigin(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (fromEnv) {
+    const normalized = normalizeAbsoluteUrl(fromEnv);
+    if (normalized) return new URL(normalized).origin;
+  }
+  return DEFAULT_PUBLIC_ORIGIN;
+}
+
+/**
+ * Canonical MCP resource URL (issuer origin + /api/mcp).
+ * Prefer MCP_RESOURCE_URL / NEXT_PUBLIC_MCP_URL when set; else derive from
+ * NEXT_PUBLIC_APP_URL; else https://xos.xpressdjs.com/api/mcp.
+ */
 export function mcpResourceUrl(): string {
   const fromEnv = process.env.MCP_RESOURCE_URL?.trim() || process.env.NEXT_PUBLIC_MCP_URL?.trim();
   if (fromEnv) {
-    try {
-      return new URL(fromEnv).toString().replace(/\/$/, "");
-    } catch {
-      /* fall through */
-    }
+    const normalized = normalizeAbsoluteUrl(fromEnv);
+    if (normalized) return normalized;
   }
-  return DEFAULT_MCP_RESOURCE_URL;
+  return `${publicAppOrigin()}/api/mcp`;
 }
 
 /** Authorization server issuer (= origin of the MCP resource URL). */
 export function mcpIssuer(): string {
   return new URL(mcpResourceUrl()).origin;
+}
+
+/** Resource audiences accepted at authorize/token and on MCP bearer checks. */
+export function acceptedMcpResourceUrls(): string[] {
+  const urls = new Set<string>();
+  const canonical = normalizeAbsoluteUrl(mcpResourceUrl());
+  const legacy = normalizeAbsoluteUrl(LEGACY_MCP_RESOURCE_URL);
+  if (canonical) urls.add(canonical);
+  if (legacy) urls.add(legacy);
+  return [...urls];
+}
+
+export function isAcceptedMcpResource(resource: string): boolean {
+  const got = normalizeAbsoluteUrl(resource);
+  if (!got) return false;
+  return acceptedMcpResourceUrls().some((allowed) => allowed === got);
 }
 
 export function protectedResourceMetadataUrl(resourceUrl = mcpResourceUrl()): string {

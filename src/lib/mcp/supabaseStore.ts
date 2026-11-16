@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { tokenDecision, type ServiceTokenRow } from "./auth";
 import { hashToken, hashesEqual, looksLikeServiceToken } from "./crypto";
 import { decideIdempotency, idempotencyKeyError, type IdempotencyStatus } from "./idempotency";
-import { mcpResourceUrl } from "./oauth/config";
+import { isAcceptedMcpResource } from "./oauth/config";
 import { liveMcpScopesForUser } from "./oauth/staffUser";
 import type { AuditRow, ConfirmationRow, IdempotencyRow, McpStore } from "./store";
 
@@ -44,11 +44,7 @@ export function supabaseStore(admin: SupabaseClient): McpStore {
       if (!access) return { ok: false, reason: "invalid" };
       if (access.revoked_at) return { ok: false, reason: "revoked" };
       if (Date.parse(access.expires_at as string) <= now.getTime()) return { ok: false, reason: "expired" };
-      try {
-        const expected = new URL(mcpResourceUrl()).toString().replace(/\/$/, "");
-        const got = new URL(access.resource as string).toString().replace(/\/$/, "");
-        if (expected !== got) return { ok: false, reason: "audience" };
-      } catch {
+      if (!isAcceptedMcpResource(String(access.resource ?? ""))) {
         return { ok: false, reason: "audience" };
       }
 

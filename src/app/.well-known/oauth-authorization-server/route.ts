@@ -3,7 +3,7 @@ import { buildAuthorizationServerMetadata, mcpIssuer } from "@/lib/mcp/oauth/con
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** RFC 8414 authorization server metadata. Issuer is the MCP Netlify origin. */
+/** RFC 8414 authorization server metadata. Issuer is the public site origin. */
 export function GET() {
   return Response.json(buildAuthorizationServerMetadata(mcpIssuer()), {
     headers: {
