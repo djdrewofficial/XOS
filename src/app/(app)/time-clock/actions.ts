@@ -167,20 +167,12 @@ export async function adminUpsertPunch(formData: FormData) {
     const { data: before } = await supabase.from("time_punches").select("*").eq("id", punchId).maybeSingle();
     if (!before) throw new Error("Punch not found.");
     if (before.deleted_at) throw new Error("Punch already deleted.");
-    const { error } = await supabase
-      .from("time_punches")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", punchId);
-    if (error) throw new Error(error.message);
-    await supabase.from("time_punch_edits").insert({
-      punch_id: punchId,
-      event_staff_id: before.event_staff_id,
-      action: "delete",
-      before_row: before,
-      after_row: { ...before, deleted_at: new Date().toISOString() },
-      reason: reason ?? "deleted",
-      edited_by: editorId,
+    // RPC sets edit reason and soft-deletes in one tx; audit trigger writes time_punch_edits.
+    const { error } = await supabase.rpc("xos_time_punch_admin_soft_delete", {
+      p_id: punchId,
+      p_reason: reason ?? "deleted",
     });
+    if (error) throw new Error(error.message);
     // unlock timesheet if it was approved on punch change
     await supabase
       .from("event_staff")
@@ -222,22 +214,13 @@ export async function adminUpsertPunch(formData: FormData) {
       note: clean(formData.get("note")),
       source: "admin",
     };
-    const { data: after, error } = await supabase
-      .from("time_punches")
-      .update(patch)
-      .eq("id", punchId)
-      .select("*")
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    await supabase.from("time_punch_edits").insert({
-      punch_id: punchId,
-      event_staff_id: before.event_staff_id,
-      action: "update",
-      before_row: before,
-      after_row: after,
-      reason: reason ?? "updated",
-      edited_by: editorId,
+    // RPC sets edit reason and updates in one tx; audit trigger writes time_punch_edits.
+    const { error } = await supabase.rpc("xos_time_punch_admin_update", {
+      p_id: punchId,
+      p_patch: patch,
+      p_reason: reason ?? "updated",
     });
+    if (error) throw new Error(error.message);
     await supabase
       .from("event_staff")
       .update({
