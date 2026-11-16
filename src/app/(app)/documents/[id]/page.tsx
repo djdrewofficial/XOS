@@ -40,13 +40,24 @@ export default async function DocumentDetailPage({
       .select("*, event:events(id, name, event_date, client:clients(first_name, last_name))")
       .eq("id", id)
       .single(),
-    supabase.from("company_settings").select("company_name, from_email").eq("id", true).maybeSingle(),
+    supabase
+      .from("company_settings")
+      .select("company_name, from_email, document_logo_url, document_accent_color, document_footer_text")
+      .eq("id", true)
+      .maybeSingle(),
   ]);
   if (!doc) notFound();
 
   const ev = doc.event as unknown as { id: string; name: string; event_date: string | null; client: { first_name: string; last_name: string } | null } | null;
   const clientName = ev?.client ? `${ev.client.first_name} ${ev.client.last_name}`.trim() : null;
   const blocks = sanitizeBlocks(doc.blocks);
+  const brand = cs as {
+    company_name?: string | null;
+    from_email?: string | null;
+    document_logo_url?: string | null;
+    document_accent_color?: string | null;
+    document_footer_text?: string | null;
+  } | null;
   const locked = Boolean(doc.signed_at);
   const editing = edit === "1" && !locked;
 
@@ -130,8 +141,11 @@ export default async function DocumentDetailPage({
             docType={docTypeClientLabel(doc.doc_type)}
             clientName={clientName}
             eventDateLabel={fmtDate(ev?.event_date)}
-            companyName={cs?.company_name ?? "Xpress Entertainment"}
-            companyEmail={cs?.from_email ?? null}
+            companyName={brand?.company_name ?? "Xpress Entertainment"}
+            companyEmail={brand?.from_email ?? null}
+            logoUrl={brand?.document_logo_url}
+            accentColor={brand?.document_accent_color}
+            footerText={brand?.document_footer_text}
             blocks={blocks}
             signedLine={doc.signed_at ? `Signed by ${doc.signer_name} on ${new Date(doc.signed_at).toLocaleString()}` : null}
           />

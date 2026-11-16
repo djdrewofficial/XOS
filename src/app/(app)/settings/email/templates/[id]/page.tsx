@@ -223,13 +223,15 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
       </Section>
 
       {!isSms && (
-      <Section title="Attach Document">
+      <Section title="Attach Document / PDF Receipt">
         <Note>
           Attaches a document from the{" "}
           <Link href="/documents" className="font-semibold text-brand underline dark:text-brand-lighter">Document Manager</Link>{" "}
-          every time this email sends — from booking helpers, the scheduler, or manual sends.
+          every time this email sends: booking helpers, the scheduler, or manual sends. For payment receipts, pick{" "}
+          <strong>Payment Receipt</strong> and <strong>PDF Attachment</strong> below (the seeded Payment Received
+          template does this by default). Edit the receipt layout under Documents.
         </Note>
-        <Row label="Document Template">
+        <Row label="Document Template" hint="Choose Payment Receipt to attach a branded PDF receipt with this email">
           <select name="attach_template_id" defaultValue={tpl.attach_template_id ?? ""} className="input w-full max-w-md">
             <option value="">— No document —</option>
             {(docTemplates ?? []).map((d) => (
@@ -242,7 +244,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
             <label className="flex cursor-pointer items-start gap-2.5 text-sm text-zinc-700 dark:text-zinc-300">
               <input type="radio" name="attach_mode" value="esign_link" defaultChecked={(tpl.attach_mode ?? "esign_link") === "esign_link"} className="mt-1 accent-brand-light" />
               <span>
-                <strong>E-Sign Link</strong> — generates the document for the event at send time and puts the secure
+                <strong>E-Sign Link</strong> - generates the document for the event at send time and puts the secure
                 signing button in the email. Use the <code className="rounded bg-black/5 px-1 dark:bg-white/10">&lt;document_sign_link&gt;</code>{" "}
                 merge tag to place the link yourself, or leave it out and a Review &amp; Sign button is added at the bottom.
               </span>
@@ -250,9 +252,11 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
             <label className="flex cursor-pointer items-start gap-2.5 text-sm text-zinc-700 dark:text-zinc-300">
               <input type="radio" name="attach_mode" value="pdf" defaultChecked={tpl.attach_mode === "pdf"} className="mt-1 accent-brand-light" />
               <span>
-                <strong>PDF Attachment (no e-sign)</strong> — renders the branded PDF and attaches it. Uses the latest{" "}
-                <em>signed</em> copy when one exists (e.g. sending the executed agreement), otherwise generates fresh.
-                The PDF is also saved to the event&apos;s files.
+                <strong>Attach PDF receipt / document (no e-sign)</strong> - renders the branded PDF and attaches it.
+                Templates marked &quot;Always generate a fresh PDF on send&quot; (Payment Receipt) freeze current merge
+                tags every send. Other templates prefer the latest <em>signed</em> copy when one exists. The PDF is also
+                saved to the event&apos;s files. Filename comes from the document template&apos;s PDF filename field
+                (Payment Receipt defaults to <code className="rounded bg-black/5 px-1 dark:bg-white/10">Xpress Receipt - &lt;event_number&gt;.pdf</code>).
               </span>
             </label>
           </div>

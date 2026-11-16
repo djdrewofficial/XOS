@@ -126,6 +126,91 @@ describe("shared outbound enrichment", () => {
     }
   });
 
+  it("always regenerates a fresh PDF when the document template has fresh_on_attach, and uses pdf_filename", async () => {
+    const pdf = Buffer.from("%PDF-1.4 receipt");
+    let generated = 0;
+    const writes: string[] = [];
+    const supabase = {
+      from(table: string) {
+        if (table === "email_templates") {
+          return chain({
+            attach_template_id: "receipt-tpl",
+            attach_mode: "pdf",
+            branded_shell: true,
+            attach_file_label_ids: [],
+            is_marketing: false,
+          });
+        }
+        if (table === "events") return chain({ pay_token: null, event_type_id: null });
+        if (table === "journey_settings") return chain({ proposal_flow_enabled: false, proposal_doc_template_id: null });
+        if (table === "document_templates") {
+          return chain({
+            fresh_on_attach: true,
+            pdf_filename: "Xpress Receipt - <event_number>",
+            name: "Payment Receipt",
+            doc_type: "receipt",
+          });
+        }
+        if (table === "documents") {
+          // Stale prior receipt must be ignored when fresh_on_attach is on.
+          return chain(null, [{ id: "old-receipt", title: "Payment Receipt - Old", signed_at: null }]);
+        }
+        if (table === "email_log" || table === "event_files") return chain(null, null);
+        writes.push(table);
+        return chain(null, []);
+      },
+      rpc: async (name: string) => {
+        if (name === "render_merge_tags") return { data: "Xpress Receipt - 500123", error: null };
+        return { data: null, error: null };
+      },
+      storage: {
+        from() {
+          return {
+            upload: async () => {
+              writes.push("upload");
+              return { error: null };
+            },
+          };
+        },
+      },
+    };
+    const deps: EnrichDeps = {
+      fillJoinLinks: async (_e, html) => html,
+      loadEventBundle: async () => null,
+      quoteSummaryHtml: () => "",
+      paymentPlanHtml: () => "",
+      signButtonHtml: () => "<a>sign</a>",
+      appUrl: () => "https://xos.example",
+      createAdminClient: () => supabase as never,
+      generateDocumentRow: async () => {
+        generated += 1;
+        return { id: "new-receipt", title: "Payment Receipt - Jordan Rivera", doc_type: "receipt" };
+      },
+      buildDocumentHtml: async () => ({
+        html: "<article>Payment Receipt booking agreement</article>",
+        title: "Payment Receipt - Jordan Rivera",
+      }),
+      htmlToPdf: async () => pdf,
+    };
+    const planned = await enrichOutbound(
+      supabase as never,
+      {
+        id: "msg-receipt",
+        event_id: "event-1",
+        template_id: "email-1",
+        body_html: "<p>Thanks for your payment</p>",
+        attached_document_id: null,
+      },
+      deps,
+      { commit: true },
+    );
+    assert.equal(generated, 1);
+    assert.equal(planned.attachments.length, 1);
+    assert.equal(planned.attachments[0].filename, "Xpress Receipt - 500123.pdf");
+    assert.equal(planned.attachments[0].data.equals(pdf), true);
+    assert.ok(writes.includes("upload"));
+  });
+
   it("does not render or insert a missing agreement while planning, and does not add a second sign button", async () => {
     let buttons = 0;
     let rendered = 0;

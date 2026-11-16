@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import DocumentBuilder from "@/components/DocumentBuilder";
+import { CheckBoxField } from "@/components/SettingsForm";
 import { DOC_TYPES, sanitizeBlocks } from "@/lib/documentBlocks";
 import { updateTemplate } from "../../actions";
 
@@ -20,14 +21,23 @@ export default async function DocumentTemplatePage({
   ]);
   if (!template) notFound();
 
+  const tpl = template as typeof template & {
+    fresh_on_attach?: boolean;
+    pdf_filename?: string | null;
+  };
+
   return (
     <div className="max-w-4xl">
       <div className="mb-5">
         <Link href="/documents" className="text-xs font-semibold text-zinc-500 hover:underline">← Documents</Link>
         <h1 className="page-title mt-1">{template.name}</h1>
         <p className="text-sm text-zinc-500">
-          Write the content — XOS applies the branded design when documents are generated. Use merge tags in text
-          blocks; smart blocks pull live event data.
+          Write the content. XOS applies the branded design when documents are generated. Use merge tags in text
+          blocks; smart blocks pull live event data. Logo, accent color, and footer text are editable in{" "}
+          <Link href="/settings/general" className="font-semibold text-brand underline dark:text-brand-lighter">
+            Settings → General
+          </Link>
+          .
         </p>
       </div>
 
@@ -79,6 +89,33 @@ export default async function DocumentTemplatePage({
               </select>
               <p className="mt-1 text-[11px] text-zinc-400">
                 Booking helper that runs automatically the moment the client signs.
+              </p>
+            </div>
+          </div>
+
+          {/* PDF attach settings (used when an email template attaches this doc as PDF) */}
+          <div className="mt-3 grid gap-3 border-t border-zinc-100 pt-3 sm:grid-cols-2 dark:border-white/[0.06]">
+            <div>
+              <label className="label-xs">PDF Attachment Filename</label>
+              <input
+                name="pdf_filename"
+                defaultValue={tpl.pdf_filename ?? ""}
+                placeholder="Xpress Receipt - &lt;event_number&gt;"
+                className="input w-full"
+              />
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Merge tags allowed. Used when an email attaches this template as a PDF. Blank uses the document title.
+              </p>
+            </div>
+            <div className="flex flex-col justify-end">
+              <CheckBoxField
+                name="fresh_on_attach"
+                label="Always generate a fresh PDF on send"
+                defaultChecked={tpl.fresh_on_attach ?? false}
+              />
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Turn on for receipts so each payment freezes current amounts. Leave off for signed booking agreements
+                (those prefer the latest signed copy).
               </p>
             </div>
           </div>

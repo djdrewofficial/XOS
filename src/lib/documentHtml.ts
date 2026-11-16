@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { XDOC_CSS } from "@/components/DocumentShell";
+import { XDOC_CSS, XDOC_DEFAULT_ACCENT, XDOC_DEFAULT_ACCENT_LIGHT } from "@/lib/documentShellCss";
 import { sanitizeBlocks, docTypeClientLabel, sanitizeDocumentHtml } from "@/lib/documentBlocks";
 import { renderBlocks } from "@/lib/documentRender";
 import { appUrl } from "@/lib/signing";
@@ -18,6 +18,40 @@ function fmtDate(d: string | null | undefined): string | null {
   return new Date(y, m - 1, day).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
+function safeAccent(raw: string | null | undefined): string {
+  const v = (raw ?? "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  return XDOC_DEFAULT_ACCENT;
+}
+
+type DocBrand = {
+  companyName: string;
+  logoUrl: string;
+  accent: string;
+  accentLight: string;
+  footerLeft: string;
+  signedLine: string;
+};
+
+function brandFromSettings(cs: {
+  company_name?: string | null;
+  from_email?: string | null;
+  document_logo_url?: string | null;
+  document_accent_color?: string | null;
+  document_footer_text?: string | null;
+} | null): DocBrand {
+  const companyName = cs?.company_name ?? "Xpress Entertainment";
+  const accent = safeAccent(cs?.document_accent_color);
+  return {
+    companyName,
+    logoUrl: (cs?.document_logo_url ?? "").trim() || `${appUrl()}/logo-dark.png`,
+    accent,
+    accentLight: accent === XDOC_DEFAULT_ACCENT ? XDOC_DEFAULT_ACCENT_LIGHT : accent,
+    footerLeft: (cs?.document_footer_text ?? "").trim() || companyName,
+    signedLine: esc(cs?.from_email ?? ""),
+  };
+}
+
 export async function buildDocumentHtml(
   supabase: SupabaseClient,
   documentId: string
@@ -28,7 +62,11 @@ export async function buildDocumentHtml(
       .select("*, event:events(id, name, event_date, client:clients(first_name, last_name))")
       .eq("id", documentId)
       .single(),
-    supabase.from("company_settings").select("company_name, from_email").eq("id", true).maybeSingle(),
+    supabase
+      .from("company_settings")
+      .select("company_name, from_email, document_logo_url, document_accent_color, document_footer_text")
+      .eq("id", true)
+      .maybeSingle(),
   ]);
   if (!doc) return null;
 
@@ -38,22 +76,37 @@ export async function buildDocumentHtml(
     client: { first_name: string; last_name: string } | null;
   } | null;
   const clientName = ev?.client ? `${ev.client.first_name} ${ev.client.last_name}`.trim() : null;
-  const companyName = cs?.company_name ?? "Xpress Entertainment";
+  const brand = brandFromSettings(cs);
   const blocks = sanitizeBlocks(doc.blocks);
   const sub = [clientName, fmtDate(ev?.event_date)].filter(Boolean).join(" · ");
   const signedLine = doc.signed_at
     ? `Signed by ${esc(doc.signer_name)} on ${new Date(doc.signed_at).toLocaleString()}`
-    : esc(cs?.from_email ?? "");
+    : brand.signedLine;
 
   return {
-    html: wrapDocHtml({ companyName, docType: doc.doc_type, title: doc.title, sub, signedLine, blocks }),
+    html: wrapDocHtml({
+      companyName: brand.companyName,
+      logoUrl: brand.logoUrl,
+      accent: brand.accent,
+      accentLight: brand.accentLight,
+      footerLeft: brand.footerLeft,
+      docType: doc.doc_type,
+      title: doc.title,
+      sub,
+      signedLine,
+      blocks,
+    }),
     title: doc.title,
   };
 }
 
 /** Wrap rendered blocks in the branded standalone HTML page (PDF / preview). */
-function wrapDocHtml(opts: {
+export function wrapDocHtml(opts: {
   companyName: string;
+  logoUrl: string;
+  accent: string;
+  accentLight: string;
+  footerLeft: string;
   docType: string;
   title: string;
   sub: string;
@@ -71,15 +124,15 @@ function wrapDocHtml(opts: {
   .xdoc-sec-body { padding: 4px 0 10px; }
   .xdoc-table, .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
   </style></head><body style="margin:0;background:#f4f4f7;">
-  <div class="xdoc">
+  <div class="xdoc" style="--xdoc-accent:${esc(opts.accent)};--xdoc-accent-light:${esc(opts.accentLight)};">
     <header class="xdoc-header">
-      <img src="${appUrl()}/logo-dark.png" alt="${esc(opts.companyName)}" />
+      <img src="${esc(opts.logoUrl)}" alt="${esc(opts.companyName)}" />
       <div class="xdoc-kind">${esc(docTypeClientLabel(opts.docType))}</div>
       <div class="xdoc-title">${esc(opts.title)}</div>
       <div class="xdoc-sub">${esc(opts.sub)}</div>
     </header>
     <div class="xdoc-body">${body}</div>
-    <footer class="xdoc-footer"><span>${esc(opts.companyName)}</span><span>${opts.signedLine}</span></footer>
+    <footer class="xdoc-footer"><span>${esc(opts.footerLeft)}</span><span>${opts.signedLine}</span></footer>
   </div>
   </body></html>`;
 }
@@ -93,11 +146,15 @@ export async function buildTemplatePreviewHtml(
 ): Promise<{ html: string; title: string } | null> {
   const [{ data: tpl }, { data: cs }] = await Promise.all([
     supabase.from("document_templates").select("name, doc_type, blocks").eq("id", templateId).single(),
-    supabase.from("company_settings").select("company_name, from_email, default_template_event_id").eq("id", true).maybeSingle(),
+    supabase
+      .from("company_settings")
+      .select("company_name, from_email, default_template_event_id, document_logo_url, document_accent_color, document_footer_text")
+      .eq("id", true)
+      .maybeSingle(),
   ]);
   if (!tpl) return null;
 
-  const companyName = cs?.company_name ?? "Xpress Entertainment";
+  const brand = brandFromSettings(cs);
   let eventId = (cs?.default_template_event_id as string | null) ?? null;
   if (!eventId) {
     const { data: latest } = await supabase
@@ -126,7 +183,18 @@ export async function buildTemplatePreviewHtml(
   }
 
   return {
-    html: wrapDocHtml({ companyName, docType: tpl.doc_type, title: tpl.name, sub, signedLine: esc(cs?.from_email ?? ""), blocks }),
+    html: wrapDocHtml({
+      companyName: brand.companyName,
+      logoUrl: brand.logoUrl,
+      accent: brand.accent,
+      accentLight: brand.accentLight,
+      footerLeft: brand.footerLeft,
+      docType: tpl.doc_type,
+      title: tpl.name,
+      sub,
+      signedLine: brand.signedLine,
+      blocks,
+    }),
     title: tpl.name,
   };
 }

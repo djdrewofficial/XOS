@@ -46,7 +46,11 @@ export default async function PublicSignPage({
       .select("*, event:events(id, name, event_date, pay_token, journey_type_id, client:clients(first_name, last_name))")
       .eq("access_token", token)
       .maybeSingle(),
-    supabase.from("company_settings").select("company_name, from_email").eq("id", true).maybeSingle(),
+    supabase
+      .from("company_settings")
+      .select("company_name, from_email, document_logo_url, document_accent_color, document_footer_text")
+      .eq("id", true)
+      .maybeSingle(),
   ]);
 
   if (!doc) return <Unavailable message="This document link is not valid or has been removed." />;
@@ -77,7 +81,14 @@ export default async function PublicSignPage({
     : null;
   const continueLabel = journey.step_payment ? "Continue to payment →" : "Download the app & book your onboarding →";
   const clientName = ev?.client ? `${ev.client.first_name} ${ev.client.last_name}`.trim() : null;
-  const companyName = cs?.company_name ?? "Xpress Entertainment";
+  const brand = cs as {
+    company_name?: string | null;
+    from_email?: string | null;
+    document_logo_url?: string | null;
+    document_accent_color?: string | null;
+    document_footer_text?: string | null;
+  } | null;
+  const companyName = brand?.company_name ?? "Xpress Entertainment";
   const signAction = signDocument.bind(null, token);
 
   return (
@@ -94,7 +105,10 @@ export default async function PublicSignPage({
           clientName={clientName}
           eventDateLabel={fmtDate(ev?.event_date)}
           companyName={companyName}
-          companyEmail={cs?.from_email ?? null}
+          companyEmail={brand?.from_email ?? null}
+          logoUrl={brand?.document_logo_url}
+          accentColor={brand?.document_accent_color}
+          footerText={brand?.document_footer_text}
           blocks={sanitizeBlocks(doc.blocks)}
           signedLine={doc.signed_at ? `Signed by ${doc.signer_name} on ${new Date(doc.signed_at).toLocaleString()}` : null}
         />

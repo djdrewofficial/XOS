@@ -255,7 +255,9 @@ export async function generateDocumentRow(
   if (!rendered) return null;
 
   const client = event.client as unknown as { first_name: string; last_name: string } | null;
-  const title = `${template.name} — ${client ? `${client.first_name} ${client.last_name}`.trim() : event.name || "Event"}`;
+  // Receipts avoid em dashes in client-facing titles; other docs keep the prior separator.
+  const sep = template.doc_type === "receipt" ? " - " : " — ";
+  const title = `${template.name}${sep}${client ? `${client.first_name} ${client.last_name}`.trim() : event.name || "Event"}`;
 
   const { data: doc, error } = await supabase
     .from("documents")

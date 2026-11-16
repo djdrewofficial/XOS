@@ -45,6 +45,9 @@ type GeneralSettings = {
   landing_page: string;
   legal_venue: string | null;
   postal_address: string | null;
+  document_logo_url: string | null;
+  document_accent_color: string | null;
+  document_footer_text: string | null;
   instagram_url: string | null;
   tiktok_url: string | null;
 };
@@ -143,6 +146,46 @@ export default async function GeneralSettingsPage() {
             The address (and, on marketing emails, a one-click unsubscribe link) appears in the footer of automated
             mail. Recipients who unsubscribe are added to a suppression list and skipped for marketing sends —
             transactional mail (agreements, receipts, reminders) still goes out.
+          </Note>
+        </Section>
+
+        <Section title="Document Branding">
+          <Row
+            label="Document Logo URL"
+            hint="Header logo on generated PDFs and document pages. Blank uses the built-in Xpress logo."
+          >
+            <input
+              name="document_logo_url"
+              defaultValue={s.document_logo_url ?? ""}
+              placeholder="https://…/logo.png"
+              className="input w-full max-w-md"
+            />
+          </Row>
+          <Row
+            label="Document Accent Color"
+            hint="Header gradient and headings on booking agreements, receipts, and other documents."
+          >
+            <input
+              name="document_accent_color"
+              defaultValue={s.document_accent_color ?? "#4b328e"}
+              placeholder="#4b328e"
+              className="input w-full max-w-md"
+            />
+          </Row>
+          <Row
+            label="Document Footer Text"
+            hint="Left side of the document footer. Blank uses the company name."
+          >
+            <input
+              name="document_footer_text"
+              defaultValue={s.document_footer_text ?? ""}
+              placeholder="Xpress Entertainment"
+              className="input w-full max-w-md"
+            />
+          </Row>
+          <Note>
+            These settings apply to every document template (including Payment Receipt). Edit the receipt layout under{" "}
+            <Link href="/documents" className="font-semibold text-brand underline dark:text-brand-lighter">Documents</Link>.
           </Note>
         </Section>
 

@@ -72,6 +72,8 @@ export async function updateTemplate(id: string, formData: FormData) {
       doc_type: clean(formData.get("doc_type")) ?? "contract",
       after_sign_url: clean(formData.get("after_sign_url")),
       after_sign_helper_id: clean(formData.get("after_sign_helper_id")),
+      fresh_on_attach: formData.get("fresh_on_attach") === "on",
+      pdf_filename: clean(formData.get("pdf_filename")),
       blocks: blocksFromForm(formData),
       updated_at: new Date().toISOString(),
     })
@@ -88,7 +90,14 @@ export async function duplicateTemplate(id: string) {
   if (error || !t) throw new Error(error?.message ?? "Template not found");
   const { data: copy, error: insError } = await supabase
     .from("document_templates")
-    .insert({ name: `${t.name} (copy)`, doc_type: t.doc_type, blocks: t.blocks })
+    .insert({
+      name: `${t.name} (copy)`,
+      doc_type: t.doc_type,
+      blocks: t.blocks,
+      fresh_on_attach: Boolean((t as { fresh_on_attach?: boolean }).fresh_on_attach),
+      pdf_filename: (t as { pdf_filename?: string | null }).pdf_filename ?? null,
+      photo_release: (t as { photo_release?: boolean }).photo_release ?? false,
+    })
     .select("id")
     .single();
   if (insError) throw new Error(insError.message);

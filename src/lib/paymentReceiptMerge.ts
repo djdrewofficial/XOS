@@ -8,6 +8,8 @@ export type ReceiptPayment = {
   method: string;
   paidAt: string; // ISO date or timestamptz
   processingFee?: number | null;
+  notes?: string | null;
+  bankDepositRef?: string | null;
   status?: string | null;
   deletedAt?: string | null;
 };
@@ -81,10 +83,19 @@ export type PaymentReceiptTags = {
   most_recent_payment_date: string;
   most_recent_payment_processing_fee: string;
   most_recent_payment_fee_line: string;
+  most_recent_payment_notes: string;
   payments_received: string;
   balance_due: string;
   balance_status: string;
 };
+
+/** Notes on the payment, falling back to bank deposit reference. */
+export function paymentNotes(payment: ReceiptPayment | null): string {
+  if (!payment) return "";
+  const notes = (payment.notes ?? "").trim();
+  if (notes) return notes;
+  return (payment.bankDepositRef ?? "").trim();
+}
 
 export function paymentReceiptTags(input: ReceiptEventMoney): PaymentReceiptTags {
   const paid = totalPaid(input.payments);
@@ -99,11 +110,44 @@ export function paymentReceiptTags(input: ReceiptEventMoney): PaymentReceiptTags
     most_recent_payment_processing_fee: feeMoney,
     most_recent_payment_fee_line:
       fee > 0 ? `<br>Card service fee: <strong>${feeMoney}</strong>` : "",
+    most_recent_payment_notes: paymentNotes(latest),
     payments_received: money(paid),
     balance_due: money(bal),
     balance_status: bal <= 0 ? "Paid in full" : money(bal),
   };
 }
+
+/** Sanitize a rendered pdf_filename template into a safe .pdf basename. */
+export function receiptPdfFilename(rendered: string | null | undefined, fallback = "Xpress Receipt"): string {
+  const base = (rendered ?? "")
+    .replace(/<[^>]+>/g, "") // leftover unmerged tags
+    .replace(/[^\w\- &']+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${base || fallback}.pdf`;
+}
+
+/** Seeded Payment Receipt document body (HTML with merge tags). Editable in Documents. */
+export const PAYMENT_RECEIPT_DOC_BODY = [
+  "<p>Thank you for your payment. This receipt relates to your booking agreement with Xpress Entertainment.</p>",
+  "<p><strong>Client:</strong> <client_name><br>",
+  "<strong>Event:</strong> <event_name><br>",
+  "<strong>Event number:</strong> <event_number><br>",
+  "<strong>Event date:</strong> <event_date_long></p>",
+  "<p><strong>Payment received</strong><br>",
+  "Amount: <strong><most_recent_payment_amount></strong><br>",
+  "Method: <strong><most_recent_payment_method></strong><br>",
+  "Date: <strong><most_recent_payment_date></strong>",
+  "<most_recent_payment_fee_line></p>",
+  "<p>Confirmation / notes: <most_recent_payment_notes></p>",
+  "<p>Investment total: <strong><total_fee></strong><br>",
+  "Paid to date: <strong><payments_received></strong><br>",
+  "Remaining balance: <strong><balance_status></strong></p>",
+  "<p>If anything looks off, reply to this email and we will sort it out.</p>",
+].join("\n");
+
+export const PAYMENT_RECEIPT_PDF_FILENAME = "Xpress Receipt - <event_number>";
+export const PAYMENT_RECEIPT_TEMPLATE_ID = "c8e4f1a2-9b3d-4e5f-a6c7-d8e9f0a1b228";
 
 /** English Payment Received body (same copy seeded in migration 00226). */
 export const PAYMENT_RECEIVED_SUBJECT =

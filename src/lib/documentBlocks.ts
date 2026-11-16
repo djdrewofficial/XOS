@@ -31,14 +31,17 @@ export const DOC_TYPES = [
   ["contract", "Contract"],
   ["quote", "Quote"],
   ["invoice", "Invoice"],
+  ["receipt", "Payment Receipt"],
   ["other", "Other"],
 ] as const;
 
-/* Client-facing wording — we never say "contract" to clients; it's a Booking Agreement. */
+/* Client-facing wording — we never say "contract" to clients; it's a Booking Agreement.
+   Receipts are labeled "Payment Receipt" (never "invoice"). */
 export const DOC_TYPE_CLIENT_LABELS: Record<string, string> = {
   contract: "Booking Agreement",
   quote: "Quote",
   invoice: "Invoice",
+  receipt: "Payment Receipt",
   other: "Document",
 };
 

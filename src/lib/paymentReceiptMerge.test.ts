@@ -129,6 +129,7 @@ describe("payment receipt merge tags", () => {
 describe("migration 00226 payment received receipt", () => {
   it("seeds the English template copy and registers the new merge tags", () => {
     assert.match(migration, /name = 'Payment Received'/);
+    // Keep the HTML body; PDF attach is layered on in 00228.
     assert.match(migration, /most_recent_payment_amount/);
     assert.match(migration, /most_recent_payment_method/);
     assert.match(migration, /most_recent_payment_date/);

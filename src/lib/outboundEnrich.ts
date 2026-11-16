@@ -200,17 +200,52 @@ export async function enrichOutbound(
       }
     }
   } else {
-    const { data: docs } = await supabase.from("documents").select("id, title, signed_at").eq("event_id", msg.event_id).eq("template_id", attachTemplateId).neq("status", "void").order("created_at", { ascending: false });
-    const pick = (docs ?? []).find((d: { signed_at?: string | null }) => d.signed_at) ?? (docs ?? [])[0] ?? null;
-    const doc = pick ?? (commit ? await deps.generateDocumentRow(supabase, attachTemplateId, msg.event_id, "final") : null);
-    if (!pick && !commit) pdfDeferred = true;
+    // PDF attachment. Receipts (and any template with fresh_on_attach) always
+    // generate a new frozen document so each send shows the current payment.
+    // Other templates still prefer the latest signed copy, then any prior doc.
+    const { data: attachTpl } = await supabase
+      .from("document_templates")
+      .select("fresh_on_attach, pdf_filename, name, doc_type")
+      .eq("id", attachTemplateId)
+      .maybeSingle();
+    const alwaysFresh = attachTpl?.fresh_on_attach === true;
+
+    let doc: { id: string; title?: string; signed_at?: string | null } | null = null;
+    if (!alwaysFresh) {
+      const { data: docs } = await supabase
+        .from("documents")
+        .select("id, title, signed_at")
+        .eq("event_id", msg.event_id)
+        .eq("template_id", attachTemplateId)
+        .neq("status", "void")
+        .order("created_at", { ascending: false });
+      doc = (docs ?? []).find((d: { signed_at?: string | null }) => d.signed_at) ?? (docs ?? [])[0] ?? null;
+    }
+    if (!doc) {
+      if (commit) {
+        doc = await deps.generateDocumentRow(supabase, attachTemplateId, msg.event_id, "final");
+      } else {
+        pdfDeferred = true;
+      }
+    }
     if (doc) {
       const built = await deps.buildDocumentHtml(supabase, doc.id);
       if (built) {
         documentHtmlSha256 = sha256(built.html);
         if (commit) {
           const pdf = await deps.htmlToPdf(built.html);
-          const filename = `${built.title.replace(/[^\w\- &']+/g, "").trim() || "Document"}.pdf`;
+          let filename = `${built.title.replace(/[^\w\- &']+/g, "").trim() || "Document"}.pdf`;
+          if (attachTpl?.pdf_filename) {
+            const { data: renderedName } = await supabase.rpc("render_merge_tags", {
+              p_event_id: msg.event_id,
+              p_template: attachTpl.pdf_filename,
+            });
+            const base = String(renderedName ?? attachTpl.pdf_filename)
+              .replace(/[^\w\- &']+/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+            if (base) filename = `${base}.pdf`;
+          }
           files.push({ filename, contentType: "application/pdf", data: pdf });
           const path = `${msg.event_id}/${doc.id}-${Date.now()}.pdf`;
           const { error: upError } = await supabase.storage.from("event-files").upload(path, pdf, { contentType: "application/pdf", upsert: true });

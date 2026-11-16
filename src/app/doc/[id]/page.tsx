@@ -32,12 +32,23 @@ export default async function DocumentPrintPage({
       .select("*, event:events(id, name, event_date, client:clients(first_name, last_name))")
       .eq("id", id)
       .single(),
-    supabase.from("company_settings").select("company_name, from_email").eq("id", true).maybeSingle(),
+    supabase
+      .from("company_settings")
+      .select("company_name, from_email, document_logo_url, document_accent_color, document_footer_text")
+      .eq("id", true)
+      .maybeSingle(),
   ]);
   if (!doc) notFound();
 
   const ev = doc.event as unknown as { name: string; event_date: string | null; client: { first_name: string; last_name: string } | null } | null;
   const clientName = ev?.client ? `${ev.client.first_name} ${ev.client.last_name}`.trim() : null;
+  const brand = cs as {
+    company_name?: string | null;
+    from_email?: string | null;
+    document_logo_url?: string | null;
+    document_accent_color?: string | null;
+    document_footer_text?: string | null;
+  } | null;
 
   return (
     <div className="min-h-screen bg-zinc-200 py-8 dark:bg-zinc-900 print:bg-white print:py-0">
@@ -49,8 +60,11 @@ export default async function DocumentPrintPage({
         docType={docTypeClientLabel(doc.doc_type)}
         clientName={clientName}
         eventDateLabel={fmtDate(ev?.event_date)}
-        companyName={cs?.company_name ?? "Xpress Entertainment"}
-        companyEmail={cs?.from_email ?? null}
+        companyName={brand?.company_name ?? "Xpress Entertainment"}
+        companyEmail={brand?.from_email ?? null}
+        logoUrl={brand?.document_logo_url}
+        accentColor={brand?.document_accent_color}
+        footerText={brand?.document_footer_text}
         blocks={sanitizeBlocks(doc.blocks)}
         signedLine={doc.signed_at ? `Signed by ${doc.signer_name} on ${new Date(doc.signed_at).toLocaleString()}` : null}
       />
