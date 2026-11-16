@@ -19,6 +19,8 @@ export const XDOC_CSS = `
 .xdoc-body ul, .xdoc-body ol { padding-left: 1.4em; margin: .65em 0; }
 .xdoc-body a { color: #4b328e; }
 .xdoc-block { margin: 0 0 18px; }
+.xdoc-block-heading { font-family: ui-sans-serif, system-ui, sans-serif; color: #4b328e;
+  font-size: 16px; font-weight: 800; letter-spacing: -.01em; margin: 0.4em 0 0.35em; }
 .xdoc-table { width: 100%; border-collapse: collapse; margin: 14px 0;
   font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; }
 .xdoc-table th { background: #4b328e; color: #fff; text-align: left; padding: 9px 14px;
@@ -74,16 +76,19 @@ export const XDOC_CSS = `
   .xdoc-noprint { display: none !important; }
   .xdoc-header { border-radius: 0; padding: 34px 44px 28px; }
   .xdoc-body { padding: 32px 44px; }
-  /* Avoid forced blank page-1 gaps: do NOT keep whole tall tables on one page.
-     Keep compact cards/boxes and individual table rows together instead. */
+  /* Tall tables must split across pages (repeat thead). Avoid blank page-1 gaps.
+     Keep compact cards/boxes and individual rows together; keep doc footer with prior content. */
+  .xdoc-table { break-inside: auto; page-break-inside: auto; }
+  .xdoc-table thead { display: table-header-group; }
+  .xdoc-table tfoot { display: table-row-group; } /* total stays at end of table, not every page */
+  .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-summary { break-inside: avoid; page-break-inside: avoid; }
   .xdoc-sec { border: none; border-radius: 0; }
   .xdoc-sec summary { background: none; padding: 8px 0 2px; }
   .xdoc-sec summary::before { display: none; }
   .xdoc-sec-body { padding: 4px 0 10px; }
-  .xdoc-table tr { break-inside: avoid; page-break-inside: avoid; }
-  .xdoc-body h1, .xdoc-body h2, .xdoc-body h3 { break-after: avoid; page-break-after: avoid; }
+  .xdoc-body h1, .xdoc-body h2, .xdoc-body h3, .xdoc-block-heading { break-after: avoid; page-break-after: avoid; }
   .xdoc-divider { break-after: avoid; }
-  .xdoc-footer { border-top: 1px solid #ece9f4; }
+  .xdoc-footer { border-top: 1px solid #ece9f4; break-before: avoid; page-break-before: avoid; }
 }
 `;

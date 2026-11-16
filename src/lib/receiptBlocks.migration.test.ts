@@ -22,6 +22,9 @@ describe("migration 00231 receipt blocks", () => {
     assert.match(migration, /payment_schedule/);
     assert.match(migration, /onlyUnpaid/);
     assert.match(migration, /hideWhenPaidInFull/);
+    assert.match(migration, /Line Items/);
+    assert.match(migration, /Payments Received/);
+    assert.match(migration, /Upcoming Payments/);
     assert.match(migration, /Payment Receipt/);
     assert.doesNotMatch(migration, /header_kicker.*[Ii]nvoice/);
     assert.doesNotMatch(migration, /—/);

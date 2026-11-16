@@ -102,22 +102,15 @@ export function looksLikeImportedPaymentNote(text: string | null | undefined): b
   return false;
 }
 
-/** Client-facing notes for the payments_received Notes column.
+/** Client-facing text for the payments_received Notes column only.
+    Uses the notes field alone (never reason / bank_deposit_ref fallbacks).
     Never prints imported DJEP / processor dump notes (email, PayPal txn ids, legacy import). */
 export function clientFacingPaymentNotes(payment: ReceiptPayment | null): string {
   if (!payment) return "";
-  if (payment.legacyDjepId) {
-    // Imported payment: only a clean staff reason is safe to show
-    const reason = (payment.reason ?? "").trim();
-    if (reason && !looksLikeImportedPaymentNote(reason)) return reason;
-    return "";
-  }
+  if (payment.legacyDjepId) return "";
   const notes = (payment.notes ?? "").trim();
-  if (notes && !looksLikeImportedPaymentNote(notes)) return notes;
-  const reason = (payment.reason ?? "").trim();
-  if (reason && !looksLikeImportedPaymentNote(reason)) return reason;
-  // bank deposit refs often look like internal ops codes; skip on client docs
-  return "";
+  if (!notes || looksLikeImportedPaymentNote(notes)) return "";
+  return notes;
 }
 
 export type PaymentReceiptTags = {

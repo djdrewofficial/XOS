@@ -14,7 +14,8 @@ export type FeeTableOptions = {
 };
 
 export type PaymentsReceivedOptions = {
-  /** Show a Notes column. Default false. Imported DJEP-looking notes stay hidden even when on. */
+  /** Show a Notes column. Default false. When off, reason/bank-deposit fallbacks never print.
+      When on, only the notes field prints (DJEP/PayPal import noise stripped). */
   showNotes?: boolean;
 };
 
@@ -32,10 +33,16 @@ export type SummaryBoxOptions = {
   paidInFullLabel?: string;
 };
 
+/** Optional heading printed above a smart block (e.g. "Line Items"). */
+export type BlockHeadingOptions = {
+  heading?: string;
+};
+
 export type DocBlockOptions = FeeTableOptions &
   PaymentsReceivedOptions &
   PaymentScheduleOptions &
-  SummaryBoxOptions;
+  SummaryBoxOptions &
+  BlockHeadingOptions;
 
 export type DocBlock = {
   id: string;
@@ -137,6 +144,8 @@ export function sanitizeBlockOptions(type: DocBlock["type"], raw: unknown): DocB
     const t = (o[k] as string).trim();
     return t || undefined;
   };
+  const heading = label("heading");
+  if (heading !== undefined) out.heading = heading.slice(0, 120);
 
   if (type === "fee_table") {
     const showDescriptions = bool("showDescriptions");
@@ -170,6 +179,7 @@ export function sanitizeBlockOptions(type: DocBlock["type"], raw: unknown): DocB
     if (paidInFullLabel !== undefined) out.paidInFullLabel = paidInFullLabel.slice(0, 80);
     return Object.keys(out).length ? out : undefined;
   }
+  // heading-only is only meaningful on money smart blocks above
   return undefined;
 }
 
@@ -244,6 +254,7 @@ export function paymentReceiptInvoiceBlocks(): DocBlock[] {
       id: "receipt-fees",
       type: "fee_table",
       options: {
+        heading: "Line Items",
         showDescriptions: true,
         showQty: true,
         totalLabel: "Total Investment",
@@ -252,12 +263,13 @@ export function paymentReceiptInvoiceBlocks(): DocBlock[] {
     {
       id: "receipt-payments",
       type: "payments_received",
-      options: { showNotes: false },
+      options: { heading: "Payments Received", showNotes: false },
     },
     {
       id: "receipt-summary",
       type: "summary_box",
       options: {
+        heading: "Summary",
         totalLabel: "Total investment",
         paidLabel: "Already paid",
         balanceLabel: "Balance due",
@@ -268,6 +280,7 @@ export function paymentReceiptInvoiceBlocks(): DocBlock[] {
       id: "receipt-schedule",
       type: "payment_schedule",
       options: {
+        heading: "Upcoming Payments",
         onlyUnpaid: true,
         hideWhenPaidInFull: true,
       },

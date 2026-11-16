@@ -4,9 +4,10 @@
 --
 -- No schema change: block options live in document_templates.blocks jsonb.
 -- Updates the Payment Receipt template (prod id 0fae46ca-...) to the
--- invoice-style block set: fee_table (qty + descriptions), payments_received
--- (notes off), summary_box, payment_schedule (unpaid only / hide when paid).
--- Client-facing title stays "Payment Receipt" (never "invoice").
+-- invoice-style block set: fee_table (qty + descriptions + heading),
+-- payments_received (notes off), summary_box, payment_schedule
+-- (unpaid only / hide when paid). Client-facing title stays "Payment Receipt"
+-- (never "invoice").
 
 do $seed$
 declare
@@ -34,6 +35,7 @@ begin
       'id', 'receipt-fees',
       'type', 'fee_table',
       'options', jsonb_build_object(
+        'heading', 'Line Items',
         'showDescriptions', true,
         'showQty', true,
         'totalLabel', 'Total Investment'
@@ -42,12 +44,16 @@ begin
     jsonb_build_object(
       'id', 'receipt-payments',
       'type', 'payments_received',
-      'options', jsonb_build_object('showNotes', false)
+      'options', jsonb_build_object(
+        'heading', 'Payments Received',
+        'showNotes', false
+      )
     ),
     jsonb_build_object(
       'id', 'receipt-summary',
       'type', 'summary_box',
       'options', jsonb_build_object(
+        'heading', 'Summary',
         'totalLabel', 'Total investment',
         'paidLabel', 'Already paid',
         'balanceLabel', 'Balance due',
@@ -58,6 +64,7 @@ begin
       'id', 'receipt-schedule',
       'type', 'payment_schedule',
       'options', jsonb_build_object(
+        'heading', 'Upcoming Payments',
         'onlyUnpaid', true,
         'hideWhenPaidInFull', true
       )

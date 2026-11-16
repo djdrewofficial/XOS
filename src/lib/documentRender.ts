@@ -20,7 +20,7 @@ import {
   totalPaid,
   type ReceiptPayment,
 } from "@/lib/paymentReceiptMerge";
-import { splitSchedule, type SchedRow } from "@/lib/scheduleLock";
+import type { SchedRow } from "@/lib/scheduleLock";
 import { money } from "@/lib/types";
 
 /* Server-side document generation: merges text blocks via render_merge_tags and
@@ -243,6 +243,40 @@ function descHtml(text: string | null | undefined, show: boolean): string {
   return `<div class="xdoc-desc">${esc(text)}</div>`;
 }
 
+/** Optional block heading; omitted when the block body is empty (e.g. financials hidden). */
+export function withBlockHeading(options: DocBlockOptions | undefined, html: string): string {
+  if (!html) return "";
+  const heading = (options?.heading ?? "").trim();
+  if (!heading) return html;
+  return `<h3 class="xdoc-block-heading">${esc(heading)}</h3>${html}`;
+}
+
+/** Remaining schedule rows after applying received payments in due-date order
+    (then seq). Linked scheduled_payment_id rows are covered first; leftover cash
+    covers earlier due dates. */
+export function unpaidScheduleRows(
+  schedule: SchedRow[],
+  payments: ReceiptPayment[],
+): SchedRow[] {
+  const approved = payments.filter((p) => (p.status ?? "approved") === "approved" && !p.deletedAt);
+  const linked = new Set(approved.map((p) => p.scheduledPaymentId).filter(Boolean) as string[]);
+  const received = approved.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const sorted = [...schedule].sort((a, b) => {
+    const da = a.due_date ? a.due_date.slice(0, 10) : "9999-99-99";
+    const db = b.due_date ? b.due_date.slice(0, 10) : "9999-99-99";
+    if (da !== db) return da.localeCompare(db);
+    return a.seq - b.seq;
+  });
+  const open: SchedRow[] = [];
+  let cumulative = 0;
+  for (const r of sorted) {
+    cumulative += Number(r.amount);
+    if (linked.has(r.id) || cumulative <= received + 0.005) continue;
+    open.push(r);
+  }
+  return open;
+}
+
 export function renderFeeTable(b: EventBundle, options?: DocBlockOptions): string {
   const e = b.event;
   const showDescriptions = options?.showDescriptions !== false;
@@ -265,7 +299,10 @@ export function renderFeeTable(b: EventBundle, options?: DocBlockOptions): strin
           a.quantity > 1 ? ` × ${a.quantity}` : ""
         }${descHtml((a.description_override || a.addon?.description) as string | null, showDescriptions)}</td></tr>`,
       );
-    return `<table class="xdoc-table"><thead><tr><th>Services</th></tr></thead><tbody>${items.join("")}</tbody></table>`;
+    return withBlockHeading(
+      options,
+      `<table class="xdoc-table"><thead><tr><th>Services</th></tr></thead><tbody>${items.join("")}</tbody></table>`,
+    );
   }
 
   const rows: string[] = [];
@@ -312,9 +349,12 @@ export function renderFeeTable(b: EventBundle, options?: DocBlockOptions): strin
     if (Number(e.discount1_amount) > 0) pushLine(e.discount1_label || "Discount", null, null, null, Number(e.discount1_amount), true);
     if (Number(e.discount2_amount) > 0) pushLine(e.discount2_label || "Discount", null, null, null, Number(e.discount2_amount), true);
 
-    return `<table class="xdoc-table"><thead><tr><th>Services</th><th class="xdoc-qty">Qty</th><th class="xdoc-amount">Unit Price</th><th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows.join(
-      "",
-    )}</tbody><tfoot><tr><td colspan="3">${esc(totalLabel)}</td><td class="xdoc-amount">${money(b.total)}</td></tr></tfoot></table>`;
+    return withBlockHeading(
+      options,
+      `<table class="xdoc-table"><thead><tr><th>Services</th><th class="xdoc-qty">Qty</th><th class="xdoc-amount">Unit Price</th><th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows.join(
+        "",
+      )}</tbody><tfoot><tr><td colspan="3">${esc(totalLabel)}</td><td class="xdoc-amount">${money(b.total)}</td></tr></tfoot></table>`,
+    );
   }
 
   const pkgPrice = Number(e.package_price_override ?? e.package_price_locked ?? e.package?.default_price ?? 0);
@@ -353,9 +393,12 @@ export function renderFeeTable(b: EventBundle, options?: DocBlockOptions): strin
       )}</td></tr>`,
     );
 
-  return `<table class="xdoc-table"><thead><tr><th>Services</th><th class="xdoc-amount">Investment</th></tr></thead><tbody>${rows.join(
-    "",
-  )}</tbody><tfoot><tr><td>${esc(totalLabel)}</td><td class="xdoc-amount">${money(b.total)}</td></tr></tfoot></table>`;
+  return withBlockHeading(
+    options,
+    `<table class="xdoc-table"><thead><tr><th>Services</th><th class="xdoc-amount">Investment</th></tr></thead><tbody>${rows.join(
+      "",
+    )}</tbody><tfoot><tr><td>${esc(totalLabel)}</td><td class="xdoc-amount">${money(b.total)}</td></tr></tfoot></table>`,
+  );
 }
 
 export function renderPaymentSchedule(b: EventBundle, options?: DocBlockOptions): string {
@@ -364,18 +407,14 @@ export function renderPaymentSchedule(b: EventBundle, options?: DocBlockOptions)
 
   let rows = b.schedule;
   if (options?.onlyUnpaid) {
-    const approved = b.payments
-      .filter((p) => (p.status ?? "approved") === "approved" && !p.deletedAt)
-      .map((p) => ({ amount: Number(p.amount || 0), scheduled_payment_id: p.scheduledPaymentId ?? null }));
-    const { open } = splitSchedule(b.schedule, approved);
-    rows = open;
+    rows = unpaidScheduleRows(b.schedule, b.payments);
     if (rows.length === 0) {
-      return `<p class="xdoc-muted">No upcoming payments.</p>`;
+      return withBlockHeading(options, `<p class="xdoc-muted">No upcoming payments.</p>`);
     }
   }
 
   if (rows.length === 0) {
-    return `<p class="xdoc-muted">Payment schedule to be determined.</p>`;
+    return withBlockHeading(options, `<p class="xdoc-muted">Payment schedule to be determined.</p>`);
   }
   const body = rows
     .map(
@@ -385,7 +424,10 @@ export function renderPaymentSchedule(b: EventBundle, options?: DocBlockOptions)
         }</td><td class="xdoc-amount">${money(Number(sp.amount))}</td></tr>`,
     )
     .join("");
-  return `<table class="xdoc-table"><thead><tr><th>Payment</th><th>Due</th><th class="xdoc-amount">Amount</th></tr></thead><tbody>${body}</tbody></table>`;
+  return withBlockHeading(
+    options,
+    `<table class="xdoc-table"><thead><tr><th>Payment</th><th>Due</th><th class="xdoc-amount">Amount</th></tr></thead><tbody>${body}</tbody></table>`,
+  );
 }
 
 /** Actual received payments table + paid to date / remaining balance.
@@ -396,12 +438,13 @@ export function renderPaymentsReceived(b: EventBundle, options?: DocBlockOptions
   const showNotes = options?.showNotes === true;
   const live = b.payments.filter((p) => (p.status ?? "approved") === "approved" && !p.deletedAt);
   if (live.length === 0) {
-    return `<p class="xdoc-muted">No payments recorded yet.</p>`;
+    return withBlockHeading(options, `<p class="xdoc-muted">No payments recorded yet.</p>`);
   }
   const rows = live
     .map((p) => {
       const fee = Number(p.processingFee ?? 0);
       const feeLine = fee > 0 ? `<div class="xdoc-desc">Card service fee: ${money(fee)} (not applied to balance)</div>` : "";
+      // Notes column is notes-only: never reason / bank_deposit_ref fallbacks.
       const noteCell = showNotes ? `<td>${esc(clientFacingPaymentNotes(p))}</td>` : "";
       return `<tr><td>${esc(formatPaymentDate(p.paidAt))}</td><td>${esc(formatPaymentMethod(p.method))}${feeLine}</td>${noteCell}<td class="xdoc-amount">${money(
         Number(p.amount || 0),
@@ -412,9 +455,12 @@ export function renderPaymentsReceived(b: EventBundle, options?: DocBlockOptions
   const remaining = balanceStatus(b.total, live);
   const notesHead = showNotes ? "<th>Notes</th>" : "";
   const span = showNotes ? 3 : 2;
-  return `<table class="xdoc-table"><thead><tr><th>Date</th><th>Method</th>${notesHead}<th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="${span}">Paid to date</td><td class="xdoc-amount">${money(
-    paid,
-  )}</td></tr><tr><td colspan="${span}">Remaining balance</td><td class="xdoc-amount">${esc(remaining)}</td></tr></tfoot></table>`;
+  return withBlockHeading(
+    options,
+    `<table class="xdoc-table"><thead><tr><th>Date</th><th>Method</th>${notesHead}<th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="${span}">Paid to date</td><td class="xdoc-amount">${money(
+      paid,
+    )}</td></tr><tr><td colspan="${span}">Remaining balance</td><td class="xdoc-amount">${esc(remaining)}</td></tr></tfoot></table>`,
+  );
 }
 
 /** Highlighted summary: total investment, already paid, balance due / paid in full. */
@@ -428,13 +474,16 @@ export function renderSummaryBox(b: EventBundle, options?: DocBlockOptions): str
   const bal = balanceDue(b.total, b.payments);
   const balanceValue = bal <= 0 ? paidInFullLabel : money(bal);
   const balanceClass = bal <= 0 ? "xdoc-summary-paid" : "xdoc-summary-due";
-  return `<div class="xdoc-summary"><div class="xdoc-summary-row"><span>${esc(totalLabel)}</span><span class="xdoc-amount">${money(
-    b.total,
-  )}</span></div><div class="xdoc-summary-row"><span>${esc(paidLabel)}</span><span class="xdoc-amount">${money(
-    paid,
-  )}</span></div><div class="xdoc-summary-row ${balanceClass}"><span>${esc(
-    bal <= 0 ? paidInFullLabel : balanceLabel,
-  )}</span><span class="xdoc-amount">${esc(balanceValue)}</span></div></div>`;
+  return withBlockHeading(
+    options,
+    `<div class="xdoc-summary"><div class="xdoc-summary-row"><span>${esc(totalLabel)}</span><span class="xdoc-amount">${money(
+      b.total,
+    )}</span></div><div class="xdoc-summary-row"><span>${esc(paidLabel)}</span><span class="xdoc-amount">${money(
+      paid,
+    )}</span></div><div class="xdoc-summary-row ${balanceClass}"><span>${esc(
+      bal <= 0 ? paidInFullLabel : balanceLabel,
+    )}</span><span class="xdoc-amount">${esc(balanceValue)}</span></div></div>`,
+  );
 }
 
 export function renderEventDetails(b: EventBundle): string {

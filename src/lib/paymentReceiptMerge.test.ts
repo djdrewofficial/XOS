@@ -38,7 +38,7 @@ describe("formatPaymentMethod", () => {
 });
 
 describe("clientFacingPaymentNotes", () => {
-  it("strips emails, PayPal capture ids, and legacy DJEP import notes", () => {
+  it("uses notes only (never reason/bank ref) and strips DJEP / PayPal noise", () => {
     assert.equal(looksLikeImportedPaymentNote("email me at a@b.com"), true);
     assert.equal(looksLikeImportedPaymentNote("PayPal capture CAP-ABC123"), true);
     assert.equal(looksLikeImportedPaymentNote("Retainer thank you"), false);
@@ -48,8 +48,21 @@ describe("clientFacingPaymentNotes", () => {
         method: "zelle",
         paidAt: "2026-01-01T00:00:00Z",
         notes: "Thanks!",
+        reason: "Retainer",
+        bankDepositRef: "DEP-1",
       }),
       "Thanks!",
+    );
+    // empty notes: do not fall back to reason / bank deposit ref
+    assert.equal(
+      clientFacingPaymentNotes({
+        amount: 1,
+        method: "zelle",
+        paidAt: "2026-01-01T00:00:00Z",
+        reason: "Retainer",
+        bankDepositRef: "DEP-1",
+      }),
+      "",
     );
     assert.equal(
       clientFacingPaymentNotes({
@@ -59,15 +72,14 @@ describe("clientFacingPaymentNotes", () => {
         notes: "PayPal capture CAP-XYZ",
         reason: "Final",
       }),
-      "Final",
+      "",
     );
     assert.equal(
       clientFacingPaymentNotes({
         amount: 1,
         method: "check",
         paidAt: "2026-01-01T00:00:00Z",
-        notes: "messy import notes with dump",
-        reason: "also messy client@x.com",
+        notes: "staff note",
         legacyDjepId: "99",
       }),
       "",

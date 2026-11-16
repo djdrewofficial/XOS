@@ -25,6 +25,8 @@ function updateOptions(block: DocBlock, patch: DocBlockOptions): DocBlock {
   return { ...block, options: { ...(block.options ?? {}), ...patch } };
 }
 
+const MONEY_BLOCKS = new Set(["fee_table", "payments_received", "payment_schedule", "summary_box"]);
+
 function SmartBlockSettings({
   block,
   onChange,
@@ -33,84 +35,100 @@ function SmartBlockSettings({
   onChange: (next: DocBlock) => void;
 }) {
   const o = block.options ?? {};
-  if (block.type === "fee_table") {
-    return (
-      <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={o.showDescriptions !== false}
-            onChange={(e) => onChange(updateOptions(block, { showDescriptions: e.target.checked }))}
-          />
-          Show descriptions
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={o.showQty === true}
-            onChange={(e) => onChange(updateOptions(block, { showQty: e.target.checked }))}
-          />
-          Show qty and unit price columns
-        </label>
-        <label className="block text-xs text-zinc-500">
-          Total label
-          <input
-            type="text"
-            className="input mt-1 w-full"
-            value={o.totalLabel ?? DEFAULT_FEE_TOTAL_LABEL}
-            onChange={(e) => onChange(updateOptions(block, { totalLabel: e.target.value }))}
-          />
-        </label>
-      </div>
-    );
-  }
-  if (block.type === "payments_received") {
-    return (
-      <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={o.showNotes === true}
-            onChange={(e) => onChange(updateOptions(block, { showNotes: e.target.checked }))}
-          />
-          Show notes column
-        </label>
-        <p className="text-[11px] text-zinc-400">
-          Off by default. When on, imported DJEP / PayPal dump notes are still stripped from the client PDF.
-        </p>
-      </div>
-    );
-  }
-  if (block.type === "payment_schedule") {
-    return (
-      <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={o.onlyUnpaid === true}
-            onChange={(e) => onChange(updateOptions(block, { onlyUnpaid: e.target.checked }))}
-          />
-          Only show unpaid / upcoming
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={o.hideWhenPaidInFull === true}
-            onChange={(e) => onChange(updateOptions(block, { hideWhenPaidInFull: e.target.checked }))}
-          />
-          Hide when paid in full
-        </label>
-      </div>
-    );
-  }
-  if (block.type === "summary_box") {
-    return (
-      <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
-        {(
+  if (!MONEY_BLOCKS.has(block.type)) return null;
+
+  const headingPlaceholder =
+    block.type === "fee_table"
+      ? "Line Items"
+      : block.type === "payments_received"
+        ? "Payments Received"
+        : block.type === "payment_schedule"
+          ? "Upcoming Payments"
+          : "Summary";
+
+  return (
+    <div className="space-y-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-white/[0.06]">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Block settings</p>
+      <label className="block text-xs text-zinc-500">
+        Section heading (optional)
+        <input
+          type="text"
+          className="input mt-1 w-full"
+          placeholder={headingPlaceholder}
+          value={o.heading ?? ""}
+          onChange={(e) => onChange(updateOptions(block, { heading: e.target.value }))}
+        />
+      </label>
+
+      {block.type === "fee_table" && (
+        <>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={o.showDescriptions !== false}
+              onChange={(e) => onChange(updateOptions(block, { showDescriptions: e.target.checked }))}
+            />
+            Show descriptions
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={o.showQty === true}
+              onChange={(e) => onChange(updateOptions(block, { showQty: e.target.checked }))}
+            />
+            Show separate Qty and Unit price columns
+          </label>
+          <label className="block text-xs text-zinc-500">
+            Total label
+            <input
+              type="text"
+              className="input mt-1 w-full"
+              value={o.totalLabel ?? DEFAULT_FEE_TOTAL_LABEL}
+              onChange={(e) => onChange(updateOptions(block, { totalLabel: e.target.value }))}
+            />
+          </label>
+        </>
+      )}
+
+      {block.type === "payments_received" && (
+        <>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={o.showNotes === true}
+              onChange={(e) => onChange(updateOptions(block, { showNotes: e.target.checked }))}
+            />
+            Show notes column
+          </label>
+          <p className="text-[11px] text-zinc-400">
+            Off by default (no notes, reason, or bank deposit ref). When on, only the notes field prints; DJEP / PayPal dump notes stay stripped.
+          </p>
+        </>
+      )}
+
+      {block.type === "payment_schedule" && (
+        <>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={o.onlyUnpaid === true}
+              onChange={(e) => onChange(updateOptions(block, { onlyUnpaid: e.target.checked }))}
+            />
+            Only show unpaid / upcoming
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={o.hideWhenPaidInFull === true}
+              onChange={(e) => onChange(updateOptions(block, { hideWhenPaidInFull: e.target.checked }))}
+            />
+            Hide when paid in full
+          </label>
+        </>
+      )}
+
+      {block.type === "summary_box" &&
+        (
           [
             ["totalLabel", "Total label", DEFAULT_SUMMARY_TOTAL_LABEL],
             ["paidLabel", "Paid label", DEFAULT_SUMMARY_PAID_LABEL],
@@ -128,10 +146,8 @@ function SmartBlockSettings({
             />
           </label>
         ))}
-      </div>
-    );
-  }
-  return null;
+    </div>
+  );
 }
 
 export default function DocumentBuilder({

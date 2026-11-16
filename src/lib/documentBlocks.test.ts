@@ -57,7 +57,11 @@ describe("documentBlocks receipt helpers", () => {
     const blocks = paymentReceiptInvoiceBlocks();
     assert.equal(blocks.map((b) => b.type).join(","), "text,fee_table,payments_received,summary_box,payment_schedule");
     assert.equal(blocks[1].options?.showQty, true);
+    assert.equal(blocks[1].options?.heading, "Line Items");
     assert.equal(blocks[2].options?.showNotes, false);
+    assert.equal(blocks[2].options?.heading, "Payments Received");
+    assert.equal(blocks[3].options?.heading, "Summary");
     assert.equal(blocks[4].options?.hideWhenPaidInFull, true);
+    assert.equal(blocks[4].options?.heading, "Upcoming Payments");
   });
 });

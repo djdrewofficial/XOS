@@ -6,8 +6,10 @@ import {
   renderPaymentSchedule,
   renderPaymentsReceived,
   renderSummaryBox,
+  unpaidScheduleRows,
   type EventBundle,
 } from "./documentRender.ts";
+import { XDOC_CSS } from "./documentShellCss.ts";
 import type { ReceiptPayment } from "./paymentReceiptMerge.ts";
 
 function bundle(
@@ -92,16 +94,18 @@ describe("fmtDate date-only", () => {
 });
 
 describe("renderFeeTable options", () => {
-  it("supports qty columns, descriptions, and a custom total label", () => {
+  it("supports qty columns, descriptions, heading, and a custom total label", () => {
     const html = renderFeeTable(
       bundle({ financialsHidden: false, total: 2700, payments: [] }),
-      { showDescriptions: true, showQty: true, totalLabel: "Total Investment" },
+      { heading: "Line Items", showDescriptions: true, showQty: true, totalLabel: "Total Investment" },
     );
+    assert.match(html, /Line Items/);
     assert.match(html, /Qty/);
     assert.match(html, /Unit Price/);
     assert.match(html, /LED Uplighting/);
     assert.match(html, /Wireless LED cans/);
     assert.match(html, />2</);
+    assert.doesNotMatch(html, /LED Uplighting × 2/); // qty is its own column
     assert.match(html, /Travel Fee/);
     assert.match(html, /Early booking/);
     assert.match(html, /Total Investment/);
@@ -129,17 +133,30 @@ describe("renderFeeTable options", () => {
 });
 
 describe("renderPaymentsReceived notes option", () => {
-  it("hides the notes column by default", () => {
+  it("hides notes/reason/bank-ref entirely when showNotes is off (default)", () => {
     const html = renderPaymentsReceived(
-      bundle({ financialsHidden: false, total: 2700, payments: fullPay }),
+      bundle({
+        financialsHidden: false,
+        total: 2700,
+        payments: [
+          {
+            amount: 500,
+            method: "zelle",
+            paidAt: "2026-01-15T00:00:00Z",
+            reason: "Retainer",
+            notes: "",
+            bankDepositRef: "DEP-99",
+          },
+        ],
+      }),
     );
     assert.doesNotMatch(html, /<th>Notes<\/th>/);
-    assert.doesNotMatch(html, /CAP-ABC123/);
+    assert.doesNotMatch(html, /Retainer/);
+    assert.doesNotMatch(html, /DEP-99/);
     assert.match(html, /<th>Date<\/th>/);
-    assert.match(html, /Paid in full/);
   });
 
-  it("shows notes when enabled but strips imported PayPal / DJEP noise", () => {
+  it("shows notes when enabled but never reason fallback or import noise", () => {
     const html = renderPaymentsReceived(
       bundle({
         financialsHidden: false,
@@ -157,27 +174,36 @@ describe("renderPaymentsReceived notes option", () => {
             method: "paypal",
             paidAt: "2026-02-01T00:00:00Z",
             notes: "PayPal capture CAP-ZZZ999",
+            reason: "Final",
             legacyDjepId: "djep-1",
           },
           {
             amount: 100,
             method: "cash",
             paidAt: "2026-03-01T00:00:00Z",
-            notes: "contact client@example.com for receipt",
+            notes: "",
+            reason: "ShouldNotPrint",
+            bankDepositRef: "BANK-1",
           },
         ],
       }),
-      { showNotes: true },
+      { showNotes: true, heading: "Payments Received" },
     );
+    assert.match(html, /Payments Received/);
     assert.match(html, /<th>Notes<\/th>/);
     assert.match(html, /Thanks!/);
     assert.doesNotMatch(html, /CAP-ZZZ999/);
-    assert.doesNotMatch(html, /client@example\.com/);
+    assert.doesNotMatch(html, /ShouldNotPrint/);
+    assert.doesNotMatch(html, /BANK-1/);
+    // reason is not a notes fallback, but "Retainer" must not appear from the notes cell
+    assert.doesNotMatch(html, /<td>Retainer<\/td>/);
   });
 
   it("returns empty when financials are hidden", () => {
     assert.equal(
-      renderPaymentsReceived(bundle({ financialsHidden: true, total: 2700, payments: partialPay })),
+      renderPaymentsReceived(bundle({ financialsHidden: true, total: 2700, payments: partialPay }), {
+        heading: "Payments Received",
+      }),
       "",
     );
   });
@@ -203,25 +229,47 @@ describe("renderSummaryBox", () => {
     assert.doesNotMatch(settled, /Balance due/);
   });
 
-  it("hides when financials are hidden", () => {
-    assert.equal(renderSummaryBox(bundle({ financialsHidden: true, total: 2700, payments: [] })), "");
+  it("hides entirely (labels and heading too) when financials are hidden", () => {
+    assert.equal(
+      renderSummaryBox(bundle({ financialsHidden: true, total: 2700, payments: [] }), {
+        heading: "Summary",
+        totalLabel: "Total investment",
+        paidLabel: "Already paid",
+      }),
+      "",
+    );
   });
 });
 
 describe("renderPaymentSchedule options", () => {
-  it("can show only unpaid rows and hide when paid in full", () => {
+  it("shows only remaining rows after applying payments in due-date order", () => {
     const unpaid = renderPaymentSchedule(
       bundle({ financialsHidden: false, total: 2700, payments: partialPay }),
-      { onlyUnpaid: true },
+      { onlyUnpaid: true, heading: "Upcoming Payments" },
     );
+    assert.match(unpaid, /Upcoming Payments/);
     assert.match(unpaid, /Second Payment/);
     assert.match(unpaid, /Final Payment/);
     assert.doesNotMatch(unpaid, /Retainer/);
     assert.match(unpaid, /August 1, 2026/);
 
+    // due date order, not seq: earlier due date with higher seq is covered first
+    const byDue = unpaidScheduleRows(
+      [
+        { id: "late", seq: 1, due_date: "2026-08-01", amount: 500, label: "Late label early seq" },
+        { id: "early", seq: 2, due_date: "2026-01-15", amount: 500, label: "Early due" },
+        { id: "mid", seq: 3, due_date: "2026-06-01", amount: 500, label: "Mid due" },
+      ],
+      [{ amount: 500, method: "zelle", paidAt: "2026-01-15T00:00:00Z" }],
+    );
+    assert.deepEqual(
+      byDue.map((r) => r.id),
+      ["mid", "late"],
+    );
+
     const hidden = renderPaymentSchedule(
       bundle({ financialsHidden: false, total: 2700, payments: fullPay }),
-      { onlyUnpaid: true, hideWhenPaidInFull: true },
+      { onlyUnpaid: true, hideWhenPaidInFull: true, heading: "Upcoming Payments" },
     );
     assert.equal(hidden, "");
   });
@@ -230,8 +278,18 @@ describe("renderPaymentSchedule options", () => {
     assert.equal(
       renderPaymentSchedule(bundle({ financialsHidden: true, total: 2700, payments: [] }), {
         onlyUnpaid: true,
+        heading: "Upcoming Payments",
       }),
       "",
     );
+  });
+});
+
+describe("PDF print CSS for money tables", () => {
+  it("allows tables to split across pages with repeating headers and keeps footer attached", () => {
+    assert.match(XDOC_CSS, /\.xdoc-table \{[^}]*break-inside: auto/);
+    assert.match(XDOC_CSS, /thead \{ display: table-header-group/);
+    assert.match(XDOC_CSS, /\.xdoc-footer \{[^}]*break-before: avoid/);
+    assert.doesNotMatch(XDOC_CSS, /\.xdoc-table, .xdoc-details/);
   });
 });

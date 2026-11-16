@@ -117,15 +117,21 @@ const balancePayments = [
   { amount: 1800, method: "check", paidAt: "2026-05-01T00:00:00Z", notes: "Thanks!", scheduledPaymentId: "sp2" },
 ];
 
-const feeOpts = { showDescriptions: true, showQty: true, totalLabel: "Total Investment" };
-const payOpts = { showNotes: false };
+const feeOpts = {
+  heading: "Line Items",
+  showDescriptions: true,
+  showQty: true,
+  totalLabel: "Total Investment",
+};
+const payOpts = { heading: "Payments Received", showNotes: false };
 const summaryOpts = {
+  heading: "Summary",
   totalLabel: "Total investment",
   paidLabel: "Already paid",
   balanceLabel: "Balance due",
   paidInFullLabel: "Paid in full",
 };
-const scheduleOpts = { onlyUnpaid: true, hideWhenPaidInFull: true };
+const scheduleOpts = { heading: "Upcoming Payments", onlyUnpaid: true, hideWhenPaidInFull: true };
 
 function scenarioBlocks(title, payments) {
   const b = baseBundle(payments, total);
