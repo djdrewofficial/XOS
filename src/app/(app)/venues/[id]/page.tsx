@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { money, type XEvent } from "@/lib/types";
-import { updateVenue, addVenueContact, removeVenueContact, addVenueRoom } from "../actions";
+import { updateVenue, addVenueContact, removeVenueContact, addVenueRoom, geocodeVenue } from "../actions";
 import SaveButton from "@/components/SaveButton";
 
 import { getMe } from "@/lib/auth";
@@ -141,6 +141,14 @@ export default async function VenueDetailPage({
               <label className="label-xs">Travel time (min, one-way)</label>
               <input type="number" step="1" name="travel_minutes" defaultValue={(venue as { travel_minutes?: number | null }).travel_minutes ?? ""} className="input w-full" />
             </div>
+            <div className="col-span-2 rounded-lg border border-zinc-200 bg-black/[0.02] p-3 text-sm dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="mb-1 font-semibold text-zinc-800 dark:text-zinc-200">Map coordinates</div>
+              <p className="text-xs text-zinc-500">
+                {(venue as { lat?: number | null }).lat != null && (venue as { lng?: number | null }).lng != null
+                  ? `Lat ${(venue as { lat: number }).lat}, Lng ${(venue as { lng: number }).lng}`
+                  : "No coordinates yet (needed for punch distance). Use Geocode below after saving the address."}
+              </p>
+            </div>
             <div className="flex items-end gap-2 pb-2">
               <input type="checkbox" name="is_one_time" id="one_time" defaultChecked={venue.is_one_time} className="size-4 accent-brand-light" />
               <label htmlFor="one_time" className="text-sm text-zinc-600 dark:text-zinc-400">One-time venue</label>
@@ -170,6 +178,11 @@ export default async function VenueDetailPage({
             <div className="col-span-2">
               <SaveButton>Save Venue</SaveButton>
             </div>
+          </form>
+          <form action={geocodeVenue.bind(null, id)} className="mt-3">
+            <button className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90">
+              {(venue as { lat?: number | null }).lat != null ? "Refresh coordinates from address" : "Geocode from address"}
+            </button>
           </form>
         </div>
 

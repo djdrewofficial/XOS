@@ -63,6 +63,7 @@ export type FsStaff = {
   id: string;
   employee_id: string | null;
   role: string | null;
+  pay_type?: string | null;
   first_name: string | null;
   last_name: string | null;
   stage_name: string | null;
@@ -75,6 +76,7 @@ export type FsStaff = {
   checked_out_at: string | null;
   /** null unless this is the viewer's own row */
   flat_wage: number | null;
+  hourly_rate_override?: number | null;
 };
 
 export type FieldStaffEventData = {

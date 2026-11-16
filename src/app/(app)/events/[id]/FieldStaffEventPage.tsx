@@ -158,6 +158,26 @@ export default async function FieldStaffEventPage({
     </div>
   );
 
+  const [{ data: staffFeat }, { data: clockSettings }, { data: myPunches }] = await Promise.all([
+    supabase.from("staff_settings").select("feat_check_in_out").eq("id", true).maybeSingle(),
+    supabase.from("time_clock_settings").select("enabled").eq("id", true).maybeSingle(),
+    mine.length
+      ? supabase
+          .from("time_punches")
+          .select("event_staff_id, punch_type, punched_at")
+          .in("event_staff_id", mine.map((s) => s.id))
+          .is("deleted_at", null)
+          .order("punched_at")
+      : Promise.resolve({ data: [] as { event_staff_id: string; punch_type: string; punched_at: string }[] }),
+  ]);
+  const clockEnabled = staffFeat?.feat_check_in_out !== false && clockSettings?.enabled !== false;
+  const openByStaff = new Map<string, boolean>();
+  for (const p of myPunches ?? []) {
+    const sid = p.event_staff_id as string;
+    if (p.punch_type === "in") openByStaff.set(sid, true);
+    else if (p.punch_type === "out") openByStaff.set(sid, false);
+  }
+
   const staffTab = (
     <div className="space-y-5">
       {mine.length > 0 && (
@@ -171,10 +191,19 @@ export default async function FieldStaffEventPage({
                   <div className="text-xs text-zinc-500">
                     {fmtTime(s.start_time ?? event.start_time)} – {fmtTime(s.end_time ?? event.end_time)}
                     {s.flat_wage != null && Number(s.flat_wage) > 0 && <> · Wage {money(Number(s.flat_wage))}</>}
+                    {s.pay_type === "hourly" && s.hourly_rate_override != null && (
+                      <> · ${Number(s.hourly_rate_override).toFixed(2)}/hr</>
+                    )}
                   </div>
                   {s.notes && <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">{s.notes}</p>}
                 </div>
-                <StaffCheckIn eventStaffId={s.id} checkedInAt={s.checked_in_at} checkedOutAt={s.checked_out_at} />
+                <StaffCheckIn
+                  eventStaffId={s.id}
+                  checkedInAt={s.checked_in_at}
+                  checkedOutAt={s.checked_out_at}
+                  enabled={clockEnabled}
+                  openPunch={openByStaff.get(s.id) === true}
+                />
               </li>
             ))}
           </ul>

@@ -30,7 +30,7 @@ These stay excluded because the actor is not the office token:
 - Client portal and couple-app writes, including the couple's own vendor removal, songs, photos, and guest invites.
 - Client signing and proposal confirmation.
 - Passkeys, password reset, the signed-in person's own profile, and their own second factor.
-- Employee self check-in and the employee's own timesheet request. Office approval of that request is `timesheet_requests`.
+- Employee self check-in and the employee's own timesheet request. Office approval of that request is `timesheet_requests`. Hourly punch timesheet approve/unlock is `timesheet_approve` / `timesheet_unlock`; punch reads are `time_punches_list` and `event_staff_time_pay`.
 - OAuth login and provider callbacks for Spotify, HighLevel, and comms. Sync and export of an already stored connection stay tools.
 - Inbound webhooks, public unsubscribe, client pay and PayPal routes, and the auth SMS hook `src/app/api/auth/hooks/send-sms/route.ts`.
 - `saveRolePermissions`, `saveUserPermissions`, and staff `savePermissions` / `saveAccess`. Those change who is allowed to act. They are the permission grid, not an office record.

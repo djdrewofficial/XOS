@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/auth";
-import { staffHours, staffCost } from "@/lib/payroll";
+import { staffCost, staffCostForPayroll, staffHours } from "@/lib/payroll";
+import type { TimeClockSettingsLite } from "@/lib/timeClock";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -35,22 +36,47 @@ export async function savePayrollSettings(formData: FormData) {
   revalidatePath("/payroll");
 }
 
-/* Materialize auto payables (one per staffer per event) for a pay period, owed =
-   computed staff cost. Idempotent: updates existing auto rows, inserts new ones;
-   never deletes (would orphan logged payments). */
+/* Materialize auto payables for a pay period.
+   Hourly: only approved/locked timesheets (uses locked amount).
+   Flat: always included from flat_wage. */
 export async function generatePayables(payday: string, periodStart: string, periodEnd: string) {
   await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireAdmin(supabase);
 
+  const { data: clockSettings } = await supabase.from("time_clock_settings").select("*").eq("id", true).maybeSingle();
+  const settings = clockSettings as TimeClockSettingsLite | null;
+  const requireApproval = settings?.require_approval_before_payroll !== false;
+
   const { data: events } = await supabase
     .from("events")
     .select(
-      "id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate))"
+      "id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate))"
     )
     .is("archived_at", null)
     .gte("event_date", periodStart)
     .lte("event_date", periodEnd);
+
+  const staffIds = (events ?? []).flatMap((ev) =>
+    ((ev.event_staff ?? []) as { id: string }[]).map((es) => es.id)
+  );
+  const punchesByStaff: Record<string, { punch_type: string; punched_at: string; deleted_at: string | null }[]> = {};
+  if (staffIds.length) {
+    const { data: punches } = await supabase
+      .from("time_punches")
+      .select("event_staff_id, punch_type, punched_at, deleted_at")
+      .in("event_staff_id", staffIds)
+      .is("deleted_at", null);
+    for (const p of punches ?? []) {
+      const sid = p.event_staff_id as string;
+      if (!punchesByStaff[sid]) punchesByStaff[sid] = [];
+      punchesByStaff[sid].push({
+        punch_type: p.punch_type as string,
+        punched_at: p.punched_at as string,
+        deleted_at: null,
+      });
+    }
+  }
 
   const { data: existing } = await supabase
     .from("payroll_payables")
@@ -60,6 +86,8 @@ export async function generatePayables(payday: string, periodStart: string, peri
   const existingByKey = new Map((existing ?? []).map((r) => [`${r.employee_id}|${r.event_id}`, r.id as string]));
 
   const toInsert: Record<string, unknown>[] = [];
+  const linkUpdates: { eventStaffId: string; payableId: string }[] = [];
+
   for (const ev of events ?? []) {
     if (!(ev.status as unknown as { counts_payroll?: boolean } | null)?.counts_payroll) continue;
     const travel = (ev.venue as unknown as { travel_minutes?: number | null } | null)?.travel_minutes ?? 0;
@@ -69,6 +97,11 @@ export async function generatePayables(payday: string, periodStart: string, peri
       role: string | null;
       pay_type: string | null;
       flat_wage: number | null;
+      hourly_rate_override: number | null;
+      timesheet_status: string | null;
+      timesheet_hours: number | null;
+      timesheet_amount: number | null;
+      timesheet_rate: number | null;
       start_time: string | null;
       end_time: string | null;
       checked_in_at: string | null;
@@ -76,12 +109,28 @@ export async function generatePayables(payday: string, periodStart: string, peri
       employee: { hourly_rate?: number | null } | null;
     }>) {
       if (!es.employee_id) continue;
-      const hours = staffHours(es, ev, travel, { actual: !!(es.checked_in_at && es.checked_out_at) });
-      const cost = staffCost(es, es.employee, hours);
+      const payType = es.pay_type ?? "flat";
+      const punches = punchesByStaff[es.id] ?? [];
+      const hours = staffHours(es, ev, travel, {
+        actual: !!(es.checked_in_at && es.checked_out_at) || punches.length > 0,
+        punches,
+        settings,
+        punchedHourly: payType === "hourly" && punches.length > 0,
+      });
+
+      let cost: number | null;
+      if (payType === "hourly" && requireApproval) {
+        cost = staffCostForPayroll(es, es.employee, hours);
+        if (cost == null) continue; // skip unapproved hourly
+      } else {
+        cost = staffCost(es, es.employee, hours);
+      }
+
       const key = `${es.employee_id}|${ev.id}`;
       const existingId = existingByKey.get(key);
       if (existingId) {
         await supabase.from("payroll_payables").update({ amount_owed: cost, description: es.role }).eq("id", existingId);
+        linkUpdates.push({ eventStaffId: es.id, payableId: existingId });
       } else {
         toInsert.push({
           pay_period: payday,
@@ -91,11 +140,35 @@ export async function generatePayables(payday: string, periodStart: string, peri
           description: es.role,
           amount_owed: cost,
           source: "auto",
+          _event_staff_id: es.id,
         });
       }
     }
   }
-  if (toInsert.length) await supabase.from("payroll_payables").insert(toInsert);
+
+  if (toInsert.length) {
+    const pendingLinks = toInsert.map((r) => ({
+      eventStaffId: r._event_staff_id as string,
+      employee_id: r.employee_id as string,
+      event_id: r.event_id as string,
+    }));
+    const rows = toInsert.map(({ _event_staff_id: _, ...rest }) => rest);
+    const { data: inserted, error } = await supabase.from("payroll_payables").insert(rows).select("id, employee_id, event_id");
+    if (error) throw new Error(error.message);
+    for (const row of inserted ?? []) {
+      const match = pendingLinks.find((p) => p.employee_id === row.employee_id && p.event_id === row.event_id);
+      if (match) linkUpdates.push({ eventStaffId: match.eventStaffId, payableId: row.id as string });
+    }
+  }
+
+  for (const link of linkUpdates) {
+    await supabase
+      .from("event_staff")
+      .update({ timesheet_payable_id: link.payableId, timesheet_status: "locked" })
+      .eq("id", link.eventStaffId)
+      .in("timesheet_status", ["approved", "locked"]);
+  }
+
   revalidatePath("/payroll");
 }
 
@@ -112,6 +185,18 @@ export async function logPayment(payableId: string, formData: FormData) {
     notes: clean(formData.get("notes")),
   });
   if (error) throw new Error(error.message);
+  // Mark linked timesheets paid when fully covered
+  const { data: payable } = await supabase
+    .from("payroll_payables")
+    .select("id, amount_owed, payments:payroll_payments(amount)")
+    .eq("id", payableId)
+    .maybeSingle();
+  if (payable) {
+    const paid = ((payable.payments as { amount: number }[] | null) ?? []).reduce((s, x) => s + Number(x.amount), 0);
+    if (paid + 0.001 >= Number(payable.amount_owed)) {
+      await supabase.from("event_staff").update({ timesheet_status: "paid", paid_at: new Date().toISOString() }).eq("timesheet_payable_id", payableId);
+    }
+  }
   revalidatePath("/payroll");
 }
 
@@ -138,6 +223,7 @@ export async function removePayable(payableId: string) {
   await requireModule("payroll", "edit", { mode: "throw" });
   const supabase = await createClient();
   await requireAdmin(supabase);
+  await supabase.from("event_staff").update({ timesheet_payable_id: null }).eq("timesheet_payable_id", payableId);
   await supabase.from("payroll_payables").delete().eq("id", payableId);
   revalidatePath("/payroll");
 }

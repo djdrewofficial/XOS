@@ -350,10 +350,16 @@ export async function MyUpcomingEvents() {
   }
 
   const src = eventSource(me.fieldStaff);
-  const { data: assignments } = await supabase
-    .from(src.eventStaff)
-    .select(`id, role, checked_in_at, checked_out_at, event:${src.events}(id, name, event_date, start_time, archived_at, status:event_statuses(name, color, text_color), venue:${src.venues}(name))`)
-    .eq("employee_id", me.employeeId);
+  const [{ data: assignments }, { data: staffFeat }, { data: clockSettings }] = await Promise.all([
+    supabase
+      .from(src.eventStaff)
+      .select(`id, role, checked_in_at, checked_out_at, event:${src.events}(id, name, event_date, start_time, archived_at, status:event_statuses(name, color, text_color), venue:${src.venues}(name))`)
+      .eq("employee_id", me.employeeId),
+    supabase.from("staff_settings").select("feat_check_in_out").eq("id", true).maybeSingle(),
+    supabase.from("time_clock_settings").select("enabled").eq("id", true).maybeSingle(),
+  ]);
+
+  const clockEnabled = staffFeat?.feat_check_in_out !== false && clockSettings?.enabled !== false;
 
   const today = todayStr();
   const upcoming = (assignments ?? [])
@@ -361,6 +367,30 @@ export async function MyUpcomingEvents() {
     .filter((a) => a.event?.event_date && a.event.event_date >= today && !a.event.archived_at)
     .sort((a, b) => (a.event!.event_date! < b.event!.event_date! ? -1 : 1))
     .slice(0, 8);
+
+  const openByStaff = new Map<string, boolean>();
+  if (upcoming.length) {
+    const punchRes = await supabase
+      .from("time_punches")
+      .select("event_staff_id, punch_type, punched_at, deleted_at")
+      .in("event_staff_id", upcoming.map((a) => a.id))
+      .is("deleted_at", null)
+      .order("punched_at");
+    const by: Record<string, { punch_type: string; punched_at: string }[]> = {};
+    for (const p of punchRes.error ? [] : punchRes.data ?? []) {
+      const sid = p.event_staff_id as string;
+      if (!by[sid]) by[sid] = [];
+      by[sid].push({ punch_type: p.punch_type as string, punched_at: p.punched_at as string });
+    }
+    for (const [sid, rows] of Object.entries(by)) {
+      let open = false;
+      for (const r of rows) {
+        if (r.punch_type === "in") open = true;
+        else if (r.punch_type === "out") open = false;
+      }
+      openByStaff.set(sid, open);
+    }
+  }
 
   return (
     <div>
@@ -387,7 +417,15 @@ export async function MyUpcomingEvents() {
                 </td>
                 <td className="px-4 py-2">{a.role}</td>
                 <td className="px-4 py-2">{a.event!.venue?.name ?? "—"}</td>
-                <td className="px-4 py-2"><StaffCheckIn eventStaffId={a.id} checkedInAt={a.checked_in_at} checkedOutAt={a.checked_out_at} /></td>
+                <td className="px-4 py-2">
+                  <StaffCheckIn
+                    eventStaffId={a.id}
+                    checkedInAt={a.checked_in_at}
+                    checkedOutAt={a.checked_out_at}
+                    enabled={clockEnabled}
+                    openPunch={openByStaff.get(a.id) === true}
+                  />
+                </td>
               </tr>
             ))}
             {upcoming.length === 0 && (

@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { requireModule } from "@/lib/auth";
 import { money } from "@/lib/types";
 import { staffHours, staffCost, payPeriodFor, fmtPeriod } from "@/lib/payroll";
+import { effectiveHourlyRate, isMissedPunch } from "@/lib/timeClock";
+import { approveTimesheet, unlockTimesheet } from "@/app/(app)/time-clock/actions";
 import {
   savePayrollSettings,
   generatePayables,
@@ -68,41 +70,98 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
     );
   }
 
+  const { data: clockSettings } = await supabase.from("time_clock_settings").select("*").eq("id", true).maybeSingle();
+  const grace = Number(clockSettings?.missed_punch_grace_minutes ?? 30);
+
   // ---- estimate: staff on events in this period ----
   const { data: events } = await supabase
     .from("events")
     .select(
-      "id, name, event_date, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(name, travel_minutes), event_staff(id, role, pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees(first_name, last_name, hourly_rate))"
+      "id, name, event_date, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(name, travel_minutes), event_staff(id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, location_missing, employee:employees(first_name, last_name, hourly_rate))"
     )
     .is("archived_at", null)
     .gte("event_date", period.periodStart)
     .lte("event_date", period.periodEnd)
     .order("event_date");
 
-  type EstRow = { staff: string; event: string; eventId: string; date: string; hours: number; rate: string; cost: number; actual: boolean };
+  const allStaffIds = (events ?? []).flatMap((ev) => ((ev.event_staff ?? []) as { id: string }[]).map((es) => es.id));
+  const punchesByStaff: Record<string, { punch_type: string; punched_at: string }[]> = {};
+  if (allStaffIds.length) {
+    const { data: punches } = await supabase
+      .from("time_punches")
+      .select("event_staff_id, punch_type, punched_at")
+      .in("event_staff_id", allStaffIds)
+      .is("deleted_at", null)
+      .order("punched_at");
+    for (const p of punches ?? []) {
+      const sid = p.event_staff_id as string;
+      if (!punchesByStaff[sid]) punchesByStaff[sid] = [];
+      punchesByStaff[sid].push({ punch_type: p.punch_type as string, punched_at: p.punched_at as string });
+    }
+  }
+
+  type EstRow = {
+    staffId: string;
+    staff: string;
+    event: string;
+    eventId: string;
+    date: string;
+    hours: number;
+    rate: string;
+    cost: number;
+    actual: boolean;
+    payType: string;
+    approval: string;
+    missed: boolean;
+    locationMissing: boolean;
+  };
   const estRows: EstRow[] = [];
   for (const ev of events ?? []) {
-    // only statuses flagged "Counts toward Payroll" generate payroll
     if (!(ev.status as unknown as { counts_payroll?: boolean } | null)?.counts_payroll) continue;
     const travel = (ev.venue as unknown as { travel_minutes?: number | null } | null)?.travel_minutes ?? 0;
     for (const es of (ev.event_staff ?? []) as Array<Record<string, unknown>>) {
       const emp = es.employee as { first_name?: string; last_name?: string; hourly_rate?: number | null } | null;
-      const actual = !!(es.checked_in_at && es.checked_out_at);
-      const hours = staffHours(es, ev, travel, { actual });
+      const punches = punchesByStaff[es.id as string] ?? [];
+      const payType = (es.pay_type as string) ?? "flat";
+      const actual = punches.length > 0 || !!(es.checked_in_at && es.checked_out_at);
+      const hours = staffHours(es, ev, travel, {
+        actual,
+        punches,
+        settings: clockSettings,
+        punchedHourly: payType === "hourly" && punches.length > 0,
+      });
       const cost = staffCost(es, emp, hours);
+      const rateNum = effectiveHourlyRate(es as { hourly_rate_override?: number | null; timesheet_rate?: number | null }, emp);
+      const hasIn = punches.some((p) => p.punch_type === "in") || !!es.checked_in_at;
+      const startForMiss = (es.start_time as string | null) ?? (ev.setup_time as string | null) ?? (ev.start_time as string | null);
+      const missed =
+        payType === "hourly" &&
+        isMissedPunch({
+          eventDate: ev.event_date as string,
+          startTime: startForMiss,
+          graceMinutes: grace,
+          hasInPunch: hasIn,
+        });
       estRows.push({
+        staffId: es.id as string,
         staff: `${emp?.first_name ?? ""} ${emp?.last_name ?? ""}`.trim() || "—",
         event: (ev.name as string) || "(unnamed)",
         eventId: ev.id as string,
         date: ev.event_date as string,
         hours,
-        rate: (es.pay_type as string) === "flat" ? "flat" : `$${Number(emp?.hourly_rate ?? 0)}/hr`,
+        rate: payType === "flat" ? "flat" : `$${rateNum}/hr`,
         cost,
         actual,
+        payType,
+        approval: (es.timesheet_status as string) ?? "open",
+        missed,
+        locationMissing: Boolean(es.location_missing),
       });
     }
   }
   const estTotal = estRows.reduce((s, r) => s + r.cost, 0);
+  const missedCount = estRows.filter((r) => r.missed).length;
+  const pendingApproval = estRows.filter((r) => r.payType === "hourly" && r.approval !== "locked" && r.approval !== "paid" && r.approval !== "approved").length;
 
   // ---- payables ledger for this payday ----
   const { data: payables } = await supabase
@@ -159,10 +218,17 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
 
       {/* ---- estimate ---- */}
       <div className="card p-5">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="card-title mb-0">Estimated payroll this period</h2>
-          <span className="text-lg font-black text-zinc-900 dark:text-white">{money(estTotal)}</span>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+            {missedCount > 0 && <span className="font-semibold text-amber-700 dark:text-amber-300">{missedCount} missed punch{missedCount === 1 ? "" : "es"}</span>}
+            {pendingApproval > 0 && <span>{pendingApproval} hourly awaiting approval</span>}
+            <span className="text-lg font-black text-zinc-900 dark:text-white">{money(estTotal)}</span>
+          </div>
         </div>
+        <p className="mb-3 text-xs text-zinc-500">
+          Hourly payables are only created for approved/locked timesheets. Flat wages generate as before.
+        </p>
         {estRows.length === 0 ? (
           <p className="text-sm text-zinc-500">No staffed events in this period.</p>
         ) : (
@@ -173,23 +239,49 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
                 <th className="px-2 py-1.5 text-left">Event</th>
                 <th className="px-2 py-1.5 text-right">Hours</th>
                 <th className="px-2 py-1.5 text-left">Rate</th>
+                <th className="px-2 py-1.5 text-left">Status</th>
                 <th className="px-2 py-1.5 text-right">Cost</th>
+                <th className="px-2 py-1.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-white/[0.06]">
-              {estRows.map((r, i) => (
-                <tr key={i}>
-                  <td className="px-2 py-1.5">{r.staff}</td>
+              {estRows.map((r) => (
+                <tr key={r.staffId}>
                   <td className="px-2 py-1.5">
-                    <Link href={`/events/${r.eventId}`} className="text-brand hover:underline dark:text-brand-lighter">{r.event}</Link>
+                    {r.staff}
+                    {r.missed && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-bold uppercase text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">missed</span>}
+                    {r.locationMissing && <span className="ml-1 text-[10px] text-zinc-400">no GPS</span>}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <Link href={`/events/${r.eventId}?tab=staff`} className="text-brand hover:underline dark:text-brand-lighter">{r.event}</Link>
                     <span className="ml-1 text-xs text-zinc-400">{r.date}</span>
                   </td>
                   <td className="px-2 py-1.5 text-right">
-                    {r.rate === "flat" ? "—" : r.hours.toFixed(1)}
-                    {r.actual && r.rate !== "flat" && <span className="ml-1 text-[10px] text-emerald-600">actual</span>}
+                    {r.rate === "flat" ? "—" : r.hours.toFixed(2)}
+                    {r.actual && r.rate !== "flat" && <span className="ml-1 text-[10px] text-emerald-600">clocked</span>}
                   </td>
                   <td className="px-2 py-1.5">{r.rate}</td>
+                  <td className="px-2 py-1.5">
+                    {r.payType === "hourly" ? (
+                      <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-bold uppercase dark:bg-white/10">{r.approval}</span>
+                    ) : (
+                      <span className="text-zinc-400">flat</span>
+                    )}
+                  </td>
                   <td className="px-2 py-1.5 text-right font-semibold">{money(r.cost)}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    {r.payType === "hourly" && r.approval !== "locked" && r.approval !== "paid" && (
+                      <form action={approveTimesheet.bind(null, r.staffId)} className="inline">
+                        <button className="text-xs font-semibold text-brand hover:underline dark:text-brand-lighter">Approve</button>
+                      </form>
+                    )}
+                    {r.payType === "hourly" && (r.approval === "locked" || r.approval === "approved") && (
+                      <form action={unlockTimesheet.bind(null, r.staffId)} className="inline">
+                        <input type="hidden" name="reason" value="Unlocked from payroll page" />
+                        <button className="text-xs text-zinc-500 hover:underline">Unlock</button>
+                      </form>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

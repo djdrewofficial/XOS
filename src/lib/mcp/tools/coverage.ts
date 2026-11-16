@@ -676,6 +676,213 @@ export const coverageTools: LiveTool[] = [
     },
   },
   {
+    name: "time_punches_list",
+    description: "List time-clock punches for an event, employee, assignment, or date range. Includes GPS fields when stored.",
+    scopes: ["money.payroll"],
+    confirm: false,
+    inputSchema: obj({ event_id: UUID, employee_id: UUID, event_staff_id: UUID, from: STR, to: STR, limit: { type: "number" } }, []),
+    async execute(args, ctx) {
+      const admin = adminOf(ctx);
+      let q = admin
+        .from("time_punches")
+        .select("id, event_staff_id, employee_id, event_id, punch_type, punched_at, lat, lng, accuracy_m, distance_m, location_missing, source, note, deleted_at")
+        .is("deleted_at", null)
+        .order("punched_at", { ascending: false })
+        .limit(typeof args.limit === "number" ? Math.min(args.limit, 200) : 100);
+      if (s(args, "event_id")) q = q.eq("event_id", s(args, "event_id"));
+      if (s(args, "employee_id")) q = q.eq("employee_id", s(args, "employee_id"));
+      if (s(args, "event_staff_id")) q = q.eq("event_staff_id", s(args, "event_staff_id"));
+      if (s(args, "from")) q = q.gte("punched_at", s(args, "from"));
+      if (s(args, "to")) q = q.lte("punched_at", s(args, "to"));
+      return { punches: await query(q) };
+    },
+  },
+  {
+    name: "event_staff_time_pay",
+    description: "Read hours, rate, amount, and approval status per event_staff from v_event_staff_time_pay.",
+    scopes: ["money.payroll"],
+    confirm: false,
+    inputSchema: obj({ event_id: UUID, employee_id: UUID, event_staff_id: UUID, limit: { type: "number" } }, []),
+    async execute(args, ctx) {
+      const admin = adminOf(ctx);
+      let q = admin.from("v_event_staff_time_pay").select("*").limit(typeof args.limit === "number" ? Math.min(args.limit, 200) : 100);
+      if (s(args, "event_id")) q = q.eq("event_id", s(args, "event_id"));
+      if (s(args, "employee_id")) q = q.eq("employee_id", s(args, "employee_id"));
+      if (s(args, "event_staff_id")) q = q.eq("event_staff_id", s(args, "event_staff_id"));
+      return { rows: await query(q) };
+    },
+  },
+  {
+    name: "timesheet_approve",
+    description: "Approve and lock an hourly timesheet from punches so payroll_generate can create a payable.",
+    scopes: ["money.payroll"],
+    confirm: true,
+    inputSchema: obj({ event_staff_id: UUID }, ["event_staff_id"]),
+    async execute(args, ctx) {
+      const admin = adminOf(ctx);
+      const id = s(args, "event_staff_id")!;
+      const row = await query(admin.from("event_staff").select("id, pay_type, hourly_rate_override, employee:employees(hourly_rate)").eq("id", id).maybeSingle()) as {
+        id: string;
+        pay_type: string | null;
+        hourly_rate_override: number | null;
+        employee: { hourly_rate?: number | null } | null;
+      } | null;
+      if (!row) throw new Error("Assignment not found.");
+      if ((row.pay_type ?? "flat") !== "hourly") throw new Error("Only hourly assignments need timesheet approval.");
+      const punches = (await query(admin.from("time_punches").select("punch_type, punched_at, deleted_at").eq("event_staff_id", id).is("deleted_at", null))) as {
+        punch_type: string;
+        punched_at: string;
+        deleted_at: string | null;
+      }[];
+      const { payableHoursFromPunches, effectiveHourlyRate, hourlyAmount } = await import("@/lib/timeClock");
+      const { data: settings } = await admin.from("time_clock_settings").select("*").eq("id", true).maybeSingle();
+      const hours = payableHoursFromPunches(punches ?? [], settings, 0);
+      const rate = effectiveHourlyRate(row, row.employee);
+      const amount = hourlyAmount(hours, rate);
+      const now = new Date().toISOString();
+      const { error } = await admin.from("event_staff").update({
+        timesheet_status: "locked",
+        timesheet_hours: hours,
+        timesheet_rate: rate,
+        timesheet_amount: amount,
+        timesheet_approved_at: now,
+        timesheet_locked_at: now,
+      }).eq("id", id);
+      if (error) throw new Error(error.message);
+      return { ok: true, hours, rate, amount };
+    },
+  },
+  {
+    name: "timesheet_unlock",
+    description: "Unlock an approved hourly timesheet so punches can be edited again. Requires a reason.",
+    scopes: ["money.payroll"],
+    confirm: true,
+    inputSchema: obj({ event_staff_id: UUID, reason: STR }, ["event_staff_id", "reason"]),
+    async execute(args, ctx) {
+      const admin = adminOf(ctx);
+      const id = s(args, "event_staff_id")!;
+      const reason = s(args, "reason");
+      if (!reason) throw new Error("A reason is required to unlock.");
+      const row = await query(admin.from("event_staff").select("id, timesheet_status").eq("id", id).maybeSingle()) as { timesheet_status: string } | null;
+      if (!row) throw new Error("Assignment not found.");
+      if (row.timesheet_status === "paid") throw new Error("This timesheet was already paid.");
+      const { error } = await admin.from("event_staff").update({
+        timesheet_status: "open",
+        timesheet_approved_at: null,
+        timesheet_approved_by: null,
+        timesheet_locked_at: null,
+        timesheet_payable_id: null,
+      }).eq("id", id);
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    },
+  },
+  {
+    name: "time_punch_admin_upsert",
+    description: "Admin insert, update, or soft-delete a punch with a required reason. Writes an audit row.",
+    scopes: ["money.payroll"],
+    confirm: true,
+    inputSchema: obj({
+      action: { type: "string", enum: ["insert", "update", "delete"] },
+      punch_id: UUID,
+      event_staff_id: UUID,
+      punch_type: { type: "string", enum: ["in", "out"] },
+      punched_at: STR,
+      lat: { type: "number" },
+      lng: { type: "number" },
+      accuracy_m: { type: "number" },
+      location_missing: { type: "boolean" },
+      note: STR,
+      reason: STR,
+      edited_by_employee_id: UUID,
+    }, ["action", "reason"]),
+    async execute(args, ctx) {
+      const admin = adminOf(ctx);
+      const action = s(args, "action")!;
+      const reason = s(args, "reason");
+      if (!reason) throw new Error("A reason is required.");
+      const editor = s(args, "edited_by_employee_id");
+      if (!editor) throw new Error("edited_by_employee_id is required for the audit trail.");
+
+      if (action === "delete") {
+        const punchId = s(args, "punch_id");
+        if (!punchId) throw new Error("punch_id is required.");
+        const before = await query(admin.from("time_punches").select("*").eq("id", punchId).maybeSingle()) as Record<string, unknown> | null;
+        if (!before || before.deleted_at) throw new Error("Punch not found.");
+        const { error } = await admin.from("time_punches").update({ deleted_at: new Date().toISOString() }).eq("id", punchId);
+        if (error) throw new Error(error.message);
+        await admin.from("time_punch_edits").insert({
+          punch_id: punchId,
+          event_staff_id: before.event_staff_id,
+          action: "delete",
+          before_row: before,
+          after_row: { ...before, deleted_at: new Date().toISOString() },
+          reason,
+          edited_by: editor,
+        });
+        return { ok: true };
+      }
+
+      if (action === "update") {
+        const punchId = s(args, "punch_id");
+        if (!punchId) throw new Error("punch_id is required.");
+        const before = await query(admin.from("time_punches").select("*").eq("id", punchId).maybeSingle()) as Record<string, unknown> | null;
+        if (!before || before.deleted_at) throw new Error("Punch not found.");
+        const patch: Record<string, unknown> = { source: "admin" };
+        if (s(args, "punch_type")) patch.punch_type = s(args, "punch_type");
+        if (s(args, "punched_at")) patch.punched_at = s(args, "punched_at");
+        if (typeof args.lat === "number") patch.lat = args.lat;
+        if (typeof args.lng === "number") patch.lng = args.lng;
+        if (typeof args.accuracy_m === "number") patch.accuracy_m = args.accuracy_m;
+        if (typeof args.location_missing === "boolean") patch.location_missing = args.location_missing;
+        if ("note" in args) patch.note = s(args, "note");
+        const after = await query(admin.from("time_punches").update(patch).eq("id", punchId).select("*").maybeSingle());
+        await admin.from("time_punch_edits").insert({
+          punch_id: punchId,
+          event_staff_id: before.event_staff_id,
+          action: "update",
+          before_row: before,
+          after_row: after,
+          reason,
+          edited_by: editor,
+        });
+        return { ok: true, punch: after };
+      }
+
+      const eventStaffId = s(args, "event_staff_id");
+      if (!eventStaffId) throw new Error("event_staff_id is required.");
+      const row = await query(admin.from("event_staff").select("id, employee_id, event_id").eq("id", eventStaffId).maybeSingle()) as {
+        employee_id: string;
+        event_id: string;
+      } | null;
+      if (!row) throw new Error("Assignment not found.");
+      const after = await query(admin.from("time_punches").insert({
+        event_staff_id: eventStaffId,
+        employee_id: row.employee_id,
+        event_id: row.event_id,
+        punch_type: s(args, "punch_type") ?? "in",
+        punched_at: s(args, "punched_at") ?? new Date().toISOString(),
+        lat: typeof args.lat === "number" ? args.lat : null,
+        lng: typeof args.lng === "number" ? args.lng : null,
+        accuracy_m: typeof args.accuracy_m === "number" ? args.accuracy_m : null,
+        location_missing: args.location_missing === true || typeof args.lat !== "number",
+        source: "admin",
+        note: s(args, "note"),
+        created_by: editor,
+      }).select("*").maybeSingle());
+      await admin.from("time_punch_edits").insert({
+        punch_id: (after as { id?: string } | null)?.id ?? null,
+        event_staff_id: eventStaffId,
+        action: "insert",
+        before_row: null,
+        after_row: after,
+        reason,
+        edited_by: editor,
+      });
+      return { ok: true, punch: after };
+    },
+  },
+  {
     name: "equipment_update",
     description: "Update an equipment item name, category, serial number, and active flag.",
     scopes: ["write.equipment"],

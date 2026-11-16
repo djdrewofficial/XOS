@@ -357,7 +357,7 @@ export default async function EmployeeProfilePage({
             <div className="flex justify-between"><dt className="text-zinc-500">Unpaid Wages</dt><dd className="font-bold text-amber-700 dark:text-amber-300">{money(unpaidWages)}</dd></div>
           </dl>
           <p className="mt-3 text-xs text-zinc-500">
-            Per-event wages are set on each event&apos;s Staff tab. Punch-based hourly auto-calc comes with the employee portal.
+            Per-event wages are set on each event&apos;s Staff tab. Hourly assignments use this rate (or an override) times clocked punches after timesheet approval.
           </p>
         </div>
       </div>

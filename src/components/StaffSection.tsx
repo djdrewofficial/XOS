@@ -6,11 +6,14 @@ import {
 } from "@/app/(app)/events/actions";
 import { money, type Employee } from "@/lib/types";
 import AssignStaffForm from "@/components/AssignStaffForm";
+import AdminPunchPanel, { type PunchRow } from "@/components/AdminPunchPanel";
 
 type Staff = {
   id: string;
   role: string;
+  pay_type?: string | null;
   flat_wage: number;
+  hourly_rate_override?: number | null;
   start_time: string | null;
   end_time: string | null;
   notes: string | null;
@@ -20,6 +23,9 @@ type Staff = {
   checked_in_at: string | null;
   checked_out_at: string | null;
   portal_visible: boolean;
+  timesheet_status?: string | null;
+  timesheet_hours?: number | null;
+  timesheet_amount?: number | null;
   employee: Employee | null;
 };
 
@@ -56,14 +62,26 @@ function StatusButton({
   );
 }
 
+function wageLabel(s: Staff): string {
+  if ((s.pay_type ?? "flat") === "hourly") {
+    const rate = s.hourly_rate_override ?? s.employee?.hourly_rate;
+    return rate != null ? `$${Number(rate).toFixed(2)}/hr` : "Hourly (no rate)";
+  }
+  return money(s.flat_wage);
+}
+
 export default function StaffSection({
   eventId,
   staff,
   employees,
+  punchesByStaff = {},
+  canEditPunches = true,
 }: {
   eventId: string;
   staff: Staff[];
   employees: Employee[];
+  punchesByStaff?: Record<string, PunchRow[]>;
+  canEditPunches?: boolean;
 }) {
   const input =
     "rounded-md border border-zinc-300 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-3 py-2 text-sm focus:border-brand-light/70 focus:outline-none";
@@ -73,7 +91,6 @@ export default function StaffSection({
       <div className="grid gap-5 lg:grid-cols-2">
         {staff.map((s, i) => (
           <div key={s.id} className="card p-5">
-            {/* header */}
             <div className="mb-4 flex items-start justify-between gap-2">
               <div className="flex items-center gap-3">
                 <div className="flex size-12 items-center justify-center rounded-full bg-gradient-to-br from-brand to-brand-light text-lg font-black text-white">
@@ -87,8 +104,8 @@ export default function StaffSection({
                     Position #{i + 1} {i === 0 ? "· Primary Employee" : "· Additional Employee"}
                   </div>
                   <div className="text-xs text-zinc-500">
-                    Role: <span className="text-zinc-700 dark:text-zinc-300">{s.role}</span> · Wage:{" "}
-                    <span className="text-zinc-700 dark:text-zinc-300">{money(s.flat_wage)}</span>
+                    Role: <span className="text-zinc-700 dark:text-zinc-300">{s.role}</span> ·{" "}
+                    <span className="text-zinc-700 dark:text-zinc-300">{wageLabel(s)}</span>
                   </div>
                 </div>
               </div>
@@ -97,7 +114,6 @@ export default function StaffSection({
               </form>
             </div>
 
-            {/* status grid */}
             <div className="mb-3 grid grid-cols-2 gap-1.5">
               <StatusButton
                 done={!!s.notified_at}
@@ -129,7 +145,6 @@ export default function StaffSection({
               />
             </div>
 
-            {/* portal visibility */}
             <form action={toggleStaffPortal.bind(null, eventId, s.id, !s.portal_visible)} className="mb-3">
               <button
                 className={`w-full rounded-lg px-2 py-1.5 text-xs font-bold ${
@@ -142,7 +157,6 @@ export default function StaffSection({
               </button>
             </form>
 
-            {/* details: role / wage / times / notes */}
             <form action={updateStaffDetails.bind(null, eventId, s.id)} className="space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -150,8 +164,26 @@ export default function StaffSection({
                   <input name="role" defaultValue={s.role} className={`${input} w-full`} />
                 </div>
                 <div>
-                  <label className="label-xs">Wage ($)</label>
+                  <label className="label-xs">Pay type</label>
+                  <select name="pay_type" defaultValue={s.pay_type ?? "flat"} className={`${input} w-full`}>
+                    <option value="flat">Flat</option>
+                    <option value="hourly">Hourly</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label-xs">Flat wage ($)</label>
                   <input type="number" step="0.01" name="flat_wage" defaultValue={s.flat_wage} className={`${input} w-full`} />
+                </div>
+                <div>
+                  <label className="label-xs">Hourly override ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="hourly_rate_override"
+                    defaultValue={s.hourly_rate_override ?? ""}
+                    placeholder={s.employee?.hourly_rate != null ? `Default ${s.employee.hourly_rate}` : "Employee rate"}
+                    className={`${input} w-full`}
+                  />
                 </div>
                 <div>
                   <label className="label-xs">Start Time</label>
@@ -174,6 +206,16 @@ export default function StaffSection({
               </div>
               <button className="btn-ghost px-4 py-1.5 text-xs">Save Details</button>
             </form>
+
+            <AdminPunchPanel
+              eventStaffId={s.id}
+              punches={punchesByStaff[s.id] ?? []}
+              payType={s.pay_type ?? "flat"}
+              timesheetStatus={s.timesheet_status ?? "open"}
+              timesheetHours={s.timesheet_hours ?? null}
+              timesheetAmount={s.timesheet_amount ?? null}
+              canEdit={canEditPunches}
+            />
           </div>
         ))}
 
@@ -184,7 +226,6 @@ export default function StaffSection({
         )}
       </div>
 
-      {/* assign */}
       <div className="card max-w-2xl p-5">
         <h2 className="card-title">Assign Staff</h2>
         <AssignStaffForm eventId={eventId} employees={employees} inputClass={input} />

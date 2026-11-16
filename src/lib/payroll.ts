@@ -1,5 +1,14 @@
 /* Payroll math: payable hours, staff cost, and pay-period math. */
 
+import {
+  effectiveHourlyRate,
+  hoursFromPunches,
+  hourlyAmount,
+  payableHoursFromPunches,
+  type PunchLite,
+  type TimeClockSettingsLite,
+} from "@/lib/timeClock";
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export type StaffLite = {
@@ -9,6 +18,11 @@ export type StaffLite = {
   flat_wage?: number | null;
   checked_in_at?: string | null;
   checked_out_at?: string | null;
+  hourly_rate_override?: number | null;
+  timesheet_rate?: number | null;
+  timesheet_hours?: number | null;
+  timesheet_amount?: number | null;
+  timesheet_status?: string | null;
 };
 export type EventTimes = { setup_time?: string | null; start_time?: string | null; end_time?: string | null };
 
@@ -19,21 +33,34 @@ function toMinutes(t?: string | null): number | null {
   return h * 60 + (m || 0);
 }
 
-/* Payable hours for a staffer. Estimate = (end − setup) using the staffer's own
-   start/end when set, else event setup→end; plus round-trip venue travel. When
-   {actual} and both check-in/out exist, use the clocked span instead of the
-   scheduled window (travel still added). */
+/* Payable hours for a staffer.
+   - With punches: sum of in→out pairs; travel added only when
+     time_clock_settings.include_travel_for_hourly_punches is on (default off).
+   - Without punches but actual check-in/out stamps: clocked span; same travel rule
+     when opts.punchedHourly is true.
+   - Estimate (no punches): scheduled window + round-trip venue travel (flat/estimate). */
 export function staffHours(
   es: StaffLite,
   event: EventTimes,
   travelMinutes: number | null | undefined,
-  opts: { actual?: boolean } = {}
+  opts: {
+    actual?: boolean;
+    punches?: PunchLite[];
+    settings?: TimeClockSettingsLite | null;
+    punchedHourly?: boolean;
+  } = {}
 ): number {
+  if (opts.punches && opts.punches.length) {
+    return payableHoursFromPunches(opts.punches, opts.settings, travelMinutes);
+  }
+
   const travelH = 2 * ((travelMinutes ?? 0) / 60);
+  const skipTravel = opts.punchedHourly && !opts.settings?.include_travel_for_hourly_punches;
 
   if (opts.actual && es.checked_in_at && es.checked_out_at) {
     const ms = new Date(es.checked_out_at).getTime() - new Date(es.checked_in_at).getTime();
-    return round2((ms > 0 ? ms / 3_600_000 : 0) + travelH);
+    const clocked = ms > 0 ? ms / 3_600_000 : 0;
+    return round2(clocked + (skipTravel ? 0 : travelH));
   }
 
   const startMin = toMinutes(es.start_time) ?? toMinutes(event.setup_time) ?? toMinutes(event.start_time);
@@ -42,10 +69,39 @@ export function staffHours(
   return round2((endMin - startMin) / 60 + travelH);
 }
 
-/* What a staffer is owed for an event: flat fee, or hours × default hourly rate. */
-export function staffCost(es: StaffLite, employee: { hourly_rate?: number | null } | null, hours: number): number {
+/* What a staffer is owed for an event: flat fee, or hours × effective hourly rate. */
+export function staffCost(
+  es: StaffLite,
+  employee: { hourly_rate?: number | null } | null,
+  hours: number
+): number {
   if ((es.pay_type ?? "flat") === "flat") return Number(es.flat_wage) || 0;
-  return round2(hours * (Number(employee?.hourly_rate) || 0));
+  if (es.timesheet_amount != null && Number.isFinite(Number(es.timesheet_amount))) {
+    return Number(es.timesheet_amount);
+  }
+  const rate = effectiveHourlyRate(es, employee);
+  return hourlyAmount(hours, rate);
+}
+
+/** Prefer locked/approved timesheet totals when present. */
+export function staffCostForPayroll(
+  es: StaffLite,
+  employee: { hourly_rate?: number | null } | null,
+  hours: number
+): number | null {
+  const payType = es.pay_type ?? "flat";
+  if (payType === "hourly") {
+    const status = es.timesheet_status ?? "open";
+    if (status !== "approved" && status !== "locked" && status !== "paid") return null;
+    if (es.timesheet_amount != null) return Number(es.timesheet_amount);
+    const h = es.timesheet_hours != null ? Number(es.timesheet_hours) : hours;
+    return staffCost(es, employee, h);
+  }
+  return staffCost(es, employee, hours);
+}
+
+export function rawPunchHours(punches: PunchLite[]): number {
+  return hoursFromPunches(punches);
 }
 
 export type PayPeriod = {

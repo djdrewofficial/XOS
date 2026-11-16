@@ -15,6 +15,8 @@ const READ_ONLY_RISKY = new Set([
   "helpers_list",
   "email_templates_list",
   "payments_proposal_link",
+  "time_punches_list",
+  "event_staff_time_pay",
 ]);
 
 function catalog(source: string) {
