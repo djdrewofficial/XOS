@@ -183,6 +183,16 @@ describe("template schedule", () => {
     assert.equal(patch.employee_visibility, "admins_salespeople");
     assert.throws(() => templateSchedulePatch({ schedule_anchor: "birthday" }), /Schedule anchor/);
     assert.throws(() => templateSchedulePatch({ sched_send_to: ["everyone"] }), /Send to/);
+    assert.throws(
+      () => templateSchedulePatch({ sched_employee_mode: "excluded", sched_employee_ids: [] }),
+      /Assigned DJ filter/,
+    );
+    const excluded = templateSchedulePatch({
+      sched_employee_mode: "excluded",
+      sched_employee_ids: [TYPE],
+    });
+    assert.equal(excluded.sched_employee_mode, "excluded");
+    assert.deepEqual(excluded.sched_employee_ids, [TYPE]);
   });
 
   it("replaces the schedule columns and clears review flags", async () => {

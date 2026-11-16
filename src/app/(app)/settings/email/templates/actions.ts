@@ -21,6 +21,12 @@ function buildPayload(formData: FormData) {
   const packageIds = ids(formData, "sched_package_ids");
   const salespersonIds = ids(formData, "sched_salesperson_ids");
   const employeeIds = ids(formData, "sched_employee_ids");
+  const employeeModeRaw = clean(formData.get("sched_employee_mode")) ?? "any";
+  const employeeMode =
+    employeeModeRaw === "selected" || employeeModeRaw === "excluded" ? employeeModeRaw : "any";
+  // selected/excluded with no picks collapses to any so a blank checklist cannot
+  // silently match nobody (selected) or everybody (excluded).
+  const schedEmployeeMode = employeeMode !== "any" && employeeIds.length > 0 ? employeeMode : "any";
   const visPackageIds = ids(formData, "vis_package_ids");
 
   return {
@@ -54,8 +60,8 @@ function buildPayload(formData: FormData) {
     sched_payments: clean(formData.get("sched_payments")) ?? "any",
     sched_salesperson_mode: salespersonIds.length > 0 ? "selected" : "any",
     sched_salesperson_ids: salespersonIds,
-    sched_employee_mode: employeeIds.length > 0 ? "selected" : "any",
-    sched_employee_ids: employeeIds,
+    sched_employee_mode: schedEmployeeMode,
+    sched_employee_ids: schedEmployeeMode === "any" ? [] : employeeIds,
     schedule_from: clean(formData.get("schedule_from")) ?? "company",
     sched_send_to: ids(formData, "sched_send_to"),
     sched_vendor_category_ids: ids(formData, "sched_vendor_category_ids"),

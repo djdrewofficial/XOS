@@ -4,7 +4,6 @@ import { requireApiModule } from "@/lib/apiAuth";
 import { emailShell, signButtonHtml, appUrl } from "@/lib/signing";
 import { decodeMergeTagDelimiters, sanitizeHrefAttributes } from "@/lib/mergeHref";
 import { joinCodeEmailSection } from "@/lib/eventAccess";
-import { DEFAULT_PLANNING_MEETING_URL } from "@/lib/planningMeetingUrl";
 
 // Sample values so the preview reads like a real send. Every key here is a tag the
 // real renderer actually resolves (see supported_merge_tags() / render_merge_tags) —
@@ -20,12 +19,9 @@ const SAMPLE: Record<string, string> = {
   decision_maker_email: "jordan@example.com",
   poc_name: "Drew Ramos", poc_first_name: "Drew", poc_last_name: "Ramos",
   poc_email: "drew@xpressdjs.com", poc_phone: "(555) 010-2020",
-  // <poc_planning_link> reads POC employees.planning_meeting_url, then DJ, then
-  // this company fallback (SQL: xos_event_planning_meeting_url, migration 00227).
-  poc_planning_link: DEFAULT_PLANNING_MEETING_URL,
   billing_terms: "Installments", legal_venue: "Broward County, Florida",
   djemployee1_stage_name: "DJ Drew", djemployee1_cell_phone: "(555) 234-5678",
-  dj_calendar_link: DEFAULT_PLANNING_MEETING_URL,
+  dj_calendar_link: "https://xpressdjs.com/drewplanning",
   event_name: "Jordan & Taylor’s Wedding", event_type: "Wedding",
   xos_welcome_link: "https://xos.xpressdjs.com/welcome/sample",
   event_date_long: "Saturday, August 15, 2026", event_date_short: "08/15/2026",
