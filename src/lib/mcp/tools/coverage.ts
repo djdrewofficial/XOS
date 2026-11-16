@@ -809,7 +809,8 @@ export const coverageTools: LiveTool[] = [
         if (!punchId) throw new Error("punch_id is required.");
         const before = await query(admin.from("time_punches").select("*").eq("id", punchId).maybeSingle()) as Record<string, unknown> | null;
         if (!before || before.deleted_at) throw new Error("Punch not found.");
-        const { error } = await admin.from("time_punches").update({ deleted_at: new Date().toISOString() }).eq("id", punchId);
+        // RPC soft-deletes with reason GUC in one tx. Service-role has no JWT employee, so write the audit here.
+        const { error } = await admin.rpc("xos_time_punch_admin_soft_delete", { p_id: punchId, p_reason: reason });
         if (error) throw new Error(error.message);
         await admin.from("time_punch_edits").insert({
           punch_id: punchId,
@@ -836,7 +837,11 @@ export const coverageTools: LiveTool[] = [
         if (typeof args.accuracy_m === "number") patch.accuracy_m = args.accuracy_m;
         if (typeof args.location_missing === "boolean") patch.location_missing = args.location_missing;
         if ("note" in args) patch.note = s(args, "note");
-        const after = await query(admin.from("time_punches").update(patch).eq("id", punchId).select("*").maybeSingle());
+        const after = await query(admin.rpc("xos_time_punch_admin_update", {
+          p_id: punchId,
+          p_patch: patch,
+          p_reason: reason,
+        }));
         await admin.from("time_punch_edits").insert({
           punch_id: punchId,
           event_staff_id: before.event_staff_id,
