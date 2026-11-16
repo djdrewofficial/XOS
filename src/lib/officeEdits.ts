@@ -124,6 +124,8 @@ export function helperVisibilityPatch(input: Record<string, unknown>): Row {
     auto_on_proposal_confirmed: input.auto_on_proposal_confirmed === true,
     auto_on_signed: input.auto_on_signed === true,
     auto_on_payment: input.auto_on_payment === true,
+    on_payment_skip_hidden_financials: input.on_payment_skip_hidden_financials === true,
+    on_payment_skip_paypal_thanked: input.on_payment_skip_paypal_thanked === true,
     event_type_ids: uuids(input.event_type_ids ?? [], "Automatic event types"),
   };
 }

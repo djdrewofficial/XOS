@@ -18,16 +18,23 @@ export async function recordPayment(
   opts: { drain?: "all" | "event" } = {},
 ) {
   assertPaymentAmount(input.amount);
-  const { error } = await supabase.from("payments").insert({
-    event_id: input.eventId,
-    amount: input.amount,
-    method: input.method || "other",
-    reason: input.reason,
-    paid_at: input.paidAt ?? new Date().toISOString(),
-    notes: input.notes,
-  });
+  const { data: inserted, error } = await supabase
+    .from("payments")
+    .insert({
+      event_id: input.eventId,
+      amount: input.amount,
+      method: input.method || "other",
+      reason: input.reason,
+      paid_at: input.paidAt ?? new Date().toISOString(),
+      notes: input.notes,
+    })
+    .select("id")
+    .single();
   if (error) throw new Error(error.message);
-  await runAutomations(supabase, input.eventId, "payment_received", { drain: opts.drain ?? "all" });
+  await runAutomations(supabase, input.eventId, "payment_received", {
+    drain: opts.drain ?? "all",
+    paymentId: inserted?.id,
+  });
 }
 
 export async function updatePaymentRecord(
@@ -88,7 +95,10 @@ export async function confirmPaymentRecord(
     .select("id");
   if (error) throw new Error(error.message);
   if (!updated?.length) throw new Error("This payment is not a pending claim anymore. Nothing else was run.");
-  await runAutomations(supabase, input.eventId, "payment_received", { drain: opts.drain ?? "all" });
+  await runAutomations(supabase, input.eventId, "payment_received", {
+    drain: opts.drain ?? "all",
+    paymentId: input.paymentId,
+  });
 }
 
 export async function softRemovePayment(

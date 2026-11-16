@@ -157,10 +157,14 @@ describe("helper visibility", () => {
       visible_event_type_ids: [TYPE],
       hide_if_payment_made: true,
       auto_on_payment: true,
+      on_payment_skip_hidden_financials: true,
+      on_payment_skip_paypal_thanked: true,
     });
     assert.deepEqual(tables.booking_helpers[0].visible_event_type_ids, [TYPE]);
     assert.equal(tables.booking_helpers[0].hide_if_payment_made, true);
     assert.equal(patch.auto_on_payment, true);
+    assert.equal(patch.on_payment_skip_hidden_financials, true);
+    assert.equal(patch.on_payment_skip_paypal_thanked, true);
     assert.deepEqual(patch.allowed_roles, []);
   });
 });
