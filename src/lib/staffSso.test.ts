@@ -33,12 +33,14 @@ describe("staff identity after Google or Apple", () => {
 });
 
 describe("return urls", () => {
-  it("allows only a local /sso path", () => {
+  it("allows local /sso and MCP OAuth authorize return paths", () => {
     assert.equal(safeStaffNext("/sso/gallery"), "/sso/gallery");
     assert.equal(safeStaffNext("https://evil.example/sso/gallery"), null);
     assert.equal(safeStaffNext("//evil.example"), null);
     assert.equal(safeStaffNext("/events/1"), null);
     assert.equal(safeStaffNext("/sso/ok\nSet-Cookie"), null);
+    assert.equal(safeStaffNext("/oauth/mcp/consent?request_id=x"), null);
+    assert.equal(safeStaffNext("/api/mcp/oauth/authorize?client_id=x"), "/api/mcp/oauth/authorize?client_id=x");
     const callback = staffCallbackUrl("https://xos.xpressdjs.com", "/sso/gallery");
     assert.equal(callback, "https://xos.xpressdjs.com/auth/callback?next=%2Fsso%2Fgallery");
     assert.equal(staffCallbackUrl("https://user:pw@xos.xpressdjs.com", null), null);

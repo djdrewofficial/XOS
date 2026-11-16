@@ -1,4 +1,5 @@
-import type { ServiceTokenRow } from "./auth";
+import { tokenDecision, type ServiceTokenRow } from "./auth";
+import { hashToken, hashesEqual } from "./crypto";
 import {
   decideIdempotency,
   idempotencyKeyError,
@@ -42,8 +43,18 @@ export type ConfirmationRow = {
 
 export type IdempotencyRow = IdempotencySnapshot;
 
+export type BearerAuthResult =
+  | { ok: true; token: ServiceTokenRow }
+  | { ok: false; reason: "invalid" | "revoked" | "expired" | "overlap_ended" | "audience" };
+
 export interface McpStore {
   findTokenByHash(hash: string): Promise<ServiceTokenRow | null>;
+  /**
+   * Resolve a raw bearer into a service-token-shaped identity.
+   * Service tokens and OAuth access tokens both go through here so scope checks
+   * and audit logging stay on the same grant/token row.
+   */
+  authenticateBearer(raw: string, now: Date): Promise<BearerAuthResult>;
   touchToken(id: string, at: Date): Promise<void>;
   insertAudit(row: AuditRow): Promise<void>;
   audits(): Promise<AuditRow[]>;
@@ -77,6 +88,13 @@ export function memoryStore(): { store: McpStore; addToken(row: ServiceTokenRow)
   const store: McpStore = {
     async findTokenByHash(hash) {
       return tokens.find((row) => row.token_hash === hash) ?? null;
+    },
+    async authenticateBearer(raw, now) {
+      const token = await store.findTokenByHash(hashToken(raw));
+      if (!token || !hashesEqual(token.token_hash, hashToken(raw))) return { ok: false, reason: "invalid" };
+      const decision = tokenDecision(token, now);
+      if (!decision.ok) return { ok: false, reason: decision.reason };
+      return { ok: true, token };
     },
     async touchToken(id, at) {
       const row = tokens.find((token) => token.id === id);

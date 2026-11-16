@@ -6,6 +6,7 @@ import {
   MCP_SCOPE_LABELS,
   allMcpScopes,
   hasHighRiskMcpScope,
+  isMcpScope,
   readMcpScopes,
   toggleMcpScope,
   type McpScope,
@@ -20,6 +21,7 @@ import {
   revokeMcpToken,
   setAutoApprove,
   setHelpersSkipXosApproval,
+  updateMcpTokenScopes,
 } from "./actions";
 
 export function MintForm() {
@@ -104,6 +106,29 @@ export function RevokeButton({ id }: { id: string }) {
     <form action={revokeMcpToken}>
       <input type="hidden" name="token_id" value={id} />
       <button type="submit" className="btn-ghost px-2 py-1 text-xs">Revoke</button>
+    </form>
+  );
+}
+
+/** Edit scopes on an active service token (OAuth follows the person's role). */
+export function EditScopesForm({ id, scopes }: { id: string; scopes: string[] }) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<McpScope[]>(() => scopes.filter(isMcpScope));
+  if (!open) {
+    return (
+      <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => setOpen(true)}>
+        Edit scopes
+      </button>
+    );
+  }
+  return (
+    <form action={updateMcpTokenScopes} className="space-y-3 rounded border border-zinc-200 bg-zinc-50 p-3">
+      <input type="hidden" name="token_id" value={id} />
+      <ScopePicker selected={selected} setSelected={setSelected} />
+      <div className="flex gap-2">
+        <button type="submit" className="btn-primary text-xs">Save scopes</button>
+        <button type="button" className="btn-ghost text-xs" onClick={() => setOpen(false)}>Cancel</button>
+      </div>
     </form>
   );
 }

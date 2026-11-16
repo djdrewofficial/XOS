@@ -162,9 +162,51 @@ export async function rejectMcpPreview(formData: FormData) {
 export async function revokeMcpToken(formData: FormData) {
   await requireMaster();
   const id = String(formData.get("token_id") ?? "");
-  const now = new Date().toISOString();
-  const { error } = await createAdminClient().from("mcp_service_tokens").update({ revoked_at: now, overlap_until: now }).eq("id", id);
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
+  const admin = createAdminClient();
+  const { data: row } = await admin.from("mcp_service_tokens").select("id, auth_kind").eq("id", id).maybeSingle();
+  const { error } = await admin.from("mcp_service_tokens").update({ revoked_at: now, overlap_until: now }).eq("id", id);
   if (error) throw new Error(error.message);
+  // OAuth grants: kill access + refresh tokens immediately (migration 00235).
+  if (row && (row as { auth_kind?: string }).auth_kind === "oauth") {
+    try {
+      const { supabaseOAuthStore } = await import("@/lib/mcp/oauth/supabaseOAuthStore");
+      await supabaseOAuthStore(admin).revokeAccessForGrant(id, nowDate);
+      await supabaseOAuthStore(admin).revokeRefreshForGrant(id, nowDate);
+    } catch {
+      // Tables may not exist yet; the grant row is already revoked.
+    }
+  }
+  revalidatePath("/settings/mcp");
+}
+
+/** Master admin: change scopes on an active service token (not OAuth — those follow the user's role). */
+export async function updateMcpTokenScopes(formData: FormData) {
+  await requireMaster();
+  const id = String(formData.get("token_id") ?? "").trim();
+  if (!id) throw new Error("Missing token.");
+  let scopes;
+  try {
+    scopes = assertScopes(formData.getAll("scope").map(String));
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "Those scopes are not valid.");
+  }
+  if (!scopes.length) throw new Error("Pick at least one scope.");
+  const admin = createAdminClient();
+  const { data: row } = await admin.from("mcp_service_tokens").select("auth_kind").eq("id", id).maybeSingle();
+  if (row && (row as { auth_kind?: string }).auth_kind === "oauth") {
+    throw new Error("OAuth connections follow the person's XOS role. Revoke and reconnect to refresh.");
+  }
+  const { data, error } = await admin
+    .from("mcp_service_tokens")
+    .update({ scopes })
+    .eq("id", id)
+    .is("revoked_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("That token is not active.");
   revalidatePath("/settings/mcp");
 }
 

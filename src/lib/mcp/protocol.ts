@@ -1,4 +1,4 @@
-import { canonicalJson, hashToken, hashesEqual, sha256 } from "./crypto";
+import { canonicalJson, sha256 } from "./crypto";
 import { auditView, hideClientLinks, redact } from "./redact";
 import { skipsXosApproval, tokenDecision, type ServiceTokenRow } from "./auth";
 import { idempotencyKeyError } from "./idempotency";
@@ -136,25 +136,26 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
     return finish(401, rpcError(null, -32001, "Missing bearer token"), { status: "unauthorized", errorCode: "missing" });
   }
 
-  const token = await store.findTokenByHash(hashToken(raw));
-  if (!token || !hashesEqual(token.token_hash, hashToken(raw))) {
+  const auth = await store.authenticateBearer(raw, now);
+  if (!auth.ok) {
     if (call.ip && (await limited(store, "mcp:authfail", call.ip, limits.authFailsPerIp, limits.windowMs, now))) {
       return finish(429, rpcError(null, -32029, "Too many authentication attempts"), { status: "rate_limited", errorCode: "rate_limited" });
     }
-    return finish(401, rpcError(null, -32001, "Invalid bearer token"), { status: "unauthorized", errorCode: "invalid" });
+    const message =
+      auth.reason === "revoked"
+        ? "Token revoked"
+        : auth.reason === "expired"
+          ? "Token expired"
+          : auth.reason === "overlap_ended"
+            ? "Token rotation overlap has ended"
+            : auth.reason === "audience"
+              ? "Token audience mismatch"
+              : "Invalid bearer token";
+    return finish(401, rpcError(null, -32001, message), { status: "unauthorized", errorCode: auth.reason === "invalid" ? "invalid" : auth.reason });
   }
+  const token = auth.token;
   tokenId = token.id;
   tokenName = token.name;
-  const decision = tokenDecision(token, now);
-  if (!decision.ok) {
-    const message =
-      decision.reason === "revoked"
-        ? "Token revoked"
-        : decision.reason === "expired"
-          ? "Token expired"
-          : "Token rotation overlap has ended";
-    return finish(401, rpcError(null, -32001, message), { status: "unauthorized", errorCode: decision.reason });
-  }
   await store.touchToken(token.id, now);
 
   if (await limited(store, "mcp:token", token.id, limits.perToken, limits.windowMs, now)) {
