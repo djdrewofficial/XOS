@@ -49,6 +49,7 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     await db.exec(read("supabase/migrations/00223_mcp_held_effects.sql"));
     await db.exec(read("supabase/migrations/00224_mcp_runtime_guards.sql"));
     await db.exec(read("supabase/migrations/00225_mcp_helpers_skip_xos_approval.sql"));
+    await db.exec(read("supabase/migrations/00227_mcp_auto_approve.sql"));
   });
 
   it("rejects an idempotency key shorter than 8 characters", async () => {
@@ -221,6 +222,19 @@ describe("mcp migration guards", { timeout: 60_000 }, () => {
     assert.equal((row.rows[0] as { helpers_skip_xos_approval: boolean }).helpers_skip_xos_approval, false);
     const migration = read("supabase/migrations/00225_mcp_helpers_skip_xos_approval.sql");
     assert.match(migration, /default false/);
+    assert.doesNotMatch(migration, /update\s+public\.mcp_service_tokens/i);
+  });
+
+  it("defaults auto_approve to false and does not flip existing tokens", async () => {
+    const token = "b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2";
+    await db.exec(`
+      insert into public.mcp_service_tokens (id, name, token_prefix, token_hash, scopes)
+      values ('${token}', 'trust-default', 'xos_mcp_auto', repeat('12', 32), '{}')
+    `);
+    const row = await db.query(`select auto_approve from public.mcp_service_tokens where id = '${token}'`);
+    assert.equal((row.rows[0] as { auto_approve: boolean }).auto_approve, false);
+    const migration = read("supabase/migrations/00227_mcp_auto_approve.sql");
+    assert.match(migration, /auto_approve boolean not null default false/);
     assert.doesNotMatch(migration, /update\s+public\.mcp_service_tokens/i);
   });
 });

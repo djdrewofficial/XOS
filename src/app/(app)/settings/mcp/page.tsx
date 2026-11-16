@@ -2,7 +2,14 @@ import { redirect } from "next/navigation";
 import { getMe } from "@/lib/auth";
 import { formatMcpScopeLabels } from "@/lib/mcp/scopes";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ApprovalCard, HelpersSkipToggle, MintForm, RevokeButton, RotateForm } from "./McpAdmin";
+import {
+  ApprovalCard,
+  HelpersSkipToggle,
+  MintForm,
+  RevokeButton,
+  RotateForm,
+  TrustedAgentToggle,
+} from "./McpAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +24,17 @@ type TokenRow = {
   revoked_at: string | null;
   overlap_until: string | null;
   helpers_skip_xos_approval?: boolean | null;
+  auto_approve?: boolean | null;
+};
+
+type AuditRow = {
+  id: number;
+  created_at: string;
+  token_name: string | null;
+  tool_name: string | null;
+  status: string;
+  args_redacted: unknown;
+  confirmation_id: string | null;
 };
 
 const TOKEN_COLS =
@@ -29,22 +47,33 @@ export default async function McpSettingsPage() {
   let tokens: TokenRow[] = [];
   let setupNeeded = false;
   let helpersSkipReady = false;
+  let autoApproveReady = false;
   try {
     const admin = createAdminClient();
-    const withFlag = await admin
+    const withBoth = await admin
       .from("mcp_service_tokens")
-      .select(`${TOKEN_COLS}, helpers_skip_xos_approval`)
+      .select(`${TOKEN_COLS}, helpers_skip_xos_approval, auto_approve`)
       .order("created_at", { ascending: false });
-    if (!withFlag.error) {
-      tokens = (withFlag.data ?? []) as TokenRow[];
+    if (!withBoth.error) {
+      tokens = (withBoth.data ?? []) as TokenRow[];
       helpersSkipReady = true;
+      autoApproveReady = true;
     } else {
-      const fallback = await admin
+      const withHelpers = await admin
         .from("mcp_service_tokens")
-        .select(TOKEN_COLS)
+        .select(`${TOKEN_COLS}, helpers_skip_xos_approval`)
         .order("created_at", { ascending: false });
-      if (fallback.error) setupNeeded = true;
-      else tokens = (fallback.data ?? []) as TokenRow[];
+      if (!withHelpers.error) {
+        tokens = (withHelpers.data ?? []) as TokenRow[];
+        helpersSkipReady = true;
+      } else {
+        const fallback = await admin
+          .from("mcp_service_tokens")
+          .select(TOKEN_COLS)
+          .order("created_at", { ascending: false });
+        if (fallback.error) setupNeeded = true;
+        else tokens = (fallback.data ?? []) as TokenRow[];
+      }
     }
   } catch {
     setupNeeded = true;
@@ -64,6 +93,22 @@ export default async function McpSettingsPage() {
       .limit(20);
     if (error) approvalReady = false;
     else pending = (data ?? []) as { id: string; tool_name: string; preview: unknown }[];
+  }
+
+  let recentActivity: AuditRow[] = [];
+  if (!setupNeeded) {
+    const { data } = await createAdminClient()
+      .from("mcp_audit_log")
+      .select("id, created_at, token_name, tool_name, status, args_redacted, confirmation_id")
+      .in("status", ["ok", "begun", "completed", "confirmation_required", "error", "failed"])
+      .order("created_at", { ascending: false })
+      .limit(40);
+    recentActivity = ((data ?? []) as AuditRow[]).filter((row) => {
+      if (!row.tool_name || row.tool_name === "initialize" || row.tool_name === "tools/list" || row.tool_name === "ping") {
+        return false;
+      }
+      return ["ok", "begun", "completed", "confirmation_required", "error", "failed"].includes(row.status);
+    }).slice(0, 25);
   }
 
   return (
@@ -89,6 +134,11 @@ export default async function McpSettingsPage() {
               Helper direct-run needs migration <code>00225_mcp_helpers_skip_xos_approval.sql</code> before the per-token toggle appears. This page does not apply it.
             </div>
           ) : null}
+          {!autoApproveReady ? (
+            <div className="card p-4 text-sm text-zinc-600">
+              Trusted agent needs migration <code>00227_mcp_auto_approve.sql</code> before the per-token toggle appears. This page does not apply it.
+            </div>
+          ) : null}
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
               <thead className="table-head text-left">
@@ -96,6 +146,7 @@ export default async function McpSettingsPage() {
                   <th className="px-3 py-2">Name</th>
                   <th className="px-3 py-2">Prefix</th>
                   <th className="px-3 py-2">Scopes</th>
+                  <th className="px-3 py-2">Trust</th>
                   <th className="px-3 py-2">Helpers</th>
                   <th className="px-3 py-2">Last used</th>
                   <th className="px-3 py-2">Status</th>
@@ -108,6 +159,15 @@ export default async function McpSettingsPage() {
                     <td className="px-3 py-2">{token.name}</td>
                     <td className="px-3 py-2 font-mono text-xs">{token.token_prefix}…</td>
                     <td className="px-3 py-2 text-xs">{formatMcpScopeLabels(token.scopes ?? [])}</td>
+                    <td className="px-3 py-2">
+                      {!token.revoked_at && autoApproveReady ? (
+                        <TrustedAgentToggle id={token.id} enabled={token.auto_approve === true} />
+                      ) : token.auto_approve ? (
+                        <span className="text-xs text-amber-800">Trusted</span>
+                      ) : (
+                        <span className="text-xs text-zinc-400">—</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       {!token.revoked_at && helpersSkipReady ? (
                         <HelpersSkipToggle id={token.id} enabled={token.helpers_skip_xos_approval === true} />
@@ -123,7 +183,7 @@ export default async function McpSettingsPage() {
                   </tr>
                 ))}
                 {tokens.length === 0 ? (
-                  <tr><td colSpan={7} className="px-3 py-4 text-zinc-500">No tokens yet.</td></tr>
+                  <tr><td colSpan={8} className="px-3 py-4 text-zinc-500">No tokens yet.</td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -143,6 +203,38 @@ export default async function McpSettingsPage() {
               Approvals need migration 00220 in the migration history. Until then, sensitive previews cannot be run.
             </div>
           )}
+          {recentActivity.length > 0 ? (
+            <div className="card overflow-hidden">
+              <div className="border-b border-zinc-200 px-4 py-3">
+                <h2 className="card-title">Recent agent activity</h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Includes Trusted-agent auto-runs and helpers that skipped a receipt. Args are redacted. Pending receipts above still need Approve and run.
+                </p>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="table-head text-left">
+                  <tr>
+                    <th className="px-3 py-2">When</th>
+                    <th className="px-3 py-2">Agent</th>
+                    <th className="px-3 py-2">Tool</th>
+                    <th className="px-3 py-2">Result</th>
+                    <th className="px-3 py-2">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentActivity.map((row) => (
+                    <tr key={row.id} className="border-t border-zinc-200 align-top">
+                      <td className="px-3 py-2 whitespace-nowrap text-xs">{new Date(row.created_at).toLocaleString()}</td>
+                      <td className="px-3 py-2 text-xs">{row.token_name ?? "—"}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{row.tool_name}</td>
+                      <td className="px-3 py-2 text-xs">{activityStatus(row)}</td>
+                      <td className="px-3 py-2 text-xs text-zinc-600">{activityNote(row)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
           <MintForm />
           <RotateForm tokens={active.map((token) => ({ id: token.id, name: token.name, token_prefix: token.token_prefix }))} />
         </>
@@ -156,4 +248,24 @@ function statusLabel(token: TokenRow) {
   if (token.expires_at && Date.parse(token.expires_at) <= Date.now()) return "Expired";
   if (token.overlap_until) return `Rotating until ${new Date(token.overlap_until).toLocaleString()}`;
   return "Active";
+}
+
+function activityStatus(row: AuditRow) {
+  if (row.status === "ok" || row.status === "completed") return "Ran";
+  if (row.status === "begun") return "Started";
+  if (row.status === "confirmation_required") return "Waiting for you";
+  if (row.status === "error" || row.status === "failed") return "Failed";
+  return row.status;
+}
+
+function activityNote(row: AuditRow) {
+  const args = row.args_redacted && typeof row.args_redacted === "object" && !Array.isArray(row.args_redacted)
+    ? (row.args_redacted as Record<string, unknown>)
+    : null;
+  const bits: string[] = [];
+  if (args?.auto_approve === true) bits.push("Trusted agent (auto-ran)");
+  if (args?.helpers_skip_xos_approval === true) bits.push("Helpers skip");
+  if (row.confirmation_id) bits.push(`Receipt ${row.confirmation_id.slice(0, 8)}…`);
+  if (args?.receipt != null) bits.push("Effects logged");
+  return bits.length ? bits.join(" · ") : "—";
 }

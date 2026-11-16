@@ -9,6 +9,8 @@ export type ToolContext = {
     scopes: readonly string[];
     /** From mcp_service_tokens.helpers_skip_xos_approval. Not a client-supplied flag. */
     helpersSkipXosApproval?: boolean;
+    /** From mcp_service_tokens.auto_approve. Not a client-supplied flag. */
+    autoApprove?: boolean;
   };
   /** Service-role client. Present when the server is handling a live request. */
   admin: SupabaseClient;

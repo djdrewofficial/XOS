@@ -249,12 +249,13 @@ describe("helpers_run XOS approval skip", () => {
     assert.ok(slice.indexOf("requireMaster") < slice.indexOf(".update("));
 
     const protocol = read("src/lib/mcp/protocol.ts");
-    assert.match(protocol, /helpersRunSkipsXosApproval\(tool\.name, token\)/);
+    assert.match(protocol, /skipsXosApproval\(tool, token\)/);
     assert.doesNotMatch(protocol, /argsIn\.helpers_skip/);
     assert.doesNotMatch(protocol, /arguments\.helpers_skip/);
+    assert.doesNotMatch(protocol, /argsIn\.auto_approve/);
 
     const office = read("src/lib/mcp/tools/office.ts");
-    assert.match(office, /ctx\.token\.helpersSkipXosApproval === true/);
+    assert.match(office, /ctx\.token\.helpersSkipXosApproval === true \|\| ctx\.token\.autoApprove === true/);
     assert.match(office, /executeBookingHelper/);
     assert.match(office, /mcp_run_helper_claim/);
 
