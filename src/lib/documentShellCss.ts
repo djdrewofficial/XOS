@@ -85,6 +85,16 @@ export const XDOC_CSS = `
   .xdoc-table thead { display: table-header-group; }
   .xdoc-table tfoot { display: table-row-group; } /* total stays at end of table, not every page */
   .xdoc-table tr, .xdoc-table td, .xdoc-desc { break-inside: avoid; page-break-inside: avoid; }
+  /* payments_received: keep header+rows+totals as one unit when they fit.
+     Long lists may still split; do not repeat thead, and keep tfoot with the
+     last payment rows so page 2 never shows header + totals alone. */
+  .xdoc-payments-table { break-inside: avoid; page-break-inside: avoid; }
+  .xdoc-payments-table thead { display: table-row-group; }
+  .xdoc-payments-table tfoot,
+  .xdoc-payments-table tfoot tr {
+    break-inside: avoid; page-break-inside: avoid;
+    break-before: avoid; page-break-before: avoid;
+  }
   .xdoc-details, .xdoc-sign, .xdoc-detail, .xdoc-summary { break-inside: avoid; page-break-inside: avoid; }
   .xdoc-sec { border: none; border-radius: 0; }
   .xdoc-sec summary { background: none; padding: 8px 0 2px; }

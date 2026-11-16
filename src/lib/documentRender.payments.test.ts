@@ -68,6 +68,9 @@ describe("renderPaymentsReceived", () => {
     assert.match(html, /November 12, 2026/);
     assert.match(html, /Card service fee: \$42\.00/);
     assert.match(html, /Paid in full/);
+    assert.match(html, /class="xdoc-table xdoc-payments-table"/);
+    assert.match(html, /Paid to date/);
+    assert.match(html, /Remaining balance/);
     assert.doesNotMatch(html, /\$1,292/); // fee must not inflate paid total
     assert.doesNotMatch(html, /—/);
   });

@@ -448,9 +448,12 @@ export function renderPaymentsReceived(b: EventBundle, options?: DocBlockOptions
   const remaining = balanceStatus(b.total, live);
   const notesHead = showNotes ? "<th>Notes</th>" : "";
   const span = showNotes ? 3 : 2;
+  // xdoc-payments-table: keep header+rows+totals together when they fit on one
+  // page (print CSS). Long lists may still split; totals must not orphan under a
+  // repeated header alone.
   return withBlockHeading(
     options,
-    `<table class="xdoc-table"><thead><tr><th>Date</th><th>Method</th>${notesHead}<th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="${span}">Paid to date</td><td class="xdoc-amount">${money(
+    `<table class="xdoc-table xdoc-payments-table"><thead><tr><th>Date</th><th>Method</th>${notesHead}<th class="xdoc-amount">Amount</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="${span}">Paid to date</td><td class="xdoc-amount">${money(
       paid,
     )}</td></tr><tr><td colspan="${span}">Remaining balance</td><td class="xdoc-amount">${esc(remaining)}</td></tr></tfoot></table>`,
   );

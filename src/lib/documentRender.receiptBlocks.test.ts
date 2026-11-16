@@ -375,4 +375,12 @@ describe("PDF print CSS for money tables", () => {
     assert.match(pdfSrc, /preferCSSPageSize:\s*true/);
     assert.match(pdfSrc, /margin:\s*\{\s*top:\s*"0in"/);
   });
+
+  it("keeps payments_received table together when it fits and never orphans totals under a repeated header", () => {
+    assert.match(XDOC_CSS, /\.xdoc-payments-table \{[^}]*break-inside: avoid/);
+    assert.match(XDOC_CSS, /\.xdoc-payments-table thead \{ display: table-row-group/);
+    assert.match(XDOC_CSS, /\.xdoc-payments-table tfoot[\s\S]*?break-before: avoid/);
+    // General money tables still split; only payments_received opts into keep-together.
+    assert.match(XDOC_CSS, /\.xdoc-table \{[^}]*break-inside: auto/);
+  });
 });
