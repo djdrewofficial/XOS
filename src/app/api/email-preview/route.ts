@@ -20,7 +20,8 @@ const SAMPLE: Record<string, string> = {
   decision_maker_email: "jordan@example.com",
   poc_name: "Drew Ramos", poc_first_name: "Drew", poc_last_name: "Ramos",
   poc_email: "drew@xpressdjs.com", poc_phone: "(555) 010-2020",
-  // Same fallback as SQL xos_default_planning_meeting_url (migration 00227).
+  // <poc_planning_link> reads POC employees.planning_meeting_url, then DJ, then
+  // this company fallback (SQL: xos_event_planning_meeting_url, migration 00227).
   poc_planning_link: DEFAULT_PLANNING_MEETING_URL,
   billing_terms: "Installments", legal_venue: "Broward County, Florida",
   djemployee1_stage_name: "DJ Drew", djemployee1_cell_phone: "(555) 234-5678",
