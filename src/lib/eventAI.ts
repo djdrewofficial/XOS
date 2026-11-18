@@ -38,7 +38,7 @@ export async function buildEventContext(
   const [{ data: ecs }, { data: staff }, { data: addons }, { data: secs }, { data: songs }, { data: qs }, { data: ans }] =
     await Promise.all([
       sb.from("event_clients").select("role,is_primary,client:clients(id,first_name,last_name,email,cell_phone)").eq("event_id", eventId),
-      sb.from("event_staff").select("role,employee:employees(first_name,last_name,stage_name)").eq("event_id", eventId),
+      sb.from("event_staff").select("role,employee:employees!event_staff_employee_id_fkey(first_name,last_name,stage_name)").eq("event_id", eventId),
       sb.from("event_addons").select("quantity,addon:addons(name)").eq("event_id", eventId),
       sb.from("planning_sections").select("id,title,time_label,section_type,intro,sort_order").eq("event_id", eventId).order("sort_order"),
       sb.from("planning_songs").select("section_id,title,artist,note,must_play,do_not_play,requested_by,sort_order").eq("event_id", eventId).order("sort_order"),

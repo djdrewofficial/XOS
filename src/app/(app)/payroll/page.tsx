@@ -77,7 +77,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const { data: events } = await supabase
     .from("events")
     .select(
-      "id, name, event_date, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(name, travel_minutes), event_staff(id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, location_missing, employee:employees(first_name, last_name, hourly_rate))"
+      "id, name, event_date, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(name, travel_minutes), event_staff(id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, location_missing, employee:employees!event_staff_employee_id_fkey(first_name, last_name, hourly_rate))"
     )
     .is("archived_at", null)
     .gte("event_date", period.periodStart)
@@ -186,7 +186,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   // ---- pending change requests + form data ----
   const { data: changeReqs } = await supabase
     .from("timesheet_change_requests")
-    .select("*, event_staff(role, employee:employees(first_name, last_name), event:events(name))")
+    .select("*, event_staff(role, employee:employees!event_staff_employee_id_fkey(first_name, last_name), event:events(name))")
     .eq("status", "pending")
     .order("created_at");
 

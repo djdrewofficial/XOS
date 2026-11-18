@@ -67,7 +67,7 @@ export default function EventChip({
           .single(),
         supabase.from("payments").select("id, amount, paid_at, method").eq("event_id", eventId).eq("status", "approved").is("deleted_at", null).order("paid_at"),
         supabase.from("scheduled_payments").select("id, seq, label, due_date, amount").eq("event_id", eventId).order("seq"),
-        supabase.from("event_staff").select("id, role, employee:employees(first_name, last_name)").eq("event_id", eventId),
+        supabase.from("event_staff").select("id, role, employee:employees!event_staff_employee_id_fkey(first_name, last_name)").eq("event_id", eventId),
         supabase.from("event_notes").select("id, body, created_at").eq("event_id", eventId).order("created_at", { ascending: false }).limit(5),
       ]);
     if (event) {

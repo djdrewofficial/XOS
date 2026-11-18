@@ -51,7 +51,7 @@ export async function generatePayables(payday: string, periodStart: string, peri
   const { data: events } = await supabase
     .from("events")
     .select(
-      "id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate))"
+      "id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, employee:employees!event_staff_employee_id_fkey(hourly_rate))"
     )
     .is("archived_at", null)
     .gte("event_date", periodStart)

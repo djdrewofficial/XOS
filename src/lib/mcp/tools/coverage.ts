@@ -721,7 +721,7 @@ export const coverageTools: LiveTool[] = [
     async execute(args, ctx) {
       const admin = adminOf(ctx);
       const id = s(args, "event_staff_id")!;
-      const row = await query(admin.from("event_staff").select("id, pay_type, hourly_rate_override, employee:employees(hourly_rate)").eq("id", id).maybeSingle()) as {
+      const row = await query(admin.from("event_staff").select("id, pay_type, hourly_rate_override, employee:employees!event_staff_employee_id_fkey(hourly_rate)").eq("id", id).maybeSingle()) as {
         id: string;
         pay_type: string | null;
         hourly_rate_override: number | null;

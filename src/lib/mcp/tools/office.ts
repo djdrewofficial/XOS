@@ -1324,7 +1324,7 @@ export const officeTools: LiveTool[] = [
       const { staffCostForPayroll, staffHours: hoursFn, staffCost: costFn } = await import("@/lib/payroll");
       const { data: clockSettings } = await admin.from("time_clock_settings").select("*").eq("id", true).maybeSingle();
       const requireApproval = clockSettings?.require_approval_before_payroll !== false;
-      const { data: events } = await admin.from("events").select("id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate))").is("archived_at", null).gte("event_date", s(args, "period_start")).lte("event_date", s(args, "period_end"));
+      const { data: events } = await admin.from("events").select("id, setup_time, start_time, end_time, status:event_statuses(counts_payroll), venue:venues(travel_minutes), event_staff(id, employee_id, role, pay_type, flat_wage, hourly_rate_override, timesheet_status, timesheet_hours, timesheet_amount, timesheet_rate, start_time, end_time, checked_in_at, checked_out_at, employee:employees!event_staff_employee_id_fkey(hourly_rate))").is("archived_at", null).gte("event_date", s(args, "period_start")).lte("event_date", s(args, "period_end"));
       const staffIds = (events ?? []).flatMap((ev) => ((ev.event_staff ?? []) as { id: string }[]).map((es) => es.id));
       const punchesByStaff: Record<string, { punch_type: string; punched_at: string; deleted_at: string | null }[]> = {};
       if (staffIds.length) {
