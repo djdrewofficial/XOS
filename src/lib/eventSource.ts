@@ -87,7 +87,7 @@ export function addonName(row: { name?: string | null; addon?: unknown }): strin
 export function staffNameSelect(src: EventSource): string {
   return src.fieldStaff
     ? "event_id, role, first_name, last_name"
-    : "event_id, role, employee:employees(first_name, last_name)";
+    : "event_id, role, employee:employees!event_staff_employee_id_fkey(first_name, last_name)";
 }
 export function staffName(row: { first_name?: string | null; last_name?: string | null; employee?: unknown }): string {
   const emp = (row.employee as { first_name?: string; last_name?: string } | null) ?? row;

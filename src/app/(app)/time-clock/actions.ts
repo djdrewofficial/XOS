@@ -312,7 +312,7 @@ export async function approveTimesheet(eventStaffId: string) {
 
   const { data: row } = await supabase
     .from("event_staff")
-    .select("id, event_id, pay_type, flat_wage, hourly_rate_override, timesheet_status, employee:employees(hourly_rate)")
+    .select("id, event_id, pay_type, flat_wage, hourly_rate_override, timesheet_status, employee:employees!event_staff_employee_id_fkey(hourly_rate)")
     .eq("id", eventStaffId)
     .maybeSingle();
   if (!row) throw new Error("Assignment not found.");

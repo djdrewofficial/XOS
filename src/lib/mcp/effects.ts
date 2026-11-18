@@ -336,7 +336,7 @@ async function noticeRecipients(
       if (emp) out.push({ audience: "event_salesperson", email: salesperson.email, sms: salesperson.sms, address: emp.email ?? null, phone: emp.phone ?? null });
     }
     if (assigned) {
-      const { data: staff } = await admin.from("event_staff").select("employee:employees(email, phone)").eq("event_id", eventId);
+      const { data: staff } = await admin.from("event_staff").select("employee:employees!event_staff_employee_id_fkey(email, phone)").eq("event_id", eventId);
       for (const row of staff ?? []) {
         const emp = row.employee as { email?: string | null; phone?: string | null } | { email?: string | null; phone?: string | null }[] | null;
         const person = Array.isArray(emp) ? emp[0] : emp;

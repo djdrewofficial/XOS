@@ -30,7 +30,7 @@ export default async function IncomeExpensePage({ searchParams }: { searchParams
       "id, event_date, archived_at, package_price_override, package_price_locked, overtime_fee, travel_fee, discount1_amount, discount2_amount, setup_time, start_time, end_time, " +
         "status:event_statuses(counts_financial), package:packages(default_price), venue:venues(setup_fee, travel_minutes), " +
         "event_addons(quantity, price_override, price_locked, addon:addons(default_price)), " +
-        "event_staff(pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees(hourly_rate)), " +
+        "event_staff(pay_type, flat_wage, start_time, end_time, checked_in_at, checked_out_at, employee:employees!event_staff_employee_id_fkey(hourly_rate)), " +
         "payments(amount, status), expenses(amount)"
     )
     .gte("event_date", `${y}-01-01`)

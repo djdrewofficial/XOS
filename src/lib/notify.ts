@@ -120,7 +120,7 @@ async function dispatchInner(supabase: SupabaseClient, typeKey: string, ctx: Not
     if (asRow) {
       const { data: staff } = await supabase
         .from("event_staff")
-        .select("employee:employees(id, email, phone, permission_tier)")
+        .select("employee:employees!event_staff_employee_id_fkey(id, email, phone, permission_tier)")
         .eq("event_id", ctx.eventId);
       for (const s of (staff ?? []) as unknown as { employee: EmployeeLite | null }[]) {
         if (s.employee) mergeRecipient(perEmployee, s.employee, asRow);

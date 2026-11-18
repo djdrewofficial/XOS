@@ -198,7 +198,7 @@ export default async function EventDetailPage({
     supabase.from("event_statuses").select("id, name, color, text_color").eq("is_active", true).order("sort_order"),
     supabase.from("booking_helpers").select("*").eq("is_active", true).order("position"),
     supabase.from("booking_helper_runs").select("helper_id").eq("event_id", id),
-    supabase.from("event_staff").select("*, employee:employees(*)").eq("event_id", id),
+    supabase.from("event_staff").select("*, employee:employees!event_staff_employee_id_fkey(*)").eq("event_id", id),
     supabase.from("employees").select("*").eq("is_active", true).order("first_name"),
     supabase
       .from("event_clients")

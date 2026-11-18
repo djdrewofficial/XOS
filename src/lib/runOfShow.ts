@@ -64,7 +64,7 @@ export async function saveRunOfShowToDocs(admin: SupabaseClient, eventId: string
 /** Email the run-of-show PDF to the event's assigned staff. Returns count sent. */
 export async function emailRunOfShowToStaff(admin: SupabaseClient, eventId: string, pdf: Buffer, filename: string, eventName: string): Promise<number> {
   const { data: ev } = await admin.from("events").select("event_date").eq("id", eventId).maybeSingle();
-  const { data: staff } = await admin.from("event_staff").select("employee:employees(first_name,email)").eq("event_id", eventId);
+  const { data: staff } = await admin.from("event_staff").select("employee:employees!event_staff_employee_id_fkey(first_name,email)").eq("event_id", eventId);
   const seen = new Set<string>();
   let sent = 0;
   for (const s of staff ?? []) {
