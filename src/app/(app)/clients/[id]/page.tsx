@@ -8,9 +8,12 @@ import AnonymizeClient from "@/components/AnonymizeClient";
 import { updateClientRecord, inviteClient, resetClientPassword, setClientSmsOptOut, setClientSmsConsent, anonymizeClient } from "../actions";
 import { getSmsOptStatus } from "@/lib/smsOptOut";
 import { money, eventTotal, type Client, type XEvent } from "@/lib/types";
+import { mergeClientEvents } from "@/lib/clientEvents";
 import PhoneSyncNote from "@/components/PhoneSyncNote";
 
 export const dynamic = "force-dynamic";
+
+const EVENT_SELECT = "*, status:event_statuses(*), package:packages(*), venue:venues(*)";
 
 export default async function ClientDetailPage({
   params,
@@ -20,17 +23,32 @@ export default async function ClientDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: client }, { data: events }, { data: account }] = await Promise.all([
+  // Primary = events.client_id; linked = event_clients (co-client / contract holder / etc.).
+  // Same union the clients list page builds — without it, people like Mia Fusca
+  // (on event_clients while the planner owns events.client_id) show zero events.
+  const [{ data: client }, { data: primaryEvents }, { data: linkedRows }, { data: account }] = await Promise.all([
     supabase.from("clients").select("*").eq("id", id).single(),
     supabase
       .from("events")
-      .select("*, status:event_statuses(*), package:packages(*), venue:venues(*)")
+      .select(EVENT_SELECT)
       .eq("client_id", id)
       .order("event_date", { ascending: false }),
+    supabase
+      .from("event_clients")
+      .select(`role, event:events(${EVENT_SELECT})`)
+      .eq("client_id", id),
     supabase.from("accounts").select("auth_user_id").eq("client_id", id).maybeSingle(),
   ]);
 
   if (!client) notFound();
+
+  // PostgREST types many-to-one embeds as arrays; runtime is a single object (or null).
+  type LinkedRow = { role: string | null; event: XEvent | XEvent[] | null };
+  const linkRows = ((linkedRows ?? []) as LinkedRow[]).map((row) => ({
+    role: row.role,
+    event: Array.isArray(row.event) ? (row.event[0] ?? null) : row.event,
+  }));
+  const events = mergeClientEvents((primaryEvents ?? []) as XEvent[], linkRows);
 
   const smsStatus = await getSmsOptStatus(supabase, (client as Client).cell_phone ?? null);
 
@@ -53,13 +71,16 @@ export default async function ClientDetailPage({
             </tr>
           </thead>
           <tbody>
-            {(events ?? []).map((e: XEvent) => (
+            {events.map((e) => (
               <tr key={e.id} className="row hover:bg-black/[0.03] dark:hover:bg-white/[0.04]">
                 <td className="px-4 py-2">{e.event_date ?? "—"}</td>
                 <td className="px-4 py-2">
                   <Link href={`/events/${e.id}`} className="text-brand dark:text-brand-lighter hover:underline">
                     {e.name || "(unnamed)"}
                   </Link>
+                  {e.client_role ? (
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{e.client_role}</div>
+                  ) : null}
                 </td>
                 <td className="px-4 py-2">
                   {e.status && (
@@ -75,7 +96,7 @@ export default async function ClientDetailPage({
                 <td className="px-4 py-2 text-right">{money(eventTotal(e))}</td>
               </tr>
             ))}
-            {(events ?? []).length === 0 && (
+            {events.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-zinc-600 dark:text-zinc-400">
                   No events for this client.
