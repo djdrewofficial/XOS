@@ -1,5 +1,77 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/** One event_clients row as returned by MCP events_get (for set_contract_holder / recipients). */
+export type EventClientMembership = {
+  event_client_id: string;
+  client_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  role: string | null;
+  is_primary: boolean;
+  is_contract_holder: boolean;
+  has_email: boolean;
+  has_phone: boolean;
+};
+
+type EventClientJoinRow = {
+  id?: string | null;
+  client_id?: string | null;
+  role?: string | null;
+  is_primary?: boolean | null;
+  is_contract_holder?: boolean | null;
+  client?: {
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    cell_phone?: string | null;
+  } | null;
+};
+
+function nonEmpty(value: string | null | undefined): boolean {
+  return Boolean(value && value.trim());
+}
+
+/** Map event_clients (+ nested client) rows into the events_get memberships shape. */
+export function mapEventClientMemberships(rows: unknown): EventClientMembership[] {
+  if (!Array.isArray(rows)) return [];
+  const out: EventClientMembership[] = [];
+  for (const raw of rows) {
+    const row = raw as EventClientJoinRow;
+    const eventClientId = typeof row.id === "string" ? row.id : null;
+    const clientId = typeof row.client_id === "string" ? row.client_id : null;
+    if (!eventClientId || !clientId) continue;
+    const client = row.client ?? null;
+    out.push({
+      event_client_id: eventClientId,
+      client_id: clientId,
+      first_name: client?.first_name ?? null,
+      last_name: client?.last_name ?? null,
+      role: row.role ?? null,
+      is_primary: row.is_primary === true,
+      is_contract_holder: row.is_contract_holder === true,
+      has_email: nonEmpty(client?.email),
+      has_phone: nonEmpty(client?.cell_phone),
+    });
+  }
+  return out;
+}
+
+/** Load memberships for events_get so agents can pass event_client_id to set_contract_holder. */
+export async function listEventClientMemberships(
+  admin: SupabaseClient,
+  eventId: string,
+): Promise<EventClientMembership[]> {
+  const { data, error } = await admin
+    .from("event_clients")
+    .select(
+      "id, client_id, role, is_primary, is_contract_holder, client:clients(first_name, last_name, email, cell_phone)",
+    )
+    .eq("event_id", eventId)
+    .order("created_at");
+  if (error) throw new Error(error.message);
+  return mapEventClientMemberships(data);
+}
+
 /** Flip the Booking Agreement holder flag the same way the event page does. */
 export async function setEventContractHolder(
   admin: SupabaseClient,

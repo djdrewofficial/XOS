@@ -12,6 +12,7 @@ import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations } from "@/lib/automations";
 import { findOrCreateClient } from "@/lib/clients";
 import { syncClientLoginPhone } from "@/lib/loginPhoneAdmin";
+import { loadEventPartyLayout } from "@/lib/loadContractHolder";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -82,43 +83,43 @@ export async function confirmProposal(token: string, formData: FormData) {
   const journey = resolveJourney(typeRes.data, jsRes.data);
 
   // ---- 1) write the submitted edits ----------------------------------------
-  const { data: ecs } = await supabase
-    .from("event_clients")
-    .select("id, client_id, is_primary, created_at")
-    .eq("event_id", eventId)
-    .order("is_primary", { ascending: false })
-    .order("created_at");
-  const primary = (ecs ?? []).find((e) => e.is_primary) ?? (ecs ?? [])[0] ?? null;
-  const partnerB = (ecs ?? []).find((e) => !e.is_primary) ?? null;
+  // Your Info edits apply to the contract holder (Partner 1), not the primary
+  // client — matching the proposal page greeting / Your Information section.
+  const party = await loadEventPartyLayout(supabase, eventId);
+  const holderId = party.holder?.clientId ?? null;
+  const partnerBId = party.partnerB?.clientId ?? null;
 
-  // primary contact (Partner A / business contact)
-  if (primary) {
-    const { data: before } = await supabase.from("clients").select("cell_phone").eq("id", primary.client_id).maybeSingle();
+  if (holderId) {
+    const { data: before } = await supabase.from("clients").select("cell_phone").eq("id", holderId).maybeSingle();
+    // Only write fields that were actually on the form. Empty email/phone are
+    // omitted from Your Info when blank, so has() avoids wiping other data.
     const update: Record<string, unknown> = {
       first_name: clean(formData.get("a_first")) ?? "",
       last_name: clean(formData.get("a_last")) ?? "",
-      email: clean(formData.get("a_email")),
-      cell_phone: clean(formData.get("a_cell")),
     };
+    if (formData.has("a_email")) update.email = clean(formData.get("a_email"));
+    if (formData.has("a_cell")) update.cell_phone = clean(formData.get("a_cell"));
     if (formData.has("organization")) update.organization = clean(formData.get("organization"));
-    await supabase.from("clients").update(update).eq("id", primary.client_id);
-    await syncClientLoginPhone(primary.client_id as string, (update.cell_phone as string | null) ?? null, before?.cell_phone ?? null);
+    await supabase.from("clients").update(update).eq("id", holderId);
+    if (formData.has("a_cell")) {
+      await syncClientLoginPhone(holderId, (update.cell_phone as string | null) ?? null, before?.cell_phone ?? null);
+    }
   }
 
   // Partner B — only when the couple layout submitted those fields
-  if (formData.has("b_first") || formData.has("b_email")) {
+  if (formData.has("b_first") || formData.has("b_email") || formData.has("b_last") || formData.has("b_cell")) {
     const bFirst = clean(formData.get("b_first"));
     const bLast = clean(formData.get("b_last"));
     const bEmail = clean(formData.get("b_email"));
     const bCell = clean(formData.get("b_cell"));
     const hasB = bFirst || bLast || bEmail || bCell;
-    if (partnerB) {
-      const { data: before } = await supabase.from("clients").select("cell_phone").eq("id", partnerB.client_id).maybeSingle();
+    if (partnerBId) {
+      const { data: before } = await supabase.from("clients").select("cell_phone").eq("id", partnerBId).maybeSingle();
       await supabase
         .from("clients")
         .update({ first_name: bFirst ?? "", last_name: bLast ?? "", email: bEmail, cell_phone: bCell })
-        .eq("id", partnerB.client_id);
-      await syncClientLoginPhone(partnerB.client_id as string, bCell, before?.cell_phone ?? null);
+        .eq("id", partnerBId);
+      await syncClientLoginPhone(partnerBId, bCell, before?.cell_phone ?? null);
     } else if (hasB) {
       // dedupe by email — reuse an existing client if Partner B is already one
       const found = await findOrCreateClient(supabase, { first_name: bFirst ?? "", last_name: bLast ?? "", email: bEmail, cell_phone: bCell });
