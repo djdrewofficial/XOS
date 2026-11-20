@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSuppressedByCommsPause, pausedEventIdSet } from "@/lib/commsPause";
+import {
+  recordOutboundEmailComms,
+  type EmailCommsLogDeps,
+  type EmailCommsLogInput,
+} from "@/lib/emailCommsLog";
 import { createClient } from "@/lib/supabase/server";
 // toE164 lives in lib/phone (neutral module) so lib/smsOptOut can use it without a
 // circular import back to this file. Re-exported below for existing importers.
@@ -300,24 +305,49 @@ async function upsertConversationMessages(
 ): Promise<number> {
   const messages = await fetchConversationMessages(conversationId);
   if (!messages.length) return 0;
-  const rows = messages.map((m) => ({
-    id: m.id,
-    conversation_id: conversationId,
-    direction: m.direction ?? null,
-    message_type: m.messageType ?? null,
-    status: m.status ?? null,
-    body: m.body ?? null,
-    from_number: m.from ?? null,
-    to_number: m.to ?? null,
-    date_added: m.dateAdded ?? null,
-    meta: {
-      ...(m.meta ?? {}),
-      ...(m.callDuration != null ? { callDuration: m.callDuration } : {}),
-      ...(m.callStatus ? { callStatus: m.callStatus } : {}),
-      ...(m.attachments?.length ? { attachments: m.attachments } : {}),
-    } as Record<string, unknown>,
-    synced_at: new Date().toISOString(),
-  }));
+  // Skip GHL copies we already mirrored locally as xos-email-<email_log id>
+  // (inbound/outbound log uses altId = email_log.id). Avoids duplicate bubbles.
+  const candidateAltIds = messages
+    .map((m) => {
+      const meta = (m.meta ?? {}) as { altId?: string; emailLogId?: string };
+      const alt = (m as { altId?: string }).altId ?? meta.altId ?? meta.emailLogId;
+      return typeof alt === "string" && /^[0-9a-f-]{36}$/i.test(alt) ? alt : null;
+    })
+    .filter((id): id is string => !!id);
+  const localMirrorIds = candidateAltIds.map((id) => `xos-email-${id}`);
+  const knownLocal = new Set<string>();
+  if (localMirrorIds.length) {
+    const { data: locals } = await supabase.from("hl_messages").select("id").in("id", localMirrorIds);
+    for (const row of locals ?? []) knownLocal.add(row.id as string);
+  }
+
+  const rows = messages
+    .filter((m) => {
+      const meta = (m.meta ?? {}) as { altId?: string; emailLogId?: string };
+      const alt = (m as { altId?: string }).altId ?? meta.altId ?? meta.emailLogId;
+      if (typeof alt === "string" && knownLocal.has(`xos-email-${alt}`)) return false;
+      return true;
+    })
+    .map((m) => ({
+      id: m.id,
+      conversation_id: conversationId,
+      direction: m.direction ?? null,
+      message_type: m.messageType ?? null,
+      status: m.status ?? null,
+      body: m.body ?? null,
+      from_number: m.from ?? null,
+      to_number: m.to ?? null,
+      date_added: m.dateAdded ?? null,
+      meta: {
+        ...(m.meta ?? {}),
+        ...(m.callDuration != null ? { callDuration: m.callDuration } : {}),
+        ...(m.callStatus ? { callStatus: m.callStatus } : {}),
+        ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+      } as Record<string, unknown>,
+      synced_at: new Date().toISOString(),
+    }));
+
+  if (!rows.length) return 0;
 
   // emails arrive as stubs — pull full content (subject + body) for the ones
   // we haven't enriched yet, and never clobber bodies fetched earlier
@@ -571,15 +601,176 @@ export async function syncStaffToHighLevel(
 }
 
 /* ============ XOS-sent email → Comms + HighLevel ============
-   Booking agreements and automated emails deliver through Mailgun, so they never
-   pass through GHL and wouldn't show in the event Comms tab (which reads the
-   synced hl_messages) or on the GHL contact. After a Mailgun delivery this:
-   - mirrors the email into the client's conversation in hl_messages (id
-     "xos-email-<email_log id>"), creating the GHL conversation if they don't have
-     one yet, so it shows in Comms + Inbox;
-   - when the Marketplace-App threading isn't connected (so GHL has no copy),
-     adds a note to the GHL contact so the send is visible in HighLevel too.
+   Booking agreements / scheduled templates / booking helpers deliver through
+   Mailgun, so they would not appear in Comms (hl_messages) or on the GHL
+   contact conversation. After delivery, recordXosEmailInComms runs the shared
+   logger (emailCommsLog): mirrors into every event_clients conversation chip,
+   posts a log-without-send Email onto the GHL contact (inbound API; note
+   fallback), and records ghl_sync_* on email_log for retries.
    Best-effort: never throws, never affects sending. */
+
+/** Log an already-delivered email into a GHL conversation WITHOUT re-sending.
+    Uses POST /conversations/messages/inbound with direction=outbound (PIT). */
+export async function logEmailInGhlConversation(opts: {
+  contactId: string;
+  toEmail: string;
+  fromName?: string | null;
+  fromEmail?: string | null;
+  subject: string;
+  html: string;
+  sentAt: string;
+  altId: string;
+  attachmentUrls?: string[];
+}): Promise<{ ok: true; messageId: string | null } | { ok: false; error: string }> {
+  if (!isHighLevelConfigured()) return { ok: false, error: "HighLevel not configured" };
+  const emailFrom = opts.fromEmail
+    ? opts.fromName
+      ? `${opts.fromName} <${opts.fromEmail}>`
+      : opts.fromEmail
+    : undefined;
+  const payload: Record<string, unknown> = {
+    type: "Email",
+    direction: "outbound",
+    contactId: opts.contactId,
+    emailTo: opts.toEmail,
+    ...(emailFrom ? { emailFrom } : {}),
+    subject: opts.subject || "Message from Xpress Entertainment",
+    html: opts.html,
+    message: stripHtml(opts.html).slice(0, 20_000),
+    altId: opts.altId,
+    date: opts.sentAt,
+    ...(opts.attachmentUrls?.length ? { attachments: opts.attachmentUrls } : {}),
+  };
+  const result = await hlFetch("/conversations/messages/inbound", "2021-04-15", payload);
+  if (!result.ok) return { ok: false, error: result.error };
+  const id = (result.data.messageId ?? result.data.emailMessageId ?? result.data.msg ?? null) as string | null;
+  return { ok: true, messageId: typeof id === "string" ? id : null };
+}
+
+function emailCommsDeps(supabase: SupabaseClient): EmailCommsLogDeps {
+  return {
+    isHighLevelConfigured,
+    listEventClients: async (eventId) => {
+      const { data } = await supabase
+        .from("event_clients")
+        .select("client_id, is_primary, role, client:clients(id, email, first_name, last_name, cell_phone)")
+        .eq("event_id", eventId);
+      return (data ?? []).map((row) => {
+        const c = row.client as
+          | { id: string; email: string | null; first_name: string | null; last_name: string | null; cell_phone: string | null }
+          | { id: string; email: string | null; first_name: string | null; last_name: string | null; cell_phone: string | null }[]
+          | null;
+        const client = Array.isArray(c) ? c[0] ?? null : c;
+        return {
+          clientId: (client?.id ?? row.client_id) as string,
+          email: client?.email ?? null,
+          firstName: client?.first_name ?? null,
+          lastName: client?.last_name ?? null,
+          phone: client?.cell_phone ? toE164(client.cell_phone) : null,
+          isPrimary: !!row.is_primary,
+          role: (row.role as string | null) ?? null,
+        };
+      });
+    },
+    findConversationByClientId: async (clientId) => {
+      const { data } = await supabase
+        .from("hl_conversations")
+        .select("id, hl_contact_id, last_message_at, client_id, email")
+        .eq("client_id", clientId)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+    findConversationByEmail: async (email) => {
+      const { data } = await supabase
+        .from("hl_conversations")
+        .select("id, hl_contact_id, last_message_at, client_id, email")
+        .ilike("email", email)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+    findEmployeeByEmail: async (email) => {
+      const { data } = await supabase
+        .from("employees")
+        .select("id, first_name, last_name, phone, email")
+        .ilike("email", email)
+        .limit(1)
+        .maybeSingle();
+      if (!data) return null;
+      return {
+        id: data.id as string,
+        firstName: (data.first_name as string | null) ?? null,
+        lastName: (data.last_name as string | null) ?? null,
+        phone: data.phone ? toE164(data.phone as string) : null,
+      };
+    },
+    upsertGhlContact: async ({ email, firstName, lastName, phone }) => {
+      const staff = await supabase
+        .from("employees")
+        .select("id")
+        .ilike("email", email)
+        .limit(1)
+        .maybeSingle();
+      if (staff.data?.id) return syncStaffToHighLevel(supabase, staff.data.id as string);
+      return upsertContactByEmail({ email, firstName, lastName, phone });
+    },
+    findGhlConversationId: findConversationIdByContact,
+    createGhlConversation: async (contactId) => {
+      const { locationId } = highlevelConfig();
+      const created = await hlFetch("/conversations/", "2021-04-15", { locationId, contactId });
+      const cv = created.ok ? (created.data.conversation as { id?: string } | undefined) : undefined;
+      return cv?.id ?? ((created.ok ? created.data.id : null) as string | null) ?? null;
+    },
+    upsertHlConversation: async (row) => {
+      await supabase.from("hl_conversations").upsert(
+        {
+          id: row.id,
+          hl_contact_id: row.hl_contact_id,
+          client_id: row.client_id,
+          contact_name: row.contact_name,
+          email: row.email,
+          unread_count: 0,
+          synced_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
+      );
+    },
+    upsertHlMessage: async (row) => {
+      await supabase.from("hl_messages").upsert(
+        {
+          ...row,
+          synced_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
+      );
+    },
+    updateConversationPreview: async (conversationId, patch) => {
+      await supabase.from("hl_conversations").update(patch).eq("id", conversationId);
+    },
+    logEmailInGhl: logEmailInGhlConversation,
+    leaveGhlNote: async (contactId, body) => {
+      const result = await hlFetch(`/contacts/${contactId}/notes`, "2021-07-28", { body });
+      return result.ok ? { ok: true } : { ok: false, error: result.error };
+    },
+    updateEmailLog: async (emailLogId, patch) => {
+      // Columns from migration 00236; ignore unknown-column errors until applied.
+      const { error } = await supabase.from("email_log").update(patch).eq("id", emailLogId);
+      if (error && /column|schema cache/i.test(error.message)) {
+        const legacy: Record<string, unknown> = {};
+        if ("client_id" in patch) legacy.client_id = patch.client_id;
+        if (Object.keys(legacy).length) {
+          await supabase.from("email_log").update(legacy).eq("id", emailLogId);
+        }
+        return;
+      }
+      if (error) console.warn("email_log sync update failed:", error.message);
+    },
+  };
+}
+
 export async function recordXosEmailInComms(
   supabase: SupabaseClient,
   opts: {
@@ -589,131 +780,106 @@ export async function recordXosEmailInComms(
     subject: string;
     html: string;
     sentAt: string;
-    /** GHL already holds a real copy (OAuth threading succeeded) — sync brings it in. */
+    /** GHL already holds a real copy (OAuth threading / HL send) — skip re-post. */
     threadedInHl: boolean;
-  }
+    eventId?: string | null;
+    fromName?: string | null;
+    fromEmail?: string | null;
+    helperId?: string | null;
+    templateId?: string | null;
+    templateName?: string | null;
+    sourceKind?: EmailCommsLogInput["sourceKind"];
+    sourceLabel?: string | null;
+    attachments?: { filename?: string; url?: string }[];
+    ghlMessageId?: string | null;
+  },
 ): Promise<void> {
   try {
-    const email = opts.toEmail.trim().toLowerCase();
-    if (!email) return;
+    // Load event_id / helper / template from the log row when the caller omitted them.
+    let eventId = opts.eventId ?? null;
+    let helperId = opts.helperId ?? null;
+    let templateId = opts.templateId ?? null;
+    let templateName = opts.templateName ?? null;
+    let sourceKind = opts.sourceKind ?? null;
+    let sourceLabel = opts.sourceLabel ?? null;
+    let fromName = opts.fromName ?? null;
+    let fromEmail = opts.fromEmail ?? null;
 
-    // the client's existing conversation (by client link, else by email)
-    let conv: { id: string; hl_contact_id: string | null; last_message_at: string | null } | null = null;
-    if (opts.clientId) {
-      const { data } = await supabase
-        .from("hl_conversations")
-        .select("id, hl_contact_id, last_message_at")
-        .eq("client_id", opts.clientId)
-        .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(1)
+    if (!eventId || !templateId || !helperId || !fromEmail) {
+      // Prefer the richer select (migration 00236). Fall back if columns aren't live yet.
+      let row: Record<string, unknown> | null = null;
+      const rich = await supabase
+        .from("email_log")
+        .select(
+          "event_id, client_id, template_id, helper_id, from_name, from_address, comms_source, comms_source_label, bypass_comms_pause",
+        )
+        .eq("id", opts.emailLogId)
         .maybeSingle();
-      conv = data;
-    }
-    if (!conv) {
-      const { data } = await supabase
-        .from("hl_conversations")
-        .select("id, hl_contact_id, last_message_at")
-        .ilike("email", email)
-        .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
-      conv = data;
-    }
-    // Clients and staff get a GHL contact/conversation; vendor/other mail with no
-    // existing thread is left alone.
-    const { data: staff } = opts.clientId
-      ? { data: null }
-      : await supabase
-          .from("employees")
-          .select("id, first_name, last_name, phone, email")
-          .ilike("email", email)
-          .limit(1)
+      if (rich.error && /column|schema cache/i.test(rich.error.message)) {
+        const legacy = await supabase
+          .from("email_log")
+          .select("event_id, client_id, template_id, from_name, from_address, bypass_comms_pause")
+          .eq("id", opts.emailLogId)
           .maybeSingle();
-    if (!conv && !opts.clientId && !staff) return;
+        row = (legacy.data as Record<string, unknown> | null) ?? null;
+      } else {
+        row = (rich.data as Record<string, unknown> | null) ?? null;
+      }
+      if (row) {
+        eventId = eventId ?? ((row.event_id as string | null) ?? null);
+        helperId = helperId ?? ((row.helper_id as string | null) ?? null);
+        templateId = templateId ?? ((row.template_id as string | null) ?? null);
+        fromName = fromName ?? ((row.from_name as string | null) ?? null);
+        fromEmail = fromEmail ?? ((row.from_address as string | null) ?? null);
+        sourceKind =
+          sourceKind ?? ((row.comms_source as EmailCommsLogInput["sourceKind"] | null) ?? null);
+        sourceLabel = sourceLabel ?? ((row.comms_source_label as string | null) ?? null);
+        if (!sourceKind && row.bypass_comms_pause) sourceKind = "booking_helper";
+      }
+    }
 
-    let contactId = conv?.hl_contact_id ?? null;
-    if (isHighLevelConfigured() && (!conv || !contactId)) {
-      const { data: client } = opts.clientId
-        ? await supabase.from("clients").select("first_name, last_name, cell_phone").eq("id", opts.clientId).maybeSingle()
-        : { data: null };
-      const c = client
-        ? client
-        : staff
-          ? { first_name: staff.first_name, last_name: staff.last_name, cell_phone: staff.phone }
-          : null;
-      const up = staff
-        ? await syncStaffToHighLevel(supabase, staff.id as string)
-        : await upsertContactByEmail({
-            email,
-            firstName: c?.first_name ?? null,
-            lastName: c?.last_name ?? null,
-            phone: c?.cell_phone ? toE164(c.cell_phone) : null,
+    if (templateId && (!templateName || !sourceKind)) {
+      const { data: tpl } = await supabase
+        .from("email_templates")
+        .select("name, schedule_enabled")
+        .eq("id", templateId)
+        .maybeSingle();
+      if (tpl) {
+        templateName = templateName ?? (tpl.name as string | null);
+        if (!sourceKind) {
+          const { deriveCommsSource } = await import("@/lib/emailCommsLog");
+          sourceKind = deriveCommsSource({
+            helperId,
+            scheduleEnabled: !!tpl.schedule_enabled,
           });
-      if (up.ok) contactId = up.contactId;
-      if (!conv && contactId) {
-        let convId = await findConversationIdByContact(contactId);
-        if (!convId) {
-          const { locationId } = highlevelConfig();
-          const created = await hlFetch("/conversations/", "2021-04-15", { locationId, contactId });
-          const cv = created.ok ? (created.data.conversation as { id?: string } | undefined) : undefined;
-          convId = cv?.id ?? ((created.ok ? created.data.id : null) as string | null) ?? null;
-        }
-        if (convId) {
-          const name = c ? `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() : null;
-          await supabase.from("hl_conversations").upsert(
-            {
-              id: convId,
-              hl_contact_id: contactId,
-              client_id: opts.clientId,
-              contact_name: name || email,
-              email,
-              unread_count: 0,
-              synced_at: new Date().toISOString(),
-            },
-            { onConflict: "id" }
-          );
-          conv = { id: convId, hl_contact_id: contactId, last_message_at: null };
         }
       }
     }
 
-    const body = stripHtml(opts.html).slice(0, 20_000);
-    if (conv && !opts.threadedInHl) {
-      await supabase.from("hl_messages").upsert(
-        {
-          id: `xos-email-${opts.emailLogId}`,
-          conversation_id: conv.id,
-          direction: "outbound",
-          message_type: "TYPE_EMAIL",
-          status: "sent",
-          body,
-          to_number: email,
-          date_added: opts.sentAt,
-          meta: { subject: opts.subject, emailHtml: opts.html.slice(0, 100_000), source: "xos", emailLogId: opts.emailLogId },
-          synced_at: new Date().toISOString(),
-        },
-        { onConflict: "id" }
-      );
-      if (!conv.last_message_at || conv.last_message_at < opts.sentAt) {
-        await supabase
-          .from("hl_conversations")
-          .update({
-            last_message_at: opts.sentAt,
-            last_message_type: "TYPE_EMAIL",
-            last_message_direction: "outbound",
-            last_message_body: `${opts.subject}`.slice(0, 500),
-          })
-          .eq("id", conv.id);
-      }
-    }
+    if (!sourceKind && helperId) sourceKind = "booking_helper";
 
-    // GHL has no copy of a Mailgun send → leave a note on the contact
-    if (!opts.threadedInHl && contactId && isHighLevelConfigured()) {
-      const excerpt = body.length > 1500 ? `${body.slice(0, 1500)}…` : body;
-      await hlFetch(`/contacts/${contactId}/notes`, "2021-07-28", {
-        body: `📧 Email sent from XOS to ${email}\nSubject: ${opts.subject}\n\n${excerpt}`,
-      });
-    }
+    await recordOutboundEmailComms(
+      {
+        emailLogId: opts.emailLogId,
+        eventId,
+        clientId: opts.clientId,
+        toEmail: opts.toEmail,
+        fromName,
+        fromEmail,
+        subject: opts.subject,
+        html: opts.html,
+        sentAt: opts.sentAt,
+        attachments: opts.attachments,
+        sourceKind,
+        sourceLabel,
+        helperId,
+        templateId,
+        templateName,
+        alreadyInGhl: opts.threadedInHl,
+        ghlMessageId: opts.ghlMessageId ?? null,
+      },
+      emailCommsDeps(supabase),
+    );
   } catch (err) {
     console.error("recordXosEmailInComms failed:", err);
   }

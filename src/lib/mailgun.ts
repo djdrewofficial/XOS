@@ -435,8 +435,12 @@ export async function processOutbox(
         });
         threadedInHl = threaded.ok;
       }
-      // Show the send in the event Comms tab + on the GHL contact.
+      // Show the send in the event Comms tab + on the GHL contact (every
+      // event_clients chip + GHL conversation log). Shared step never blocks send.
       if (msg.to_address) {
+        const attachmentMeta = attachments.map((a) => ({
+          filename: a.filename,
+        }));
         await recordXosEmailInComms(admin, {
           emailLogId: msg.id,
           toEmail: msg.to_address,
@@ -445,6 +449,15 @@ export async function processOutbox(
           html,
           sentAt: new Date().toISOString(),
           threadedInHl,
+          eventId: (msg.event_id as string | null) ?? null,
+          fromName: (msg.from_name as string | null) ?? null,
+          fromEmail: (msg.from_address as string | null) ?? null,
+          helperId: ((msg as { helper_id?: string | null }).helper_id) ?? null,
+          templateId: (msg.template_id as string | null) ?? null,
+          sourceKind: ((msg as { comms_source?: "scheduled_template" | "booking_helper" | "payment_reminder" | "manual" | "system" | "other" | null }).comms_source) ?? null,
+          sourceLabel: ((msg as { comms_source_label?: string | null }).comms_source_label) ?? null,
+          attachments: attachmentMeta,
+          ghlMessageId: deliveredViaMailgun ? null : result.id || null,
         });
       }
     } else {
