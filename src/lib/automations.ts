@@ -172,6 +172,15 @@ export async function runAutomations(
         if (!/already|visibility|one-shot|should not/i.test(error.message)) throw new Error(error.message);
         continue;
       }
+      if (opts.drain !== "hold") {
+        const { stampHelperQueuedEmails } = await import("@/lib/bookingHelperRun");
+        await stampHelperQueuedEmails(admin, {
+          eventId,
+          helperId: h.id,
+          helperTitle: h.title ?? "Helper",
+          sinceIso: queuedSince,
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (opts.drain === "hold" && /schema cache|could not find|does not exist|00222/i.test(message)) throw err;

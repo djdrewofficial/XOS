@@ -177,12 +177,20 @@ async function handle(
         return { prompts: data ?? [] };
       }
       // 3-arg form = the staff-click entry point (p_manual = true, bypasses comms_paused).
+      const queuedSince = new Date().toISOString();
       const { error } = await admin.rpc("run_booking_helper", {
         p_helper_id: helperId,
         p_event_id: eventId,
         p_sms_overrides: cleanSmsOverrides(body.smsOverrides),
       });
       check(error);
+      const { stampHelperQueuedEmails } = await import("@/lib/bookingHelperRun");
+      await stampHelperQueuedEmails(admin, {
+        eventId,
+        helperId,
+        helperTitle: (scope.title as string) ?? "Helper",
+        sinceIso: queuedSince,
+      });
       await fireHelperWebhook(admin, helperId, eventId);
       const drainer = me.fieldStaff ? admin : supabase;
       await processOutbox(drainer);

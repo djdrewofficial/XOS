@@ -63,7 +63,23 @@ export function AttachmentList({ urls, out }: { urls: string[]; out: boolean }) 
 export function MessageBubble({ m }: { m: MsgRow }) {
   const out = m.direction === "outbound";
   const isText = m.message_type === "TYPE_SMS" || m.message_type === "TYPE_WHATSAPP";
-  const meta = (m.meta ?? {}) as { callDuration?: number };
+  const meta = (m.meta ?? {}) as {
+    callDuration?: number;
+    subject?: string;
+    sourceLabel?: string;
+    sourceKind?: string;
+    sharedOnEvent?: boolean;
+    sentToName?: string;
+  };
+  const sourceLabel =
+    meta.sourceLabel ||
+    (meta.sourceKind === "scheduled_template"
+      ? "Scheduled template"
+      : meta.sourceKind === "booking_helper"
+        ? "Booking helper"
+        : meta.sourceKind === "payment_reminder"
+          ? "Payment reminder"
+          : null);
   return (
     <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
       <div
@@ -84,9 +100,14 @@ export function MessageBubble({ m }: { m: MsgRow }) {
             )}
           </div>
         )}
-        {m.message_type === "TYPE_EMAIL" && (m.meta as { subject?: string } | null)?.subject && (
+        {m.message_type === "TYPE_EMAIL" && sourceLabel && (
+          <div className={`mb-1 text-[10px] font-semibold uppercase tracking-wide ${out ? "text-white/75" : "text-zinc-500"}`}>
+            {sourceLabel}
+          </div>
+        )}
+        {m.message_type === "TYPE_EMAIL" && meta.subject && (
           <div className="mb-1 text-[12px] font-bold">
-            {(m.meta as { subject?: string }).subject}
+            {meta.subject}
           </div>
         )}
         {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}

@@ -39,6 +39,29 @@ export async function previewHelperSms(admin: SupabaseClient, eventId: string, h
   return (data ?? []) as HelperSmsPrompt[];
 }
 
+/** Stamp Comms/GHL source metadata on email_log rows a helper just queued.
+    Safe before migration 00236 (unknown-column errors are ignored). */
+export async function stampHelperQueuedEmails(
+  admin: SupabaseClient,
+  opts: { eventId: string; helperId: string; helperTitle: string; sinceIso: string },
+): Promise<void> {
+  const sourceLabel = `Booking helper: ${opts.helperTitle}`;
+  const stamp = await admin
+    .from("email_log")
+    .update({
+      helper_id: opts.helperId,
+      comms_source: "booking_helper",
+      comms_source_label: sourceLabel,
+      ghl_sync_status: "pending",
+    })
+    .eq("event_id", opts.eventId)
+    .eq("status", "queued")
+    .gte("created_at", opts.sinceIso);
+  if (stamp.error && !/column|schema cache/i.test(stamp.error.message)) {
+    console.warn("helper email_log source stamp failed:", stamp.error.message);
+  }
+}
+
 /** The event-page helper button. The database queues the helper's actions
     (including contract emails, with database merge tags filled). This function
     then runs the app outbox so quote, payment-plan, and sign-link tags are
@@ -80,6 +103,12 @@ export async function executeBookingHelper(
     p_sms_overrides: cleanSmsOverrides(input.smsOverrides),
   });
   if (error) throw new Error(error.message);
+  await stampHelperQueuedEmails(admin, {
+    eventId: input.eventId,
+    helperId: input.helperId,
+    helperTitle: scope.title as string,
+    sinceIso: queuedSince,
+  });
   // Loaded here so the role and event-type guards above can run without the mail stack.
   const [{ fireHelperWebhook }, { drainEventOutbox }] = await Promise.all([import("@/lib/automations"), import("@/lib/scopedOutbox")]);
   await fireHelperWebhook(admin, input.helperId, input.eventId);
