@@ -1271,6 +1271,7 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
   await officeOnly();
   const supabase = await createClient();
   const overrideSubmitted = clean(formData.get("package_price_override")) != null;
+  const overtimeHourlyRaw = clean(formData.get("overtime_hourly"));
   const nn = (name: string) => Math.max(0, num(formData.get(name)));
   await updateEventFinancialsRecord(supabase, eventId, {
     packageId: clean(formData.get("package_id")),
@@ -1281,6 +1282,8 @@ export async function updateEventFinancials(eventId: string, formData: FormData)
     travel: nn("travel_fee"),
     discount1: nn("discount1_amount"),
     discount2: nn("discount2_amount"),
+    overtimeHourlyProvided: true,
+    overtimeHourly: overtimeHourlyRaw != null ? nn("overtime_hourly") : null,
   });
   revalidateMoney(eventId);
 }

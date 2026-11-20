@@ -103,6 +103,8 @@ export type XEvent = {
   package_price_override: number | null;
   package_price_locked?: number | null; // price pinned at assignment — catalog changes never reprice events
   package_version_no?: number | null;
+  /** Per-event overtime $/hr override; null = use package.overtime_hourly. */
+  overtime_hourly?: number | null;
   overtime_fee: number;
   travel_fee: number;
   discount1_label: string | null;

@@ -454,6 +454,13 @@ async function handle(
         discount1_amount: discount1,
         discount2_amount: discount2,
       };
+      // null / "" clears the per-event overtime $/hr override (fall back to package default)
+      if ("overtime_hourly" in body) {
+        patch.overtime_hourly =
+          body.overtime_hourly === null || body.overtime_hourly === undefined || body.overtime_hourly === ""
+            ? null
+            : nn(body.overtime_hourly);
+      }
       // labels live next to the amounts on the event row (web edits them in the same form)
       if ("discount1_label" in body) patch.discount1_label = text(body.discount1_label, 120);
       if ("discount2_label" in body) patch.discount2_label = text(body.discount2_label, 120);
