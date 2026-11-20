@@ -75,7 +75,11 @@ describe("field staff cannot use the helper or membership paths as a side door",
     const assigned = fakeDb({ event_staff: [{ id: "s1", event_id: EVENT, employee_id: "e1" }] });
     await requireEventTouch(assigned.db, me(true), EVENT);
     await requireEventTouch(fakeDb({}).db, me(false), EVENT);
-    for (const [fn, call] of [["getHelperSmsPrompts", "previewHelperSms("], ["runBookingHelper", "executeBookingHelper("]] as const) {
+    for (const [fn, call] of [
+      ["getHelperSmsPrompts", "previewHelperSms("],
+      ["getHelperRecipientPreview", "previewHelperRecipients("],
+      ["runBookingHelper", "executeBookingHelper("],
+    ] as const) {
       const src = body(fn);
       const gate = src.indexOf("await assignedOrOffice(eventId)");
       assert.ok(gate >= 0, `${fn} gates on assignment`);

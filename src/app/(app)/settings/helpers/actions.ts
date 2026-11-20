@@ -10,13 +10,26 @@ function clean(v: FormDataEntryValue | null): string | null {
   return s === "" ? null : s;
 }
 
-type HelperAction = Record<string, string | boolean>;
+type HelperAction = Record<string, string | boolean | string[] | { mode: string; roles?: string[] }>;
 
 /** "Prompt to send text" checkbox state for one of the three SMS actions. When on,
     a human clicking the helper confirms (and can edit or skip) that text instead of
     it going out automatically. Automated runs ignore the flag and send as configured. */
 function smsPrompt(formData: FormData, name: string): boolean {
   return formData.get(name) === "on";
+}
+
+const RECIPIENT_MODES = new Set(["default", "all", "primary", "contract_holder", "roles"]);
+
+/** Template-level recipient setting for a client email/SMS step. */
+function recipientConfig(formData: FormData, prefix: string): { mode: string; roles?: string[] } | undefined {
+  const mode = clean(formData.get(`${prefix}_recipients_mode`)) ?? "default";
+  if (!RECIPIENT_MODES.has(mode) || mode === "default") return undefined;
+  if (mode === "roles") {
+    const roles = formData.getAll(`${prefix}_recipients_roles`).map(String).filter(Boolean);
+    return { mode, roles };
+  }
+  return { mode };
 }
 
 const DATE_FIELDS = [
@@ -82,12 +95,15 @@ function buildHelperPayload(formData: FormData) {
   // emails
   const templateId = clean(formData.get("action_template_id"));
   if (templateId) {
-    actions.push({
+    const emailAction: HelperAction = {
       type: "send_email",
       template_id: templateId,
       to: "client",
       from: clean(formData.get("action_email_from")) ?? "company",
-    });
+    };
+    const recipients = recipientConfig(formData, "email");
+    if (recipients) emailAction.recipients = recipients;
+    actions.push(emailAction);
   }
 
   const customAddress = clean(formData.get("email_custom_address"));
@@ -105,12 +121,15 @@ function buildHelperPayload(formData: FormData) {
   // texts (HighLevel SMS) — template-based, mirroring the email actions above
   const smsTemplateId = clean(formData.get("action_sms_template_id"));
   if (smsTemplateId) {
-    actions.push({
+    const smsAction: HelperAction = {
       type: "send_sms",
       to: "client",
       template_id: smsTemplateId,
       prompt: smsPrompt(formData, "action_sms_prompt"),
-    });
+    };
+    const recipients = recipientConfig(formData, "sms");
+    if (recipients) smsAction.recipients = recipients;
+    actions.push(smsAction);
   }
 
   const smsCustomNumber = clean(formData.get("sms_custom_number"));
