@@ -6,7 +6,7 @@ import { RESET_APPROVAL_BODY } from "@/lib/oneTimeLink";
 import { findOrCreateClient } from "@/lib/clients";
 import { generateDocumentRow, loadEventBundle } from "@/lib/documentRender";
 import { anonymizeClientRecord } from "@/lib/anonymizeClient";
-import { updateEventFinancialsRecord } from "@/lib/eventFinancials";
+import { effectiveOvertimeHourly, updateEventFinancialsRecord } from "@/lib/eventFinancials";
 import { archiveEventRecord, assertEventDeletable, unarchiveEventRecord } from "@/lib/eventLifecycle";
 import { syncStaffToHighLevel, processSmsOutbox } from "@/lib/highlevel";
 import { processOutbox } from "@/lib/mailgun";
@@ -240,7 +240,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_get",
-    description: "Get one event with its client, venue, status, package, add-ons, staff, and payment totals.",
+    description: "Get one event with its client, venue, status, package, add-ons, staff, and payment totals. With the money scope, also returns fee fields and effective_overtime_hourly (event override or package default).",
     scopes: ["read.events"],
     confirm: false,
     inputSchema: obj({ event_id: UUID }, ["event_id"]),
@@ -253,17 +253,39 @@ export const officeTools: LiveTool[] = [
       const staffCols = ctx.token.scopes.includes("money.payroll")
         ? "id, employee_id, role, flat_wage, confirmed_at, declined_at"
         : "id, employee_id, role, confirmed_at, declined_at";
+      const money = ctx.token.scopes.includes("money");
+      const eventCols = money
+        ? `id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, package_price_override, package_price_locked, deposit_value, overtime_hourly, overtime_fee, travel_fee, discount1_amount, discount2_amount, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name), package:packages(id, name, default_price, deposit_value, overtime_hourly)`
+        : `id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name)`;
       const [event, addons, staff, payments, schedule, notes] = await Promise.all([
-        query(admin.from("events").select(`id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name)`).eq("id", id).maybeSingle()),
+        query(admin.from("events").select(eventCols).eq("id", id).maybeSingle()),
         ctx.token.scopes.includes("read.catalog") ? query(admin.from("event_addons").select("id, addon_id, quantity, price_override, price_locked").eq("event_id", id)) : [],
         ctx.token.scopes.includes("read.staff") ? query(admin.from("event_staff").select(staffCols).eq("event_id", id)) : [],
-        ctx.token.scopes.includes("money") ? query(admin.from("payments").select("id, amount, method, reason, status, paid_at, deleted_at").eq("event_id", id)) : [],
-        ctx.token.scopes.includes("money") ? query(admin.from("scheduled_payments").select("id, seq, label, amount, due_date").eq("event_id", id).order("seq")) : [],
+        money ? query(admin.from("payments").select("id, amount, method, reason, status, paid_at, deleted_at").eq("event_id", id)) : [],
+        money ? query(admin.from("scheduled_payments").select("id, seq, label, amount, due_date").eq("event_id", id).order("seq")) : [],
         query(admin.from("event_notes").select("id, kind, body, created_at").eq("event_id", id).order("created_at", { ascending: false }).limit(30)),
       ]);
       if (!event) throw new Error("Event not found.");
       const notePage = pageMeta(notes, 30);
-      return { event, addons, staff, payments, schedule, notes: notePage.items, notes_limit: notePage.limit, notes_returned: notePage.returned, notes_may_have_more: notePage.may_have_more };
+      const out: Record<string, unknown> = {
+        event,
+        addons,
+        staff,
+        payments,
+        schedule,
+        notes: notePage.items,
+        notes_limit: notePage.limit,
+        notes_returned: notePage.returned,
+        notes_may_have_more: notePage.may_have_more,
+      };
+      if (money) {
+        const row = event as {
+          overtime_hourly?: number | null;
+          package?: { overtime_hourly?: number | null } | null;
+        };
+        out.effective_overtime_hourly = effectiveOvertimeHourly(row.overtime_hourly, row.package?.overtime_hourly);
+      }
+      return out;
     },
   },
   {
@@ -536,7 +558,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_update_financials",
-    description: "Update package, deposit, fees, and discounts. Discounts are clamped so the investment cannot go negative. Changing the package applies its date price and defaults.",
+    description: "Update package, deposit, fees, discounts, and overtime_hourly. Pass overtime_hourly as a number to set a per-event override, or null to clear it (fall back to the package default). Discounts are clamped so the investment cannot go negative. Changing the package applies its date price and defaults. Returns effective_overtime_hourly.",
     scopes: ["write.events", "money"],
     confirm: true,
     inputSchema: obj({
@@ -544,6 +566,7 @@ export const officeTools: LiveTool[] = [
       package_id: UUID,
       package_price_override: { type: "number", minimum: 0 },
       deposit_value: { type: "number", minimum: 0 },
+      overtime_hourly: { type: "number", minimum: 0 },
       overtime_fee: { type: "number", minimum: 0 },
       travel_fee: { type: "number", minimum: 0 },
       discount1_amount: { type: "number", minimum: 0 },
@@ -557,12 +580,13 @@ export const officeTools: LiveTool[] = [
       const id = s(args, "event_id")!;
       const { data: current, error } = await admin
         .from("events")
-        .select("package_id, package_price_override, deposit_value, overtime_fee, travel_fee, discount1_amount, discount2_amount")
+        .select("package_id, package_price_override, deposit_value, overtime_hourly, overtime_fee, travel_fee, discount1_amount, discount2_amount")
         .eq("id", id)
         .maybeSingle();
       if (error) throw new Error(error.message);
       if (!current) throw new Error("Event not found.");
       const sentOverride = typeof args.package_price_override === "number";
+      const overtimeHourlyProvided = "overtime_hourly" in args;
       await updateEventFinancialsRecord(admin, id, {
         packageId: "package_id" in args ? s(args, "package_id") : (current.package_id as string | null),
         packagePriceOverride: sentOverride ? (args.package_price_override as number) : (current.package_price_override as number | null),
@@ -572,8 +596,27 @@ export const officeTools: LiveTool[] = [
         travel: "travel_fee" in args ? n(args, "travel_fee") : Number(current.travel_fee ?? 0),
         discount1: "discount1_amount" in args ? n(args, "discount1_amount") : Number(current.discount1_amount ?? 0),
         discount2: "discount2_amount" in args ? n(args, "discount2_amount") : Number(current.discount2_amount ?? 0),
+        overtimeHourlyProvided,
+        overtimeHourly: overtimeHourlyProvided
+          ? args.overtime_hourly == null
+            ? null
+            : n(args, "overtime_hourly")
+          : undefined,
       });
-      return { ok: true };
+      const pkgId = ("package_id" in args ? s(args, "package_id") : (current.package_id as string | null)) ?? null;
+      const [{ data: after }, pkgRes] = await Promise.all([
+        admin.from("events").select("overtime_hourly, package_id").eq("id", id).maybeSingle(),
+        pkgId
+          ? admin.from("packages").select("overtime_hourly").eq("id", pkgId).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      const override = after?.overtime_hourly as number | null | undefined;
+      const pkgOt = (pkgRes.data as { overtime_hourly?: number | null } | null)?.overtime_hourly;
+      return {
+        ok: true,
+        overtime_hourly: override ?? null,
+        effective_overtime_hourly: effectiveOvertimeHourly(override, pkgOt),
+      };
     },
   },
   {

@@ -56,6 +56,7 @@ import {
 } from "../actions";
 import { generateDocument, setDocumentVisibility } from "@/app/(app)/documents/actions";
 import InlineEditCard from "@/components/InlineEditCard";
+import { effectiveOvertimeHourly } from "@/lib/eventFinancials";
 import EventFilesSection from "@/components/EventFilesSection";
 import SpotifyExport from "@/components/SpotifyExport";
 import { DoNotPlayPanel, EventSectionNotes } from "@/components/planner/SectionMomentNotes";
@@ -1396,6 +1397,9 @@ export default async function EventDetailPage({
   const netProfit = total - wages - expensesTotal;
   const totalMiles = (trips ?? []).reduce((s, t) => s + Number(t.miles), 0);
   const pkgPrice = event.package_price_override ?? event.package_price_locked ?? event.package?.default_price ?? 0;
+  const pkgOvertimeHourly = Number(event.package?.overtime_hourly ?? 0);
+  const eventOvertimeHourly = (event as { overtime_hourly?: number | null }).overtime_hourly ?? null;
+  const overtimeHourlyRate = effectiveOvertimeHourly(eventOvertimeHourly, pkgOvertimeHourly);
   // description pinned to the version the event was sold with (falls back to live package)
   let pkgDescription = (event.package as unknown as { description?: string | null } | null)?.description;
   const pinnedVersionNo = (event as { package_version_no?: number | null }).package_version_no;
@@ -1560,6 +1564,14 @@ export default async function EventDetailPage({
               },
               { name: "package_price_override", label: "Package Price Override ($)", type: "number", step: "0.01", value: event.package_price_override, placeholder: "blank = default" },
               { name: "deposit_value", label: "Deposit ($)", type: "number", step: "0.01", value: event.deposit_value },
+              {
+                name: "overtime_hourly",
+                label: "Overtime hourly rate ($)",
+                type: "number",
+                step: "0.01",
+                value: eventOvertimeHourly,
+                placeholder: `blank = package default (${money(pkgOvertimeHourly)})`,
+              },
               { name: "overtime_fee", label: "Overtime Fee ($)", type: "number", step: "0.01", value: event.overtime_fee },
               { name: "travel_fee", label: "Travel Fee ($)", type: "number", step: "0.01", value: event.travel_fee },
               { name: "discount1_amount", label: "Discount 1 ($)", type: "number", step: "0.01", value: event.discount1_amount },
@@ -1581,6 +1593,17 @@ export default async function EventDetailPage({
                 <span>{money(addonLine(ea))}</span>
               </div>
             ))}
+            <div className={feeRow}>
+              <span className="text-zinc-600 dark:text-zinc-400">
+                Overtime hourly rate
+                {eventOvertimeHourly == null ? (
+                  <span className="ml-1 text-[11px] text-zinc-400">(package default)</span>
+                ) : (
+                  <span className="ml-1 text-[11px] text-zinc-400">(event override)</span>
+                )}
+              </span>
+              <span>{money(overtimeHourlyRate)}/hr</span>
+            </div>
             {event.overtime_fee > 0 && (
               <div className={feeRow}>
                 <span className="text-zinc-600 dark:text-zinc-400">Overtime</span>

@@ -11,7 +11,27 @@ export type EventFinancialInput = {
   travel: number;
   discount1: number;
   discount2: number;
+  /**
+   * Per-event overtime $/hr override. When `overtimeHourlyProvided` is true:
+   * a number sets the override; null clears it (fall back to package default).
+   * When omitted/false, leave the column unchanged.
+   */
+  overtimeHourly?: number | null;
+  overtimeHourlyProvided?: boolean;
 };
+
+/** Effective overtime $/hr: event override when set, else package default (else 0). */
+export function effectiveOvertimeHourly(
+  eventOvertimeHourly: number | string | null | undefined,
+  packageOvertimeHourly: number | string | null | undefined,
+): number {
+  if (eventOvertimeHourly != null && eventOvertimeHourly !== "") {
+    const n = Number(eventOvertimeHourly);
+    if (Number.isFinite(n)) return n;
+  }
+  const pkg = Number(packageOvertimeHourly ?? 0);
+  return Number.isFinite(pkg) ? pkg : 0;
+}
 
 /** Financials tab save: non-negative money fields, discounts clamped so the
     investment can't go negative, then package defaults when the package changes. */
@@ -54,18 +74,19 @@ export async function updateEventFinancialsRecord(supabase: SupabaseClient, even
     discount1 = Math.min(discount1, subtotal);
     discount2 = Math.min(discount2, Math.max(0, subtotal - discount1));
   }
-  const { error } = await supabase
-    .from("events")
-    .update({
-      package_id: input.packageId,
-      package_price_override: override,
-      deposit_value: deposit,
-      overtime_fee: overtime,
-      travel_fee: travel,
-      discount1_amount: discount1,
-      discount2_amount: discount2,
-    })
-    .eq("id", eventId);
+  const patch: Record<string, unknown> = {
+    package_id: input.packageId,
+    package_price_override: override,
+    deposit_value: deposit,
+    overtime_fee: overtime,
+    travel_fee: travel,
+    discount1_amount: discount1,
+    discount2_amount: discount2,
+  };
+  if (input.overtimeHourlyProvided) {
+    patch.overtime_hourly = input.overtimeHourly == null ? null : nn(Number(input.overtimeHourly));
+  }
+  const { error } = await supabase.from("events").update(patch).eq("id", eventId);
   if (error) throw new Error(error.message);
   if (input.packageId && input.packageId !== before.package_id) {
     await applyPackageSelection(supabase, eventId, input.packageId, before.event_date ?? null, input.overrideSubmitted);

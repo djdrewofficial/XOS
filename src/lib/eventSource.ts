@@ -43,7 +43,7 @@ export function eventSource(fieldStaff: boolean): EventSource {
 
 /** Columns of xos_fs_events (migration 00217). Everything on `events` except
     money: package_price_override/locked, deposit_value, travel_fee, overtime_fee,
-    discount1/2 label+amount, schedule_ack_total, pay_token, autopay_*,
+    overtime_hourly, discount1/2 label+amount, schedule_ack_total, pay_token, autopay_*,
     billing_terms(_count), legacy_djep_id. */
 export const FS_EVENT_COLUMNS = [
   "id", "event_number", "name", "event_date", "setup_time", "start_time", "end_time",
