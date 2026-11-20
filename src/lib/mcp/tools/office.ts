@@ -26,6 +26,7 @@ import { canonicalJson, sha256 } from "../crypto";
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
 import { addEventClientMembership } from "../eventMembership";
 import { INQUIRY_SOURCE_NAME_SCHEMA, insertEventWithInquirySource, updateEventWithInquirySource } from "../inquirySource";
+import { createVendor, listVendors } from "../vendorOps";
 import { McpScopeError, type ToolContext } from "../types";
 import type { LiveTool } from "../protocol";
 import type { JsonSchema } from "../validate";
@@ -841,22 +842,17 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "vendors_list",
-    description: "List vendor companies. Optional q matches the company name.",
+    description: "List vendor companies with their contacts. Optional q matches company_name and contact name/email/phone. Contact info is on vendor_contacts, not vendors.",
     scopes: ["read.vendors"],
     confirm: false,
     inputSchema: obj({ q: { type: "string" }, limit: limitProp }),
     async execute(args, ctx) {
-      let q = adminOf(ctx).from("vendors").select("id, company_name, category, email, phone").order("company_name").limit(n(args, "limit") || 50);
-      const term = s(args, "q");
-      if (term) q = q.ilike("company_name", `%${term.replace(/[%]/g, "")}%`);
-      const limit = n(args, "limit") || 50;
-      const page = pageMeta(await query(q), limit);
-      return { vendors: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
+      return listVendors(adminOf(ctx), args);
     },
   },
   {
     name: "vendors_get",
-    description: "Get one vendor and its contacts.",
+    description: "Get one vendor and its contacts (email/phone live on vendor_contacts).",
     scopes: ["read.vendors"],
     confirm: false,
     inputSchema: obj({ vendor_id: UUID }, ["vendor_id"]),
@@ -865,21 +861,34 @@ export const officeTools: LiveTool[] = [
       const id = s(args, "vendor_id");
       const [vendor, contacts] = await Promise.all([
         query(admin.from("vendors").select("*").eq("id", id).maybeSingle()),
-        query(admin.from("vendor_contacts").select("id, name, email, phone").eq("vendor_id", id)),
+        query(admin.from("vendor_contacts").select("id, name, role, email, phone").eq("vendor_id", id)),
       ]);
       return { vendor, contacts };
     },
   },
   {
     name: "vendors_create",
-    description: "Create a vendor company.",
+    description: "Create a vendor company. Email/phone are optional and stored on a vendor_contacts row (vendors has no email/phone columns). Optional contact_name/contact_role set that contact.",
     scopes: ["write.vendors"],
     confirm: false,
-    inputSchema: obj({ company_name: { type: "string", minLength: 1 }, email: { type: "string" }, phone: { type: "string" } }, ["company_name"]),
+    inputSchema: obj({
+      company_name: { type: "string", minLength: 1 },
+      category: { type: "string" },
+      category_id: UUID,
+      notes: { type: "string" },
+      website: { type: "string" },
+      instagram: { type: "string" },
+      tiktok: { type: "string" },
+      youtube: { type: "string" },
+      social_collab: { type: "string", enum: ["collab", "tag", "either", "none"] },
+      is_preferred: { type: "boolean" },
+      email: { type: "string" },
+      phone: { type: "string" },
+      contact_name: { type: "string" },
+      contact_role: { type: "string" },
+    }, ["company_name"]),
     async execute(args, ctx) {
-      const { data, error } = await adminOf(ctx).from("vendors").insert({ company_name: s(args, "company_name"), email: s(args, "email"), phone: s(args, "phone") }).select("id").single();
-      if (error) throw new Error(error.message);
-      return { id: data.id };
+      return createVendor(adminOf(ctx), args);
     },
   },
   {
