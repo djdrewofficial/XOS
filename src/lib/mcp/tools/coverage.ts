@@ -38,6 +38,7 @@ import {
   updateTemplateQuestion,
   type EditorDb,
 } from "@/lib/officeEdits";
+import { updateVendor } from "../vendorOps";
 import type { LiveTool } from "../protocol";
 import { McpScopeError, type ToolContext } from "../types";
 import type { JsonSchema } from "../validate";
@@ -361,7 +362,7 @@ export const coverageTools: LiveTool[] = [
   },
   {
     name: "events_add_vendor",
-    description: "Attach a vendor to an event.",
+    description: "Attach a vendor to an event. Optional role is free text; UI suggestions include Photographer, Videographer, Wedding Planner, Day-of Coordinator, Florist, Caterer, Venue Coordinator, Venue, Hair & Makeup, Officiant, Rentals, Cake / Desserts, Transportation, Live Musician, Other, Vendor. Per-event contact fields live on event_vendors (contact_name/contact_phone/contact_email), not on vendors.",
     scopes: ["write.events", "write.vendors"],
     confirm: false,
     inputSchema: obj({ event_id: UUID, vendor_id: UUID, role: STR }, ["event_id", "vendor_id"]),
@@ -601,16 +602,28 @@ export const coverageTools: LiveTool[] = [
   },
   {
     name: "vendors_update",
-    description: "Update a vendor company name, category, email, and phone.",
+    description: "Update a vendor company fields (name, category, notes, website, socials). Email/phone update or create the primary vendor_contacts row — vendors has no email/phone columns. For add/remove of extra contacts use vendors_contact.",
     scopes: ["write.vendors"],
     confirm: false,
-    inputSchema: obj({ vendor_id: UUID, company_name: STR, category: STR, email: STR, phone: STR, notes: STR }, ["vendor_id"]),
+    inputSchema: obj({
+      vendor_id: UUID,
+      company_name: STR,
+      category: STR,
+      category_id: UUID,
+      notes: STR,
+      website: STR,
+      instagram: STR,
+      tiktok: STR,
+      youtube: STR,
+      social_collab: { type: "string", enum: ["collab", "tag", "either", "none"] },
+      is_preferred: { type: "boolean" },
+      email: STR,
+      phone: STR,
+      contact_name: STR,
+      contact_role: STR,
+    }, ["vendor_id"]),
     async execute(args, ctx) {
-      const patch: Record<string, unknown> = {};
-      for (const key of ["company_name", "category", "email", "phone", "notes"]) if (key in args) patch[key] = args[key];
-      const { error } = await adminOf(ctx).from("vendors").update(patch).eq("id", s(args, "vendor_id"));
-      if (error) throw new Error(error.message);
-      return { ok: true };
+      return updateVendor(adminOf(ctx), args);
     },
   },
   {
