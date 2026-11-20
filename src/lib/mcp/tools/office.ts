@@ -25,7 +25,7 @@ import { assertSmsBody } from "../smsPolicy";
 import { buildOutstanding } from "@/lib/reports/build";
 import { canonicalJson, sha256 } from "../crypto";
 import { assertEffectScopes, collectAutomationEffects, collectHelperEffects } from "../effects";
-import { addEventClientMembership } from "../eventMembership";
+import { addEventClientMembership, listEventClientMemberships } from "../eventMembership";
 import { INQUIRY_SOURCE_NAME_SCHEMA, insertEventWithInquirySource, updateEventWithInquirySource } from "../inquirySource";
 import { createVendor, listVendors } from "../vendorOps";
 import { McpScopeError, type ToolContext } from "../types";
@@ -261,7 +261,7 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "events_get",
-    description: "Get one event with its client, venue, status, package, add-ons, staff, and payment totals. With the money scope, also returns fee fields and effective_overtime_hourly (event override or package default).",
+    description: "Get one event with its client memberships (event_clients), venue, status, package, add-ons, staff, and payment totals. Memberships include event_client_id for events_set_contract_holder, plus role/primary/holder flags and has_email/has_phone. With the money scope, also returns fee fields and effective_overtime_hourly (event override or package default).",
     scopes: ["read.events"],
     confirm: false,
     inputSchema: obj({ event_id: UUID }, ["event_id"]),
@@ -278,18 +278,20 @@ export const officeTools: LiveTool[] = [
       const eventCols = money
         ? `id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, package_price_override, package_price_locked, deposit_value, overtime_hourly, overtime_fee, travel_fee, discount1_amount, discount2_amount, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name), package:packages(id, name, default_price, deposit_value, overtime_hourly)`
         : `id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name)`;
-      const [event, addons, staff, payments, schedule, notes] = await Promise.all([
+      const [event, addons, staff, payments, schedule, notes, memberships] = await Promise.all([
         query(admin.from("events").select(eventCols).eq("id", id).maybeSingle()),
         ctx.token.scopes.includes("read.catalog") ? query(admin.from("event_addons").select("id, addon_id, quantity, price_override, price_locked").eq("event_id", id)) : [],
         ctx.token.scopes.includes("read.staff") ? query(admin.from("event_staff").select(staffCols).eq("event_id", id)) : [],
         money ? query(admin.from("payments").select("id, amount, method, reason, status, paid_at, deleted_at").eq("event_id", id)) : [],
         money ? query(admin.from("scheduled_payments").select("id, seq, label, amount, due_date").eq("event_id", id).order("seq")) : [],
         query(admin.from("event_notes").select("id, kind, body, created_at").eq("event_id", id).order("created_at", { ascending: false }).limit(30)),
+        listEventClientMemberships(admin, id!),
       ]);
       if (!event) throw new Error("Event not found.");
       const notePage = pageMeta(notes, 30);
       const out: Record<string, unknown> = {
         event,
+        memberships,
         addons,
         staff,
         payments,
