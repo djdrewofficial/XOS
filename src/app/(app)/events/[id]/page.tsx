@@ -891,6 +891,9 @@ export default async function EventDetailPage({
     sms_prompt: (((h as { actions?: HelperAction[] }).actions ?? []) as HelperAction[]).some(
       (a) => (a.type === "send_sms" || a.type === "send_sms_staff") && a.prompt === true
     ),
+    has_client_sends: (((h as { actions?: HelperAction[] }).actions ?? []) as HelperAction[]).some(
+      (a) => (a.type === "send_email" || a.type === "send_sms") && a.to !== "custom"
+    ),
     summary: summarizeHelperActions(((h as { actions?: HelperAction[] }).actions ?? []) as HelperAction[], {
       emailTemplates: emailTplMap,
       // the templates query returns email + SMS rows, so one map names both

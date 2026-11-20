@@ -9,7 +9,15 @@ import { parseSchedulePlan } from "@/lib/paymentSchedule";
 import { loadEventBundle } from "@/lib/documentRender";
 import { autoNameEvent } from "@/lib/eventName";
 import { runAutomations } from "@/lib/automations";
-import { executeBookingHelper, previewHelperSms, type HelperSmsOverride, type HelperSmsPrompt } from "@/lib/bookingHelperRun";
+import {
+  executeBookingHelper,
+  previewHelperRecipients,
+  previewHelperSms,
+  type HelperRecipientOverride,
+  type HelperSmsOverride,
+  type HelperSmsPrompt,
+  type HelperStepRecipientPreview,
+} from "@/lib/bookingHelperRun";
 import {
   addScheduledPaymentPlan,
   confirmPaymentRecord,
@@ -448,12 +456,24 @@ export async function getHelperSmsPrompts(eventId: string, helperId: string): Pr
   return previewHelperSms(createAdminClient(), eventId, helperId);
 }
 
+/** Resolved email/SMS recipients for the helper confirm dialog. */
+export async function getHelperRecipientPreview(
+  eventId: string,
+  helperId: string,
+): Promise<HelperStepRecipientPreview[]> {
+  await requireModule("events", "edit", { mode: "throw" });
+  await assignedOrOffice(eventId);
+  return previewHelperRecipients(createAdminClient(), eventId, helperId);
+}
+
 export async function runBookingHelper(
   eventId: string,
   helperId: string,
   // per-action decisions for SMS actions flagged "prompt to send" — skip the text
   // (already texted from a personal phone) or send an edited body
-  smsOverrides?: Record<string, HelperSmsOverride>
+  smsOverrides?: Record<string, HelperSmsOverride>,
+  /** Per-action contact checkboxes from the confirm dialog. */
+  recipientOverrides?: Record<string, HelperRecipientOverride>,
 ) {
   await requireModule("events", "edit", { mode: "throw" });
   await assignedOrOffice(eventId);
@@ -466,6 +486,7 @@ export async function runBookingHelper(
     eventId,
     helperId,
     smsOverrides,
+    recipientOverrides,
     actorRole: me?.role ?? null,
     actorFieldStaff: me?.fieldStaff === true,
     enforceRole: true,

@@ -70,7 +70,8 @@ describe("manual vs automated origin", () => {
 
     // The event-page button and the MCP connector share this function. The
     // 3-arg RPC is the manual entry (p_manual = true). Staff pass enforceRole.
-    assert.match(helperClick, /p_sms_overrides: cleanSmsOverrides\(input\.smsOverrides\)/);
+    assert.match(helperClick, /cleanSmsOverrides\(input\.smsOverrides\)/);
+    assert.match(helperClick, /p_sms_overrides:\s*smsOverrides/);
     assert.match(staffClick, /executeBookingHelper\(/);
     assert.match(staffClick, /enforceRole: true/);
     assert.match(automations, /rpc\("run_booking_helper", \{ p_helper_id: h\.id, p_event_id: eventId \}\)/);

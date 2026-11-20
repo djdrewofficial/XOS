@@ -6,7 +6,9 @@ import { updateHelper } from "../actions";
 import Tabs from "@/components/Tabs";
 import SaveButton from "@/components/SaveButton";
 import { ButtonSettingsRows, RadioChecklist, EnabledToggle } from "@/components/HelperEditorControls";
+import HelperRecipientModeFields from "@/components/HelperRecipientModeFields";
 import { HELPER_ROLE_OPTIONS } from "@/lib/helperAccess";
+import { parseRecipientConfig } from "@/lib/helperRecipients";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,7 @@ type HelperAction = {
   number?: string;
   journey_type_id?: string;
   prompt?: boolean;
+  recipients?: { mode?: string; roles?: string[] };
 };
 
 const DATE_FIELDS = [
@@ -191,6 +194,8 @@ export default async function EditHelperPage({
 
   const emailTemplates = (templates ?? []).filter((t) => !t.is_sms);
   const smsTemplates = (templates ?? []).filter((t) => t.is_sms);
+  const clientEmailRecipients = parseRecipientConfig(clientEmail?.recipients);
+  const clientSmsRecipients = parseRecipientConfig(clientSms?.recipients);
 
   const TemplateSelect = ({ name, value }: { name: string; value?: string }) => (
     <select name={name} defaultValue={value ?? ""} className="input w-full">
@@ -372,6 +377,16 @@ export default async function EditHelperPage({
         <Row label="Client">
           <TemplateSelect name="action_template_id" value={clientEmail?.template_id} />
         </Row>
+        <Row
+          label="Recipients"
+          hint="Who on the event gets this email. Default keeps today's behavior (primary client only)."
+        >
+          <HelperRecipientModeFields
+            prefix="email"
+            initialMode={clientEmailRecipients.mode}
+            initialRoles={clientEmailRecipients.roles ?? []}
+          />
+        </Row>
         <Row label="Send As" hint="Salesperson/DJ must have an address on your verified domain; otherwise falls back to company.">
           <select name="action_email_from" defaultValue={clientEmail?.from ?? "company"} className="input w-full max-w-xs">
             <option value="company">Company (default)</option>
@@ -417,8 +432,18 @@ export default async function EditHelperPage({
         always send the template as-is.)
       </div>
       <Section title="Send Text Message To Related Contact">
-        <Row label="Client" hint="Sent to the client's cell phone — skipped if none on file.">
+        <Row label="Client" hint="Sent to the chosen contacts' cell phones — anyone without a number is skipped with a warning.">
           <SmsTemplateSelect name="action_sms_template_id" value={clientSms?.template_id} />
+        </Row>
+        <Row
+          label="Recipients"
+          hint="Who on the event gets this text. Default keeps today's behavior (primary client only)."
+        >
+          <HelperRecipientModeFields
+            prefix="sms"
+            initialMode={clientSmsRecipients.mode}
+            initialRoles={clientSmsRecipients.roles ?? []}
+          />
         </Row>
         <Row
           label="Prompt To Send Text"
