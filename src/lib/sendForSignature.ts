@@ -162,6 +162,10 @@ export async function sendDocumentForSignature(
   const queuedIds: string[] = [];
   const sentTo: { clientId: string; email: string }[] = [];
 
+  // Greeting uses the recipient's first name (who is reading the inbox), not
+  // the contract holder. The agreement body itself still names the holder via
+  // merge tags / document render. Mixing "Hi Jordyn" with a Jamie-named
+  // agreement is intentional when the planner receives the sign link.
   for (const recip of resolved.selected) {
     const firstName = recip.firstName ?? "there";
     const bodyHtml = agreementEmailHtml({

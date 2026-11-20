@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle } from "@/lib/documentRender";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml } from "@/lib/signing";
 import { loadEventJourney } from "@/lib/eventJourney";
+import { renderEventMergeTags } from "@/lib/loadContractHolder";
 
 /* PUBLIC proposal cover — the email-can't-reach-them fallback. Renders the same
    content as the proposal email (quote + payment plan) on the web, then a
@@ -65,8 +66,8 @@ export default async function OfferPage({ params }: { params: Promise<{ token: s
 
   let content = "";
   if (tpl?.body_html) {
-    const { data: rendered } = await admin.rpc("render_merge_tags", { p_event_id: event.id, p_template: tpl.body_html });
-    content = (rendered as string | null) ?? tpl.body_html;
+    // Names the contract holder (Partner 1), not the primary client.
+    content = await renderEventMergeTags(admin, event.id, tpl.body_html);
   }
   if (!content) {
     // fallback cover if the email template isn't found

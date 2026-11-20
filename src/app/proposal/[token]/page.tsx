@@ -7,10 +7,14 @@ import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConf
 import { loadEventJourney } from "@/lib/eventJourney";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
 import ProposalForm from "@/components/ProposalForm";
+import { displayName } from "@/lib/contractHolder";
+import { loadEventPartyLayout } from "@/lib/loadContractHolder";
 
 /* PUBLIC confirm-&-choose-plan page. The quote email's "Review & Sign" button
    lands the couple here: they confirm/edit their details, pick a payment plan
-   (and opt into autopay), then we generate the contract and send them to sign. */
+   (and opt into autopay), then we generate the contract and send them to sign.
+   Greeting + Your Info use the contract holder (Partner 1), not the primary
+   client — planners show in a separate Planner block. */
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { robots: { index: false, follow: false } };
@@ -30,14 +34,6 @@ function Shell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-
-type ClientLite = {
-  first_name?: string | null;
-  last_name?: string | null;
-  email?: string | null;
-  cell_phone?: string | null;
-  organization?: string | null;
-} | null;
 
 export default async function ProposalPage({
   params,
@@ -92,14 +88,9 @@ export default async function ProposalPage({
     .maybeSingle();
   if (signedDoc) redirect(journeyType.step_payment ? `/welcome/${token}` : `/vibo/${token}`);
 
-  const [bundle, { data: ecs }, venueRes, pkgRes, typeRes, jsRes] = await Promise.all([
+  const [bundle, party, venueRes, pkgRes, typeRes, jsRes] = await Promise.all([
     loadEventBundle(supabase, event.id),
-    supabase
-      .from("event_clients")
-      .select("is_primary, created_at, client:clients(first_name, last_name, email, cell_phone, organization)")
-      .eq("event_id", event.id)
-      .order("is_primary", { ascending: false })
-      .order("created_at"),
+    loadEventPartyLayout(supabase, event.id),
     event.venue_id
       ? supabase.from("venues").select("name, address").eq("id", event.venue_id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -120,10 +111,30 @@ export default async function ProposalPage({
       .maybeSingle(),
   ]);
 
-  const primary = (ecs ?? []).find((e) => e.is_primary) ?? (ecs ?? [])[0] ?? null;
-  const partnerB = (ecs ?? []).find((e) => !e.is_primary) ?? null;
-  const a = (primary?.client ?? null) as ClientLite;
-  const b = (partnerB?.client ?? null) as ClientLite;
+  const a = party.holder
+    ? {
+        first_name: party.holder.firstName,
+        last_name: party.holder.lastName,
+        email: party.holder.email,
+        cell_phone: party.holder.phone,
+        organization: party.holder.organization,
+      }
+    : null;
+  const b = party.partnerB
+    ? {
+        first_name: party.partnerB.firstName,
+        last_name: party.partnerB.lastName,
+        email: party.partnerB.email,
+        cell_phone: party.partnerB.phone,
+        organization: party.partnerB.organization,
+      }
+    : null;
+  const planners = party.planners.map((p) => ({
+    name: displayName(p),
+    organization: (p.organization ?? "").trim(),
+    email: (p.email ?? "").trim(),
+    phone: (p.phone ?? "").trim(),
+  }));
 
   const venue = (venueRes.data ?? null) as { name?: string | null; address?: string | null } | null;
   const pkg = (pkgRes.data ?? null) as { allowed_splits?: number[] | null; payment_terms?: string | null; payment_terms_days?: number | null } | null;
@@ -215,6 +226,7 @@ export default async function ProposalPage({
           cell: b?.cell_phone ?? "",
         }}
         organization={a?.organization ?? ""}
+        planners={planners}
         venue={{ name: venue?.name ?? "", address: venue?.address ?? "" }}
         timing={{
           date: event.event_date ?? "",
