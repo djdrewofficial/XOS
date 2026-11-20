@@ -7,8 +7,8 @@ import { resolveJourney, officePlan, type BillingTerms } from "@/lib/journeyConf
 import { loadEventJourney } from "@/lib/eventJourney";
 import { buildScheduleRows } from "@/lib/paymentSchedule";
 import ProposalForm from "@/components/ProposalForm";
-import { displayName } from "@/lib/contractHolder";
 import { loadEventPartyLayout } from "@/lib/loadContractHolder";
+import { buildProposalPartyView } from "@/lib/proposalPartyView";
 
 /* PUBLIC confirm-&-choose-plan page. The quote email's "Review & Sign" button
    lands the couple here: they confirm/edit their details, pick a payment plan
@@ -59,7 +59,7 @@ export default async function ProposalPage({
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, event_date, setup_time, start_time, end_time, deposit_value, venue_id, package_id, event_type_id, billing_terms, billing_terms_count, journey_type_id"
+      "id, client_id, event_date, setup_time, start_time, end_time, deposit_value, venue_id, package_id, event_type_id, billing_terms, billing_terms_count, journey_type_id"
     )
     .eq("pay_token", token)
     .maybeSingle();
@@ -111,30 +111,11 @@ export default async function ProposalPage({
       .maybeSingle(),
   ]);
 
-  const a = party.holder
-    ? {
-        first_name: party.holder.firstName,
-        last_name: party.holder.lastName,
-        email: party.holder.email,
-        cell_phone: party.holder.phone,
-        organization: party.holder.organization,
-      }
-    : null;
-  const b = party.partnerB
-    ? {
-        first_name: party.partnerB.firstName,
-        last_name: party.partnerB.lastName,
-        email: party.partnerB.email,
-        cell_phone: party.partnerB.phone,
-        organization: party.partnerB.organization,
-      }
-    : null;
-  const planners = party.planners.map((p) => ({
-    name: displayName(p),
-    organization: (p.organization ?? "").trim(),
-    email: (p.email ?? "").trim(),
-    phone: (p.phone ?? "").trim(),
-  }));
+  // (1) greeting (2) Prepared for (3) Your Info — all from contract holder.
+  const view = buildProposalPartyView({
+    members: party.members,
+    eventClientId: (event.client_id as string | null) ?? null,
+  });
 
   const venue = (venueRes.data ?? null) as { name?: string | null; address?: string | null } | null;
   const pkg = (pkgRes.data ?? null) as { allowed_splits?: number[] | null; payment_terms?: string | null; payment_terms_days?: number | null } | null;
@@ -189,8 +170,6 @@ export default async function ProposalPage({
         ? "Your payments are scheduled as follows."
         : "Your balance is due in full up front.";
 
-  const firstName = a?.first_name ?? "there";
-
   return (
     <Shell>
       {errorMessage && (
@@ -200,7 +179,7 @@ export default async function ProposalPage({
       )}
       <div className="mb-5 text-center">
         <h1 className="text-xl font-extrabold text-zinc-900 dark:text-white">
-          You&apos;re almost there, {firstName}! 🎉
+          You&apos;re almost there, {view.greetingFirstName}! 🎉
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
           {showPayment
@@ -214,19 +193,19 @@ export default async function ProposalPage({
         layout={journey.layout}
         mode={journey.chooser}
         a={{
-          first: a?.first_name ?? "",
-          last: a?.last_name ?? "",
-          email: a?.email ?? "",
-          cell: a?.cell_phone ?? "",
+          first: view.yourInfo.first,
+          last: view.yourInfo.last,
+          email: view.yourInfo.email,
+          cell: view.yourInfo.phone,
         }}
         b={{
-          first: b?.first_name ?? "",
-          last: b?.last_name ?? "",
-          email: b?.email ?? "",
-          cell: b?.cell_phone ?? "",
+          first: view.partner?.first ?? "",
+          last: view.partner?.last ?? "",
+          email: view.partner?.email ?? "",
+          cell: view.partner?.phone ?? "",
         }}
-        organization={a?.organization ?? ""}
-        planners={planners}
+        organization={view.yourInfo.organization}
+        planners={view.planners}
         venue={{ name: venue?.name ?? "", address: venue?.address ?? "" }}
         timing={{
           date: event.event_date ?? "",
@@ -234,7 +213,11 @@ export default async function ProposalPage({
           start: event.start_time ?? "",
           end: event.end_time ?? "",
         }}
-        quoteHtml={bundle ? quoteSummaryHtml(bundle) : ""}
+        quoteHtml={
+          bundle
+            ? quoteSummaryHtml(bundle, { preparedForName: view.preparedForName })
+            : ""
+        }
         total={total}
         deposit={deposit}
         allowedSplits={allowedSplits}

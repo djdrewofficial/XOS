@@ -91,15 +91,19 @@ export async function confirmProposal(token: string, formData: FormData) {
 
   if (holderId) {
     const { data: before } = await supabase.from("clients").select("cell_phone").eq("id", holderId).maybeSingle();
+    // Only write fields that were actually on the form. Empty email/phone are
+    // omitted from Your Info when blank, so has() avoids wiping other data.
     const update: Record<string, unknown> = {
       first_name: clean(formData.get("a_first")) ?? "",
       last_name: clean(formData.get("a_last")) ?? "",
-      email: clean(formData.get("a_email")),
-      cell_phone: clean(formData.get("a_cell")),
     };
+    if (formData.has("a_email")) update.email = clean(formData.get("a_email"));
+    if (formData.has("a_cell")) update.cell_phone = clean(formData.get("a_cell"));
     if (formData.has("organization")) update.organization = clean(formData.get("organization"));
     await supabase.from("clients").update(update).eq("id", holderId);
-    await syncClientLoginPhone(holderId, (update.cell_phone as string | null) ?? null, before?.cell_phone ?? null);
+    if (formData.has("a_cell")) {
+      await syncClientLoginPhone(holderId, (update.cell_phone as string | null) ?? null, before?.cell_phone ?? null);
+    }
   }
 
   // Partner B — only when the couple layout submitted those fields

@@ -90,11 +90,16 @@ function lineHtml(name: string, amount: number | null, description?: string | nu
 /** Quote summary block: "prepared for" card, package + add-ons with
     descriptions, fees, discounts, Total Investment. Also the <quote_summary>
     merge tag in email templates. */
-export function quoteSummaryHtml(bundle: EventBundle): string {
+export function quoteSummaryHtml(
+  bundle: EventBundle,
+  opts?: { /** Override "Prepared for" person (proposal page passes contract holder). */ preparedForName?: string },
+): string {
   const e = bundle.event;
   const fees = feeSummary(bundle);
   const hide = bundle.financialsHidden; // venue-paid: services only, never amounts
-  const clientName = e.client ? `${e.client.first_name} ${e.client.last_name}`.trim() : "";
+  const clientName =
+    (opts?.preparedForName ?? "").trim() ||
+    (e.client ? `${e.client.first_name} ${e.client.last_name}`.trim() : "");
   const times = [fmtTime(e.start_time), fmtTime(e.end_time)].filter(Boolean).join(" – ");
 
   const summaryCard = `
