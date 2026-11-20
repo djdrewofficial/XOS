@@ -58,25 +58,6 @@ function Input({ label, name, defaultValue, type = "text" }: { label: string; na
   );
 }
 
-/** Editable field that is omitted entirely when empty (no blank labels). */
-function OptionalInput({
-  label,
-  name,
-  defaultValue,
-  type = "text",
-  always = false,
-}: {
-  label: string;
-  name: string;
-  defaultValue: string;
-  type?: string;
-  /** When true, always show (name fields). */
-  always?: boolean;
-}) {
-  if (!always && !defaultValue.trim()) return null;
-  return <Input label={label} name={name} defaultValue={defaultValue} type={type} />;
-}
-
 function ReadOnlyLine({ label, value }: { label: string; value: string }) {
   if (!value.trim()) return null;
   return (
@@ -175,17 +156,18 @@ export default function ProposalForm(props: ProposalFormProps) {
         </div>
       )}
 
-      {/* ---- contacts (layout-driven). Your Info = contract holder (Partner 1). ---- */}
+      {/* ---- contacts (layout-driven). Your Info = contract holder (Partner 1).
+          Blank email/phone still render as empty inputs (never hidden). ---- */}
       {props.layout === "business" ? (
         <div>
           <SectionLabel>Your Organization</SectionLabel>
           <div className="space-y-3">
-            <OptionalInput label="Organization / company" name="organization" defaultValue={props.organization} />
+            <Input label="Organization / company" name="organization" defaultValue={props.organization} />
             <div className="grid grid-cols-2 gap-3">
-              <OptionalInput label="Contact first name" name="a_first" defaultValue={props.a.first} always />
-              <OptionalInput label="Contact last name" name="a_last" defaultValue={props.a.last} always />
-              <OptionalInput label="Email" name="a_email" defaultValue={props.a.email} type="email" />
-              <OptionalInput label="Phone" name="a_cell" defaultValue={props.a.cell} type="tel" />
+              <Input label="Contact first name" name="a_first" defaultValue={props.a.first} />
+              <Input label="Contact last name" name="a_last" defaultValue={props.a.last} />
+              <Input label="Email" name="a_email" defaultValue={props.a.email} type="email" />
+              <Input label="Phone" name="a_cell" defaultValue={props.a.cell} type="tel" />
             </div>
           </div>
         </div>
@@ -194,23 +176,21 @@ export default function ProposalForm(props: ProposalFormProps) {
           <div>
             <SectionLabel>Your Information</SectionLabel>
             <div className="grid grid-cols-2 gap-3">
-              <OptionalInput label="First name" name="a_first" defaultValue={props.a.first} always />
-              <OptionalInput label="Last name" name="a_last" defaultValue={props.a.last} always />
-              <OptionalInput label="Email" name="a_email" defaultValue={props.a.email} type="email" />
-              <OptionalInput label="Cell phone" name="a_cell" defaultValue={props.a.cell} type="tel" />
+              <Input label="First name" name="a_first" defaultValue={props.a.first} />
+              <Input label="Last name" name="a_last" defaultValue={props.a.last} />
+              <Input label="Email" name="a_email" defaultValue={props.a.email} type="email" />
+              <Input label="Cell phone" name="a_cell" defaultValue={props.a.cell} type="tel" />
             </div>
           </div>
-          {(props.b.first.trim() || props.b.last.trim() || props.b.email.trim() || props.b.cell.trim()) && (
-            <div>
-              <SectionLabel>Your Partner</SectionLabel>
-              <div className="grid grid-cols-2 gap-3">
-                <OptionalInput label="First name" name="b_first" defaultValue={props.b.first} always={Boolean(props.b.first || props.b.last)} />
-                <OptionalInput label="Last name" name="b_last" defaultValue={props.b.last} always={Boolean(props.b.first || props.b.last)} />
-                <OptionalInput label="Email" name="b_email" defaultValue={props.b.email} type="email" />
-                <OptionalInput label="Cell phone" name="b_cell" defaultValue={props.b.cell} type="tel" />
-              </div>
+          <div>
+            <SectionLabel>Your Partner</SectionLabel>
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="First name" name="b_first" defaultValue={props.b.first} />
+              <Input label="Last name" name="b_last" defaultValue={props.b.last} />
+              <Input label="Email" name="b_email" defaultValue={props.b.email} type="email" />
+              <Input label="Cell phone" name="b_cell" defaultValue={props.b.cell} type="tel" />
             </div>
-          )}
+          </div>
         </>
       )}
 
