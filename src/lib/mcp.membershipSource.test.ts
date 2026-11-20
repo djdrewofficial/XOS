@@ -4,7 +4,12 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { onboardingCreateInput } from "./eventOnboarding.ts";
-import { addEventClientMembership, setEventContractHolder } from "./mcp/eventMembership.ts";
+import {
+  addEventClientMembership,
+  listEventClientMemberships,
+  mapEventClientMemberships,
+  setEventContractHolder,
+} from "./mcp/eventMembership.ts";
 import {
   INQUIRY_SOURCE_NAME_SCHEMA,
   createOrReuseInquirySource,
@@ -171,6 +176,104 @@ describe("MCP inquiry source resolution", () => {
     assert.match(officeSrc, /select\("id, name, is_active"\)/);
     assert.match(paritySrc, /inquiry_source_id/);
     assert.match(readFileSync(join(root, "src/lib/mcp/tools/parity.ts"), "utf8"), /events_record/);
+  });
+});
+
+describe("MCP events_get memberships", () => {
+  it("maps event_clients into event_client_id rows with holder flags and has_email/has_phone", async () => {
+    assert.match(officeSrc, /listEventClientMemberships/);
+    assert.match(officeSrc, /memberships,/);
+    assert.match(officeSrc, /event_client_id for events_set_contract_holder/);
+
+    const mapped = mapEventClientMemberships([
+      {
+        id: MEMBER,
+        client_id: CLIENT,
+        role: "Groom",
+        is_primary: false,
+        is_contract_holder: true,
+        client: { first_name: "Jamie", last_name: "Beck", email: null, cell_phone: " " },
+      },
+      {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        client_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        role: "Planner",
+        is_primary: true,
+        is_contract_holder: false,
+        client: {
+          first_name: "Jordyn",
+          last_name: "Elyse",
+          email: "jordyn@example.com",
+          cell_phone: "+15551234567",
+        },
+      },
+      { id: null, client_id: CLIENT, role: "skip", client: null },
+    ]);
+    assert.deepEqual(mapped, [
+      {
+        event_client_id: MEMBER,
+        client_id: CLIENT,
+        first_name: "Jamie",
+        last_name: "Beck",
+        role: "Groom",
+        is_primary: false,
+        is_contract_holder: true,
+        has_email: false,
+        has_phone: false,
+      },
+      {
+        event_client_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        client_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        first_name: "Jordyn",
+        last_name: "Elyse",
+        role: "Planner",
+        is_primary: true,
+        is_contract_holder: false,
+        has_email: true,
+        has_phone: true,
+      },
+    ]);
+
+    const filters: { column: string; value: unknown }[] = [];
+    let orderedBy: string | null = null;
+    const admin = {
+      from(table: string) {
+        assert.equal(table, "event_clients");
+        return {
+          select(cols: string) {
+            assert.match(cols, /is_contract_holder/);
+            assert.match(cols, /client:clients\(first_name, last_name, email, cell_phone\)/);
+            return this;
+          },
+          eq(column: string, value: unknown) {
+            filters.push({ column, value });
+            return this;
+          },
+          order(column: string) {
+            orderedBy = column;
+            return Promise.resolve({
+              data: [
+                {
+                  id: MEMBER,
+                  client_id: CLIENT,
+                  role: "Groom",
+                  is_primary: false,
+                  is_contract_holder: true,
+                  client: { first_name: "Jamie", last_name: "Beck", email: "jamie@example.com", cell_phone: null },
+                },
+              ],
+              error: null,
+            });
+          },
+        };
+      },
+    };
+    const rows = await listEventClientMemberships(admin as never, EVENT);
+    assert.deepEqual(filters, [{ column: "event_id", value: EVENT }]);
+    assert.equal(orderedBy, "created_at");
+    assert.equal(rows[0]?.event_client_id, MEMBER);
+    assert.equal(rows[0]?.has_email, true);
+    assert.equal(rows[0]?.has_phone, false);
   });
 });
 

@@ -119,6 +119,17 @@ export async function loadEventBundle(supabase: SupabaseClient, eventId: string)
   ]);
   if (!event) return null;
 
+  // Documents / quotes name Partner 1 (contract holder), not the primary client.
+  const { loadContractHolderClient } = await import("@/lib/loadContractHolder");
+  const holder = await loadContractHolderClient(supabase, eventId);
+  if (holder) {
+    (event as { client?: unknown }).client = {
+      first_name: holder.first_name,
+      last_name: holder.last_name,
+      email: holder.email,
+    };
+  }
+
   const contractNotes = ((notes ?? []) as { body: string | null }[])
     .map((n) => (n.body ?? "").trim())
     .filter(Boolean);
@@ -531,17 +542,18 @@ export async function generateDocumentRow(
   eventId: string,
   status: string = "draft",
 ): Promise<{ id: string; title: string; access_token: string; doc_type: string } | null> {
-  const [{ data: template }, { data: event }] = await Promise.all([
+  const [{ data: template }, { data: event }, { loadContractHolderClient }] = await Promise.all([
     supabase.from("document_templates").select("*").eq("id", templateId).single(),
-    supabase.from("events").select("id, name, client:clients(first_name, last_name)").eq("id", eventId).single(),
+    supabase.from("events").select("id, name").eq("id", eventId).single(),
+    import("@/lib/loadContractHolder"),
   ]);
   if (!template || !event) return null;
 
   const rendered = await renderBlocks(supabase, eventId, sanitizeBlocks(template.blocks));
   if (!rendered) return null;
 
-  const client = event.client as unknown as { first_name: string; last_name: string } | null;
-  const clientName = client ? `${client.first_name} ${client.last_name}`.trim() : "";
+  const holder = await loadContractHolderClient(supabase, eventId);
+  const clientName = holder ? `${holder.first_name ?? ""} ${holder.last_name ?? ""}`.trim() : "";
   const title = formatDocumentTitle((template as { title_format?: string | null }).title_format, {
     template: template.name,
     client: clientName,
@@ -572,6 +584,7 @@ export async function generateDocumentRow(
 export async function renderBlocks(supabase: SupabaseClient, eventId: string, blocks: DocBlock[]): Promise<DocBlock[] | null> {
   const bundle = await loadEventBundle(supabase, eventId);
   if (!bundle) return null;
+  const { renderEventMergeTags } = await import("@/lib/loadContractHolder");
 
   const out: DocBlock[] = [];
   for (const block of blocks) {
@@ -581,28 +594,19 @@ export async function renderBlocks(supabase: SupabaseClient, eventId: string, bl
         out.push({ ...block, html: "" });
         continue;
       }
-      const { data: merged } = await supabase.rpc("render_merge_tags", {
-        p_event_id: eventId,
-        p_template: template,
-      });
-      out.push({ ...block, html: (merged as string | null) ?? template });
+      const merged = await renderEventMergeTags(supabase, eventId, template);
+      out.push({ ...block, html: merged });
     } else if (block.type === "section") {
       // collapsible chapter: merged title + body wrapped in a <details> the
       // shell styles (smaller legal text, auto-expands for print)
-      const { data: mergedBody } = await supabase.rpc("render_merge_tags", {
-        p_event_id: eventId,
-        p_template: block.html ?? "",
-      });
-      const { data: mergedTitle } = await supabase.rpc("render_merge_tags", {
-        p_event_id: eventId,
-        p_template: block.title ?? "",
-      });
-      const title = ((mergedTitle as string | null) ?? block.title ?? "Section").trim() || "Section";
+      const mergedBody = await renderEventMergeTags(supabase, eventId, block.html ?? "");
+      const mergedTitle = await renderEventMergeTags(supabase, eventId, block.title ?? "");
+      const title = (mergedTitle ?? block.title ?? "Section").trim() || "Section";
       out.push({
         ...block,
         title,
         html: `<details class="xdoc-sec"><summary>${esc(title)}</summary><div class="xdoc-sec-body">${
-          (mergedBody as string | null) ?? block.html ?? ""
+          mergedBody ?? block.html ?? ""
         }</div></details>`,
       });
     } else if (block.type === "fee_table") {

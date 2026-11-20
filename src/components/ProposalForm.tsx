@@ -15,14 +15,19 @@ const fmtDate = (d: string | null) => {
 };
 
 type Contact = { first: string; last: string; email: string; cell: string };
+type PlannerInfo = { name: string; organization: string; email: string; phone: string };
 
 export type ProposalFormProps = {
   token: string;
   layout: ProposalLayout;
   mode: PaymentChooser;
+  /** Partner 1 / contract holder */
   a: Contact;
+  /** Partner 2 (non-holder, non-planner) */
   b: Contact;
   organization: string;
+  /** Read-only planner contacts (role = Planner) */
+  planners?: PlannerInfo[];
   venue: { name: string; address: string };
   timing: { date: string; setup: string; start: string; end: string };
   quoteHtml: string;
@@ -50,6 +55,35 @@ function Input({ label, name, defaultValue, type = "text" }: { label: string; na
         className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-brand dark:border-white/15 dark:bg-zinc-800 dark:text-white"
       />
     </label>
+  );
+}
+
+/** Editable field that is omitted entirely when empty (no blank labels). */
+function OptionalInput({
+  label,
+  name,
+  defaultValue,
+  type = "text",
+  always = false,
+}: {
+  label: string;
+  name: string;
+  defaultValue: string;
+  type?: string;
+  /** When true, always show (name fields). */
+  always?: boolean;
+}) {
+  if (!always && !defaultValue.trim()) return null;
+  return <Input label={label} name={name} defaultValue={defaultValue} type={type} />;
+}
+
+function ReadOnlyLine({ label, value }: { label: string; value: string }) {
+  if (!value.trim()) return null;
+  return (
+    <div>
+      <div className="text-xs font-medium text-zinc-500">{label}</div>
+      <div className="text-sm text-zinc-900 dark:text-white">{value}</div>
+    </div>
   );
 }
 
@@ -141,17 +175,17 @@ export default function ProposalForm(props: ProposalFormProps) {
         </div>
       )}
 
-      {/* ---- contacts (layout-driven) ---- */}
+      {/* ---- contacts (layout-driven). Your Info = contract holder (Partner 1). ---- */}
       {props.layout === "business" ? (
         <div>
           <SectionLabel>Your Organization</SectionLabel>
           <div className="space-y-3">
-            <Input label="Organization / company" name="organization" defaultValue={props.organization} />
+            <OptionalInput label="Organization / company" name="organization" defaultValue={props.organization} />
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Contact first name" name="a_first" defaultValue={props.a.first} />
-              <Input label="Contact last name" name="a_last" defaultValue={props.a.last} />
-              <Input label="Email" name="a_email" defaultValue={props.a.email} type="email" />
-              <Input label="Phone" name="a_cell" defaultValue={props.a.cell} type="tel" />
+              <OptionalInput label="Contact first name" name="a_first" defaultValue={props.a.first} always />
+              <OptionalInput label="Contact last name" name="a_last" defaultValue={props.a.last} always />
+              <OptionalInput label="Email" name="a_email" defaultValue={props.a.email} type="email" />
+              <OptionalInput label="Phone" name="a_cell" defaultValue={props.a.cell} type="tel" />
             </div>
           </div>
         </div>
@@ -160,22 +194,40 @@ export default function ProposalForm(props: ProposalFormProps) {
           <div>
             <SectionLabel>Your Information</SectionLabel>
             <div className="grid grid-cols-2 gap-3">
-              <Input label="First name" name="a_first" defaultValue={props.a.first} />
-              <Input label="Last name" name="a_last" defaultValue={props.a.last} />
-              <Input label="Email" name="a_email" defaultValue={props.a.email} type="email" />
-              <Input label="Cell phone" name="a_cell" defaultValue={props.a.cell} type="tel" />
+              <OptionalInput label="First name" name="a_first" defaultValue={props.a.first} always />
+              <OptionalInput label="Last name" name="a_last" defaultValue={props.a.last} always />
+              <OptionalInput label="Email" name="a_email" defaultValue={props.a.email} type="email" />
+              <OptionalInput label="Cell phone" name="a_cell" defaultValue={props.a.cell} type="tel" />
             </div>
           </div>
-          <div>
-            <SectionLabel>Your Partner</SectionLabel>
-            <div className="grid grid-cols-2 gap-3">
-              <Input label="First name" name="b_first" defaultValue={props.b.first} />
-              <Input label="Last name" name="b_last" defaultValue={props.b.last} />
-              <Input label="Email" name="b_email" defaultValue={props.b.email} type="email" />
-              <Input label="Cell phone" name="b_cell" defaultValue={props.b.cell} type="tel" />
+          {(props.b.first.trim() || props.b.last.trim() || props.b.email.trim() || props.b.cell.trim()) && (
+            <div>
+              <SectionLabel>Your Partner</SectionLabel>
+              <div className="grid grid-cols-2 gap-3">
+                <OptionalInput label="First name" name="b_first" defaultValue={props.b.first} always={Boolean(props.b.first || props.b.last)} />
+                <OptionalInput label="Last name" name="b_last" defaultValue={props.b.last} always={Boolean(props.b.first || props.b.last)} />
+                <OptionalInput label="Email" name="b_email" defaultValue={props.b.email} type="email" />
+                <OptionalInput label="Cell phone" name="b_cell" defaultValue={props.b.cell} type="tel" />
+              </div>
             </div>
-          </div>
+          )}
         </>
+      )}
+
+      {(props.planners ?? []).length > 0 && (
+        <div>
+          <SectionLabel>Planner</SectionLabel>
+          <div className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-white/10 dark:bg-white/[0.03]">
+            {(props.planners ?? []).map((p, i) => (
+              <div key={`${p.name}-${i}`} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <ReadOnlyLine label="Name" value={p.name} />
+                <ReadOnlyLine label="Company" value={p.organization} />
+                <ReadOnlyLine label="Email" value={p.email} />
+                <ReadOnlyLine label="Phone" value={p.phone} />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ---- Venue ---- */}
