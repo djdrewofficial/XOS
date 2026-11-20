@@ -9,10 +9,9 @@ import {
   regenerateDocument,
   setDocumentStatus,
   deleteDocument,
-  sendForSignature,
 } from "../actions";
-import SaveButton from "@/components/SaveButton";
 import PendingSubmit from "@/components/PendingSubmit";
+import SendForSignatureButton from "@/components/SendForSignatureButton";
 import { appUrl } from "@/lib/signing";
 
 export const dynamic = "force-dynamic";
@@ -70,11 +69,7 @@ export default async function DocumentDetailPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!locked && doc.doc_type !== "receipt" && (
-            <form action={sendForSignature.bind(null, id)}>
-              <SaveButton className="btn-primary px-4 py-2 text-xs" savedLabel="Sent">
-                ✉ Send To Client For Signature
-              </SaveButton>
-            </form>
+            <SendForSignatureButton documentId={id} />
           )}
           <a href={`/api/documents/${doc.id}/pdf`} className="btn-primary px-4 py-2 text-xs">
             Download PDF

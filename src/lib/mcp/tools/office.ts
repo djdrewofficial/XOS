@@ -18,7 +18,8 @@ import { reseedEventPlanning } from "@/lib/planning";
 import { runAutomations } from "@/lib/automations";
 import { freezeTemplateEmail, previewSms, previewTemplateEmail, sendSms, sendTemplateEmail } from "@/lib/queueTemplateSend";
 import { SCHEDULE_TEMPLATE_COLUMNS, mapTemplate, targetDateFor, templateMatchesEvent, zonedParts, type ScheduleEventFacts, type TemplateRow } from "@/lib/scheduledComms";
-import { previewDocumentSend, sendDocumentForSignature } from "@/lib/sendForSignature";
+import { previewDocumentSend, sendDocumentForSignature, type DocumentSendRecipientInput } from "@/lib/sendForSignature";
+import type { HelperRecipientConfig, RecipientMode } from "@/lib/helperRecipients";
 import { isPhoneOptedOut } from "@/lib/smsOptOut";
 import { assertSmsBody } from "../smsPolicy";
 import { buildOutstanding } from "@/lib/reports/build";
@@ -169,6 +170,26 @@ function s(args: Record<string, unknown>, key: string): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function documentRecipientInput(args: Record<string, unknown>): DocumentSendRecipientInput | null {
+  const idsRaw = args.recipient_client_ids;
+  const clientIds = Array.isArray(idsRaw)
+    ? idsRaw.map((id) => String(id).trim()).filter(Boolean)
+    : null;
+  const modeRaw = s(args, "recipient_mode");
+  const rolesRaw = args.recipient_roles;
+  const roles = Array.isArray(rolesRaw) ? rolesRaw.map((r) => String(r).trim()).filter(Boolean) : undefined;
+  const allowed: RecipientMode[] = ["default", "all", "primary", "contract_holder", "roles"];
+  const recipients: HelperRecipientConfig | undefined =
+    modeRaw && allowed.includes(modeRaw as RecipientMode)
+      ? { mode: modeRaw as RecipientMode, roles }
+      : undefined;
+  if (!clientIds?.length && !recipients) return null;
+  return {
+    clientIds: clientIds?.length ? clientIds : null,
+    recipients: recipients ?? null,
+  };
 }
 
 function n(args: Record<string, unknown>, key: string): number {
@@ -1146,23 +1167,33 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "documents_send_for_signature",
-    description: "Send a generated Booking Agreement (or other document) to the client using the app's Send for signature path. The quote, investment, and payment plan are rendered in the app, then the outbox sends the email. Do not try to send this from the database.",
+    description:
+      "Send a generated Booking Agreement (or other document) using the app's Send for signature path (merge tags + quote blocks). Optional recipient_client_ids or recipient_mode/roles choose who gets the email; default is the primary client. Recipients get the sign link; the signer of record is whoever opens /sign/[token] and signs (contract holder on the event is not changed by this tool).",
     scopes: ["comms.contract"],
     confirm: true,
-    inputSchema: obj({ document_id: UUID }, ["document_id"]),
+    inputSchema: obj({
+      document_id: UUID,
+      recipient_client_ids: { type: "array", items: UUID },
+      recipient_mode: {
+        type: "string",
+        enum: ["default", "all", "primary", "contract_holder", "roles"],
+      },
+      recipient_roles: { type: "array", items: { type: "string" } },
+    }, ["document_id"]),
     async freeze(args, ctx) {
-      return previewDocumentSend(adminOf(ctx), s(args, "document_id")!);
+      return previewDocumentSend(adminOf(ctx), s(args, "document_id")!, documentRecipientInput(args));
     },
     async preview(args, ctx) {
-      return previewDocumentSend(adminOf(ctx), s(args, "document_id")!);
+      return previewDocumentSend(adminOf(ctx), s(args, "document_id")!, documentRecipientInput(args));
     },
     async execute(args, ctx) {
-      const fresh = await previewDocumentSend(adminOf(ctx), s(args, "document_id")!);
+      const input = documentRecipientInput(args);
+      const fresh = await previewDocumentSend(adminOf(ctx), s(args, "document_id")!, input);
       if (ctx.approvedEffectHash && sha256(canonicalJson(fresh)) !== ctx.approvedEffectHash) {
         throw new Error("The rendered agreement email changed. Nothing was sent.");
       }
-      const sent = await sendDocumentForSignature(adminOf(ctx), s(args, "document_id")!);
-      return { ok: true, to: sent.to };
+      const sent = await sendDocumentForSignature(adminOf(ctx), s(args, "document_id")!, input);
+      return { ok: true, to: sent.to, recipients: sent.recipients, warnings: sent.warnings };
     },
   },
   {
@@ -1509,13 +1540,14 @@ export const officeTools: LiveTool[] = [
   },
   {
     name: "helpers_run",
-    description: "Run a booking helper the way the event-page button does: the database queues its actions, then the app outbox fills contract merge tags and sends. Event-type limits still apply. If the helper emails or texts, the token also needs those comms scopes. By default this returns an Agent Access receipt for a master admin to approve. When that token has “Run helpers without XOS approval” or Trusted agent on, this tool runs immediately with no receipt (chat approval is still expected). Contracts still only go out through the app Send Contract path or a dedicated contract tool.",
+    description: "Run a booking helper the way the event-page button does: the database queues its actions, then the app outbox fills contract merge tags and sends. Event-type limits still apply. If the helper emails or texts, the token also needs those comms scopes. Optional recipient_overrides (keyed by action index) pick exact event contact ids for client email/SMS steps. By default this returns an Agent Access receipt for a master admin to approve. When that token has “Run helpers without XOS approval” or Trusted agent on, this tool runs immediately with no receipt (chat approval is still expected). Contracts still only go out through the app Send Contract path or a dedicated contract tool.",
     scopes: ["helpers.run"],
     confirm: true,
     inputSchema: obj({
       event_id: UUID,
       helper_id: UUID,
       sms_overrides: { type: "object" },
+      recipient_overrides: { type: "object" },
     }, ["event_id", "helper_id"]),
     async authorize(args, ctx) {
       await requireHelperScopes(ctx, s(args, "helper_id")!);
@@ -1526,7 +1558,12 @@ export const officeTools: LiveTool[] = [
         collectHelperEffects(admin, s(args, "helper_id")!),
         previewHelperSms(admin, s(args, "event_id")!, s(args, "helper_id")!),
       ]);
-      return { effects, sms_prompts: prompts, sms_overrides: args.sms_overrides ?? null };
+      return {
+        effects,
+        sms_prompts: prompts,
+        sms_overrides: args.sms_overrides ?? null,
+        recipient_overrides: args.recipient_overrides ?? null,
+      };
     },
     async preview(args, ctx) {
       const admin = adminOf(ctx);
@@ -1534,10 +1571,19 @@ export const officeTools: LiveTool[] = [
         collectHelperEffects(admin, s(args, "helper_id")!),
         previewHelperSms(admin, s(args, "event_id")!, s(args, "helper_id")!),
       ]);
-      return { effects, sms_prompts: prompts, sms_overrides: args.sms_overrides ?? null };
+      return {
+        effects,
+        sms_prompts: prompts,
+        sms_overrides: args.sms_overrides ?? null,
+        recipient_overrides: args.recipient_overrides ?? null,
+      };
     },
     async execute(args, ctx) {
       const overrides = args.sms_overrides && typeof args.sms_overrides === "object" ? args.sms_overrides as Record<string, { skip?: boolean; body?: string }> : null;
+      const recipientOverrides =
+        args.recipient_overrides && typeof args.recipient_overrides === "object"
+          ? (args.recipient_overrides as Record<string, { skip?: boolean; client_ids?: string[] }>)
+          : null;
       const admin = adminOf(ctx);
       const eventId = s(args, "event_id")!;
       const helperId = s(args, "helper_id")!;
@@ -1549,6 +1595,7 @@ export const officeTools: LiveTool[] = [
           eventId,
           helperId,
           smsOverrides: overrides,
+          recipientOverrides,
           actorRole: null,
           enforceRole: false,
         });

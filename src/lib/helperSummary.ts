@@ -18,6 +18,8 @@ export type HelperAction = {
   helper_id?: string;
   /** SMS actions only: confirm/edit/skip this text when a human clicks the helper. */
   prompt?: boolean;
+  /** Client email/SMS recipient mode (see helperRecipients.ts). */
+  recipients?: { mode?: string; roles?: string[] };
 };
 
 export type HelperLookups = {
@@ -44,20 +46,33 @@ function tmpl(map: Record<string, string> | undefined, id?: string): string {
   return (id && map?.[id]) || "template";
 }
 
+function recipientPhrase(a: HelperAction): string {
+  const mode = a.recipients?.mode ?? "default";
+  if (a.to === "custom") return "(custom address)";
+  if (mode === "all") return "to all event contacts";
+  if (mode === "primary") return "to primary client";
+  if (mode === "contract_holder") return "to contract holder";
+  if (mode === "roles") {
+    const roles = a.recipients?.roles?.length ? a.recipients.roles.join(", ") : "selected roles";
+    return `to roles (${roles})`;
+  }
+  return "to client";
+}
+
 /** Returns a list of plain-English action descriptions for a helper. */
 export function summarizeHelperActions(actions: HelperAction[], lk: HelperLookups = {}): string[] {
   const out: string[] = [];
   for (const a of actions ?? []) {
     switch (a.type) {
       case "send_email":
-        out.push(`Email ${a.to === "custom" ? "(custom address)" : "to client"}: ${tmpl(lk.emailTemplates, a.template_id)}`);
+        out.push(`Email ${a.to === "custom" ? "(custom address)" : recipientPhrase(a)}: ${tmpl(lk.emailTemplates, a.template_id)}`);
         break;
       case "send_email_staff":
         out.push(`Email to employees: ${tmpl(lk.emailTemplates, a.template_id)}`);
         break;
       case "send_sms":
         out.push(
-          `SMS ${a.to === "custom" ? "(custom number)" : "to client"}: ${a.template_id ? tmpl(lk.smsTemplates, a.template_id) : "text message"}${a.prompt ? " — you'll confirm it below" : ""}`
+          `SMS ${a.to === "custom" ? "(custom number)" : recipientPhrase(a)}: ${a.template_id ? tmpl(lk.smsTemplates, a.template_id) : "text message"}${a.prompt ? " — you'll confirm it below" : ""}`
         );
         break;
       case "send_sms_staff":

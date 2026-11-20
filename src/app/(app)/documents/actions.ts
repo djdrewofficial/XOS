@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizeBlocks, type DocBlock } from "@/lib/documentBlocks";
 import { renderBlocks, generateDocumentRow } from "@/lib/documentRender";
-import { sendDocumentForSignature } from "@/lib/sendForSignature";
+import { previewDocumentSend, sendDocumentForSignature, type DocumentSendRecipientInput } from "@/lib/sendForSignature";
+import { loadEventContacts } from "@/lib/loadEventContacts";
 
 function clean(v: FormDataEntryValue | null): string | null {
   const s = (v ?? "").toString().trim();
@@ -208,14 +209,36 @@ export async function setDocumentStatus(id: string, status: string) {
   revalidatePath("/documents");
 }
 
-/** Emails the client their signing link and marks the document as sent. */
-export async function sendForSignature(id: string) {
+/** Event contacts for the send-for-signature recipient picker. */
+export async function getDocumentSendContacts(documentId: string) {
   await requireModule("documents", "edit", { mode: "throw" });
   const supabase = await createClient();
-  const sent = await sendDocumentForSignature(supabase, id);
+  const { data: doc } = await supabase.from("documents").select("event_id").eq("id", documentId).maybeSingle();
+  if (!doc?.event_id) return [];
+  return loadEventContacts(supabase, doc.event_id);
+}
+
+export async function previewSendForSignature(documentId: string, clientIds?: string[]) {
+  await requireModule("documents", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const input: DocumentSendRecipientInput | undefined =
+    clientIds && clientIds.length > 0 ? { clientIds } : undefined;
+  return previewDocumentSend(supabase, documentId, input);
+}
+
+/** Emails the chosen contacts their signing link and marks the document as sent.
+    Recipient selection changes who gets the email; the signer of record is still
+    whoever opens /sign/[token] and signs. */
+export async function sendForSignature(id: string, clientIds?: string[]) {
+  await requireModule("documents", "edit", { mode: "throw" });
+  const supabase = await createClient();
+  const input: DocumentSendRecipientInput | undefined =
+    clientIds && clientIds.length > 0 ? { clientIds } : undefined;
+  const sent = await sendDocumentForSignature(supabase, id, input);
   revalidatePath(`/documents/${id}`);
   if (sent.eventId) revalidatePath(`/events/${sent.eventId}`);
   revalidatePath("/documents");
+  return sent;
 }
 
 export async function setDocumentVisibility(id: string, eventId: string, visible: boolean) {
