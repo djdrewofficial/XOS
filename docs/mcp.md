@@ -211,9 +211,11 @@ OAuth Connect and its metadata use the public custom domain `https://xos.xpressd
 Agents that support MCP OAuth (Notion/Slack-style Connect) do not need a pasted token:
 
 1. Add a custom connector with URL `https://xos.xpressdjs.com/api/mcp` and **no** auth header.
-2. Click Connect. Sign in to XOS if prompted — that is the whole flow (no scope picker).
+2. Click Connect. Sign in to XOS if prompted, then click **Allow** on the confirmation screen (client name and redirect host are shown; no scope picker).
 3. The connection uses that staff member’s existing XOS role permissions. Audit log shows e.g. `Drew Segura (OAuth)`.
 4. Revoke later in Settings → Agent Access under OAuth connections.
+
+`GET /api/mcp/oauth/authorize` only renders that confirmation. A grant and authorization code are issued only on an explicit same-origin `POST` with a CSRF token bound to the signed-in staff user and the exact authorize parameters. Cancel returns `error=access_denied` to the registered redirect URI. Dynamic client registration accepts `https:` redirect URIs, and `http:` only for loopback (`localhost`, `127.0.0.1`, `[::1]`).
 
 Service tokens still work for clients that only support a static Bearer header.
 

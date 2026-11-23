@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  AUTHORIZE_CSRF_COOKIE,
+  AUTHORIZE_CSRF_TTL_SEC,
+  AUTHORIZE_SECURITY_HEADERS,
+  csrfCookieOptions,
+  mintAuthorizeCsrf,
+  processAuthorizeConsentDecision,
+  renderAuthorizeConsentHtml,
+} from "@/lib/mcp/oauth/authorizeConsent";
 import { mcpIssuer } from "@/lib/mcp/oauth/config";
-import { completeAuthorize, validateAuthorizeRequest } from "@/lib/mcp/oauth/server";
+import { validateAuthorizeRequest, type AuthorizeQuery } from "@/lib/mcp/oauth/server";
 import { resolveOAuthStaffUser } from "@/lib/mcp/oauth/staffUser";
 import { supabaseOAuthStore } from "@/lib/mcp/oauth/supabaseOAuthStore";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -11,26 +20,46 @@ export const dynamic = "force-dynamic";
 
 /**
  * OAuth 2.1 authorization endpoint.
- * Signed-in staff are auto-approved: scopes come from their XOS role (no extra UI).
+ * GET shows a one-click Allow / Cancel confirmation for signed-in staff
+ * (permissions still come from the XOS role; no scope picker).
+ * POST Allow issues the authorization code after CSRF + Origin checks.
  * Unsigned-in visitors go to /login and return here.
  */
+
+function withSecurityHeaders(res: NextResponse): NextResponse {
+  for (const [k, v] of Object.entries(AUTHORIZE_SECURITY_HEADERS)) {
+    res.headers.set(k, v);
+  }
+  return res;
+}
+
+function readAuthorizeQuery(get: (key: string) => string | null): AuthorizeQuery {
+  return {
+    response_type: get("response_type"),
+    client_id: get("client_id"),
+    redirect_uri: get("redirect_uri"),
+    scope: get("scope"),
+    state: get("state"),
+    code_challenge: get("code_challenge"),
+    code_challenge_method: get("code_challenge_method"),
+    resource: get("resource"),
+  };
+}
+
+function clearCsrfCookie(res: NextResponse) {
+  res.cookies.set(AUTHORIZE_CSRF_COOKIE, "", { ...csrfCookieOptions(0), maxAge: 0 });
+}
+
 export async function GET(req: NextRequest) {
   const url = req.nextUrl;
   const store = supabaseOAuthStore(createAdminClient());
-  const query = {
-    response_type: url.searchParams.get("response_type"),
-    client_id: url.searchParams.get("client_id"),
-    redirect_uri: url.searchParams.get("redirect_uri"),
-    scope: url.searchParams.get("scope"),
-    state: url.searchParams.get("state"),
-    code_challenge: url.searchParams.get("code_challenge"),
-    code_challenge_method: url.searchParams.get("code_challenge_method"),
-    resource: url.searchParams.get("resource"),
-  };
+  const query = readAuthorizeQuery((k) => url.searchParams.get(k));
 
   const validated = await validateAuthorizeRequest(store, query);
   if (!validated.ok) {
-    return redirectOAuthError(store, query, validated.body.error, validated.body.error_description, validated.status);
+    return withSecurityHeaders(
+      await redirectOAuthError(store, query, validated.body.error, validated.body.error_description, validated.status),
+    );
   }
 
   const supabase = await createClient();
@@ -44,7 +73,7 @@ export async function GET(req: NextRequest) {
     const login = new URL("/login", mcpIssuer());
     const returnPath = `${url.pathname}${url.search}`;
     login.searchParams.set("next", returnPath);
-    return NextResponse.redirect(login);
+    return withSecurityHeaders(NextResponse.redirect(login));
   }
 
   const staff = await resolveOAuthStaffUser(createAdminClient(), {
@@ -52,18 +81,121 @@ export async function GET(req: NextRequest) {
     email: user.email,
   });
   if (!staff) {
-    return redirectOAuthError(store, query, "access_denied", "Sign in with an XOS staff account", 403);
+    return withSecurityHeaders(
+      await redirectOAuthError(store, query, "access_denied", "Sign in with an XOS staff account", 403),
+    );
   }
 
-  const completed = await completeAuthorize(store, query, {
-    userId: staff.userId,
-    displayName: staff.displayName,
-    scopes: staff.scopes,
+  // Never issue a grant or auth code on GET. Staff must click Allow on POST.
+  const csrfToken = mintAuthorizeCsrf(staff.userId, query);
+  const html = renderAuthorizeConsentHtml({
+    clientName: validated.value.clientName,
+    redirectUri: validated.value.redirectUri,
+    accountLabel: user.email || staff.displayName,
+    csrfToken,
+    query,
   });
-  if (!completed.ok) {
-    return redirectOAuthError(store, query, completed.body.error, completed.body.error_description, completed.status);
+  const res = withSecurityHeaders(
+    new NextResponse(html, {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    }),
+  );
+  res.cookies.set(AUTHORIZE_CSRF_COOKIE, csrfToken, csrfCookieOptions(AUTHORIZE_CSRF_TTL_SEC));
+  return res;
+}
+
+export async function POST(req: NextRequest) {
+  const url = req.nextUrl;
+  const store = supabaseOAuthStore(createAdminClient());
+
+  const form = await req.formData().catch(() => null);
+  const field = (k: string) => {
+    const v = form?.get(k);
+    return typeof v === "string" ? v : null;
+  };
+  const query = readAuthorizeQuery(field);
+  const decision = field("decision");
+  const formCsrf = field("csrf");
+  const cookieCsrf = req.cookies.get(AUTHORIZE_CSRF_COOKIE)?.value ?? null;
+
+  const validated = await validateAuthorizeRequest(store, query);
+  if (!validated.ok) {
+    const res = withSecurityHeaders(
+      await redirectOAuthError(store, query, validated.body.error, validated.body.error_description, validated.status),
+    );
+    clearCsrfCookie(res);
+    return res;
   }
-  return NextResponse.redirect(completed.value.redirectTo);
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    const login = new URL("/login", mcpIssuer());
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) {
+      if (typeof v === "string" && v) qs.set(k, v);
+    }
+    login.searchParams.set("next", `/api/mcp/oauth/authorize?${qs.toString()}`);
+    const res = withSecurityHeaders(NextResponse.redirect(login));
+    clearCsrfCookie(res);
+    return res;
+  }
+
+  const staff = await resolveOAuthStaffUser(createAdminClient(), {
+    id: user.id,
+    email: user.email,
+  });
+  if (!staff) {
+    const res = withSecurityHeaders(
+      await redirectOAuthError(store, query, "access_denied", "Sign in with an XOS staff account", 403),
+    );
+    clearCsrfCookie(res);
+    return res;
+  }
+
+  const result = await processAuthorizeConsentDecision({
+    store,
+    decision,
+    formToken: formCsrf,
+    cookieToken: cookieCsrf,
+    originHeader: req.headers.get("origin"),
+    requestOrigin: url.origin,
+    userId: staff.userId,
+    user: {
+      userId: staff.userId,
+      displayName: staff.displayName,
+      scopes: staff.scopes,
+    },
+    query,
+  });
+
+  if (!result.ok) {
+    const res = withSecurityHeaders(
+      NextResponse.json(
+        { error: result.error, error_description: result.error_description },
+        { status: result.status },
+      ),
+    );
+    // Leave CSRF cookie in place only for recoverable? Clear on hard fail.
+    clearCsrfCookie(res);
+    return res;
+  }
+
+  if (result.kind === "deny") {
+    const res = withSecurityHeaders(
+      await redirectOAuthError(store, query, "access_denied", "The resource owner denied the request", 403),
+    );
+    clearCsrfCookie(res);
+    return res;
+  }
+
+  const res = withSecurityHeaders(NextResponse.redirect(result.redirectTo, 303));
+  clearCsrfCookie(res);
+  return res;
 }
 
 async function redirectOAuthError(

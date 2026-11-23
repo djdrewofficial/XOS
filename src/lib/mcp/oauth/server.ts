@@ -62,6 +62,24 @@ export function generateOpaqueToken(prefix: string): { raw: string; hash: string
   return { raw, hash: hashToken(raw) };
 }
 
+/**
+ * OAuth 2.1 / RFC 8252: https for all hosts; plain http only for loopback
+ * (localhost, 127.0.0.1, [::1]).
+ */
+export function isAllowedOAuthRedirectUri(uri: string): boolean {
+  try {
+    const parsed = new URL(uri);
+    if (parsed.hash) return false;
+    if (parsed.protocol === "https:") return true;
+    if (parsed.protocol !== "http:") return false;
+    // Node may report IPv6 loopback as "::1" or "[::1]" depending on version.
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
 /** RFC 7591 dynamic client registration. */
 export async function registerClient(
   store: OAuthStore,
@@ -70,14 +88,12 @@ export async function registerClient(
   const redirectUris = (input.redirect_uris ?? []).map(String).filter(Boolean);
   if (!redirectUris.length) return err(400, "invalid_request", "redirect_uris is required");
   for (const uri of redirectUris) {
-    try {
-      const parsed = new URL(uri);
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-        return err(400, "invalid_request", "redirect_uris must be http(s)");
-      }
-      if (parsed.hash) return err(400, "invalid_request", "redirect_uris must not include a fragment");
-    } catch {
-      return err(400, "invalid_request", "redirect_uris contains an invalid URI");
+    if (!isAllowedOAuthRedirectUri(uri)) {
+      return err(
+        400,
+        "invalid_request",
+        "redirect_uris must be https, or http only for loopback (localhost, 127.0.0.1, [::1])",
+      );
     }
   }
 
@@ -143,9 +159,10 @@ export type AuthorizeQuery = {
 };
 
 /**
- * Validate authorize params and, for a signed-in staff user, immediately issue
- * an authorization code (no scope picker / no connection name). Scopes come from
- * the user's XOS role permissions. One active grant per user+client; reconnect replaces.
+ * Issue an authorization code after the staff user has explicitly approved on
+ * POST /api/mcp/oauth/authorize (no scope picker / no connection name). Scopes
+ * come from the user's XOS role permissions. One active grant per user+client;
+ * reconnect replaces.
  */
 export async function completeAuthorize(
   store: OAuthStore,
