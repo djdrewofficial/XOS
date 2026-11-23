@@ -1200,7 +1200,7 @@ export default async function EventDetailPage({
         </h2>
         <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
           The in-house client planning experience (music search + timeline + questions). Not yet part of the live client workflow.
-          {demoMode ? " Demo Mode is on — progress and songs below are sample data." : ""}
+          {demoMode ? " Demo Mode is on; progress and songs below are sample data." : ""}
         </p>
 
         <form action={setEventPlanningTemplate.bind(null, id)} className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
@@ -2386,7 +2386,7 @@ export default async function EventDetailPage({
           <>
             <p className="mt-1 text-sm text-zinc-500">
               {plannerSectionCount} moment{plannerSectionCount === 1 ? "" : "s"} · {plannerSongCount} song{plannerSongCount === 1 ? "" : "s"} in the in-house planner.
-              {demoMode ? " (sample data — not real client prep)" : ""}
+              {demoMode ? " (sample data, not real client prep)" : ""}
             </p>
             <EventSectionNotes eventId={id} sections={plannerNoteSections} canEdit={ffCanEdit} />
           </>

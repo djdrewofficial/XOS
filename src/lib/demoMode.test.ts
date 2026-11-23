@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   DEMO_MODE_PRESERVED_EVENT_FIELDS,
   decideEnableDemoMode,
+  demoSongIdeaListFate,
   hasRealPlanningData,
   isClientEditedDemoAnswer,
   preservedEventFlags,
@@ -112,13 +113,27 @@ describe("demo mode enable decisions", () => {
 });
 
 describe("demo mode keep-client answer edits", () => {
-  it("treats answers updated after enable as client entries", () => {
+  it("treats a non-null author id as a client edit immediately", () => {
+    const enabledAt = "2026-11-23T12:00:00.000Z";
+    assert.equal(
+      isClientEditedDemoAnswer({
+        isDemo: true,
+        updatedAt: "2026-11-23T12:00:00.500Z",
+        demoEnabledAt: enabledAt,
+        authorId: "11111111-1111-4111-8111-111111111111",
+      }),
+      true,
+    );
+  });
+
+  it("falls back to timestamp-after-enable when author id is null", () => {
     const enabledAt = "2026-11-23T12:00:00.000Z";
     assert.equal(
       isClientEditedDemoAnswer({
         isDemo: true,
         updatedAt: "2026-11-23T12:00:01.000Z",
         demoEnabledAt: enabledAt,
+        authorId: null,
       }),
       false,
     );
@@ -127,6 +142,7 @@ describe("demo mode keep-client answer edits", () => {
         isDemo: true,
         updatedAt: "2026-11-23T12:05:00.000Z",
         demoEnabledAt: enabledAt,
+        authorId: null,
       }),
       true,
     );
@@ -138,6 +154,14 @@ describe("demo mode keep-client answer edits", () => {
       }),
       true,
     );
+  });
+});
+
+describe("demo song idea list cascade safety", () => {
+  it("keeps demo lists that still hold client ideas and deletes empty ones", () => {
+    assert.equal(demoSongIdeaListFate({ listIsDemo: true, remainingIdeaCount: 2 }), "keep_as_real");
+    assert.equal(demoSongIdeaListFate({ listIsDemo: true, remainingIdeaCount: 0 }), "delete");
+    assert.equal(demoSongIdeaListFate({ listIsDemo: false, remainingIdeaCount: 0 }), "skip");
   });
 });
 
@@ -174,10 +198,25 @@ describe("demo mode wiring", () => {
     assert.doesNotMatch(mig, /comms_paused\s*=/);
   });
 
-  it("reseedEventPlanning exits Demo Mode when a real template is assigned", () => {
+  it("reseedEventPlanning exits Demo Mode and clears leftover demo song ideas / do-not-play", () => {
     const planning = read("src/lib/planning.ts");
     assert.match(planning, /demo_mode:\s*false/);
     assert.match(planning, /demo_mode_enabled_at:\s*null/);
+    assert.match(planning, /clearDemoSongIdeaLists/);
+    assert.match(planning, /clearDemoDoNotPlayNotes/);
+  });
+
+  it("keep_client path uses cascade-safe song idea list cleanup and author ids", () => {
+    const lib = read("src/lib/demoMode.ts");
+    assert.match(lib, /clearDemoSongIdeaLists/);
+    assert.doesNotMatch(lib, /from\("song_idea_lists"\)\.delete\(\)\.eq\("event_id", eventId\)\.eq\("is_demo", true\)/);
+    assert.match(lib, /answered_by/);
+    assert.match(lib, /updated_by/);
+    assert.match(lib, /authorId:\s*a\.answered_by/);
+    assert.match(lib, /authorId:\s*dnp\.updated_by/);
+    const cleanup = read("src/lib/demoModeCleanup.ts");
+    assert.match(cleanup, /demoSongIdeaListFate/);
+    assert.match(cleanup, /keep_as_real/);
   });
 
   it("exposes demo_mode on events_get and a safe set tool with no outbound comms", () => {
@@ -213,7 +252,10 @@ describe("demo mode wiring", () => {
     const actions = read("src/app/(app)/events/demoModeActions.ts");
     assert.match(actions, /enableEventDemoMode/);
     assert.match(actions, /disableEventDemoMode/);
+    assert.match(actions, /revalidatePath\(`\/portal\/plan\/\$\{eventId\}`\)/);
     assert.doesNotMatch(actions, /processOutbox|sendAccountInvite|emailAppJoinCode/);
+    const ui = read("src/components/EventDemoMode.tsx");
+    assert.doesNotMatch(ui, /\u2014/);
   });
 
   it("field staff view column list includes demo_mode", () => {

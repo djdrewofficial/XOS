@@ -323,7 +323,7 @@ export default async function FieldStaffEventPage({
             )}
           </h2>
           {event.demo_mode && (
-            <p className="mb-2 text-sm text-amber-800 dark:text-amber-200">Sample data — not real client prep.</p>
+            <p className="mb-2 text-sm text-amber-800 dark:text-amber-200">Sample data, not real client prep.</p>
           )}
           <EventSectionNotes eventId={id} sections={planner.sections} canEdit={canEdit} />
         </div>

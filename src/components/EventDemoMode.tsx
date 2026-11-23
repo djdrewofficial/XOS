@@ -13,7 +13,7 @@ export default function EventDemoMode({
 }: {
   eventId: string;
   demoMode: boolean;
-  /** Server already saw non-demo answers/songs — show a stronger confirm on enable. */
+  /** Server already saw non-demo answers/songs; show a stronger confirm on enable. */
   hasRealPlanningHint?: boolean;
 }) {
   const [pending, start] = useTransition();
@@ -70,7 +70,7 @@ export default function EventDemoMode({
           </div>
           <p className={`mt-1 text-sm ${demoMode ? "text-amber-900 dark:text-amber-200" : "text-zinc-500"}`}>
             {demoMode
-              ? "Sample timeline, songs, and answers are loaded so the prospect can explore the app. Planning % and song lists here are demo data — not real client prep."
+              ? "Sample timeline, songs, and answers are loaded so the prospect can explore the app. Planning % and song lists here are demo data, not real client prep."
               : "Fill this event's planner with realistic sample data so a Lead or Pending prospect can open the Xpress DJs app and explore. Turn it off before they start real planning. Does not send any invite or message."}
           </p>
         </div>

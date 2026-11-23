@@ -6,6 +6,7 @@ import { isFieldStaffRole } from "@/lib/fieldStaffRole";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { contentVisible } from "@/lib/ugcModeration";
+import { clearDemoDoNotPlayNotes, clearDemoSongIdeaLists } from "@/lib/demoModeCleanup";
 
 export type SectionType = "info" | "timeline" | "headline";
 export type AnswerType = "short" | "long" | "select" | "multiselect" | "scale" | "yesno" | "image_select";
@@ -311,6 +312,10 @@ export async function ensureEventPlanning(
 export async function reseedEventPlanning(eventId: string, templateId: string): Promise<boolean> {
   const admin = createAdminClient();
   await admin.from("planning_sections").delete().eq("event_id", eventId);
+  // Demo Mode also seeds song ideas + do-not-play notes outside sections.
+  // Clear those demo rows without CASCADE-deleting any non-demo client ideas.
+  await clearDemoSongIdeaLists(admin, eventId);
+  await clearDemoDoNotPlayNotes(admin, eventId);
   await admin
     .from("events")
     .update({

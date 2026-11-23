@@ -20,18 +20,34 @@ export function hasRealPlanningData(snap: RealPlanningSnapshot): boolean {
   );
 }
 
-/** Answers touched after demo was enabled count as client entries (keep mode). */
+/** Answers / notes touched by a real user count as client entries (keep mode).
+    Prefer a non-null author id (answered_by / updated_by) — seeded rows leave
+    those null. Timestamp-after-enable is a fallback for clock skew / race. */
 export function isClientEditedDemoAnswer(args: {
   isDemo: boolean;
   updatedAt: string | null;
   demoEnabledAt: string | null;
+  /** answered_by on answers, updated_by on do-not-play notes. */
+  authorId?: string | null;
   /** Grace window so the seed's own updated_at doesn't look like a client edit. */
   graceMs?: number;
 }): boolean {
   if (!args.isDemo) return true;
+  if (args.authorId) return true;
   if (!args.demoEnabledAt || !args.updatedAt) return false;
   const grace = args.graceMs ?? 2000;
   return Date.parse(args.updatedAt) > Date.parse(args.demoEnabledAt) + grace;
+}
+
+/** After deleting demo song_ideas, decide each demo list's fate so we never
+    CASCADE-delete client-added ideas that still hang off the demo list. */
+export function demoSongIdeaListFate(args: {
+  listIsDemo: boolean;
+  remainingIdeaCount: number;
+}): "delete" | "keep_as_real" | "skip" {
+  if (!args.listIsDemo) return "skip";
+  if (args.remainingIdeaCount > 0) return "keep_as_real";
+  return "delete";
 }
 
 /** Decide enable outcome without hitting the DB. */

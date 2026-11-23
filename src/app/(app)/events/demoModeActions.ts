@@ -22,7 +22,10 @@ export async function enableEventDemoModeAction(
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const result = await enableEventDemoMode(eventId, { force });
-  if (result.ok) revalidatePath(`/events/${eventId}`);
+  if (result.ok) {
+    revalidatePath(`/events/${eventId}`);
+    revalidatePath(`/portal/plan/${eventId}`);
+  }
   return result;
 }
 
@@ -34,6 +37,9 @@ export async function disableEventDemoModeAction(
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const result = await disableEventDemoMode(eventId, mode);
-  if (result.ok) revalidatePath(`/events/${eventId}`);
+  if (result.ok) {
+    revalidatePath(`/events/${eventId}`);
+    revalidatePath(`/portal/plan/${eventId}`);
+  }
   return result;
 }

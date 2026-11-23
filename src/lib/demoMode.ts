@@ -12,6 +12,7 @@ import {
   type DemoDisableMode,
   type RealPlanningSnapshot,
 } from "@/lib/demoModeLogic";
+import { clearDemoSongIdeaLists } from "@/lib/demoModeCleanup";
 import {
   DEMO_DO_NOT_PLAY_NOTES,
   DEMO_QUESTIONS,
@@ -22,6 +23,7 @@ import {
 
 export type { DemoDisableMode, RealPlanningSnapshot };
 export { hasRealPlanningData, isClientEditedDemoAnswer, decideEnableDemoMode } from "@/lib/demoModeLogic";
+export { clearDemoSongIdeaLists } from "@/lib/demoModeCleanup";
 
 export type DemoModeResult =
   | { ok: true; already?: boolean; seeded?: boolean; mode?: DemoDisableMode }
@@ -278,14 +280,13 @@ export async function enableEventDemoMode(
 }
 
 async function removeDemoLeavesOnly(admin: Admin, eventId: string, demoEnabledAt: string | null): Promise<void> {
-  // Include soft-hidden demo songs — hard delete as service role.
+  // Include soft-hidden demo songs (hard delete as service role).
   await admin.from("planning_songs").delete().eq("event_id", eventId).eq("is_demo", true);
-  await admin.from("song_ideas").delete().eq("event_id", eventId).eq("is_demo", true);
-  await admin.from("song_idea_lists").delete().eq("event_id", eventId).eq("is_demo", true);
+  await clearDemoSongIdeaLists(admin, eventId);
 
   const { data: dnp } = await admin
     .from("planning_do_not_play_notes")
-    .select("body, is_demo, updated_at")
+    .select("body, is_demo, updated_at, updated_by")
     .eq("event_id", eventId)
     .maybeSingle();
   if (dnp?.is_demo) {
@@ -293,6 +294,7 @@ async function removeDemoLeavesOnly(admin: Admin, eventId: string, demoEnabledAt
       isDemo: true,
       updatedAt: dnp.updated_at,
       demoEnabledAt,
+      authorId: dnp.updated_by,
     });
     if (edited) {
       await admin.from("planning_do_not_play_notes").update({ is_demo: false }).eq("event_id", eventId);
@@ -303,7 +305,7 @@ async function removeDemoLeavesOnly(admin: Admin, eventId: string, demoEnabledAt
 
   const { data: answers } = await admin
     .from("planning_question_answers")
-    .select("question_id, is_demo, updated_at, answer")
+    .select("question_id, is_demo, updated_at, answered_by, answer")
     .eq("event_id", eventId)
     .eq("is_demo", true);
 
@@ -313,6 +315,7 @@ async function removeDemoLeavesOnly(admin: Admin, eventId: string, demoEnabledAt
         isDemo: true,
         updatedAt: a.updated_at,
         demoEnabledAt,
+        authorId: a.answered_by,
       })
     ) {
       await admin
