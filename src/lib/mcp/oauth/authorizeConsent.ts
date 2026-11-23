@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { mcpIssuer } from "./config";
 import { completeAuthorize, type AuthorizeQuery } from "./server";
 import type { OAuthStore } from "./store";
 import type { AuthorizeUser } from "./types";
@@ -6,6 +7,15 @@ import type { AuthorizeUser } from "./types";
 /** HttpOnly SameSite=Lax cookie holding the signed consent CSRF token. */
 export const AUTHORIZE_CSRF_COOKIE = "mcp_oauth_csrf";
 export const AUTHORIZE_CSRF_TTL_SEC = 10 * 60;
+
+/** Domain-separation label for deriving the CSRF HMAC key from a raw secret. */
+export const CSRF_KEY_CONTEXT = "xos-mcp-oauth-csrf-v1";
+
+/**
+ * POST authorize redirects must use 303 See Other so browsers follow with GET.
+ * NextResponse.redirect defaults to 307, which would re-POST to redirect_uri /login.
+ */
+export const AUTHORIZE_POST_REDIRECT_STATUS = 303 as const;
 
 export const AUTHORIZE_SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
@@ -28,12 +38,32 @@ type CsrfPayload = {
   resource: string | null;
 };
 
-function csrfSigningSecret(): string {
-  return (
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.CRON_SECRET ||
-    "xos-mcp-oauth-csrf-dev"
-  );
+/** Derive a domain-separated HMAC key from a raw secret (never sign with the raw key alone). */
+export function deriveCsrfSigningKey(raw: string): Buffer {
+  return createHmac("sha256", raw).update(CSRF_KEY_CONTEXT).digest();
+}
+
+/**
+ * Resolve the raw CSRF secret. Prefer MCP_OAUTH_CSRF_SECRET, then service role / cron.
+ * Production fails closed when none are set; dev/test falls back to a local default.
+ */
+export function resolveCsrfRawSecret(): string {
+  const candidates = [
+    process.env.MCP_OAUTH_CSRF_SECRET,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.CRON_SECRET,
+  ];
+  for (const value of candidates) {
+    if (value && value.length >= 16) return value;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("MCP OAuth CSRF secret is not configured");
+  }
+  return "xos-mcp-oauth-csrf-dev";
+}
+
+function csrfSigningKey(rawOverride?: string): Buffer {
+  return deriveCsrfSigningKey(rawOverride ?? resolveCsrfRawSecret());
 }
 
 function safeEqualStr(a: string, b: string): boolean {
@@ -42,19 +72,19 @@ function safeEqualStr(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-function signPayload(payload: CsrfPayload, secret = csrfSigningSecret()): string {
+function signPayload(payload: CsrfPayload, key: Buffer): string {
   const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const sig = createHmac("sha256", secret).update(data).digest("base64url");
+  const sig = createHmac("sha256", key).update(data).digest("base64url");
   return `${data}.${sig}`;
 }
 
-function parseToken(token: string, secret = csrfSigningSecret()): CsrfPayload | null {
+function parseToken(token: string, key: Buffer): CsrfPayload | null {
   const dot = token.indexOf(".");
   if (dot < 1) return null;
   const data = token.slice(0, dot);
   const sig = token.slice(dot + 1);
   if (!data || !sig) return null;
-  const expect = createHmac("sha256", secret).update(data).digest("base64url");
+  const expect = createHmac("sha256", key).update(data).digest("base64url");
   if (!safeEqualStr(sig, expect)) return null;
   try {
     return JSON.parse(Buffer.from(data, "base64url").toString("utf8")) as CsrfPayload;
@@ -105,7 +135,8 @@ export function mintAuthorizeCsrf(
   userId: string,
   query: AuthorizeQuery,
   now = new Date(),
-  secret = csrfSigningSecret(),
+  /** Optional raw secret override (still domain-separated via deriveCsrfSigningKey). */
+  rawSecret?: string,
 ): string {
   const canon = canonicalQuery(query);
   if (!canon) throw new Error("incomplete authorize query for CSRF");
@@ -115,7 +146,7 @@ export function mintAuthorizeCsrf(
     exp: Math.floor(now.getTime() / 1000) + AUTHORIZE_CSRF_TTL_SEC,
     ...canon,
   };
-  return signPayload(payload, secret);
+  return signPayload(payload, csrfSigningKey(rawSecret));
 }
 
 /**
@@ -129,13 +160,14 @@ export function verifyAuthorizeCsrf(args: {
   userId: string;
   query: AuthorizeQuery;
   now?: Date;
+  /** Optional raw secret override (still domain-separated). */
   secret?: string;
 }): boolean {
   const formToken = args.formToken?.trim() || "";
   const cookieToken = args.cookieToken?.trim() || "";
   if (!formToken || !cookieToken) return false;
   if (!safeEqualStr(formToken, cookieToken)) return false;
-  const payload = parseToken(formToken, args.secret ?? csrfSigningSecret());
+  const payload = parseToken(formToken, csrfSigningKey(args.secret));
   if (!payload) return false;
   const nowSec = Math.floor((args.now ?? new Date()).getTime() / 1000);
   if (payload.exp < nowSec) return false;
@@ -143,14 +175,31 @@ export function verifyAuthorizeCsrf(args: {
   return paramsMatch(payload, args.query);
 }
 
-/** Same-origin browser form posts send Origin; require it to match the request URL. */
-export function originAllowed(originHeader: string | null, requestOrigin: string): boolean {
-  if (!originHeader) return false;
+/**
+ * Accept Origin when it matches any allowed origin (request URL origin and/or
+ * the canonical public issuer behind Cloudflare/Netlify). Missing Origin is rejected.
+ */
+export function originAllowed(originHeader: string | null, ...allowedOrigins: string[]): boolean {
+  if (!originHeader || allowedOrigins.length === 0) return false;
+  let got: string;
   try {
-    return new URL(originHeader).origin === new URL(requestOrigin).origin;
+    got = new URL(originHeader).origin;
   } catch {
     return false;
   }
+  for (const allowed of allowedOrigins) {
+    try {
+      if (got === new URL(allowed).origin) return true;
+    } catch {
+      /* skip invalid allowed entry */
+    }
+  }
+  return false;
+}
+
+/** Origins accepted for authorize POST (request host + canonical mcpIssuer). */
+export function authorizeAllowedOrigins(requestOrigin: string, issuer = mcpIssuer()): string[] {
+  return [requestOrigin, issuer];
 }
 
 export function escHtml(value: string): string {
@@ -256,7 +305,14 @@ export function csrfCookieOptions(maxAgeSec: number): {
 export type ConsentDecisionResult =
   | { ok: true; kind: "allow"; redirectTo: string; grantTokenId: string }
   | { ok: true; kind: "deny"; redirectError: "access_denied"; state: string | null }
-  | { ok: false; status: number; error: string; error_description?: string };
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      error_description?: string;
+      /** When true, the route must not clear the CSRF cookie (e.g. untrusted Origin). */
+      preserveCsrfCookie?: boolean;
+    };
 
 /**
  * CSRF-gated Allow / Cancel decision used by POST /api/mcp/oauth/authorize.
@@ -269,14 +325,23 @@ export async function processAuthorizeConsentDecision(args: {
   cookieToken: string | null | undefined;
   originHeader: string | null;
   requestOrigin: string;
+  /** Canonical public issuer origin (mcpIssuer); accepted alongside requestOrigin. */
+  issuerOrigin?: string;
   userId: string;
   user: AuthorizeUser;
   query: AuthorizeQuery;
   now?: Date;
   secret?: string;
 }): Promise<ConsentDecisionResult> {
-  if (!originAllowed(args.originHeader, args.requestOrigin)) {
-    return { ok: false, status: 403, error: "invalid_request", error_description: "Invalid request origin" };
+  const allowed = authorizeAllowedOrigins(args.requestOrigin, args.issuerOrigin ?? args.requestOrigin);
+  if (!originAllowed(args.originHeader, ...allowed)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "invalid_request",
+      error_description: "Invalid request origin",
+      preserveCsrfCookie: true,
+    };
   }
 
   const csrfOk = verifyAuthorizeCsrf({

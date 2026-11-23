@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   AUTHORIZE_CSRF_COOKIE,
   AUTHORIZE_CSRF_TTL_SEC,
+  AUTHORIZE_POST_REDIRECT_STATUS,
   AUTHORIZE_SECURITY_HEADERS,
+  authorizeAllowedOrigins,
   csrfCookieOptions,
   mintAuthorizeCsrf,
+  originAllowed,
   processAuthorizeConsentDecision,
   renderAuthorizeConsentHtml,
 } from "@/lib/mcp/oauth/authorizeConsent";
@@ -108,6 +111,19 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const url = req.nextUrl;
   const store = supabaseOAuthStore(createAdminClient());
+  const issuer = mcpIssuer();
+  const allowedOrigins = authorizeAllowedOrigins(url.origin, issuer);
+
+  // Reject untrusted Origin before any Set-Cookie that would clear CSRF.
+  // An attacker site must not be able to wipe a staff user's consent cookie.
+  if (!originAllowed(req.headers.get("origin"), ...allowedOrigins)) {
+    return withSecurityHeaders(
+      NextResponse.json(
+        { error: "invalid_request", error_description: "Invalid request origin" },
+        { status: 403 },
+      ),
+    );
+  }
 
   const form = await req.formData().catch(() => null);
   const field = (k: string) => {
@@ -122,7 +138,14 @@ export async function POST(req: NextRequest) {
   const validated = await validateAuthorizeRequest(store, query);
   if (!validated.ok) {
     const res = withSecurityHeaders(
-      await redirectOAuthError(store, query, validated.body.error, validated.body.error_description, validated.status),
+      await redirectOAuthError(
+        store,
+        query,
+        validated.body.error,
+        validated.body.error_description,
+        validated.status,
+        AUTHORIZE_POST_REDIRECT_STATUS,
+      ),
     );
     clearCsrfCookie(res);
     return res;
@@ -134,13 +157,13 @@ export async function POST(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    const login = new URL("/login", mcpIssuer());
+    const login = new URL("/login", issuer);
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) {
       if (typeof v === "string" && v) qs.set(k, v);
     }
     login.searchParams.set("next", `/api/mcp/oauth/authorize?${qs.toString()}`);
-    const res = withSecurityHeaders(NextResponse.redirect(login));
+    const res = withSecurityHeaders(NextResponse.redirect(login, AUTHORIZE_POST_REDIRECT_STATUS));
     clearCsrfCookie(res);
     return res;
   }
@@ -151,7 +174,14 @@ export async function POST(req: NextRequest) {
   });
   if (!staff) {
     const res = withSecurityHeaders(
-      await redirectOAuthError(store, query, "access_denied", "Sign in with an XOS staff account", 403),
+      await redirectOAuthError(
+        store,
+        query,
+        "access_denied",
+        "Sign in with an XOS staff account",
+        403,
+        AUTHORIZE_POST_REDIRECT_STATUS,
+      ),
     );
     clearCsrfCookie(res);
     return res;
@@ -164,6 +194,7 @@ export async function POST(req: NextRequest) {
     cookieToken: cookieCsrf,
     originHeader: req.headers.get("origin"),
     requestOrigin: url.origin,
+    issuerOrigin: issuer,
     userId: staff.userId,
     user: {
       userId: staff.userId,
@@ -180,20 +211,26 @@ export async function POST(req: NextRequest) {
         { status: result.status },
       ),
     );
-    // Leave CSRF cookie in place only for recoverable? Clear on hard fail.
-    clearCsrfCookie(res);
+    if (!result.preserveCsrfCookie) clearCsrfCookie(res);
     return res;
   }
 
   if (result.kind === "deny") {
     const res = withSecurityHeaders(
-      await redirectOAuthError(store, query, "access_denied", "The resource owner denied the request", 403),
+      await redirectOAuthError(
+        store,
+        query,
+        "access_denied",
+        "The resource owner denied the request",
+        403,
+        AUTHORIZE_POST_REDIRECT_STATUS,
+      ),
     );
     clearCsrfCookie(res);
     return res;
   }
 
-  const res = withSecurityHeaders(NextResponse.redirect(result.redirectTo, 303));
+  const res = withSecurityHeaders(NextResponse.redirect(result.redirectTo, AUTHORIZE_POST_REDIRECT_STATUS));
   clearCsrfCookie(res);
   return res;
 }
@@ -208,6 +245,8 @@ async function redirectOAuthError(
   error: string,
   description: string | undefined,
   status: number,
+  /** POST callers must pass 303 so browsers do not re-POST to redirect_uri. */
+  redirectStatus?: number,
 ) {
   if (query.client_id && query.redirect_uri) {
     const client = await store.findClient(query.client_id);
@@ -216,7 +255,9 @@ async function redirectOAuthError(
       target.searchParams.set("error", error);
       if (description) target.searchParams.set("error_description", description);
       if (query.state) target.searchParams.set("state", query.state);
-      return NextResponse.redirect(target.toString());
+      return redirectStatus != null
+        ? NextResponse.redirect(target.toString(), redirectStatus)
+        : NextResponse.redirect(target.toString());
     }
   }
   return NextResponse.json(

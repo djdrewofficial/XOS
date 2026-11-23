@@ -22,10 +22,15 @@ import { s256Challenge, verifyPkceS256 } from "./mcp/oauth/pkce.ts";
 import { mcpScopesForRole, oauthConnectionName } from "./mcp/oauth/roleScopes.ts";
 import {
   AUTHORIZE_CSRF_COOKIE,
+  AUTHORIZE_POST_REDIRECT_STATUS,
   AUTHORIZE_SECURITY_HEADERS,
+  authorizeAllowedOrigins,
+  deriveCsrfSigningKey,
   mintAuthorizeCsrf,
+  originAllowed,
   processAuthorizeConsentDecision,
   renderAuthorizeConsentHtml,
+  resolveCsrfRawSecret,
   verifyAuthorizeCsrf,
 } from "./mcp/oauth/authorizeConsent.ts";
 import {
@@ -379,6 +384,126 @@ describe("mcp oauth authorize consent", () => {
     const staffCheckIdx = postFn.indexOf("if (!staff)");
     const decisionIdx = postFn.indexOf("processAuthorizeConsentDecision");
     assert.ok(staffCheckIdx >= 0 && decisionIdx > staffCheckIdx);
+  });
+
+  it("POST Cancel and !user login redirects use HTTP 303 (not default 307)", () => {
+    assert.equal(AUTHORIZE_POST_REDIRECT_STATUS, 303);
+    const authorizeRoute = read("src/app/api/mcp/oauth/authorize/route.ts");
+    const postStart = authorizeRoute.indexOf("export async function POST");
+    const helperStart = authorizeRoute.indexOf("async function redirectOAuthError");
+    const postFn = authorizeRoute.slice(postStart, helperStart > postStart ? helperStart : undefined);
+    // Cancel / deny path
+    assert.match(postFn, /result\.kind === "deny"/);
+    assert.match(postFn, /AUTHORIZE_POST_REDIRECT_STATUS/);
+    // Direct redirects from POST (login + allow) must pass 303.
+    const redirectCalls = [...postFn.matchAll(/NextResponse\.redirect\(([^)]*)\)/g)].map((m) => m[1]);
+    assert.ok(redirectCalls.length >= 2, "expected login + allow redirects");
+    for (const args of redirectCalls) {
+      assert.match(args, /AUTHORIZE_POST_REDIRECT_STATUS/);
+      assert.doesNotMatch(args, /\b307\b/);
+    }
+    // deny / !validated / !staff go through redirectOAuthError(..., AUTHORIZE_POST_REDIRECT_STATUS)
+    assert.match(postFn, /redirectOAuthError\([\s\S]*?AUTHORIZE_POST_REDIRECT_STATUS/);
+    assert.equal((postFn.match(/AUTHORIZE_POST_REDIRECT_STATUS/g) || []).length >= 4, true);
+    // !user login redirect
+    assert.match(postFn, /NextResponse\.redirect\(login,\s*AUTHORIZE_POST_REDIRECT_STATUS\)/);
+    // Helper supports an explicit redirect status argument for POST callers.
+    const helper = authorizeRoute.slice(helperStart);
+    assert.match(helper, /redirectStatus\?: number/);
+    assert.match(helper, /NextResponse\.redirect\(target\.toString\(\),\s*redirectStatus\)/);
+  });
+
+  it("originAllowed accepts mcpIssuer when request origin is a Netlify host and rejects third parties", () => {
+    const publicOrigin = mcpIssuer();
+    assert.equal(publicOrigin, DEFAULT_PUBLIC_ORIGIN);
+    const netlifyOrigin = "https://deploy-preview-91--xos-xpressdjs.netlify.app";
+    const allowed = authorizeAllowedOrigins(netlifyOrigin, publicOrigin);
+
+    assert.equal(originAllowed(publicOrigin, ...allowed), true);
+    assert.equal(originAllowed(netlifyOrigin, ...allowed), true);
+    assert.equal(originAllowed("https://evil.example", ...allowed), false);
+    assert.equal(originAllowed(null, ...allowed), false);
+    assert.equal(originAllowed("", ...allowed), false);
+  });
+
+  it("originAllowed + consent decision accept issuer Origin behind a Netlify request host", async () => {
+    const mem = memoryOAuthStore();
+    const { store, clientId } = await registeredClient(mem.store);
+    const challenge = s256Challenge(verifier());
+    const query = authorizeQuery(clientId, challenge);
+    const csrf = mintAuthorizeCsrf(staff.userId, query, new Date(), secret);
+    const netlifyOrigin = "https://xos-xpressdjs.netlify.app";
+    const result = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: csrf,
+      cookieToken: csrf,
+      originHeader: issuerOrigin,
+      requestOrigin: netlifyOrigin,
+      issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok || result.kind !== "allow") return;
+    assert.ok(new URL(result.redirectTo).searchParams.get("code"));
+
+    const rejected = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: csrf,
+      cookieToken: csrf,
+      originHeader: "https://evil.example",
+      requestOrigin: netlifyOrigin,
+      issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) {
+      assert.equal(rejected.preserveCsrfCookie, true);
+      assert.match(rejected.error_description || "", /origin/i);
+    }
+  });
+
+  it("production fails closed without a CSRF secret env var; dev keeps a fallback", () => {
+    const prev = {
+      nodeEnv: process.env.NODE_ENV,
+      mcp: process.env.MCP_OAUTH_CSRF_SECRET,
+      service: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      cron: process.env.CRON_SECRET,
+    };
+    try {
+      delete process.env.MCP_OAUTH_CSRF_SECRET;
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      delete process.env.CRON_SECRET;
+
+      process.env.NODE_ENV = "test";
+      assert.equal(resolveCsrfRawSecret(), "xos-mcp-oauth-csrf-dev");
+      assert.ok(deriveCsrfSigningKey(resolveCsrfRawSecret()).length === 32);
+
+      process.env.NODE_ENV = "production";
+      assert.throws(() => resolveCsrfRawSecret(), /CSRF secret is not configured/);
+
+      process.env.MCP_OAUTH_CSRF_SECRET = "production-mcp-oauth-csrf-secret-key";
+      assert.equal(resolveCsrfRawSecret(), "production-mcp-oauth-csrf-secret-key");
+      // Prefer MCP_OAUTH_CSRF_SECRET over service role when both are set.
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "supabase-service-role-key-value";
+      assert.equal(resolveCsrfRawSecret(), "production-mcp-oauth-csrf-secret-key");
+    } finally {
+      if (prev.nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prev.nodeEnv;
+      if (prev.mcp === undefined) delete process.env.MCP_OAUTH_CSRF_SECRET;
+      else process.env.MCP_OAUTH_CSRF_SECRET = prev.mcp;
+      if (prev.service === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = prev.service;
+      if (prev.cron === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = prev.cron;
+    }
   });
 });
 
