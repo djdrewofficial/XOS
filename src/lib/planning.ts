@@ -306,11 +306,20 @@ export async function ensureEventPlanning(
 
 /** Switch an event to a specific template: assign it, wipe current planning, and
     re-seed. Used by booking-helper assignment and staff template changes.
-    DESTRUCTIVE — clears existing sections/answers/songs for the event. */
+    DESTRUCTIVE — clears existing sections/answers/songs for the event.
+    Also exits Demo Mode (a real template replaces sample data). */
 export async function reseedEventPlanning(eventId: string, templateId: string): Promise<boolean> {
   const admin = createAdminClient();
   await admin.from("planning_sections").delete().eq("event_id", eventId);
-  await admin.from("events").update({ planning_template_id: templateId, planning_seeded: true }).eq("id", eventId);
+  await admin
+    .from("events")
+    .update({
+      planning_template_id: templateId,
+      planning_seeded: true,
+      demo_mode: false,
+      demo_mode_enabled_at: null,
+    })
+    .eq("id", eventId);
   const ok = await seedFromTemplate(admin, eventId, templateId);
   if (!ok) await admin.from("events").update({ planning_seeded: false }).eq("id", eventId);
   return ok;

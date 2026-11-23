@@ -15,6 +15,7 @@ import { parseSchedulePlan, recordPayment, confirmPaymentRecord, restorePaymentR
 import { loadEventPlanning } from "@/lib/planning";
 import { assignAddonSections } from "@/lib/planning";
 import { reseedEventPlanning } from "@/lib/planning";
+import { disableEventDemoMode, enableEventDemoMode } from "@/lib/demoMode";
 import { runAutomations } from "@/lib/automations";
 import { freezeTemplateEmail, previewSms, previewTemplateEmail, sendSms, sendTemplateEmail } from "@/lib/queueTemplateSend";
 import { SCHEDULE_TEMPLATE_COLUMNS, mapTemplate, targetDateFor, templateMatchesEvent, zonedParts, type ScheduleEventFacts, type TemplateRow } from "@/lib/scheduledComms";
@@ -276,8 +277,8 @@ export const officeTools: LiveTool[] = [
         : "id, employee_id, role, confirmed_at, declined_at";
       const money = ctx.token.scopes.includes("money");
       const eventCols = money
-        ? `id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, package_price_override, package_price_locked, deposit_value, overtime_hourly, overtime_fee, travel_fee, discount1_amount, discount2_amount, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name), package:packages(id, name, default_price, deposit_value, overtime_hourly)`
-        : `id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name)`;
+        ? `id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, demo_mode, package_price_override, package_price_locked, deposit_value, overtime_hourly, overtime_fee, travel_fee, discount1_amount, discount2_amount, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name), package:packages(id, name, default_price, deposit_value, overtime_hourly)`
+        : `id, name, event_number, event_date, setup_time, start_time, end_time, guest_count, status_id, event_type_id, venue_id, package_id, client_id, archived_at, comms_paused, demo_mode, client:clients(${clientCols}), venue:venues(id, name, city), status:event_statuses(id, name)`;
       const [event, addons, staff, payments, schedule, notes, memberships] = await Promise.all([
         query(admin.from("events").select(eventCols).eq("id", id).maybeSingle()),
         ctx.token.scopes.includes("read.catalog") ? query(admin.from("event_addons").select("id, addon_id, quantity, price_override, price_locked").eq("event_id", id)) : [],
@@ -433,6 +434,46 @@ export const officeTools: LiveTool[] = [
       const { error } = await adminOf(ctx).from("events").update({ comms_paused: args.paused === true }).eq("id", s(args, "event_id"));
       if (error) throw new Error(error.message);
       return { ok: true, paused: args.paused === true };
+    },
+  },
+  {
+    name: "events_set_demo_mode",
+    description:
+      "Turn Event Demo Mode on or off for a prospect. ON seeds sample planner data (timeline, songs, answers) with fresh IDs. OFF uses mode=clean_slate (default: wipe and blank template) or mode=keep_client (remove sample rows only). Never sends email or SMS, and never changes hide_financials or comms_paused. Set force=true to replace existing real planning data when enabling.",
+    scopes: ["write.planning"],
+    confirm: true,
+    inputSchema: obj(
+      {
+        event_id: UUID,
+        enabled: { type: "boolean" },
+        force: { type: "boolean" },
+        mode: { type: "string", enum: ["clean_slate", "keep_client"] },
+      },
+      ["event_id", "enabled"],
+    ),
+    async preview(args) {
+      return {
+        event_id: s(args, "event_id"),
+        enabled: args.enabled === true,
+        force: args.force === true,
+        mode: args.enabled === true ? null : (s(args, "mode") === "keep_client" ? "keep_client" : "clean_slate"),
+        effect:
+          args.enabled === true
+            ? "Seeds sample planner data for the couple's app. No messages sent."
+            : "Turns Demo Mode off. No messages sent.",
+      };
+    },
+    async execute(args) {
+      const eventId = s(args, "event_id")!;
+      if (args.enabled === true) {
+        const result = await enableEventDemoMode(eventId, { force: args.force === true });
+        if (!result.ok) throw new Error(result.error);
+        return { ...result, demo_mode: true };
+      }
+      const mode = s(args, "mode") === "keep_client" ? "keep_client" : "clean_slate";
+      const result = await disableEventDemoMode(eventId, mode);
+      if (!result.ok) throw new Error(result.error);
+      return { ...result, demo_mode: false };
     },
   },
   {

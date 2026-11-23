@@ -52,7 +52,7 @@ export const FS_EVENT_COLUMNS = [
   "status_id", "event_type_id", "salesperson_id", "inquiry_source_id",
   "point_of_contact_employee_id", "journey_type_id",
   "internal_notes", "custom_fields", "planning_seeded", "planning_template_id",
-  "overtime_hours", "hide_financials", "comms_paused",
+  "overtime_hours", "hide_financials", "comms_paused", "demo_mode", "demo_mode_enabled_at",
   "initial_contact_date", "quote_sent_date", "contract_sent_date", "contract_due_date",
   "contract_signed_date", "booked_date",
   "decision_maker_name", "decision_maker_phone", "decision_maker_email",

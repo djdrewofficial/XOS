@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { money, eventTotal, type XEvent, type ScheduledPayment, type Payment } from "@/lib/types";
 import InviteToXosButton from "@/components/InviteToXosButton";
 import EventAppAccess, { type AppInviteCard, type AppMemberCard } from "@/components/EventAppAccess";
+import EventDemoMode, { DemoModeBanner } from "@/components/EventDemoMode";
 import NoteItem from "@/components/NoteItem";
 import {
   addPayment,
@@ -472,8 +473,9 @@ export default async function EventDetailPage({
   const fileLinks = new Map<string, string>();
   for (const [fid, url] of signedUrlEntries) if (url) fileLinks.set(fid, url);
 
-  // comms_paused isn't on the hand-written XEvent type; the DB column exists (select *).
+  // comms_paused / demo_mode aren't on the hand-written XEvent type; the DB columns exist (select *).
   const commsPaused = (event as { comms_paused?: boolean }).comms_paused ?? false;
+  const demoMode = (event as { demo_mode?: boolean }).demo_mode ?? false;
 
   // ---- Planning / Notes hub: planner status (XOS vs Vibo legacy) ----
   const planningSeeded = (event as { planning_seeded?: boolean }).planning_seeded ?? false;
@@ -1110,6 +1112,9 @@ export default async function EventDetailPage({
         linksNeedSetup={joinLinkState.setup}
         linksError={joinLinkState.error}
       />
+      <div className="lg:col-span-2">
+        <EventDemoMode eventId={id} demoMode={demoMode} />
+      </div>
     </div>
   );
 
@@ -1186,9 +1191,16 @@ export default async function EventDetailPage({
       </div>
 
       <div className="card p-5">
-        <h2 className="card-title">XOS Planner <span className="ml-1 rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand dark:text-brand-lighter">BETA</span></h2>
+        <h2 className="card-title">
+          XOS Planner{" "}
+          <span className="ml-1 rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand dark:text-brand-lighter">BETA</span>
+          {demoMode && (
+            <span className="ml-1 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">Demo</span>
+          )}
+        </h2>
         <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
           The in-house client planning experience (music search + timeline + questions). Not yet part of the live client workflow.
+          {demoMode ? " Demo Mode is on — progress and songs below are sample data." : ""}
         </p>
 
         <form action={setEventPlanningTemplate.bind(null, id)} className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-200 p-3 dark:border-white/10">
@@ -2368,11 +2380,13 @@ export default async function EventDetailPage({
           {plannerMode === "xos" && <span className="chip bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">XOS Planner</span>}
           {plannerMode === "vibo" && <span className="chip bg-sky-500/15 text-sky-700 dark:text-sky-300">Vibo (Legacy)</span>}
           {plannerMode === "none" && <span className="chip bg-zinc-500/15 text-zinc-600 dark:text-zinc-300">Not started</span>}
+          {demoMode && <span className="chip bg-amber-500/20 text-amber-800 dark:text-amber-200">Demo Mode</span>}
         </div>
         {plannerMode === "xos" && (
           <>
             <p className="mt-1 text-sm text-zinc-500">
               {plannerSectionCount} moment{plannerSectionCount === 1 ? "" : "s"} · {plannerSongCount} song{plannerSongCount === 1 ? "" : "s"} in the in-house planner.
+              {demoMode ? " (sample data — not real client prep)" : ""}
             </p>
             <EventSectionNotes eventId={id} sections={plannerNoteSections} canEdit={ffCanEdit} />
           </>
@@ -2739,6 +2753,11 @@ export default async function EventDetailPage({
                     Archived
                   </span>
                 )}
+                {demoMode && (
+                  <span className="ml-2 rounded bg-amber-500 px-1.5 py-0.5 align-middle text-[11px] font-semibold uppercase tracking-wide text-white">
+                    Demo Mode
+                  </span>
+                )}
               </h1>
               <p className="text-xs text-zinc-500">
                 Event Date:{" "}
@@ -2779,6 +2798,8 @@ export default async function EventDetailPage({
           </div>
         </div>
       </div>
+
+      {demoMode && <DemoModeBanner className="mb-4" />}
 
       <SigningChecklist missing={missingSigning} />
 

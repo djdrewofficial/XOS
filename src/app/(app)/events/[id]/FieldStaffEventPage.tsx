@@ -13,6 +13,7 @@ import UrlTabs from "@/components/UrlTabs";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffCheckIn from "@/components/StaffCheckIn";
 import { DoNotPlayPanel, EventSectionNotes } from "@/components/planner/SectionMomentNotes";
+import { DemoModeBanner } from "@/components/EventDemoMode";
 import { addEventNote } from "../actions";
 import { FIELD_STAFF_TABS, loadFieldStaffEvent, type FieldStaffTab } from "./fieldStaffLoader";
 
@@ -315,7 +316,15 @@ export default async function FieldStaffEventPage({
     <div className="max-w-3xl space-y-6">
       {planner && event.planning_seeded && (
         <div className="card p-5">
-          <h2 className="card-title">Event Planner</h2>
+          <h2 className="card-title">
+            Event Planner
+            {event.demo_mode && (
+              <span className="ml-2 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">Demo</span>
+            )}
+          </h2>
+          {event.demo_mode && (
+            <p className="mb-2 text-sm text-amber-800 dark:text-amber-200">Sample data — not real client prep.</p>
+          )}
           <EventSectionNotes eventId={id} sections={planner.sections} canEdit={canEdit} />
         </div>
       )}
@@ -362,6 +371,11 @@ export default async function FieldStaffEventPage({
             <h1 className="truncate text-lg font-bold text-zinc-900 dark:text-white">
               {event.name || "(unnamed event)"}
               {event.event_number && <span className="ml-2 text-xs font-semibold text-zinc-400 dark:text-zinc-600">#{event.event_number}</span>}
+              {event.demo_mode && (
+                <span className="ml-2 rounded bg-amber-500 px-1.5 py-0.5 align-middle text-[11px] font-semibold uppercase tracking-wide text-white">
+                  Demo Mode
+                </span>
+              )}
             </h1>
             <p className="text-xs text-zinc-500">
               {dateObj ? dateObj.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "Date not set"}
@@ -376,6 +390,8 @@ export default async function FieldStaffEventPage({
           )}
         </div>
       </div>
+
+      {event.demo_mode && <DemoModeBanner className="mb-4" />}
 
       {data.helpers.length > 0 && (
         <BookingHelperBar

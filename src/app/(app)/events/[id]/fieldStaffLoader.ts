@@ -35,6 +35,7 @@ export type FsEvent = {
   internal_notes: string | null;
   custom_fields: Record<string, unknown> | null;
   planning_seeded: boolean | null;
+  demo_mode?: boolean | null;
   archived_at: string | null;
   client: { id: string; first_name: string; last_name: string; cell_phone: string | null; email: string | null; organization: string | null; mailing_address: string | null } | null;
   status: Status;

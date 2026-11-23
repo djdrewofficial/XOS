@@ -17,6 +17,7 @@ import Planner from "@/components/planner/Planner";
 import ThemeToggleIcon from "@/components/planner/ThemeToggleIcon";
 import SignOutButton from "@/components/SignOutButton";
 import SpotifyExport from "@/components/SpotifyExport";
+import { DemoModeBanner } from "@/components/EventDemoMode";
 import { getSpotifyConnection } from "@/lib/spotifyAuth";
 
 export const dynamic = "force-dynamic";
@@ -39,8 +40,14 @@ export default async function PlannerPage({
 
   // Guests cannot select the events row (prices, pay links, notes). They read
   // event_guest_card. Before that view exists, the events select still works.
-  let event: { id: string; name: string | null; event_date: string | null; event_type_id: string | null; cover_photo_url: string | null } | null =
-    null;
+  let event: {
+    id: string;
+    name: string | null;
+    event_date: string | null;
+    event_type_id: string | null;
+    cover_photo_url: string | null;
+    demo_mode?: boolean | null;
+  } | null = null;
   if (role === "guest") {
     const card = await supabase
       .from("event_guest_card")
@@ -51,7 +58,7 @@ export default async function PlannerPage({
     if (!event && card.error) {
       const legacy = await supabase
         .from("events")
-        .select("id, name, event_date, event_type_id, cover_photo_url")
+        .select("id, name, event_date, event_type_id, cover_photo_url, demo_mode")
         .eq("id", eventId)
         .maybeSingle();
       event = legacy.data;
@@ -59,7 +66,7 @@ export default async function PlannerPage({
   } else {
     const full = await supabase
       .from("events")
-      .select("id, name, event_date, event_type_id, cover_photo_url")
+      .select("id, name, event_date, event_type_id, cover_photo_url, demo_mode")
       .eq("id", eventId)
       .maybeSingle();
     event = full.data;
@@ -141,6 +148,12 @@ export default async function PlannerPage({
         </div>
       </header>
 
+      {role === "staff" && event.demo_mode && (
+        <div className="mx-auto max-w-6xl px-4 pt-4">
+          <DemoModeBanner />
+        </div>
+      )}
+
       <Planner
         eventId={eventId}
         eventName={event.name || "Your Event"}
@@ -154,6 +167,7 @@ export default async function PlannerPage({
         messages={messages}
         paypalClientId={process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? null}
         staffCanEdit={role !== "staff" || (await moduleAccess("events", supabase)) === "edit"}
+        demoMode={Boolean(event.demo_mode)}
       />
       <SocialPrompt state={socialState} />
       {spotifyExportEl}
