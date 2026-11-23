@@ -129,6 +129,7 @@ export default function Planner({
   messages,
   paypalClientId,
   staffCanEdit = true,
+  demoMode = false,
 }: {
   eventId: string;
   eventName: string;
@@ -143,6 +144,8 @@ export default function Planner({
   paypalClientId: string | null;
   /** Staff with events=view can read notes but not change them. Hosts ignore this. */
   staffCanEdit?: boolean;
+  /** Staff-only: event is in Demo Mode with sample planning data. */
+  demoMode?: boolean;
 }) {
   const isGuest = role === "guest";
   const isStaff = role === "staff";
@@ -233,11 +236,26 @@ export default function Planner({
     <div className="mx-auto max-w-6xl px-4 py-6">
       <CoverPhoto eventId={eventId} url={coverPhotoUrl} canEdit={canEditCover}>
         {dateLabel && <p className="mb-1 text-sm font-semibold uppercase tracking-wider text-white/80">{dateLabel}</p>}
-        <h1 className="text-3xl font-bold text-white drop-shadow md:text-4xl">{eventName}</h1>
+        <h1 className="text-3xl font-bold text-white drop-shadow md:text-4xl">
+          {eventName}
+          {isStaff && demoMode && (
+            <span className="ml-3 align-middle rounded bg-amber-500 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
+              Demo Mode
+            </span>
+          )}
+        </h1>
         <div className="mt-4 flex flex-wrap gap-2">
-          <HeroChip icon={faListCheck} label={`${planning.answeredQuestions}/${planning.totalQuestions} questions`} pct={qPct} />
+          <HeroChip
+            icon={faListCheck}
+            label={`${planning.answeredQuestions}/${planning.totalQuestions} questions${isStaff && demoMode ? " · sample" : ""}`}
+            pct={qPct}
+          />
           {!isGuest && planning.totalSongSlots > 0 && (
-            <HeroChip icon={faHeartSolid} label={`${planning.filledSongSlots}/${planning.totalSongSlots} key songs`} pct={sPct} />
+            <HeroChip
+              icon={faHeartSolid}
+              label={`${planning.filledSongSlots}/${planning.totalSongSlots} key songs${isStaff && demoMode ? " · sample" : ""}`}
+              pct={sPct}
+            />
           )}
         </div>
       </CoverPhoto>
