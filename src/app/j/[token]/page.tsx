@@ -1,19 +1,66 @@
 import type { Metadata } from "next";
+import { DM_Serif_Display, Montserrat } from "next/font/google";
 import { describeJoinLink } from "@/lib/eventAccessServer";
 import { DemoModeBanner } from "@/components/DemoModeBanner";
 import CopyLinkButton from "./CopyLinkButton";
+
+/* Public landing for couple-app join links (/j/<token>). Opens
+   xpressclient://j/<token> or the App Store. Match the auth/reset bridge
+   brand: purple header, logo, red accent, DM Serif + Montserrat. */
+
+const display = DM_Serif_Display({ weight: "400", subsets: ["latin"], display: "swap" });
+const sans = Montserrat({ weight: ["400", "600", "700"], subsets: ["latin"], display: "swap" });
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Join your event",
   robots: { index: false, follow: false },
+  referrer: "no-referrer",
 };
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f4f1fb] p-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#e4ddf7] bg-white p-6 shadow-xl sm:p-8">{children}</div>
-    </div>
+    <main
+      className={sans.className}
+      style={{
+        minHeight: "100vh",
+        background: "linear-gradient(165deg, #2a1a52 0%, #4b328e 42%, #6a4db8 100%)",
+        color: "#120c1e",
+        padding: "20px 16px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <section
+        style={{
+          width: "100%",
+          maxWidth: 440,
+          background: "#ffffff",
+          borderRadius: 16,
+          overflow: "hidden",
+          boxShadow: "0 18px 40px rgba(18, 12, 30, 0.28)",
+        }}
+      >
+        <div style={{ background: "#4b328e", padding: "22px 24px", textAlign: "center" }}>
+          <img
+            src="/logo-dark.png"
+            alt="Xpress Entertainment"
+            width={200}
+            height={88}
+            style={{ display: "inline-block", width: 200, maxWidth: "72%", height: "auto" }}
+          />
+        </div>
+        <div style={{ height: 4, background: "#fe3a3b" }} />
+        <div style={{ padding: "22px 20px 20px" }}>
+          <style>{`
+            a.join-primary:hover { background: #fe3a3b !important; border-color: #fe3a3b !important; }
+            a.join-outline:hover { border-color: #fe3a3b !important; color: #fe3a3b !important; }
+          `}</style>
+          {children}
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -24,9 +71,15 @@ export default async function JoinLinkPage({ params }: { params: Promise<{ token
   if (!link.ok) {
     return (
       <Shell>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4b328e]">Xpress Entertainment</p>
-        <h1 className="mt-3 text-xl font-bold text-zinc-900">This link doesn&apos;t work</h1>
-        <p className="mt-2 text-sm leading-6 text-zinc-600">Ask the couple or your DJ for a new one.</p>
+        <h1
+          className={display.className}
+          style={{ margin: 0, color: "#4b328e", fontSize: 26, lineHeight: "32px", fontWeight: 400 }}
+        >
+          This link doesn&apos;t work
+        </h1>
+        <p style={{ margin: "12px 0 0", fontSize: 15, lineHeight: "24px", color: "#5a4f6e" }}>
+          Ask the couple or your DJ for a new one.
+        </p>
       </Shell>
     );
   }
@@ -38,33 +91,82 @@ export default async function JoinLinkPage({ params }: { params: Promise<{ token
 
   return (
     <Shell>
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4b328e]">Xpress Entertainment</p>
-      <h1 className="mt-3 text-2xl font-bold text-zinc-900">{link.eventName}</h1>
-      <p className="mt-2 text-sm leading-6 text-zinc-600">{line}</p>
+      <h1
+        className={display.className}
+        style={{ margin: 0, color: "#4b328e", fontSize: 28, lineHeight: "34px", fontWeight: 400 }}
+      >
+        {link.eventName}
+      </h1>
+      <p style={{ margin: "10px 0 0", fontSize: 15, lineHeight: "24px", color: "#5a4f6e" }}>{line}</p>
 
       {link.demoMode && <DemoModeBanner className="mt-4" audience="client" bilingual />}
 
       <a
+        className="join-primary"
         href={link.schemeUrl}
-        className="mt-5 block rounded-xl bg-gradient-to-r from-[#4b328e] to-[#8b6fd6] px-4 py-3 text-center text-sm font-bold text-white"
+        rel="noreferrer"
+        style={{
+          display: "block",
+          marginTop: 18,
+          padding: "13px 18px",
+          background: "#4b328e",
+          border: "1px solid #4b328e",
+          borderRadius: 8,
+          color: "#ffffff",
+          fontSize: 15,
+          lineHeight: "22px",
+          fontWeight: 700,
+          textAlign: "center",
+          textDecoration: "none",
+        }}
       >
         Open in the app
       </a>
       {link.storeUrl ? (
         <a
+          className="join-outline"
           href={link.storeUrl}
-          className="mt-2 block rounded-xl border border-[#d9d0f0] px-4 py-3 text-center text-sm font-semibold text-[#4b328e]"
+          rel="noreferrer"
+          style={{
+            display: "block",
+            marginTop: 8,
+            padding: "12px 18px",
+            background: "#ffffff",
+            border: "1.5px solid #4b328e",
+            borderRadius: 8,
+            color: "#4b328e",
+            fontSize: 15,
+            lineHeight: "22px",
+            fontWeight: 700,
+            textAlign: "center",
+            textDecoration: "none",
+          }}
         >
           Get the app
         </a>
       ) : (
-        <p className="mt-3 text-center text-sm text-zinc-500">Search the App Store for Xpress Entertainment.</p>
+        <p style={{ margin: "12px 0 0", textAlign: "center", fontSize: 14, lineHeight: "22px", color: "#5a4f6e" }}>
+          Search the App Store for Xpress Entertainment.
+        </p>
       )}
 
       {link.code && (
-        <div className="mt-6 text-center">
-          <p className="text-xs text-zinc-500">If the app asks for a code, type this in.</p>
-          <p className="mt-2 font-mono text-3xl font-extrabold tracking-[0.18em] text-[#4b328e]">{link.code}</p>
+        <div style={{ marginTop: 22, textAlign: "center" }}>
+          <p style={{ margin: 0, fontSize: 12, lineHeight: "18px", color: "#5a4f6e" }}>
+            If the app asks for a code, type this in.
+          </p>
+          <p
+            style={{
+              margin: "8px 0 0",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              fontSize: 28,
+              fontWeight: 700,
+              letterSpacing: "0.18em",
+              color: "#4b328e",
+            }}
+          >
+            {link.code}
+          </p>
         </div>
       )}
 

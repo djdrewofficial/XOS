@@ -215,9 +215,10 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/mcp/oauth/") ||
     pathname === "/api/passkey/authenticate/options" ||
     pathname === "/api/passkey/authenticate/verify";
-  // The mobile reset bridge is public for a signed-out visit. These headers
-  // keep the token out of caches, indexes, and the Referer on any later request.
-  if (pathname === "/auth/reset") {
+  // The mobile reset bridge and join-link landing are public for a signed-out
+  // visit. These headers keep tokens out of caches, indexes, and the Referer
+  // on any later request.
+  if (pathname === "/auth/reset" || pathname.startsWith("/j/")) {
     for (const [name, value] of Object.entries(mobileResetResponseHeaders())) {
       response.headers.set(name, value);
     }
