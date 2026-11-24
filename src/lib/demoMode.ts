@@ -41,7 +41,11 @@ export {
 
 export type DemoModeResult =
   | { ok: true; already?: boolean; seeded?: boolean; mode?: DemoDisableMode; template_id?: string }
-  | { ok: false; error: string; code?: "HAS_REAL_DATA" | "NOT_DEMO" | "NOT_FOUND" | "NO_TEMPLATE" };
+  | {
+      ok: false;
+      error: string;
+      code?: "HAS_REAL_DATA" | "NOT_DEMO" | "NOT_FOUND" | "NO_TEMPLATE" | "CANCELLED";
+    };
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -254,11 +258,22 @@ export async function enableEventDemoMode(
   const admin = createAdminClient();
   const { data: event, error } = await admin
     .from("events")
-    .select("id, demo_mode, hide_financials, comms_paused, event_type_id, planning_template_id")
+    .select(
+      "id, demo_mode, hide_financials, comms_paused, event_type_id, planning_template_id, archived_at, status:event_statuses(name, is_lost_sale_group)",
+    )
     .eq("id", eventId)
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!event) return { ok: false, error: "Event not found.", code: "NOT_FOUND" };
+  if (event.archived_at) return { ok: false, error: "This event is archived.", code: "NOT_FOUND" };
+  const status = event.status as { name?: string | null; is_lost_sale_group?: boolean | null } | null;
+  if (status?.is_lost_sale_group || status?.name === "Cancelled") {
+    return {
+      ok: false,
+      error: "Demo Mode is not available for cancelled or lost-sale events.",
+      code: "CANCELLED",
+    };
+  }
 
   const { count } = await admin
     .from("planning_sections")

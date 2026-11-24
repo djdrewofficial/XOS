@@ -391,7 +391,7 @@ export default async function FieldStaffEventPage({
         </div>
       </div>
 
-      {event.demo_mode && <DemoModeBanner className="mb-4" />}
+      {event.demo_mode && <DemoModeBanner className="mb-4" audience="staff" />}
 
       {data.helpers.length > 0 && (
         <BookingHelperBar

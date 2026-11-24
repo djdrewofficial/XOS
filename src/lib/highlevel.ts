@@ -1106,9 +1106,26 @@ export async function processSmsOutbox(
       contactId = contact.contactId;
     }
 
+    let smsBody = msg.body ?? "";
+    if (
+      msg.event_id &&
+      (smsBody.includes("app_host_link") ||
+        smsBody.includes("app_guest_link") ||
+        smsBody.includes("app_store_link"))
+    ) {
+      const { placeAppStoreLink, placeJoinLinkTags } = await import("@/lib/eventAccess");
+      const { XPRESS_IOS_APP_STORE_URL } = await import("@/lib/demoModeCopy");
+      if (smsBody.includes("app_store_link")) smsBody = placeAppStoreLink(smsBody, XPRESS_IOS_APP_STORE_URL);
+      if (smsBody.includes("app_host_link") || smsBody.includes("app_guest_link")) {
+        const { joinLinkTagValues } = await import("@/lib/eventAccessServer");
+        const links = await joinLinkTagValues(msg.event_id as string);
+        if (links) smsBody = placeJoinLinkTags(smsBody, links);
+      }
+    }
+
     const result = await sendConversationMessage(contactId, {
       channel: (msg.channel ?? "SMS") as CommChannel,
-      body: msg.body,
+      body: smsBody,
       subject: msg.subject,
       toEmail: msg.to_address,
       attachments: msg.attachments ?? [],

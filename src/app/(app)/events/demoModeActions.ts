@@ -9,6 +9,7 @@ import {
   type DemoDisableMode,
   type DemoModeResult,
 } from "@/lib/demoMode";
+import { sendAppDemo, type SendAppDemoResult } from "@/lib/sendAppDemo";
 
 async function officeOnly(): Promise<void> {
   requireOffice(await getMe());
@@ -37,6 +38,18 @@ export async function disableEventDemoModeAction(
   await requireModule("events", "edit", { mode: "throw" });
   await officeOnly();
   const result = await disableEventDemoMode(eventId, mode);
+  if (result.ok) {
+    revalidatePath(`/events/${eventId}`);
+    revalidatePath(`/portal/plan/${eventId}`);
+  }
+  return result;
+}
+
+/** Enable Demo Mode (if needed) and email/text the host join + App Store links. */
+export async function sendAppDemoAction(eventId: string, force = false): Promise<SendAppDemoResult> {
+  await requireModule("events", "edit", { mode: "throw" });
+  await officeOnly();
+  const result = await sendAppDemo(eventId, { force, drain: true });
   if (result.ok) {
     revalidatePath(`/events/${eventId}`);
     revalidatePath(`/portal/plan/${eventId}`);

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { describeJoinLink } from "@/lib/eventAccessServer";
+import { DemoModeBanner } from "@/components/DemoModeBanner";
 import CopyLinkButton from "./CopyLinkButton";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,8 @@ export default async function JoinLinkPage({ params }: { params: Promise<{ token
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4b328e]">Xpress Entertainment</p>
       <h1 className="mt-3 text-2xl font-bold text-zinc-900">{link.eventName}</h1>
       <p className="mt-2 text-sm leading-6 text-zinc-600">{line}</p>
+
+      {link.demoMode && <DemoModeBanner className="mt-4" audience="client" bilingual />}
 
       <a
         href={link.schemeUrl}

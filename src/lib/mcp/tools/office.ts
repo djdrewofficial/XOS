@@ -17,6 +17,7 @@ import { loadEventPlanning } from "@/lib/planning";
 import { assignAddonSections } from "@/lib/planning";
 import { reseedEventPlanning } from "@/lib/planning";
 import { disableEventDemoMode, enableEventDemoMode } from "@/lib/demoMode";
+import { sendAppDemo } from "@/lib/sendAppDemo";
 import type { LinkRole } from "@/lib/eventAccess";
 import { runAutomations } from "@/lib/automations";
 import { freezeTemplateEmail, previewSms, previewTemplateEmail, sendSms, sendTemplateEmail } from "@/lib/queueTemplateSend";
@@ -505,6 +506,27 @@ export const officeTools: LiveTool[] = [
       const { error } = await adminOf(ctx).from("events").update({ comms_paused: args.paused === true }).eq("id", s(args, "event_id"));
       if (error) throw new Error(error.message);
       return { ok: true, paused: args.paused === true };
+    },
+  },
+  {
+    name: "events_send_app_demo",
+    description:
+      "Send App Demo: turn Event Demo Mode on if it is off (using existing enableEventDemoMode), ensure a host join link, then email and text the primary client their host join link plus the iPhone App Store link only. Honors SMS STOP and marketing consent. Skips cancelled, lost-sale, and archived events. Set force=true to replace existing real planning data when enabling Demo Mode.",
+    scopes: ["write.planning", "comms.email", "comms.sms"],
+    confirm: true,
+    inputSchema: obj({ event_id: UUID, force: { type: "boolean" } }, ["event_id"]),
+    async preview(args) {
+      return {
+        event_id: s(args, "event_id"),
+        force: args.force === true,
+        effect:
+          "Enables Demo Mode if needed, then queues an email and SMS with the host join link and App Store URL.",
+      };
+    },
+    async execute(args) {
+      const result = await sendAppDemo(s(args, "event_id")!, { force: args.force === true, drain: true });
+      if (!result.ok) throw new Error(result.error);
+      return result;
     },
   },
   {

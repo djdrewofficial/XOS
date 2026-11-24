@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadEventBundle, generateDocumentRow } from "@/lib/documentRender";
 import { appUrl, quoteSummaryHtml, paymentPlanHtml, signButtonHtml, emailShell, withComplianceFooter, type EmailFooter } from "@/lib/signing";
-import { htmlHasJoinLink, placeJoinLinkTags } from "@/lib/eventAccess";
+import { htmlHasJoinLink, placeAppStoreLink, placeJoinLinkTags } from "@/lib/eventAccess";
+import { XPRESS_IOS_APP_STORE_URL } from "@/lib/demoModeCopy";
 import { isEmailOptedOut, unsubscribeToken } from "@/lib/emailOptOut";
 import { isSuppressedByCommsPause, pausedEventIdSet } from "@/lib/commsPause";
 import { buildDocumentHtml } from "@/lib/documentHtml";
@@ -102,11 +103,13 @@ async function mailgunSend(opts: {
    templates, and manual sends. */
 
 async function fillJoinLinks(eventId: string | null, html: string): Promise<string> {
-  if (!eventId || (!html.includes("app_host_link") && !html.includes("app_guest_link"))) return html;
+  let out = html;
+  if (out.includes("app_store_link")) out = placeAppStoreLink(out, XPRESS_IOS_APP_STORE_URL);
+  if (!eventId || (!out.includes("app_host_link") && !out.includes("app_guest_link"))) return out;
   const { joinLinkTagValues } = await import("@/lib/eventAccessServer");
   const links = await joinLinkTagValues(eventId);
-  if (!links) return html;
-  return placeJoinLinkTags(html, links);
+  if (!links) return out;
+  return placeJoinLinkTags(out, links);
 }
 
 export function liveEnrichDeps(): EnrichDeps {

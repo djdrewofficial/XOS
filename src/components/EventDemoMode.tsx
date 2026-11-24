@@ -1,11 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { disableEventDemoModeAction, enableEventDemoModeAction } from "@/app/(app)/events/demoModeActions";
+import {
+  disableEventDemoModeAction,
+  enableEventDemoModeAction,
+  sendAppDemoAction,
+} from "@/app/(app)/events/demoModeActions";
+export { DemoModeBanner } from "@/components/DemoModeBanner";
 
 /** Demo Mode control for the event Client / App access area.
     Enable seeds sample planner data for prospects; disable offers clean slate
-    vs keep-client-entries. Never sends email/SMS. */
+    vs keep-client-entries. Send App Demo enables (if needed) and emails/texts
+    the host join link + App Store link. */
 export default function EventDemoMode({
   eventId,
   demoMode,
@@ -18,15 +24,21 @@ export default function EventDemoMode({
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [disableOpen, setDisableOpen] = useState(false);
   const [forceOpen, setForceOpen] = useState(false);
+  const [sendConfirm, setSendConfirm] = useState(false);
+  /** When force-confirm opened from Send App Demo, force-enable then send. */
+  const [forceForSend, setForceForSend] = useState(false);
 
   function enable(force: boolean) {
     start(async () => {
       setError(null);
+      setInfo(null);
       const result = await enableEventDemoModeAction(eventId, force);
       if (!result.ok) {
         if (result.code === "HAS_REAL_DATA") {
+          setForceForSend(false);
           setForceOpen(true);
           setError(result.error);
           return;
@@ -41,12 +53,44 @@ export default function EventDemoMode({
   function disable(mode: "clean_slate" | "keep_client") {
     start(async () => {
       setError(null);
+      setInfo(null);
       const result = await disableEventDemoModeAction(eventId, mode);
       if (!result.ok) {
         setError(result.error);
         return;
       }
       setDisableOpen(false);
+    });
+  }
+
+  function sendDemo(force: boolean) {
+    start(async () => {
+      setError(null);
+      setInfo(null);
+      const result = await sendAppDemoAction(eventId, force);
+      if (!result.ok) {
+        if (result.code === "HAS_REAL_DATA") {
+          setForceForSend(true);
+          setForceOpen(true);
+          setSendConfirm(false);
+          setError(result.error);
+          return;
+        }
+        setError(result.error);
+        return;
+      }
+      setSendConfirm(false);
+      setForceOpen(false);
+      setForceForSend(false);
+      const bits = [
+        result.email_queued ? "email queued" : null,
+        result.sms_queued ? "text queued" : null,
+      ].filter(Boolean);
+      setInfo(
+        `App demo sent (${bits.join(" + ") || "nothing queued"}).${
+          result.warnings?.length ? ` ${result.warnings.join(" ")}` : ""
+        }`,
+      );
     });
   }
 
@@ -70,31 +114,65 @@ export default function EventDemoMode({
           </div>
           <p className={`mt-1 text-sm ${demoMode ? "text-amber-900 dark:text-amber-200" : "text-zinc-500"}`}>
             {demoMode
-              ? "Sample timeline, songs, and answers are loaded so the prospect can explore the app. Planning % and song lists here are demo data, not real client prep."
-              : "Fill this event's planning template with realistic sample answers and songs so a Lead or Pending prospect can open the Xpress DJs app and explore. Turn it off before they start real planning. Does not send any invite or message."}
+              ? "Sample timeline, songs, and answers are loaded so the prospect can explore the app. Planning % and song lists here are demo data, not real client prep. Turns off automatically after they sign their Booking Agreement (when that helper step is configured)."
+              : "Fill this event's planning template with realistic sample answers and songs so a Lead or Pending prospect can open the Xpress DJs app and explore. Turn it off before they start real planning, or use Send App Demo to invite them."}
           </p>
         </div>
-        {demoMode ? (
+        <div className="flex shrink-0 flex-wrap gap-2">
           <button
             type="button"
             disabled={pending}
-            className="btn-ghost shrink-0 px-3 py-1.5 text-xs disabled:opacity-50"
-            onClick={() => setDisableOpen(true)}
+            className="btn-primary px-3 py-1.5 text-xs disabled:opacity-50"
+            onClick={() => setSendConfirm(true)}
           >
-            {pending ? "Working…" : "Turn Demo Mode off"}
+            {pending ? "Working…" : "Send App Demo"}
           </button>
-        ) : (
-          <button
-            type="button"
-            disabled={pending}
-            className="btn-primary shrink-0 px-3 py-1.5 text-xs disabled:opacity-50"
-            onClick={() => (hasRealPlanningHint ? setForceOpen(true) : enable(false))}
-          >
-            {pending ? "Seeding…" : "Turn Demo Mode on"}
-          </button>
-        )}
+          {demoMode ? (
+            <button
+              type="button"
+              disabled={pending}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-50"
+              onClick={() => setDisableOpen(true)}
+            >
+              {pending ? "Working…" : "Turn Demo Mode off"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={pending}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-50"
+              onClick={() => (hasRealPlanningHint ? setForceOpen(true) : enable(false))}
+            >
+              {pending ? "Seeding…" : "Turn Demo Mode on"}
+            </button>
+          )}
+        </div>
       </div>
       {error && !forceOpen && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {info && <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">{info}</p>}
+
+      {sendConfirm && (
+        <Modal title="Send App Demo?" onClose={() => setSendConfirm(false)}>
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+            This turns Demo Mode on (if it is off), then emails and texts the primary client their host join link
+            plus the iPhone App Store link. Texts honor STOP and marketing consent. Nothing is sent to Android /
+            Google Play.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => setSendConfirm(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              className="btn-primary px-3 py-1.5 text-xs disabled:opacity-50"
+              onClick={() => sendDemo(false)}
+            >
+              {pending ? "Sending…" : "Send demo invite"}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {forceOpen && (
         <Modal
@@ -116,9 +194,9 @@ export default function EventDemoMode({
               type="button"
               disabled={pending}
               className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-              onClick={() => enable(true)}
+              onClick={() => (forceForSend ? sendDemo(true) : enable(true))}
             >
-              {pending ? "Seeding…" : "Replace with demo data"}
+              {pending ? "Working…" : forceForSend ? "Replace and send" : "Replace with demo data"}
             </button>
           </div>
         </Modal>
@@ -155,6 +233,7 @@ export default function EventDemoMode({
               </span>
               <span className="mt-0.5 block text-xs text-zinc-500">
                 Keeps songs, answers, and notes the client added themselves. Removes only the seeded sample rows.
+                Recommended when turning off after they sign.
               </span>
             </button>
           </div>
@@ -165,22 +244,6 @@ export default function EventDemoMode({
           </div>
         </Modal>
       )}
-    </div>
-  );
-}
-
-export function DemoModeBanner({ className = "" }: { className?: string }) {
-  return (
-    <div
-      className={`flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100 ${className}`}
-      role="status"
-    >
-      <span className="rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-        Demo Mode
-      </span>
-      <span>
-        Sample planning data is loaded for this prospect. Do not treat progress %, songs, or answers as real client prep.
-      </span>
     </div>
   );
 }
