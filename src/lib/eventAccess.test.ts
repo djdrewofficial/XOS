@@ -527,4 +527,49 @@ describe("join links", () => {
     assert.match(scheme, /xpressclient/);
     assert.match(scheme, /com\.xpressentertainment\.client/);
   });
+
+  it("brands the public join landing like the auth reset bridge", () => {
+    const page = readFileSync(join(root, "src/app/j/[token]/page.tsx"), "utf8");
+    const copy = readFileSync(join(root, "src/app/j/[token]/CopyLinkButton.tsx"), "utf8");
+    const middleware = readFileSync(join(root, "src/middleware.ts"), "utf8");
+    const aasa = readFileSync(join(root, "src/app/.well-known/apple-app-site-association/route.ts"), "utf8");
+
+    assert.match(page, /DM_Serif_Display/);
+    assert.match(page, /Montserrat/);
+    assert.match(page, /logo-dark\.png/);
+    assert.match(page, /#4b328e/);
+    assert.match(page, /#fe3a3b/);
+    assert.match(page, /describeJoinLink/);
+    assert.match(page, /Open in the app/);
+    assert.match(page, /Get the app/);
+    assert.match(page, /join as a host/);
+    assert.match(page, /join as a guest/);
+    assert.match(page, /This link doesn&apos;t work/);
+    assert.match(page, /Ask the couple or your DJ for a new one/);
+    assert.match(page, /Search the App Store for Xpress Entertainment/);
+    assert.match(page, /If the app asks for a code/);
+    assert.match(page, /link\.code/);
+    assert.match(page, /rel="noreferrer"/);
+    assert.match(page, /referrer:\s*"no-referrer"/);
+    assert.match(page, /robots:\s*\{\s*index:\s*false/);
+    assert.doesNotMatch(page, /fonts\.googleapis|gtag|clarity|posthog/);
+    assert.equal(page.includes("\u2014"), false);
+
+    assert.match(copy, /Copy link/);
+    assert.match(copy, /join-link/);
+    assert.match(copy, /After you install the app, it can read this link from your clipboard/);
+    assert.match(copy, /#4b328e/);
+    assert.match(copy, /#fe3a3b/);
+    assert.equal(copy.includes("\u2014"), false);
+
+    assert.match(
+      middleware,
+      /pathname === "\/auth\/reset" \|\| pathname\.startsWith\("\/j\/"\)/,
+    );
+    assert.match(middleware, /mobileResetResponseHeaders\(\)/);
+    const headersAt = middleware.indexOf('pathname === "/auth/reset" || pathname.startsWith("/j/")');
+    const loginAt = middleware.indexOf('url.pathname = "/login"');
+    assert.ok(headersAt > 0 && loginAt > headersAt);
+    assert.match(aasa, /\/j\/\*/);
+  });
 });
