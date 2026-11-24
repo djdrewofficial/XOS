@@ -155,7 +155,7 @@ describe("wiring: visibility + Send App Demo surfaces", () => {
   });
 
   it("calls enableEventDemoMode and leaves template-based seeding intact", () => {
-    // PR 94 seeds from the event planning template — do not reintroduce hardcoded sections.
+    // PR 94 seeds from the event planning template; do not reintroduce hardcoded sections.
     const lib = read("src/lib/demoMode.ts");
     assert.match(lib, /resolveDemoPlanningTemplateId/);
     assert.match(lib, /seedPlanningSkeletonFromTemplate/);
