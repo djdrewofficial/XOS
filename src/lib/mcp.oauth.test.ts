@@ -21,8 +21,22 @@ import {
 import { s256Challenge, verifyPkceS256 } from "./mcp/oauth/pkce.ts";
 import { mcpScopesForRole, oauthConnectionName } from "./mcp/oauth/roleScopes.ts";
 import {
+  AUTHORIZE_CSRF_COOKIE,
+  AUTHORIZE_POST_REDIRECT_STATUS,
+  AUTHORIZE_SECURITY_HEADERS,
+  authorizeAllowedOrigins,
+  deriveCsrfSigningKey,
+  mintAuthorizeCsrf,
+  originAllowed,
+  processAuthorizeConsentDecision,
+  renderAuthorizeConsentHtml,
+  resolveCsrfRawSecret,
+  verifyAuthorizeCsrf,
+} from "./mcp/oauth/authorizeConsent.ts";
+import {
   completeAuthorize,
   handleTokenRequest,
+  isAllowedOAuthRedirectUri,
   registerClient,
   resolveBearerIdentity,
   validateAuthorizeRequest,
@@ -119,13 +133,20 @@ describe("mcp oauth metadata", () => {
     }
   });
 
-  it("wires well-known routes, authorize auto-approve, and no consent UI", () => {
+  it("wires well-known routes and authorize consent (GET never issues a code)", () => {
     assert.match(read("src/app/.well-known/oauth-protected-resource/route.ts"), /buildProtectedResourceMetadata/);
     assert.match(read("src/app/.well-known/oauth-authorization-server/route.ts"), /buildAuthorizationServerMetadata/);
-    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /completeAuthorize/);
-    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /resolveOAuthStaffUser/);
-    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /auto-approved/);
-    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /mcpIssuer/);
+    const authorizeRoute = read("src/app/api/mcp/oauth/authorize/route.ts");
+    assert.match(authorizeRoute, /renderAuthorizeConsentHtml/);
+    assert.match(authorizeRoute, /processAuthorizeConsentDecision/);
+    assert.match(authorizeRoute, /resolveOAuthStaffUser/);
+    assert.match(authorizeRoute, /mcpIssuer/);
+    assert.match(authorizeRoute, /Never issue a grant or auth code on GET/);
+    assert.doesNotMatch(authorizeRoute, /auto-approved/);
+    // GET handler must not call completeAuthorize; only the consent POST path issues codes.
+    const getFn = authorizeRoute.slice(authorizeRoute.indexOf("export async function GET"), authorizeRoute.indexOf("export async function POST"));
+    assert.doesNotMatch(getFn, /completeAuthorize|processAuthorizeConsentDecision/);
+    assert.match(getFn, /renderAuthorizeConsentHtml/);
     assert.throws(() => read("src/app/oauth/mcp/consent/page.tsx"), /ENOENT/);
     assert.doesNotMatch(read("supabase/migrations/00235_mcp_oauth.sql"), /mcp_oauth_settings/);
     assert.doesNotMatch(read("supabase/migrations/00235_mcp_oauth.sql"), /mcp_oauth_pending/);
@@ -150,6 +171,339 @@ describe("mcp oauth DCR", () => {
     }
     const bad = await registerClient(store, { client_name: "Bad", redirect_uris: ["javascript:alert(1)"] });
     assert.equal(bad.ok, false);
+  });
+
+  it("allows https and loopback http redirect URIs and rejects non-loopback http", async () => {
+    assert.equal(isAllowedOAuthRedirectUri("https://agent.example/callback"), true);
+    assert.equal(isAllowedOAuthRedirectUri("http://localhost/callback"), true);
+    assert.equal(isAllowedOAuthRedirectUri("http://localhost:8787/cb"), true);
+    assert.equal(isAllowedOAuthRedirectUri("http://127.0.0.1/callback"), true);
+    assert.equal(isAllowedOAuthRedirectUri("http://127.0.0.1:3000/cb"), true);
+    assert.equal(isAllowedOAuthRedirectUri("http://[::1]/callback"), true);
+    assert.equal(isAllowedOAuthRedirectUri("http://[::1]:8080/cb"), true);
+    assert.equal(isAllowedOAuthRedirectUri("http://example.com/callback"), false);
+    assert.equal(isAllowedOAuthRedirectUri("http://evil.example/phish"), false);
+    assert.equal(isAllowedOAuthRedirectUri("http://192.168.1.1/cb"), false);
+
+    const { store } = memoryOAuthStore();
+    for (const uri of [
+      "https://cursor.com/callback",
+      "http://localhost:9876/oauth",
+      "http://127.0.0.1:9876/oauth",
+      "http://[::1]:9876/oauth",
+    ]) {
+      const reg = await registerClient(store, {
+        client_name: "Loopback ok",
+        redirect_uris: [uri],
+        token_endpoint_auth_method: "none",
+      });
+      assert.equal(reg.ok, true, uri);
+    }
+    const rejected = await registerClient(store, {
+      client_name: "Remote http",
+      redirect_uris: ["http://example.com/callback"],
+      token_endpoint_auth_method: "none",
+    });
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) assert.match(rejected.body.error_description || "", /loopback/i);
+  });
+});
+
+describe("mcp oauth authorize consent", () => {
+  const secret = "test-mcp-oauth-csrf-secret-32b";
+  const issuerOrigin = "https://xos.xpressdjs.com";
+
+  it("GET consent HTML shows client, redirect, account, Allow/Cancel, and security headers", async () => {
+    const { store, clientId } = await registeredClient();
+    const challenge = s256Challenge(verifier());
+    const query = authorizeQuery(clientId, challenge);
+    const validated = await validateAuthorizeRequest(store, query);
+    assert.equal(validated.ok, true);
+    if (!validated.ok) return;
+
+    // GET path: render consent only; store must stay empty of grants/codes.
+    const csrf = mintAuthorizeCsrf(staff.userId, query, new Date(), secret);
+    const html = renderAuthorizeConsentHtml({
+      clientName: validated.value.clientName,
+      redirectUri: validated.value.redirectUri,
+      accountLabel: "drew@xpressdjs.com",
+      csrfToken: csrf,
+      query,
+    });
+    assert.match(html, /Allow MCP access/);
+    assert.match(html, /Test Agent/);
+    assert.match(html, /agent\.example/);
+    assert.match(html, /drew@xpressdjs\.com/);
+    assert.match(html, /name="decision" value="allow"/);
+    assert.match(html, /name="decision" value="deny"/);
+    assert.match(html, /Cancel/);
+    assert.match(html, /Allow/);
+    assert.equal((await store.findActiveGrant(staff.userId, clientId)), null);
+    assert.equal(AUTHORIZE_SECURITY_HEADERS["Cache-Control"], "no-store");
+    assert.equal(AUTHORIZE_SECURITY_HEADERS["X-Frame-Options"], "DENY");
+    assert.equal(AUTHORIZE_SECURITY_HEADERS["Content-Security-Policy"], "frame-ancestors 'none'");
+    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /AUTHORIZE_SECURITY_HEADERS/);
+    assert.match(read("src/app/api/mcp/oauth/authorize/route.ts"), /AUTHORIZE_CSRF_COOKIE/);
+    assert.equal(AUTHORIZE_CSRF_COOKIE, "mcp_oauth_csrf");
+  });
+
+  it("POST allow with valid CSRF issues code+state and creates a grant", async () => {
+    const mem = memoryOAuthStore();
+    const { store, clientId } = await registeredClient(mem.store);
+    const challenge = s256Challenge(verifier());
+    const query = authorizeQuery(clientId, challenge);
+    const csrf = mintAuthorizeCsrf(staff.userId, query, new Date(), secret);
+    const result = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: csrf,
+      cookieToken: csrf,
+      originHeader: issuerOrigin,
+      requestOrigin: issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok || result.kind !== "allow") return;
+    const redirect = new URL(result.redirectTo);
+    assert.ok(redirect.searchParams.get("code"));
+    assert.equal(redirect.searchParams.get("state"), "xyz");
+    assert.ok(await store.findActiveGrant(staff.userId, clientId));
+    assert.equal(mem.codes.length, 1);
+  });
+
+  it("POST allow rejects missing/invalid CSRF or tampered params without creating a grant", async () => {
+    const mem = memoryOAuthStore();
+    const { store, clientId } = await registeredClient(mem.store);
+    const challenge = s256Challenge(verifier());
+    const query = authorizeQuery(clientId, challenge);
+    const csrf = mintAuthorizeCsrf(staff.userId, query, new Date(), secret);
+
+    const missing = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: null,
+      cookieToken: csrf,
+      originHeader: issuerOrigin,
+      requestOrigin: issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(missing.ok, false);
+    if (!missing.ok) assert.equal(missing.status, 403);
+
+    const badCookie = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: csrf,
+      cookieToken: "not-the-token",
+      originHeader: issuerOrigin,
+      requestOrigin: issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(badCookie.ok, false);
+
+    const tampered = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: csrf,
+      cookieToken: csrf,
+      originHeader: issuerOrigin,
+      requestOrigin: issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query: { ...query, redirect_uri: "https://evil.example/callback" },
+      secret,
+    });
+    assert.equal(tampered.ok, false);
+    assert.equal(verifyAuthorizeCsrf({
+      formToken: csrf,
+      cookieToken: csrf,
+      userId: "other-user",
+      query,
+      secret,
+    }), false);
+
+    const badOrigin = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: csrf,
+      cookieToken: csrf,
+      originHeader: "https://evil.example",
+      requestOrigin: issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(badOrigin.ok, false);
+
+    assert.equal((await store.findActiveGrant(staff.userId, clientId)), null);
+    assert.equal(mem.codes.length, 0);
+  });
+
+  it("POST cancel redirects with access_denied and creates no grant or code", async () => {
+    const mem = memoryOAuthStore();
+    const { store, clientId } = await registeredClient(mem.store);
+    const challenge = s256Challenge(verifier());
+    const query = authorizeQuery(clientId, challenge);
+    const csrf = mintAuthorizeCsrf(staff.userId, query, new Date(), secret);
+    const result = await processAuthorizeConsentDecision({
+      store,
+      decision: "deny",
+      formToken: csrf,
+      cookieToken: csrf,
+      originHeader: issuerOrigin,
+      requestOrigin: issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok || result.kind !== "deny") return;
+    assert.equal(result.redirectError, "access_denied");
+    assert.equal(result.state, "xyz");
+    assert.equal((await store.findActiveGrant(staff.userId, clientId)), null);
+    assert.equal(mem.codes.length, 0);
+  });
+
+  it("authorize route denies non-staff before any grant and keeps CSRF on the consent path", () => {
+    const authorizeRoute = read("src/app/api/mcp/oauth/authorize/route.ts");
+    assert.match(authorizeRoute, /access_denied/);
+    assert.match(authorizeRoute, /Sign in with an XOS staff account/);
+    // Non-staff is rejected before processAuthorizeConsentDecision on POST.
+    const postFn = authorizeRoute.slice(authorizeRoute.indexOf("export async function POST"));
+    const staffCheckIdx = postFn.indexOf("if (!staff)");
+    const decisionIdx = postFn.indexOf("processAuthorizeConsentDecision");
+    assert.ok(staffCheckIdx >= 0 && decisionIdx > staffCheckIdx);
+  });
+
+  it("POST Cancel and !user login redirects use HTTP 303 (not default 307)", () => {
+    assert.equal(AUTHORIZE_POST_REDIRECT_STATUS, 303);
+    const authorizeRoute = read("src/app/api/mcp/oauth/authorize/route.ts");
+    const postStart = authorizeRoute.indexOf("export async function POST");
+    const helperStart = authorizeRoute.indexOf("async function redirectOAuthError");
+    const postFn = authorizeRoute.slice(postStart, helperStart > postStart ? helperStart : undefined);
+    // Cancel / deny path
+    assert.match(postFn, /result\.kind === "deny"/);
+    assert.match(postFn, /AUTHORIZE_POST_REDIRECT_STATUS/);
+    // Direct redirects from POST (login + allow) must pass 303.
+    const redirectCalls = [...postFn.matchAll(/NextResponse\.redirect\(([^)]*)\)/g)].map((m) => m[1]);
+    assert.ok(redirectCalls.length >= 2, "expected login + allow redirects");
+    for (const args of redirectCalls) {
+      assert.match(args, /AUTHORIZE_POST_REDIRECT_STATUS/);
+      assert.doesNotMatch(args, /\b307\b/);
+    }
+    // deny / !validated / !staff go through redirectOAuthError(..., AUTHORIZE_POST_REDIRECT_STATUS)
+    assert.match(postFn, /redirectOAuthError\([\s\S]*?AUTHORIZE_POST_REDIRECT_STATUS/);
+    assert.equal((postFn.match(/AUTHORIZE_POST_REDIRECT_STATUS/g) || []).length >= 4, true);
+    // !user login redirect
+    assert.match(postFn, /NextResponse\.redirect\(login,\s*AUTHORIZE_POST_REDIRECT_STATUS\)/);
+    // Helper supports an explicit redirect status argument for POST callers.
+    const helper = authorizeRoute.slice(helperStart);
+    assert.match(helper, /redirectStatus\?: number/);
+    assert.match(helper, /NextResponse\.redirect\(target\.toString\(\),\s*redirectStatus\)/);
+  });
+
+  it("originAllowed accepts mcpIssuer when request origin is a Netlify host and rejects third parties", () => {
+    const publicOrigin = mcpIssuer();
+    assert.equal(publicOrigin, DEFAULT_PUBLIC_ORIGIN);
+    const netlifyOrigin = "https://deploy-preview-91--xos-xpressdjs.netlify.app";
+    const allowed = authorizeAllowedOrigins(netlifyOrigin, publicOrigin);
+
+    assert.equal(originAllowed(publicOrigin, ...allowed), true);
+    assert.equal(originAllowed(netlifyOrigin, ...allowed), true);
+    assert.equal(originAllowed("https://evil.example", ...allowed), false);
+    assert.equal(originAllowed(null, ...allowed), false);
+    assert.equal(originAllowed("", ...allowed), false);
+  });
+
+  it("originAllowed + consent decision accept issuer Origin behind a Netlify request host", async () => {
+    const mem = memoryOAuthStore();
+    const { store, clientId } = await registeredClient(mem.store);
+    const challenge = s256Challenge(verifier());
+    const query = authorizeQuery(clientId, challenge);
+    const csrf = mintAuthorizeCsrf(staff.userId, query, new Date(), secret);
+    const netlifyOrigin = "https://xos-xpressdjs.netlify.app";
+    const result = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: csrf,
+      cookieToken: csrf,
+      originHeader: issuerOrigin,
+      requestOrigin: netlifyOrigin,
+      issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok || result.kind !== "allow") return;
+    assert.ok(new URL(result.redirectTo).searchParams.get("code"));
+
+    const rejected = await processAuthorizeConsentDecision({
+      store,
+      decision: "allow",
+      formToken: csrf,
+      cookieToken: csrf,
+      originHeader: "https://evil.example",
+      requestOrigin: netlifyOrigin,
+      issuerOrigin,
+      userId: staff.userId,
+      user: staff,
+      query,
+      secret,
+    });
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) {
+      assert.equal(rejected.preserveCsrfCookie, true);
+      assert.match(rejected.error_description || "", /origin/i);
+    }
+  });
+
+  it("production fails closed without a CSRF secret env var; dev keeps a fallback", () => {
+    const prev = {
+      nodeEnv: process.env.NODE_ENV,
+      mcp: process.env.MCP_OAUTH_CSRF_SECRET,
+      service: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      cron: process.env.CRON_SECRET,
+    };
+    try {
+      delete process.env.MCP_OAUTH_CSRF_SECRET;
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      delete process.env.CRON_SECRET;
+
+      process.env.NODE_ENV = "test";
+      assert.equal(resolveCsrfRawSecret(), "xos-mcp-oauth-csrf-dev");
+      assert.ok(deriveCsrfSigningKey(resolveCsrfRawSecret()).length === 32);
+
+      process.env.NODE_ENV = "production";
+      assert.throws(() => resolveCsrfRawSecret(), /CSRF secret is not configured/);
+
+      process.env.MCP_OAUTH_CSRF_SECRET = "production-mcp-oauth-csrf-secret-key";
+      assert.equal(resolveCsrfRawSecret(), "production-mcp-oauth-csrf-secret-key");
+      // Prefer MCP_OAUTH_CSRF_SECRET over service role when both are set.
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "supabase-service-role-key-value";
+      assert.equal(resolveCsrfRawSecret(), "production-mcp-oauth-csrf-secret-key");
+    } finally {
+      if (prev.nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prev.nodeEnv;
+      if (prev.mcp === undefined) delete process.env.MCP_OAUTH_CSRF_SECRET;
+      else process.env.MCP_OAUTH_CSRF_SECRET = prev.mcp;
+      if (prev.service === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = prev.service;
+      if (prev.cron === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = prev.cron;
+    }
   });
 });
 
