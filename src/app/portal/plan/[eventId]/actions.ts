@@ -83,7 +83,8 @@ const SETTING_LABELS: Record<string, string> = {
   title: "Title", icon: "Icon", intro: "Intro", section_type: "Type",
   guest_enabled: "Guest access", song_limit: "Song limit", must_play_limit: "Must-play limit",
   songs_enabled: "Songs", questions_enabled: "Questions", notes_enabled: "Notes",
-  time_enabled: "Time", time_label: "Time", on_timeline: "On timeline", on_music: "On music",
+  time_enabled: "Time", time_label: "Time", is_playlist: "Playlist moment",
+  on_timeline: "On timeline", on_music: "On music",
   permissions: "Permissions",
 };
 
@@ -532,6 +533,7 @@ type SectionSettingsInput = {
   notes_enabled?: boolean;
   time_enabled?: boolean;
   time_label?: string | null;
+  is_playlist?: boolean;
   on_timeline?: boolean | null;
   on_music?: boolean | null;
   permissions?: Record<string, string[]>;

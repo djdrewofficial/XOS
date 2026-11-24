@@ -7,6 +7,11 @@ import { listEventContent } from "@/lib/ugcModerationServer";
    Hidden rows and blocked authors are omitted unless the caller is staff.
    Staff rows include hidden: true so removed content stays reviewable.
 
+   Also returns `playlists`: [{ sectionId, title, songLimit, songs:[...] }] for
+   Music-tab playlist moments (is_playlist sections). App Store / TestFlight 1.0
+   can ignore `playlists` and keep using the flat `songs` + `songIdeas` +
+   `doNotPlayNotes` fields.
+
    Existing id fields are unchanged. Display fields are appended:
    songs.requestedByLabel, likes.displayName, likes.label,
    answers.answeredByLabel, sectionNotes.updatedByLabel,

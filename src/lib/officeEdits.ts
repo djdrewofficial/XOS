@@ -287,7 +287,8 @@ export async function addTemplateSection(db: EditorDb, templateId: string, input
 
 const EVENT_SECTION_KEYS = [
   "title", "icon", "intro", "section_type", "guest_enabled", "song_limit", "must_play_limit",
-  "songs_enabled", "questions_enabled", "notes_enabled", "time_enabled", "time_label", "on_timeline", "on_music",
+  "songs_enabled", "questions_enabled", "notes_enabled", "time_enabled", "time_label",
+  "is_playlist", "on_timeline", "on_music",
 ] as const;
 
 export function eventSectionPatch(input: Record<string, unknown>): Row {

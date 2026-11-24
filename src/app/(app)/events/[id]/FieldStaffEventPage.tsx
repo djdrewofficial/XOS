@@ -12,7 +12,7 @@ import { money } from "@/lib/types";
 import UrlTabs from "@/components/UrlTabs";
 import BookingHelperBar from "@/components/BookingHelperBar";
 import StaffCheckIn from "@/components/StaffCheckIn";
-import { DoNotPlayPanel, EventSectionNotes } from "@/components/planner/SectionMomentNotes";
+import { DoNotPlayPanel, EventPlaylistsPanel, EventSectionNotes } from "@/components/planner/SectionMomentNotes";
 import { DemoModeBanner } from "@/components/EventDemoMode";
 import { addEventNote } from "../actions";
 import { FIELD_STAFF_TABS, loadFieldStaffEvent, type FieldStaffTab } from "./fieldStaffLoader";
@@ -334,6 +334,7 @@ export default async function FieldStaffEventPage({
           <a href={viboLink} target="_blank" rel="noreferrer" className="text-sm text-brand hover:underline">Open Vibo →</a>
         </div>
       )}
+      {planner && planner.playlists.length > 0 && <EventPlaylistsPanel playlists={planner.playlists} />}
       {planner && (event.planning_seeded || planner.doNotPlaySongs.length > 0 || planner.doNotPlayText) && (
         <DoNotPlayPanel eventId={id} text={planner.doNotPlayText} songs={planner.doNotPlaySongs} canEdit={canEdit} />
       )}

@@ -8,6 +8,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { bearerToken, lookupMobileAccountKind, requireMobileUser, type MobileCaller } from "@/lib/mobileCouple";
 import { resolveEventRole, type PlannerRole } from "@/lib/planning";
+import { buildPlaylists } from "@/lib/planningPlaylists";
 import { dispatchNotification } from "@/lib/notify";
 import {
   CONTENT_TYPE_LABELS,
@@ -595,12 +596,18 @@ export async function listEventContent(req: Request, eventId: string): Promise<N
   const [songsRes, likesRes, answersRes, sectionsRes, avoidRes, ideasRes, coverRes, boothRes, fileRes] = await Promise.all([
     who.rls
       .from("planning_songs")
-      .select("id, section_id, title, artist, note, requested_by, must_play, do_not_play, sort_order, hidden_at")
+      .select("id, section_id, title, artist, note, external_url, requested_by, must_play, do_not_play, sort_order, hidden_at")
       .eq("event_id", eventId)
       .order("sort_order"),
     who.rls.from("planning_song_likes").select("song_id, account_id, hidden_at, planning_songs!inner(event_id)").eq("planning_songs.event_id", eventId),
     who.rls.from("planning_question_answers").select("question_id, answer, answered_by, hidden_at").eq("event_id", eventId),
-    who.rls.from("planning_sections").select("id, client_notes, client_notes_updated_by, client_notes_hidden_at").eq("event_id", eventId),
+    who.rls
+      .from("planning_sections")
+      .select(
+        "id, title, client_notes, client_notes_updated_by, client_notes_hidden_at, is_playlist, song_limit, guest_enabled, deleted_by_host_at, sort_order",
+      )
+      .eq("event_id", eventId)
+      .order("sort_order"),
     who.role === "guest"
       ? Promise.resolve({ data: null, error: null })
       : who.rls.from("planning_do_not_play_notes").select("body, updated_by, hidden_at").eq("event_id", eventId).maybeSingle(),
@@ -615,6 +622,19 @@ export async function listEventContent(req: Request, eventId: string): Promise<N
       .order("created_at", { ascending: false })
       .limit(1),
   ]);
+
+  // is_playlist lands in 00241 — retry without it so App Store 1.0 content still loads.
+  let sectionRows = sectionsRes.data;
+  let sectionsError = sectionsRes.error;
+  if (sectionsError && /is_playlist|schema cache/i.test(sectionsError.message ?? "")) {
+    const fallback = await who.rls
+      .from("planning_sections")
+      .select("id, title, client_notes, client_notes_updated_by, client_notes_hidden_at, song_limit, guest_enabled, deleted_by_host_at, sort_order")
+      .eq("event_id", eventId)
+      .order("sort_order");
+    sectionRows = (fallback.data ?? []).map((row) => ({ ...row, is_playlist: false }));
+    sectionsError = fallback.error;
+  }
 
   const songs = withHidden(
     (songsRes.data ?? [])
@@ -632,6 +652,7 @@ export async function listEventContent(req: Request, eventId: string): Promise<N
         title: (row.title as string) ?? "",
         artist: (row.artist as string | null) ?? null,
         note: (row.note as string | null) ?? null,
+        externalUrl: (row.external_url as string | null) ?? null,
         requestedBy: (row.requested_by as string | null) ?? null,
         mustPlay: Boolean(row.must_play),
         doNotPlay: Boolean(row.do_not_play),
@@ -666,7 +687,7 @@ export async function listEventContent(req: Request, eventId: string): Promise<N
     if (!like.hidden) likeCount.set(like.songId, (likeCount.get(like.songId) ?? 0) + 1);
   }
 
-  const sectionNotes = (sectionsRes.data ?? [])
+  const sectionNotes = (sectionRows ?? [])
     .map((row) => {
       const viewed = notesForViewer(
         (row.client_notes as string | null) ?? null,
@@ -725,12 +746,40 @@ export async function listEventContent(req: Request, eventId: string): Promise<N
     });
 
   if (
-    [songsRes.error, likesRes.error, answersRes.error, sectionsRes.error, ideasRes.error].some((item) =>
+    [songsRes.error, likesRes.error, answersRes.error, sectionsError, ideasRes.error].some((item) =>
       isMissingModerationSchema(item),
     )
   ) {
     return json({ error: UGC_ERRORS.unavailable }, 503);
   }
+
+  const playlists = buildPlaylists({
+    role: who.role,
+    sections: (sectionRows ?? []).map((row) => ({
+      id: row.id as string,
+      title: (row.title as string) ?? "",
+      isPlaylist: Boolean((row as { is_playlist?: boolean }).is_playlist),
+      songLimit: (row.song_limit as number | null) ?? null,
+      guestEnabled: Boolean(row.guest_enabled),
+      deletedByHost: Boolean(row.deleted_by_host_at),
+      sortOrder: (row.sort_order as number) ?? 0,
+    })),
+    songs: songs.map((song) => ({
+      id: song.id,
+      sectionId: song.sectionId,
+      title: song.title,
+      artist: song.artist,
+      note: song.note,
+      externalUrl: song.externalUrl,
+      requestedBy: song.requestedBy,
+      mustPlay: song.mustPlay,
+      doNotPlay: song.doNotPlay,
+      sortOrder: song.sortOrder,
+      likeCount: likeCount.get(song.id) ?? 0,
+      likedByMe: likes.some((like) => like.songId === song.id && like.userId === who.caller.userId && !like.hidden),
+      hidden: song.hidden,
+    })),
+  });
 
   const file = (fileRes.data ?? [])[0] as
     | { id: string; name: string | null; uploaded_by: string | null; hidden_at: string | null }
@@ -750,6 +799,8 @@ export async function listEventContent(req: Request, eventId: string): Promise<N
         likeCount: likeCount.get(song.id) ?? 0,
         likedByMe: likes.some((like) => like.songId === song.id && like.userId === who.caller.userId && !like.hidden),
       })),
+      /** New Music-tab shape. App Store 1.0 ignores this and keeps using `songs`. */
+      playlists,
       likes,
       answers: withHidden(
         (answersRes.data ?? [])

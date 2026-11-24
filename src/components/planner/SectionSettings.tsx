@@ -61,7 +61,9 @@ export default function SectionSettings({
   // Whether this section appears on the couple's app timeline. Default follows the
   // type (timeline=on, info=off) until explicitly set here.
   const [onTimeline, setOnTimeline] = useState(section.on_timeline ?? section.section_type === "timeline");
-  // Whether this section appears on the couple's Music tab (vibe curation).
+  // Explicit playlist moment for the couple Music tab (own ordered song list).
+  const [isPlaylist, setIsPlaylist] = useState(section.is_playlist);
+  // Whether this section appears on the couple's Music tab (legacy vibe curation).
   // Default: open playlists (songs on + no single-song limit).
   const [onMusic, setOnMusic] = useState(section.on_music ?? (section.songs_enabled && section.song_limit == null));
 
@@ -92,6 +94,7 @@ export default function SectionSettings({
     timeOn !== section.time_enabled ||
     timeLabel !== (section.time_label ?? "") ||
     onTimeline !== (section.on_timeline ?? section.section_type === "timeline") ||
+    isPlaylist !== section.is_playlist ||
     onMusic !== (section.on_music ?? (section.songs_enabled && section.song_limit == null)) ||
     JSON.stringify(perms) !== JSON.stringify(initialPerms);
 
@@ -111,15 +114,17 @@ export default function SectionSettings({
         icon: icon.trim() || null,
         intro: intro.trim() || null,
         guest_enabled: guestEnabled,
-        songs_enabled: songsOn,
+        songs_enabled: isPlaylist ? true : songsOn,
         song_limit: songLimit === "" ? null : Number(songLimit),
         must_play_limit: mustPlayLimit === "" ? null : Number(mustPlayLimit),
         questions_enabled: questionsOn,
         notes_enabled: notesOn,
         time_enabled: timeOn,
         time_label: timeLabel.trim() || null,
+        is_playlist: isPlaylist,
+        // Keep legacy Music-tab flag in sync when marking a playlist moment.
         on_timeline: onTimeline,
-        on_music: onMusic,
+        on_music: isPlaylist ? true : onMusic,
         permissions,
       });
       if (res?.ok) onClose();
@@ -195,9 +200,26 @@ export default function SectionSettings({
                   <div className="mt-3 space-y-3">
                     <NumberRow label="Song limit" value={songLimit} onChange={setSongLimit} placeholder="∞" />
                     <NumberRow label="Must-play limit" value={mustPlayLimit} onChange={setMustPlayLimit} placeholder="∞" />
-                    <ToggleRow label="Show on Music tab (vibe curation)" on={onMusic} onToggle={() => setOnMusic((v) => !v)} />
+                    <ToggleRow
+                      label="Playlist moment"
+                      on={isPlaylist}
+                      onToggle={() => {
+                        setIsPlaylist((v) => {
+                          const next = !v;
+                          if (next) {
+                            setSongsOn(true);
+                            setOnMusic(true);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
                     <p className="text-xs text-zinc-500">
-                      Surfaces this moment on the couple&apos;s Music tab for playlist/vibe curation (e.g. Cocktail Hour, Dinner, Open Dancing). Turn off for single-song moments.
+                      Marks this as its own playlist on the couple Music tab (e.g. Prelude, Cocktail Hour, Dinner, Open Dancing). Couples add, remove, and reorder songs here.
+                    </p>
+                    <ToggleRow label="Show on Music tab (legacy vibe list)" on={onMusic} onToggle={() => setOnMusic((v) => !v)} />
+                    <p className="text-xs text-zinc-500">
+                      Kept for App Store 1.0 builds that still show one flat song list. Prefer &quot;Playlist moment&quot; for new events.
                     </p>
                   </div>
                 )}

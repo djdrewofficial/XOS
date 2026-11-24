@@ -60,7 +60,7 @@ import InlineEditCard from "@/components/InlineEditCard";
 import { effectiveOvertimeHourly } from "@/lib/eventFinancials";
 import EventFilesSection from "@/components/EventFilesSection";
 import SpotifyExport from "@/components/SpotifyExport";
-import { DoNotPlayPanel, EventSectionNotes } from "@/components/planner/SectionMomentNotes";
+import { DoNotPlayPanel, EventPlaylistsPanel, EventSectionNotes } from "@/components/planner/SectionMomentNotes";
 import { isDoNotPlaySectionTitle } from "@/lib/planningNotes";
 import { getSpotifyConnection } from "@/lib/spotifyAuth";
 import ConfirmCodeButton from "@/components/ConfirmCodeButton";
@@ -485,13 +485,20 @@ export default async function EventDetailPage({
   let plannerSongCount = 0;
   let plannerNoteSections: { id: string; title: string; notes: string | null; staffNotes: string | null }[] = [];
   let doNotPlayText: string | null = null;
-  let doNotPlaySongs: { id: string; title: string; artist: string | null }[] = [];
+  const doNotPlaySongs: { id: string; title: string; artist: string | null }[] = [];
+  let plannerPlaylists: { id: string; title: string; songs: { id: string; title: string; artist: string | null }[] }[] = [];
   if (activeTab === "notes") {
-    const [{ data: avoid }, { data: songRows }, { data: secTitles }] = await Promise.all([
+    const [{ data: avoid }, { data: songRows }, secRes] = await Promise.all([
       supabase.from("planning_do_not_play_notes").select("body").eq("event_id", id).maybeSingle(),
-      supabase.from("planning_songs").select("id, title, artist, do_not_play, section_id").eq("event_id", id).order("sort_order"),
-      supabase.from("planning_sections").select("id, title").eq("event_id", id),
+      supabase.from("planning_songs").select("id, title, artist, do_not_play, section_id, sort_order").eq("event_id", id).order("sort_order"),
+      supabase.from("planning_sections").select("id, title, is_playlist, sort_order").eq("event_id", id).order("sort_order"),
     ]);
+    // is_playlist lands in 00241 — fall back until that migration is applied.
+    let secTitles = secRes.data;
+    if (secRes.error) {
+      const { data: fallback } = await supabase.from("planning_sections").select("id, title, sort_order").eq("event_id", id).order("sort_order");
+      secTitles = (fallback ?? []).map((s) => ({ ...s, is_playlist: false }));
+    }
     doNotPlayText = (avoid?.body as string | null) ?? null;
     const avoidSections = new Set(
       (secTitles ?? [])
@@ -510,6 +517,25 @@ export default async function EventDetailPage({
         artist: (song.artist as string | null) ?? null,
       });
     }
+    const songsBySection = new Map<string, { id: string; title: string; artist: string | null }[]>();
+    for (const song of songRows ?? []) {
+      if (Boolean(song.do_not_play)) continue;
+      const sid = song.section_id as string;
+      const list = songsBySection.get(sid) ?? [];
+      list.push({
+        id: song.id as string,
+        title: (song.title as string) || "Untitled",
+        artist: (song.artist as string | null) ?? null,
+      });
+      songsBySection.set(sid, list);
+    }
+    plannerPlaylists = (secTitles ?? [])
+      .filter((s) => Boolean((s as { is_playlist?: boolean }).is_playlist))
+      .map((s) => ({
+        id: s.id as string,
+        title: (s.title as string) || "Playlist",
+        songs: songsBySection.get(s.id as string) ?? [],
+      }));
   }
   if (activeTab === "notes" && planningSeeded) {
     const songCount = (rows: { planning_songs?: unknown }[] | null) =>
@@ -2428,6 +2454,10 @@ export default async function EventDetailPage({
           </div>
         )}
       </div>
+
+      {plannerMode === "xos" && plannerPlaylists.length > 0 && (
+        <EventPlaylistsPanel playlists={plannerPlaylists} />
+      )}
 
       {(plannerMode === "xos" || doNotPlaySongs.length > 0 || doNotPlayText) && (
         <DoNotPlayPanel eventId={id} text={doNotPlayText} songs={doNotPlaySongs} canEdit={ffCanEdit} />

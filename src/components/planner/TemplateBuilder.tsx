@@ -62,6 +62,7 @@ export type BuilderSection = {
   notes_enabled: boolean;
   time_enabled: boolean;
   ai_picks_enabled: boolean;
+  is_playlist: boolean;
   song_limit: number | null;
   must_play_limit: number | null;
   module: string | null;
@@ -310,6 +311,7 @@ function SectionCard({
         {!isHeadline && (
           <div className="hidden items-center gap-1.5 text-[11px] text-zinc-400 sm:flex">
             {section.songs_enabled && <Pill icon={faMusic} text={section.song_limit != null ? `${section.song_limit}` : "songs"} />}
+            {section.is_playlist && <Pill icon={faMusic} text="playlist" amber />}
             {section.questions_enabled && section.questions.length > 0 && <Pill icon={faListCheck} text={`${section.questions.length}`} />}
             {section.guest_enabled && <Pill icon={faUserGroup} text="guests" amber />}
             {section.client_addable && <Pill icon={faPlus} text="add-on" amber />}
@@ -371,10 +373,19 @@ function SectionCard({
               <FeatureToggle icon={faNoteSticky} label="Notes" on={section.notes_enabled} onChange={(v) => patch({ notes_enabled: v })} />
               <FeatureToggle icon={faClock} label="Time" on={section.time_enabled} onChange={(v) => patch({ time_enabled: v })} />
               {section.songs_enabled && <FeatureToggle icon={faWandMagicSparkles} label="For You picks" on={section.ai_picks_enabled} onChange={(v) => patch({ ai_picks_enabled: v })} />}
+              {section.songs_enabled && (
+                <FeatureToggle
+                  icon={faMusic}
+                  label="Playlist moment"
+                  on={section.is_playlist}
+                  onChange={(v) => patch(v ? { is_playlist: true, songs_enabled: true } : { is_playlist: false })}
+                  amber
+                />
+              )}
               <FeatureToggle icon={faUserGroup} label="Guests can answer" on={section.guest_enabled} onChange={(v) => patch({ guest_enabled: v })} amber />
               <FeatureToggle icon={faPlus} label="Couples can add" on={section.client_addable} onChange={(v) => patch({ client_addable: v })} amber />
             </div>
-            <p className="mt-1.5 text-xs text-zinc-400">&quot;Couples can add&quot; leaves this off the default plan but lets couples add it themselves from the app (e.g. Bouquet Toss, Chair Game).</p>
+            <p className="mt-1.5 text-xs text-zinc-400">&quot;Couples can add&quot; leaves this off the default plan but lets couples add it themselves from the app (e.g. Bouquet Toss, Chair Game). &quot;Playlist moment&quot; shows this as its own list on the couple Music tab (Prelude, Cocktail, Dinner, Open Dancing).</p>
           </div>
 
           {section.songs_enabled && (
