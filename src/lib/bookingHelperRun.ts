@@ -423,6 +423,13 @@ export async function executeBookingHelper(
   const queuedSince = new Date().toISOString();
   let warnings: string[] = [];
 
+  // Demo Mode / Send App Demo run in TS (enable before mail is queued).
+  const { applyDemoModeHelperActionsBefore, applyDemoModeHelperActionsAfter } = await import(
+    "@/lib/demoModeHelperActions"
+  );
+  const before = await applyDemoModeHelperActionsBefore(admin, input.eventId, actions);
+  warnings.push(...before.warnings);
+
   if (needsRecipientRpc) {
     const { error } = await admin.rpc("run_booking_helper", {
       p_helper_id: input.helperId,
@@ -464,6 +471,10 @@ export async function executeBookingHelper(
     helperTitle: scope.title as string,
     sinceIso: queuedSince,
   });
+
+  const after = await applyDemoModeHelperActionsAfter(admin, input.eventId, actions);
+  warnings.push(...after.warnings);
+
   // Loaded here so the role and event-type guards above can run without the mail stack.
   const [{ fireHelperWebhook }, { drainEventOutbox }] = await Promise.all([import("@/lib/automations"), import("@/lib/scopedOutbox")]);
   await fireHelperWebhook(admin, input.helperId, input.eventId);

@@ -159,6 +159,22 @@ export async function runAutomations(
       }
     }
     try {
+      const { data: helperActionsRow } = await admin
+        .from("booking_helpers")
+        .select("actions")
+        .eq("id", h.id)
+        .maybeSingle();
+      const helperActions = (helperActionsRow?.actions ?? []) as { type?: string; mode?: string; force?: boolean | string }[];
+      const { applyDemoModeHelperActionsBefore, applyDemoModeHelperActionsAfter } = await import(
+        "@/lib/demoModeHelperActions"
+      );
+      // Hold path must not send App Demo messages; still allow demo_mode_on/off.
+      const beforeActions =
+        opts.drain === "hold"
+          ? helperActions.filter((a) => a.type !== "send_app_demo")
+          : helperActions;
+      await applyDemoModeHelperActionsBefore(admin, eventId, beforeActions);
+
       // 2-arg form: this is an automation, so queued mail stays subject to
       // events.comms_paused. run_booking_helper enforces its own visibility +
       // one-shot guards (raises if it shouldn't run) — skip those quietly.
@@ -180,6 +196,7 @@ export async function runAutomations(
           helperTitle: h.title ?? "Helper",
           sinceIso: queuedSince,
         });
+        await applyDemoModeHelperActionsAfter(admin, eventId, helperActions);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

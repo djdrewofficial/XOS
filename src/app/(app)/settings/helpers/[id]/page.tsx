@@ -34,6 +34,8 @@ type HelperAction = {
   journey_type_id?: string;
   prompt?: boolean;
   recipients?: { mode?: string; roles?: string[] };
+  mode?: string;
+  force?: boolean | string;
 };
 
 const DATE_FIELDS = [
@@ -362,6 +364,58 @@ export default async function EditHelperPage({
       <Section title="Internal Note">
         <Row label="Add Internal Note" hint="(merge tag enabled)">
           <input name="action_note" defaultValue={find("add_note")?.body ?? ""} className="input w-full" />
+        </Row>
+      </Section>
+
+      <Section title="Demo Mode / App Demo">
+        <Note>
+          Demo Mode actions run in the app (same as the event page controls).{" "}
+          <strong>Send App Demo</strong> turns Demo Mode on if needed, then emails and texts the client their host
+          join link plus the iPhone App Store link (uses the &quot;Send App Demo&quot; email/SMS templates when present).
+          For After Sign, add <code>demo_mode_off</code> with mode <code>keep_client</code> so sample data clears but
+          anything the prospect typed is kept.
+        </Note>
+        <Row label="Demo Mode action">
+          <select
+            name="action_demo_mode"
+            defaultValue={
+              find("send_app_demo")
+                ? "send_app_demo"
+                : find("demo_mode_on")
+                  ? "on"
+                  : find("demo_mode_off")
+                    ? "off"
+                    : ""
+            }
+            className="input w-full"
+          >
+            <option value="">(none)</option>
+            <option value="on">Turn Demo Mode on</option>
+            <option value="off">Turn Demo Mode off</option>
+            <option value="send_app_demo">Send App Demo (enable + email/SMS)</option>
+          </select>
+        </Row>
+        <Row label="When turning off" hint="keep_client is recommended after signing">
+          <select
+            name="action_demo_mode_off_mode"
+            defaultValue={(find("demo_mode_off")?.mode as string | undefined) === "clean_slate" ? "clean_slate" : "keep_client"}
+            className="input w-full"
+          >
+            <option value="keep_client">Keep client entries (remove sample only)</option>
+            <option value="clean_slate">Reset to a clean slate</option>
+          </select>
+        </Row>
+        <Row label="Force replace real planning data">
+          <CheckBoxField
+            name="action_demo_mode_force"
+            label="Replace existing real answers/songs when enabling"
+            defaultChecked={
+              find("demo_mode_on")?.force === true ||
+              find("demo_mode_on")?.force === "true" ||
+              find("send_app_demo")?.force === true ||
+              find("send_app_demo")?.force === "true"
+            }
+          />
         </Row>
       </Section>
     </div>

@@ -336,6 +336,15 @@ describe("demo mode wiring", () => {
     assert.doesNotMatch(toolBlock, /processOutbox|processSmsOutbox|sendDirectSms|queueTemplate/);
   });
 
+  it("exposes events_send_app_demo as a confirm-required outbound tool", () => {
+    const office = read("src/lib/mcp/tools/office.ts");
+    assert.match(office, /events_send_app_demo/);
+    const toolBlock = office.slice(office.indexOf('name: "events_send_app_demo"'), office.indexOf('name: "events_set_demo_mode"'));
+    assert.match(toolBlock, /confirm:\s*true/);
+    assert.match(toolBlock, /comms\.email/);
+    assert.match(toolBlock, /comms\.sms/);
+  });
+
   it("demo mode lib never queues email or SMS and preserves financial/comms flags", () => {
     const lib = read("src/lib/demoMode.ts");
     assert.match(lib, /hide_financials: preserved\.hide_financials/);

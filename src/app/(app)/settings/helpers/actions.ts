@@ -158,6 +158,25 @@ function buildHelperPayload(formData: FormData) {
   const note = clean(formData.get("action_note"));
   if (note) actions.push({ type: "add_note", body: note });
 
+  // Demo Mode / Send App Demo (executed in TypeScript around the SQL engine)
+  const demoAction = clean(formData.get("action_demo_mode"));
+  if (demoAction === "on") {
+    actions.push({
+      type: "demo_mode_on",
+      force: formData.get("action_demo_mode_force") === "on",
+    });
+  } else if (demoAction === "off") {
+    actions.push({
+      type: "demo_mode_off",
+      mode: clean(formData.get("action_demo_mode_off_mode")) === "clean_slate" ? "clean_slate" : "keep_client",
+    });
+  } else if (demoAction === "send_app_demo") {
+    actions.push({
+      type: "send_app_demo",
+      force: formData.get("action_demo_mode_force") === "on",
+    });
+  }
+
   // secondary helper runs last
   const secondary = clean(formData.get("secondary_helper_id"));
   if (secondary) actions.push({ type: "run_helper", helper_id: secondary });

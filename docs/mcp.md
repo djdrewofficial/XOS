@@ -78,6 +78,7 @@ Built in, any valid token:
 | events_set_status | write.events | yes |
 | events_set_comms_paused | write.events | |
 | events_set_demo_mode | write.planning | yes |
+| events_send_app_demo | write.planning, comms.email, comms.sms | yes |
 | events_archive | write.events | yes |
 | events_unarchive | write.events | |
 | events_delete | delete | yes |

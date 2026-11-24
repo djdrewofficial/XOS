@@ -734,6 +734,12 @@ export function placeJoinLinkTags(body: string, links: { host?: string | null; g
   return out;
 }
 
+/** Replace <app_store_link> with the iPhone App Store URL (never Android / Play). */
+export function placeAppStoreLink(body: string, storeUrl: string): string {
+  const re = /(?:<app_store_link>|&lt;app_store_link&gt;|%3Capp_store_link%3E)/gi;
+  return body.replace(re, () => storeUrl);
+}
+
 /** True when the HTML already contains a real /j/<token> URL. */
 export function htmlHasJoinLink(html: string): boolean {
   return /\/j\/[A-Za-z0-9_-]{22}(?![A-Za-z0-9_-])/.test(html);

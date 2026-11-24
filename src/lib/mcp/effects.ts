@@ -153,6 +153,12 @@ export async function collectHelperEffects(
         scopes.add("comms.email");
       } else if (type.startsWith("send_sms")) {
         scopes.add("comms.sms");
+      } else if (type === "send_app_demo") {
+        scopes.add("comms.email");
+        scopes.add("comms.sms");
+        scopes.add("write.planning");
+      } else if (type === "demo_mode_on" || type === "demo_mode_off") {
+        scopes.add("write.planning");
       }
       effects.push(effect);
     }

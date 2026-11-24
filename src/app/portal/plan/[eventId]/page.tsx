@@ -17,7 +17,7 @@ import Planner from "@/components/planner/Planner";
 import ThemeToggleIcon from "@/components/planner/ThemeToggleIcon";
 import SignOutButton from "@/components/SignOutButton";
 import SpotifyExport from "@/components/SpotifyExport";
-import { DemoModeBanner } from "@/components/EventDemoMode";
+import { DemoModeBanner } from "@/components/DemoModeBanner";
 import { getSpotifyConnection } from "@/lib/spotifyAuth";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export default async function PlannerPage({
   if (role === "guest") {
     const card = await supabase
       .from("event_guest_card")
-      .select("id, name, event_date, event_type_id, cover_photo_url")
+      .select("id, name, event_date, event_type_id, cover_photo_url, demo_mode")
       .eq("id", eventId)
       .maybeSingle();
     event = card.data;
@@ -148,9 +148,9 @@ export default async function PlannerPage({
         </div>
       </header>
 
-      {role === "staff" && event.demo_mode && (
+      {event.demo_mode && (
         <div className="mx-auto max-w-6xl px-4 pt-4">
-          <DemoModeBanner />
+          <DemoModeBanner audience={role === "staff" ? "staff" : "client"} bilingual={role !== "staff"} />
         </div>
       )}
 

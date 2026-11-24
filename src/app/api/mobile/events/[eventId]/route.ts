@@ -11,7 +11,8 @@ import { viewerBlocks } from "@/lib/ugcModerationServer";
    stay on their own tables, and those tables are host-only under RLS.
    401 no session. 403 not on this event. 404 unknown id. */
 
-const GUEST_COLUMNS = "id, name, event_date, start_time, end_time, guest_count, cover_photo_url, event_type_id";
+const GUEST_COLUMNS =
+  "id, name, event_date, start_time, end_time, guest_count, cover_photo_url, event_type_id, demo_mode";
 
 export async function GET(req: Request, { params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
@@ -69,6 +70,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ eventId:
       eventTypeId: event.event_type_id,
       eventType: eventType?.name ?? null,
       venueName: venue?.name ?? null,
+      /** When true, show an in-app Demo Mode banner (sample planner data). */
+      demoMode: Boolean((event as { demo_mode?: boolean | null }).demo_mode),
     },
   });
 }

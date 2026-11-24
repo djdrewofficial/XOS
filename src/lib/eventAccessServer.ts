@@ -1247,6 +1247,8 @@ export async function describeJoinLink(token: string): Promise<
       schemeUrl: string;
       code: string | null;
       storeUrl: string | null;
+      /** True when the event is in Demo Mode (sample planner data). */
+      demoMode: boolean;
     }
   | { ok: false }
 > {
@@ -1266,6 +1268,11 @@ export async function describeJoinLink(token: string): Promise<
     const role = data.role === "host" || data.role === "guest" ? data.role : null;
     if (!role) return { ok: false };
     const name = await eventName(admin, data.event_id as string);
+    const { data: evFlags } = await admin
+      .from("events")
+      .select("demo_mode")
+      .eq("id", data.event_id as string)
+      .maybeSingle();
     let code: string | null = null;
     if (role === "host") {
       try {
@@ -1282,6 +1289,7 @@ export async function describeJoinLink(token: string): Promise<
       schemeUrl: appJoinScheme(normalized),
       code,
       storeUrl: await appUrl(admin),
+      demoMode: Boolean(evFlags?.demo_mode),
     };
   } catch {
     return { ok: false };
