@@ -146,6 +146,7 @@ const SECTIONS: { heading: string; items: Entry[] }[] = [
         module: "settings",
         items: [
           { href: "/settings/notifications", label: "Notifications", icon: faBell, module: "settings" },
+          { href: "/settings/app-notifications", label: "App Notifications", icon: faBell, module: "settings" },
           { href: "/settings/briefings", label: "Daily Briefing", icon: faSun, module: "settings" },
           { href: "/settings/assistant", label: "AI", icon: faRobot, module: "settings" },
           { href: "/settings/fireflies", label: "Fireflies", icon: faComments, module: "settings" },

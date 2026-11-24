@@ -151,6 +151,7 @@ describe("delete-account route", () => {
     assert.match(route, /runAppAccountDeletion/);
     assert.match(route, /event_app_members/);
     assert.match(route, /device_tokens/);
+    assert.match(route, /app_device_tokens/);
     assert.match(route, /from\("accounts"\)/);
     assert.match(route, /deleteUser/);
     assert.match(route, /loginUsesApple/);

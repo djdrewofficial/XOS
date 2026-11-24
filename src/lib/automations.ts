@@ -85,6 +85,18 @@ export async function runAutomations(
     await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId });
   }
 
+  // Couple-app notification templates triggered on status change (migration 00241).
+  const statusIdForApp = opts.statusId ?? (ev.status_id as string | null);
+  if (trigger === "status_changed" && statusIdForApp && opts.drain !== "hold") {
+    try {
+      const { runAppNotificationsOnStatusChange } = await import("@/lib/appNotifications");
+      const adminForApp = createAdminClient();
+      await runAppNotificationsOnStatusChange(adminForApp, eventId, statusIdForApp);
+    } catch (err) {
+      console.error("[automations] app notifications on status change failed", err);
+    }
+  }
+
   const { data: helpers } = await supabase
     .from("booking_helpers")
     .select(
@@ -197,6 +209,18 @@ export async function runAutomations(
           sinceIso: queuedSince,
         });
         await applyDemoModeHelperActionsAfter(admin, eventId, helperActions);
+        // send_app_notification is TS-side (Expo); SQL helper engine ignores it.
+        try {
+          const { data: helperRow } = await admin.from("booking_helpers").select("actions").eq("id", h.id).maybeSingle();
+          const { queueAppNotificationsFromHelperActions } = await import("@/lib/appNotifications");
+          await queueAppNotificationsFromHelperActions(
+            admin,
+            eventId,
+            (helperRow?.actions ?? []) as { type?: string; template_id?: string }[],
+          );
+        } catch (appErr) {
+          console.error("[automations] app notification helper step failed", appErr);
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

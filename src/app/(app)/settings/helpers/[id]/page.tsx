@@ -169,10 +169,18 @@ export default async function EditHelperPage({
     supabase.from("journey_types").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
 
+  // Optional until migration 00241 is applied.
+  const { data: appNotifTemplates } = await supabase
+    .from("app_notification_templates")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("name");
+
   if (!helper) notFound();
 
   const actions = (helper.actions ?? []) as HelperAction[];
   const find = (type: string) => actions.find((a) => a.type === type);
+  const appNotifAction = find("send_app_notification");
   const emailActions = actions.filter((a) => a.type === "send_email");
   const clientEmail = emailActions.find((a) => a.to !== "custom");
   const customEmail = emailActions.find((a) => a.to === "custom");
@@ -469,6 +477,25 @@ export default async function EditHelperPage({
         </Row>
         <Row label="Send This Email">
           <TemplateSelect name="staff_email_template_id" value={staffEmail?.template_id} />
+        </Row>
+      </Section>
+      <Section title="Couple App Notification">
+        <Row
+          label="App notification"
+          hint="Queues a push / in-app popup for the event's hosts (and guests if the template says so). Managed under Settings → App Notifications."
+        >
+          <select
+            name="action_app_notification_template_id"
+            defaultValue={(appNotifAction?.template_id as string | undefined) ?? ""}
+            className="input w-full"
+          >
+            <option value="">(none)</option>
+            {(appNotifTemplates ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
         </Row>
       </Section>
     </div>

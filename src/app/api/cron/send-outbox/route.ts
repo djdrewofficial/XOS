@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { processOutbox, cleanupOutboxTmp } from "@/lib/mailgun";
 import { processSmsOutbox, syncHighLevelConversations } from "@/lib/highlevel";
+import { processAppNotificationOutbox, runScheduledAppNotifications } from "@/lib/appNotifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isRateLimited, recordRateHit } from "@/lib/rateLimit";
 
@@ -31,6 +32,20 @@ async function run(req: Request) {
   }
   const email = await processOutbox(admin);
   const sms = await processSmsOutbox(admin);
+  // Couple-app push: queue due calendar templates, then drain Expo outbox.
+  // Exact-day + dedupe; safe to run every minute. Never sends for demo/cancelled
+  // unless the template explicitly allows demo mode.
+  let appNotifSchedule: { matched: number; queued: number; skipped: number } | { error: string } = {
+    matched: 0,
+    queued: 0,
+    skipped: 0,
+  };
+  try {
+    appNotifSchedule = await runScheduledAppNotifications(admin);
+  } catch (err) {
+    appNotifSchedule = { error: err instanceof Error ? err.message : String(err) };
+  }
+  const appPush = await processAppNotificationOutbox(admin);
   // ?full=1 forces a complete conversation backfill (first run / repairs)
   const full = new URL(req.url).searchParams.get("full") === "1";
   const inbox = await syncHighLevelConversations(admin, { full });
@@ -153,6 +168,8 @@ async function run(req: Request) {
     {
       email,
       sms,
+      appNotifSchedule,
+      appPush,
       inbox,
       ...(cronMisses.length ? { cronMisses } : {}),
       ...(tmpCleaned ? { tmpCleaned } : {}),

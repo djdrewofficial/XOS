@@ -79,6 +79,7 @@ import SaveButton from "@/components/SaveButton";
 import EntityPicker from "@/components/EntityPicker";
 import EventComms, { type EventThread, type StartableClient } from "@/components/EventComms";
 import ScheduledComms from "@/components/ScheduledComms";
+import EventAppNotifications from "@/components/EventAppNotifications";
 import {
   SCHEDULE_RUN_COLUMNS,
   SCHEDULE_TEMPLATE_COLUMNS,
@@ -327,6 +328,8 @@ export default async function EventDetailPage({
     { data: schedPaymentAmounts },
     appInvitesResult,
     openReportsCount,
+    { data: appNotifRuns },
+    { data: appNotifLog },
   ] = await Promise.all([
     loadsOnTab(activeTab, "planningTemplates")
       ? supabase.from("planning_templates").select("id, name").eq("is_library", false).order("name")
@@ -431,6 +434,22 @@ export default async function EventDetailPage({
       .select("id", { count: "exact", head: true })
       .eq("event_id", id)
       .eq("status", "open"),
+    want("comms")
+      ? supabase
+          .from("app_notification_runs")
+          .select("id, template_id, trigger_key, status, created_at, app_notification_templates(name)")
+          .eq("event_id", id)
+          .order("created_at", { ascending: false })
+          .limit(40)
+      : skip,
+    want("comms")
+      ? supabase
+          .from("app_notification_log")
+          .select("id, title, status, audience_role, queued_at, sent_at, template_id")
+          .eq("event_id", id)
+          .order("queued_at", { ascending: false })
+          .limit(40)
+      : skip,
   ]);
 
   const openReportCount = openReportsCount.error ? 0 : (openReportsCount.count ?? 0);
@@ -2951,6 +2970,25 @@ export default async function EventDetailPage({
                   commsPaused={commsPaused}
                   tagGroups={commsTagGroups}
                   socialLinks={commsSocial}
+                />
+                <EventAppNotifications
+                  runs={(appNotifRuns ?? []) as {
+                    id: string;
+                    template_id: string;
+                    trigger_key: string;
+                    status: string;
+                    created_at: string;
+                    app_notification_templates?: { name: string } | { name: string }[] | null;
+                  }[]}
+                  log={(appNotifLog ?? []) as {
+                    id: string;
+                    title: string;
+                    status: string;
+                    audience_role: string;
+                    queued_at: string;
+                    sent_at: string | null;
+                    template_id: string | null;
+                  }[]}
                 />
                 <EventComms
                   eventId={id}

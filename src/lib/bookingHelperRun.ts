@@ -475,6 +475,18 @@ export async function executeBookingHelper(
   const after = await applyDemoModeHelperActionsAfter(admin, input.eventId, actions);
   warnings.push(...after.warnings);
 
+  // Couple-app push/popup actions live in TS (Expo), not in run_booking_helper SQL.
+  try {
+    const { queueAppNotificationsFromHelperActions } = await import("@/lib/appNotifications");
+    await queueAppNotificationsFromHelperActions(
+      admin,
+      input.eventId,
+      actions as { type?: string; template_id?: string }[],
+    );
+  } catch (err) {
+    warnings.push(err instanceof Error ? err.message : "App notification step failed.");
+  }
+
   // Loaded here so the role and event-type guards above can run without the mail stack.
   const [{ fireHelperWebhook }, { drainEventOutbox }] = await Promise.all([import("@/lib/automations"), import("@/lib/scopedOutbox")]);
   await fireHelperWebhook(admin, input.helperId, input.eventId);

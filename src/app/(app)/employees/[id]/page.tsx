@@ -281,6 +281,28 @@ export default async function EmployeeProfilePage({
           <label className="label-xs">Planning Meeting URL</label>
           <input name="planning_meeting_url" defaultValue={emp.planning_meeting_url ?? ""} className="input w-full" placeholder="Booking link" />
         </div>
+        <div>
+          <label className="label-xs">Booking URL (app)</label>
+          <input
+            name="booking_url"
+            defaultValue={emp.booking_url ?? ""}
+            className="input w-full"
+            placeholder="Falls back to Planning Meeting URL"
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="label-xs">Booking embed HTML (couple app)</label>
+          <textarea
+            name="booking_embed_html"
+            defaultValue={emp.booking_embed_html ?? ""}
+            rows={4}
+            className="input w-full font-mono text-xs"
+            placeholder="HighLevel planning-meeting iframe / widget — sandboxed in the couple app only"
+          />
+          <p className="mt-1 text-xs text-zinc-500">
+            Staff-authored. Used by &lt;dj_booking_embed&gt; on app notification screens. Never rendered raw in XOS web.
+          </p>
+        </div>
         <label className="col-span-2 flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
           <input type="checkbox" name="can_send_as_self" defaultChecked={emp.can_send_as_self ?? true} className="size-4 accent-brand-light" />
           Can send client emails as themselves (uses the email above — must be on the verified sending domain; otherwise emails go out as the company)

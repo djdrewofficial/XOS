@@ -165,7 +165,7 @@ describe("events_get_join_links", () => {
     assert.doesNotMatch(block, /ensureJoinLinks|resetJoinLink|emailJoinCodeToHolder|processOutbox|processSmsOutbox|writeLink/);
     assert.match(remaining, /The secret is not returned to the agent/);
     assert.match(office, /The link itself is not returned to the agent/);
-    assert.equal(mcpTools.length + 2, 190);
+    assert.equal(mcpTools.length + 2, 193);
   });
 
   it("filters by role, returns null when missing, and skips cancelled without erroring", async () => {

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { processOutbox } from "@/lib/mailgun";
 import { processSmsOutbox } from "@/lib/highlevel";
+import { processAppNotificationOutbox } from "@/lib/appNotifications";
 
 /** Send only the rows this action queued for one event. An empty id list sends
     nothing. It does not claim the rest of the outbox. */
@@ -13,5 +14,7 @@ export async function drainEventOutbox(admin: SupabaseClient, eventId: string, s
   if (smsError) throw new Error(smsError.message);
   const email = await processOutbox(admin, { onlyIds: (emails ?? []).map((row) => row.id as string) });
   const sms = await processSmsOutbox(admin, { onlyIds: (texts ?? []).map((row) => row.id as string) });
-  return { email, sms };
+  // Couple-app push drain is global (token lookup is per user); safe + small batch.
+  const appPush = await processAppNotificationOutbox(admin);
+  return { email, sms, appPush };
 }
