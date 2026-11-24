@@ -113,16 +113,25 @@ values (
   'Send App Demo',
   'Send App Demo',
   'APP',
-  'Try the Xpress app with your event',
+  'Your Xpress planning app is ready',
   $html$<p>Hi <first_name>,</p>
-<p>We set up a quick demo of your event in the Xpress Entertainment app so you can see how planning works — timeline, songs, and more.</p>
-<p><strong>This is demo mode.</strong> Feel free to tap around; you do not need to enter real details yet. Demo mode turns off automatically once you sign your Booking Agreement.</p>
-<p><a href="<app_host_link>">Open your event</a></p>
-<p>If you do not have the app yet, get it on the App Store:<br/><a href="<app_store_link>"><app_store_link></a></p>
-<p>Talk soon,<br/>Xpress Entertainment</p>$html$,
+<p>Drew from Xpress here. Your planning app is ready to explore.</p>
+<p><a href="<app_host_link>">Tap here to join your event</a></p>
+<p>No app yet? Grab it here: <a href="<app_store_link>"><app_store_link></a></p>
+<p>Everything inside is sample info for now, so play around and save the real details for later. Once your booking agreement is signed, it switches over to your real plan.</p>
+<p>Talk soon,<br/>Drew<br/>Xpress Entertainment</p>$html$,
   true, false, false, true
 )
-on conflict (id) do nothing;
+on conflict (id) do update set
+  name = excluded.name,
+  display_name = excluded.display_name,
+  group_name = excluded.group_name,
+  subject = excluded.subject,
+  body_html = excluded.body_html,
+  is_active = excluded.is_active,
+  is_sms = excluded.is_sms,
+  sms_marketing = excluded.sms_marketing,
+  branded_shell = excluded.branded_shell;
 
 insert into public.email_templates (
   id, name, display_name, group_name, subject, body_html,
@@ -134,7 +143,16 @@ values (
   'Send App Demo (SMS)',
   'APP',
   '',
-  $sms$Hi <first_name>! Your Xpress event demo is ready (sample data only — no real info needed). Open: <app_host_link> — App Store: <app_store_link>$sms$,
+  $sms$Hi <first_name>! Drew from Xpress here. Your planning app is ready to explore. Tap to join your event: <app_host_link> No app yet? Grab it here: <app_store_link> Everything inside is sample info for now, so play around and save the real details for later. Once your booking agreement is signed, it switches over to your real plan.$sms$,
   true, true, false, false
 )
-on conflict (id) do nothing;
+on conflict (id) do update set
+  name = excluded.name,
+  display_name = excluded.display_name,
+  group_name = excluded.group_name,
+  subject = excluded.subject,
+  body_html = excluded.body_html,
+  is_active = excluded.is_active,
+  is_sms = excluded.is_sms,
+  sms_marketing = excluded.sms_marketing,
+  branded_shell = excluded.branded_shell;
