@@ -71,7 +71,7 @@ export default function EventDemoMode({
           <p className={`mt-1 text-sm ${demoMode ? "text-amber-900 dark:text-amber-200" : "text-zinc-500"}`}>
             {demoMode
               ? "Sample timeline, songs, and answers are loaded so the prospect can explore the app. Planning % and song lists here are demo data, not real client prep."
-              : "Fill this event's planner with realistic sample data so a Lead or Pending prospect can open the Xpress DJs app and explore. Turn it off before they start real planning. Does not send any invite or message."}
+              : "Fill this event's planning template with realistic sample answers and songs so a Lead or Pending prospect can open the Xpress DJs app and explore. Turn it off before they start real planning. Does not send any invite or message."}
           </p>
         </div>
         {demoMode ? (

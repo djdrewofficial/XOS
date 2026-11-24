@@ -510,7 +510,7 @@ export const officeTools: LiveTool[] = [
   {
     name: "events_set_demo_mode",
     description:
-      "Turn Event Demo Mode on or off for a prospect. ON seeds sample planner data (timeline, songs, answers) with fresh IDs. OFF uses mode=clean_slate (default: wipe and blank template) or mode=keep_client (remove sample rows only). Never sends email or SMS, and never changes hide_financials or comms_paused. Set force=true to replace existing real planning data when enabling.",
+      "Turn Event Demo Mode on or off for a prospect. ON clones the event's planning template (or Xpress Entertainment Wedding 2026 / the default when unset) and fills sample answers + songs flagged is_demo. OFF uses mode=clean_slate (default: wipe and blank template) or mode=keep_client (remove sample rows only). Never sends email or SMS, and never changes hide_financials or comms_paused. Set force=true to wipe prior demo/real planning data and reseed (including old hardcoded-section demo rows).",
     scopes: ["write.planning"],
     confirm: true,
     inputSchema: obj(
@@ -530,7 +530,7 @@ export const officeTools: LiveTool[] = [
         mode: args.enabled === true ? null : (s(args, "mode") === "keep_client" ? "keep_client" : "clean_slate"),
         effect:
           args.enabled === true
-            ? "Seeds sample planner data for the couple's app. No messages sent."
+            ? "Seeds sample answers/songs into the event's planning template for the couple's app. No messages sent."
             : "Turns Demo Mode off. No messages sent.",
       };
     },

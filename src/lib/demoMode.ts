@@ -1,10 +1,17 @@
 /* Event Demo Mode — seed / clear sample planner data for prospects.
    Server-only. Uses the service-role admin client so hard-deletes pass
    ugc_block_hard_delete (same path as reseedEventPlanning). Never touches
-   hide_financials or comms_paused, and never queues email/SMS. */
+   hide_financials or comms_paused, and never queues email/SMS.
+
+   Seeding clones the event's planning template (or a robust default), then
+   fills sample answers / songs flagged is_demo. */
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ensureEventPlanning } from "@/lib/planning";
+import {
+  ensureEventPlanning,
+  resolvePlanningTemplateId,
+  seedPlanningSkeletonFromTemplate,
+} from "@/lib/planning";
 import {
   decideEnableDemoMode,
   isClientEditedDemoAnswer,
@@ -14,20 +21,27 @@ import {
 } from "@/lib/demoModeLogic";
 import { clearDemoSongIdeaLists } from "@/lib/demoModeCleanup";
 import {
-  DEMO_DO_NOT_PLAY_NOTES,
-  DEMO_QUESTIONS,
-  DEMO_SECTIONS,
-  DEMO_SONG_IDEAS,
-  DEMO_SONGS,
-} from "@/lib/demoModeSeed";
+  assignDemoSongsToSections,
+  demoAnswerForQuestion,
+  PREFERRED_DEMO_TEMPLATE_ID,
+  PREFERRED_DEMO_TEMPLATE_NAME,
+} from "@/lib/demoModeAnswers";
+import { DEMO_DO_NOT_PLAY_NOTES, DEMO_SONG_IDEAS, DEMO_SONGS } from "@/lib/demoModeSeed";
 
 export type { DemoDisableMode, RealPlanningSnapshot };
 export { hasRealPlanningData, isClientEditedDemoAnswer, decideEnableDemoMode } from "@/lib/demoModeLogic";
 export { clearDemoSongIdeaLists } from "@/lib/demoModeCleanup";
+export {
+  PREFERRED_DEMO_TEMPLATE_ID,
+  PREFERRED_DEMO_TEMPLATE_NAME,
+  demoAnswerForQuestion,
+  demoSongRoleForSectionTitle,
+  assignDemoSongsToSections,
+} from "@/lib/demoModeAnswers";
 
 export type DemoModeResult =
-  | { ok: true; already?: boolean; seeded?: boolean; mode?: DemoDisableMode }
-  | { ok: false; error: string; code?: "HAS_REAL_DATA" | "NOT_DEMO" | "NOT_FOUND" };
+  | { ok: true; already?: boolean; seeded?: boolean; mode?: DemoDisableMode; template_id?: string }
+  | { ok: false; error: string; code?: "HAS_REAL_DATA" | "NOT_DEMO" | "NOT_FOUND" | "NO_TEMPLATE" };
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -73,107 +87,116 @@ async function wipeEventPlanning(admin: Admin, eventId: string): Promise<void> {
   await admin.from("planning_section_staff_notes").delete().eq("event_id", eventId);
 }
 
-async function seedDemoPlanning(admin: Admin, eventId: string): Promise<void> {
-  const sectionIds = new Map<string, string>();
-  const questionIds = new Map<string, string>();
+/**
+ * Resolve which planning template Demo Mode should seed into.
+ * 1) events.planning_template_id
+ * 2) preferred "Xpress Entertainment Wedding 2026" (id if present, else name)
+ * 3) normal pickTemplateId fallbacks (event type → is_default)
+ */
+export async function resolveDemoPlanningTemplateId(
+  admin: Admin,
+  eventId: string,
+  eventTypeId: string | null,
+): Promise<string | null> {
+  const { data: ev } = await admin.from("events").select("planning_template_id").eq("id", eventId).maybeSingle();
+  if (ev?.planning_template_id) return ev.planning_template_id as string;
 
-  const sectionRows = DEMO_SECTIONS.map((s) => {
-    const id = crypto.randomUUID();
-    sectionIds.set(s.key, id);
-    return {
-      id,
-      event_id: eventId,
-      template_section_id: null,
-      title: s.title,
-      icon: s.icon,
-      section_type: s.section_type,
-      intro: s.intro,
-      time_label: s.time_label,
-      client_editable: s.client_editable,
-      song_limit: s.song_limit,
-      locked: false,
-      sort_order: s.sort_order,
-      guest_enabled: s.guest_enabled,
-      songs_enabled: s.songs_enabled,
-      questions_enabled: s.questions_enabled,
-      notes_enabled: s.notes_enabled,
-      time_enabled: s.time_enabled,
-      must_play_limit: null,
-      permissions: {},
-      module: null,
-      ai_picks_enabled: false,
-      on_timeline: s.on_timeline,
-      on_music: s.on_music,
-      is_demo: true,
-    };
-  });
-  const { error: secErr } = await admin.from("planning_sections").insert(sectionRows);
-  if (secErr) throw new Error(secErr.message);
+  const { data: byId } = await admin
+    .from("planning_templates")
+    .select("id")
+    .eq("id", PREFERRED_DEMO_TEMPLATE_ID)
+    .eq("is_library", false)
+    .maybeSingle();
+  if (byId?.id) return byId.id as string;
 
-  const questionRows = DEMO_QUESTIONS.map((q) => {
-    const id = crypto.randomUUID();
-    questionIds.set(q.key, id);
-    const sectionId = sectionIds.get(q.sectionKey);
-    if (!sectionId) throw new Error(`Demo seed missing section ${q.sectionKey}`);
-    return {
-      id,
-      section_id: sectionId,
-      event_id: eventId,
-      prompt: q.prompt,
-      help_text: q.help_text,
-      answer_type: q.answer_type,
-      options: q.options,
-      required: q.required,
-      sort_order: q.sort_order,
-      condition_question_id: null,
-      condition_values: [],
-      is_demo: true,
-    };
-  });
-  const { error: qErr } = await admin.from("planning_questions").insert(questionRows);
+  const { data: byName } = await admin
+    .from("planning_templates")
+    .select("id")
+    .eq("name", PREFERRED_DEMO_TEMPLATE_NAME)
+    .eq("is_library", false)
+    .limit(1)
+    .maybeSingle();
+  if (byName?.id) return byName.id as string;
+
+  return resolvePlanningTemplateId(admin, eventId, eventTypeId);
+}
+
+async function seedDemoPlanning(admin: Admin, eventId: string, templateId: string): Promise<void> {
+  const ok = await seedPlanningSkeletonFromTemplate(admin, eventId, templateId, { isDemo: true });
+  if (!ok) throw new Error("Planning template has no sections to seed.");
+
+  const { data: questions, error: qErr } = await admin
+    .from("planning_questions")
+    .select("id, prompt, help_text, answer_type, options")
+    .eq("event_id", eventId);
   if (qErr) throw new Error(qErr.message);
 
-  const answerRows = DEMO_QUESTIONS.filter((q) => q.answer != null && String(q.answer).trim() !== "").map(
-    (q) => ({
-      question_id: questionIds.get(q.key)!,
-      event_id: eventId,
-      answer: q.answer,
-      answered_by: null,
-      is_demo: true,
-    }),
-  );
+  const answerRows = (questions ?? [])
+    .map((q) => {
+      const answer = demoAnswerForQuestion({
+        prompt: q.prompt,
+        help_text: q.help_text,
+        answer_type: q.answer_type,
+        options: q.options,
+      });
+      if (answer == null || String(answer).trim() === "") return null;
+      return {
+        question_id: q.id,
+        event_id: eventId,
+        answer,
+        answered_by: null,
+        is_demo: true,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r != null);
+
   if (answerRows.length) {
     const { error: aErr } = await admin.from("planning_question_answers").insert(answerRows);
     if (aErr) throw new Error(aErr.message);
   }
 
-  const songRows = DEMO_SONGS.map((s) => {
-    const sectionId = sectionIds.get(s.sectionKey);
-    if (!sectionId) throw new Error(`Demo seed missing section ${s.sectionKey}`);
-    return {
+  const { data: sections, error: sErr } = await admin
+    .from("planning_sections")
+    .select("id, title, songs_enabled, song_limit")
+    .eq("event_id", eventId)
+    .order("sort_order");
+  if (sErr) throw new Error(sErr.message);
+
+  const placements = assignDemoSongsToSections(
+    (sections ?? []).map((s) => ({
+      id: s.id as string,
+      title: s.title as string,
+      songs_enabled: Boolean(s.songs_enabled),
+      song_limit: (s.song_limit as number | null) ?? null,
+    })),
+    DEMO_SONGS,
+  );
+
+  if (placements.length) {
+    const songRows = placements.map(({ section_id, song, sort_order }) => ({
       id: crypto.randomUUID(),
-      section_id: sectionId,
+      section_id,
       event_id: eventId,
-      provider: s.provider,
-      provider_id: s.provider_id,
-      title: s.title,
-      artist: s.artist,
-      album: s.album,
-      artwork_url: s.artwork_url,
-      duration_ms: s.duration_ms,
-      preview_url: s.preview_url,
-      external_url: s.external_url,
-      note: s.note,
+      provider: song.provider,
+      provider_id: song.provider_id,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      artwork_url: song.artwork_url,
+      duration_ms: song.duration_ms,
+      preview_url: song.preview_url,
+      external_url: song.external_url,
+      note: song.note,
       requested_by: null,
-      sort_order: s.sort_order,
-      must_play: s.must_play,
-      do_not_play: s.do_not_play,
+      sort_order,
+      must_play: song.must_play,
+      do_not_play: song.do_not_play,
       synced: false,
       is_demo: true,
-    };
-  });
-  const { error: songErr } = await admin.from("planning_songs").insert(songRows);
-  if (songErr) throw new Error(songErr.message);
+    }));
+    const { error: songErr } = await admin.from("planning_songs").insert(songRows);
+    if (songErr) throw new Error(songErr.message);
+  }
 
   const listId = crypto.randomUUID();
   const { error: listErr } = await admin.from("song_idea_lists").insert({
@@ -218,8 +241,10 @@ async function seedDemoPlanning(admin: Admin, eventId: string): Promise<void> {
 }
 
 /**
- * Turn Demo Mode ON for an event. Idempotent when already on.
+ * Turn Demo Mode ON for an event. Idempotent when already on (unless force).
  * Refuses when real (non-demo) planning data exists unless force=true.
+ * force=true always wipes (including old hardcoded-section demo rows) and reseeds
+ * into the event's planning template.
  * Does not change hide_financials / comms_paused and sends no messages.
  */
 export async function enableEventDemoMode(
@@ -229,7 +254,7 @@ export async function enableEventDemoMode(
   const admin = createAdminClient();
   const { data: event, error } = await admin
     .from("events")
-    .select("id, demo_mode, hide_financials, comms_paused, event_type_id")
+    .select("id, demo_mode, hide_financials, comms_paused, event_type_id, planning_template_id")
     .eq("id", eventId)
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
@@ -259,24 +284,34 @@ export async function enableEventDemoMode(
     };
   }
 
+  const templateId = await resolveDemoPlanningTemplateId(admin, eventId, event.event_type_id ?? null);
+  if (!templateId) {
+    return {
+      ok: false,
+      code: "NO_TEMPLATE",
+      error: "No planning template found to seed Demo Mode into. Assign a template on the event first.",
+    };
+  }
+
   const preserved = preservedEventFlags(event);
 
   await wipeEventPlanning(admin, eventId);
-  await seedDemoPlanning(admin, eventId);
+  await seedDemoPlanning(admin, eventId, templateId);
 
-  const { error: upErr } = await admin
-    .from("events")
-    .update({
-      demo_mode: true,
-      demo_mode_enabled_at: new Date().toISOString(),
-      planning_seeded: true,
-      hide_financials: preserved.hide_financials,
-      comms_paused: preserved.comms_paused,
-    })
-    .eq("id", eventId);
+  const patch: Record<string, unknown> = {
+    demo_mode: true,
+    demo_mode_enabled_at: new Date().toISOString(),
+    planning_seeded: true,
+    hide_financials: preserved.hide_financials,
+    comms_paused: preserved.comms_paused,
+  };
+  // Stamp the resolved template when the event had none, so later disable/reseed stays consistent.
+  if (!event.planning_template_id) patch.planning_template_id = templateId;
+
+  const { error: upErr } = await admin.from("events").update(patch).eq("id", eventId);
   if (upErr) return { ok: false, error: upErr.message };
 
-  return { ok: true, already: decision === "repair", seeded: true };
+  return { ok: true, already: decision === "repair", seeded: true, template_id: templateId };
 }
 
 async function removeDemoLeavesOnly(admin: Admin, eventId: string, demoEnabledAt: string | null): Promise<void> {
