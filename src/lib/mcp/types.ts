@@ -36,6 +36,11 @@ export type ToolSpec = {
   confirm: boolean;
   /** Mutating tools require an idempotency key. Confirm implies a write. */
   writes?: boolean;
+  /**
+   * Owner-approved exception: leave couple-app `/j/<token>` URLs in the agent
+   * response. Audit rows and other tools still redact them.
+   */
+  revealJoinUrls?: boolean;
   inputSchema: JsonSchema;
 };
 
