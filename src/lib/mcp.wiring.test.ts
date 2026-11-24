@@ -32,9 +32,10 @@ function catalog(source: string) {
 describe("mcp tool catalog", () => {
   it("names every tool once, with a description and a closed schema", () => {
     const tools = catalog(read("src/lib/mcp/tools/office.ts") + "\n" + read("src/lib/mcp/tools/coverage.ts") + "\n" + read("src/lib/mcp/tools/parity.ts") + "\n" + read("src/lib/mcp/tools/remaining.ts"));
-    assert.ok(tools.length >= 70);
+    assert.equal(tools.length, 187);
     const names = tools.map((tool) => tool.name);
     assert.equal(new Set(names).size, names.length);
+    assert.ok(names.includes("events_get_join_links"));
     for (const tool of tools) assert.ok(tool.description.length > 20, tool.name);
     assert.match(read("src/lib/mcp/tools/office.ts"), /additionalProperties: false/);
   });

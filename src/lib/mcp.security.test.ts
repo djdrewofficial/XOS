@@ -68,4 +68,17 @@ describe("client link redaction", () => {
     assert.doesNotMatch(hidden.body, /\/sign\/|\/pay\//);
     assert.match(hidden.note, /4,550/);
   });
+
+  it("can keep couple-app join urls for the owner-approved read tool", () => {
+    const join = "https://xos.xpressdjs.com/j/AbCdEfGhIjKlMnOpQrStUv";
+    assert.equal(hideClientLinks(join), "[client link]");
+    assert.equal(hideClientLinks(join, true), join);
+    const mixed = hideClientLinks(
+      { url: join, body: `sign https://xos.xpressdjs.com/sign/tok and ${join}` },
+      true,
+    ) as { url: string; body: string };
+    assert.equal(mixed.url, join);
+    assert.match(mixed.body, /\/j\//);
+    assert.doesNotMatch(mixed.body, /\/sign\//);
+  });
 });

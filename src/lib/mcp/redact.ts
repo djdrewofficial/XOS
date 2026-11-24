@@ -5,18 +5,23 @@ const AUDIT_DROP = /body|html|note|content|preview|message|subject/i;
 const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const PHONE = /\+?\d[\d\s().-]{8,}\d/g;
 
+export type RedactOpts = {
+  /** Keep couple-app join URLs (`/j/<token>`) for the owner-approved read tool. */
+  keepJoinUrls?: boolean;
+};
+
 /** Remove known secrets and secret-shaped fields. Does not shorten text or lists.
     Approval receipts and tool results use this so a preview cannot silently
     differ from what would run. */
-export function redact(value: unknown, secrets: readonly string[] = [], depth = 0): unknown {
+export function redact(value: unknown, secrets: readonly string[] = [], depth = 0, opts?: RedactOpts): unknown {
   if (depth > 20) return "[depth limit]";
-  if (typeof value === "string") return stripSecrets(value, secrets);
+  if (typeof value === "string") return stripSecrets(value, secrets, opts?.keepJoinUrls === true);
   if (typeof value === "number" || typeof value === "boolean" || value == null) return value;
-  if (Array.isArray(value)) return value.map((item) => redact(item, secrets, depth + 1));
+  if (Array.isArray(value)) return value.map((item) => redact(item, secrets, depth + 1, opts));
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SENSITIVE_KEY.test(key) ? "[redacted]" : redact(child, secrets, depth + 1);
+      out[key] = SENSITIVE_KEY.test(key) ? "[redacted]" : redact(child, secrets, depth + 1, opts);
     }
     return out;
   }
@@ -64,25 +69,42 @@ function redactCapabilityUrls(value: string): string {
 const CLIENT_LINK_KEY = /^(signing_url|payment_url|proposal_url|join_url|guest_url|access_token|pay_token)$/i;
 
 /** Client-facing secret links stay in the admin approval record. Agent responses
-    and the audit log only see a placeholder. */
-export function hideClientLinks(value: unknown, depth = 0): unknown {
+    and the audit log only see a placeholder. Pass keepJoinUrls for the
+    owner-approved join-link read tool so `/j/<token>` can reach the agent. */
+export function hideClientLinks(value: unknown, keepJoinUrls = false, depth = 0): unknown {
   if (depth > 20) return value;
-  if (typeof value === "string") return redactCapabilityUrls(value);
-  if (Array.isArray(value)) return value.map((item) => hideClientLinks(item, depth + 1));
+  if (typeof value === "string") {
+    if (!keepJoinUrls) return redactCapabilityUrls(value);
+    return value.replace(URL_IN_TEXT, (url) => {
+      if (/\/j\//i.test(url)) return url;
+      return capabilityUrl(url) ? "[client link]" : url;
+    });
+  }
+  if (Array.isArray(value)) return value.map((item) => hideClientLinks(item, keepJoinUrls, depth + 1));
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = CLIENT_LINK_KEY.test(key) ? "[client link]" : hideClientLinks(child, depth + 1);
+      if (CLIENT_LINK_KEY.test(key) && !(keepJoinUrls && /^(join_url|guest_url)$/i.test(key))) {
+        out[key] = "[client link]";
+      } else {
+        out[key] = hideClientLinks(child, keepJoinUrls, depth + 1);
+      }
     }
     return out;
   }
   return value;
 }
 
-function stripSecrets(value: string, secrets: readonly string[]): string {
+function stripSecrets(value: string, secrets: readonly string[], keepJoinUrls = false): string {
   let out = value;
   for (const secret of secrets) {
     if (secret.length >= 8 && out.includes(secret)) out = out.split(secret).join("[redacted]");
+  }
+  if (keepJoinUrls) {
+    return out.replace(URL_IN_TEXT, (url) => {
+      if (/\/j\//i.test(url)) return url;
+      return capabilityUrl(url) ? "[client link]" : url;
+    });
   }
   return redactCapabilityUrls(out);
 }

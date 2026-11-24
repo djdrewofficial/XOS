@@ -71,6 +71,7 @@ Built in, any valid token:
 | search | any token; results follow read scopes | |
 | events_list | read.events | |
 | events_get | read.events | |
+| events_get_join_links | read.events | |
 | events_form_options | read.events | |
 | events_create | write.events | |
 | events_update | write.events | |

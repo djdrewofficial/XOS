@@ -12,10 +12,12 @@ import { syncStaffToHighLevel, processSmsOutbox } from "@/lib/highlevel";
 import { processOutbox } from "@/lib/mailgun";
 import { applyPackageSelection, assignAddonEquipment } from "@/lib/packageSelection";
 import { parseSchedulePlan, recordPayment, confirmPaymentRecord, restorePaymentRecord, saveRemainingScheduleRows, softRemovePayment, updatePaymentRecord, addScheduledPaymentPlan } from "@/lib/paymentOps";
+import { AccessError, peekJoinLinks } from "@/lib/eventAccessServer";
 import { loadEventPlanning } from "@/lib/planning";
 import { assignAddonSections } from "@/lib/planning";
 import { reseedEventPlanning } from "@/lib/planning";
 import { disableEventDemoMode, enableEventDemoMode } from "@/lib/demoMode";
+import type { LinkRole } from "@/lib/eventAccess";
 import { runAutomations } from "@/lib/automations";
 import { freezeTemplateEmail, previewSms, previewTemplateEmail, sendSms, sendTemplateEmail } from "@/lib/queueTemplateSend";
 import { SCHEDULE_TEMPLATE_COLUMNS, mapTemplate, targetDateFor, templateMatchesEvent, zonedParts, type ScheduleEventFacts, type TemplateRow } from "@/lib/scheduledComms";
@@ -258,6 +260,75 @@ export const officeTools: LiveTool[] = [
       const limit = n(args, "limit") || 50;
       const page = pageMeta(await query(q), limit);
       return { events: page.items, limit: page.limit, returned: page.returned, may_have_more: page.may_have_more };
+    },
+  },
+  {
+    name: "events_get_join_links",
+    description:
+      "Return the live couple-app join link(s) for an event so you can share the host or guest URL with the client yourself. Read-only: does not create, reset, or rotate links, and does not send email, SMS, or notifications. If a role has no link yet, url is null with a note.",
+    scopes: ["read.events"],
+    confirm: false,
+    revealJoinUrls: true,
+    inputSchema: obj(
+      {
+        event_id: UUID,
+        role: { type: "string", enum: ["host", "guest"], description: "Return only this role. Omit for both." },
+      },
+      ["event_id"],
+    ),
+    async execute(args, ctx) {
+      const admin = adminOf(ctx);
+      const eventId = s(args, "event_id")!;
+      const roleArg = s(args, "role");
+      const roles: LinkRole[] = roleArg === "host" || roleArg === "guest" ? [roleArg] : ["host", "guest"];
+      const { data: event, error } = await admin
+        .from("events")
+        .select("id, status:event_statuses(name)")
+        .eq("id", eventId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!event) throw new Error("Event not found.");
+      const statusName = (event.status as { name?: string } | null)?.name ?? null;
+      const cancelled = statusName === "Cancelled";
+      try {
+        const peeked = await peekJoinLinks(admin, eventId, roles, ctx.now.getTime());
+        return {
+          event_id: eventId,
+          cancelled,
+          links: peeked.map((link) => ({
+            role: link.role,
+            url: link.url,
+            expires_at: link.expiresAt,
+            ...(link.url
+              ? {}
+              : {
+                  note: cancelled
+                    ? "This event is cancelled and has no join link for this role."
+                    : "No join link for this role yet. Open the event App access panel in XOS to create one; this tool never creates links.",
+                }),
+          })),
+          sends: false,
+          writes: false,
+        };
+      } catch (err) {
+        if (err instanceof AccessError && err.status === 503) {
+          return {
+            event_id: eventId,
+            cancelled,
+            setup: true,
+            links: roles.map((role) => ({
+              role,
+              url: null,
+              expires_at: null,
+              note: "Join links need a one-time database setup before they can be shown.",
+            })),
+            sends: false,
+            writes: false,
+          };
+        }
+        if (err instanceof AccessError && err.status === 404) throw new Error("Event not found.");
+        throw err;
+      }
     },
   },
   {
@@ -1963,6 +2034,7 @@ const READ_ONLY_TOOLS = new Set([
   "search",
   "events_list",
   "events_get",
+  "events_get_join_links",
   "events_form_options",
   "planning_get",
   "clients_list",

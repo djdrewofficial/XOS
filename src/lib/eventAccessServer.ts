@@ -1184,6 +1184,23 @@ export async function ensureJoinLinks(
   return out;
 }
 
+/** Staff read of existing join links. Never creates, resets, or rotates a row. */
+export async function peekJoinLinks(
+  admin: Admin,
+  eventId: string,
+  roles: readonly LinkRole[] = ["host", "guest"],
+  now = Date.now(),
+): Promise<Array<{ role: LinkRole; url: string | null; expiresAt: string | null }>> {
+  await eventName(admin, eventId);
+  const key = joinKey();
+  const out: Array<{ role: LinkRole; url: string | null; expiresAt: string | null }> = [];
+  for (const role of roles) {
+    const current = await readLink(admin, eventId, role, key, now);
+    out.push(current ? { role: current.role, url: current.url, expiresAt: current.expiresAt } : { role, url: null, expiresAt: null });
+  }
+  return out;
+}
+
 export async function loadJoinLinks(
   eventId: string,
 ): Promise<{ links: JoinLinkCard[]; setup: boolean; error: string | null }> {

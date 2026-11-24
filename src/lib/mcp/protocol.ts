@@ -125,7 +125,8 @@ export async function handleMcp(store: McpStore, tools: readonly LiveTool[], cal
       // Auth failures still return their own status when the audit table is not there yet.
       // Harmful writes already stop in beginAudit before any effect.
     }
-    return { status, body: hideClientLinks(body) };
+    const keepJoin = catalog.some((item) => item.name === toolName && item.revealJoinUrls === true);
+    return { status, body: hideClientLinks(body, keepJoin) };
   };
 
   const raw = bearer(call.authorization);
@@ -524,7 +525,7 @@ export async function executeHumanApproved(
 
 async function runExecute(tool: LiveTool, args: Record<string, unknown>, ctx: ToolContext, secrets: readonly string[]) {
   try {
-    const value = redact(await tool.execute(args, ctx), secrets);
+    const value = redact(await tool.execute(args, ctx), secrets, 0, { keepJoinUrls: tool.revealJoinUrls === true });
     return { ok: true, body: toolResult(value, false) };
   } catch (err) {
     if (err instanceof McpAuthError) throw err;
