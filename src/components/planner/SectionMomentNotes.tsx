@@ -82,6 +82,47 @@ export function EventSectionNotes({
   );
 }
 
+/** Staff event view: each playlist moment with its ordered songs. */
+export function EventPlaylistsPanel({
+  playlists,
+}: {
+  playlists: { id: string; title: string; songs: { id: string; title: string; artist: string | null }[] }[];
+}) {
+  if (!playlists.length) return null;
+  return (
+    <div className="card p-5">
+      <h2 className="card-title">Playlists</h2>
+      <p className="mb-3 text-xs text-zinc-500">
+        Moments marked as playlist moments. Couples manage each list on the Music tab in the app.
+      </p>
+      <div className="space-y-4">
+        {playlists.map((pl) => (
+          <div key={pl.id}>
+            <h3 className="mb-1.5 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+              {pl.title}
+              <span className="ml-2 text-xs font-normal text-zinc-400">
+                {pl.songs.length} song{pl.songs.length === 1 ? "" : "s"}
+              </span>
+            </h3>
+            {pl.songs.length === 0 ? (
+              <p className="text-sm text-zinc-500">No songs yet.</p>
+            ) : (
+              <ol className="list-decimal space-y-1 pl-5 text-sm">
+                {pl.songs.map((song) => (
+                  <li key={song.id} className="text-zinc-800 dark:text-zinc-100">
+                    {song.title}
+                    {song.artist && <span className="text-zinc-400"> — {song.artist}</span>}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Free text of artists, genres, and styles to avoid, shown beside the do-not-play songs. */
 export function DoNotPlayPanel({
   eventId,

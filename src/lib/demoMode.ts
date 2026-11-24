@@ -159,19 +159,42 @@ async function seedDemoPlanning(admin: Admin, eventId: string, templateId: strin
     if (aErr) throw new Error(aErr.message);
   }
 
-  const { data: sections, error: sErr } = await admin
-    .from("planning_sections")
-    .select("id, title, songs_enabled, song_limit")
-    .eq("event_id", eventId)
-    .order("sort_order");
-  if (sErr) throw new Error(sErr.message);
+  type DemoSecRow = {
+    id: string;
+    title: string;
+    songs_enabled?: boolean;
+    song_limit?: number | null;
+    is_playlist?: boolean;
+  };
+  let sections: DemoSecRow[] = [];
+  {
+    const withPlaylist = await admin
+      .from("planning_sections")
+      .select("id, title, songs_enabled, song_limit, is_playlist")
+      .eq("event_id", eventId)
+      .order("sort_order");
+    if (withPlaylist.error && /is_playlist|schema cache/i.test(withPlaylist.error.message ?? "")) {
+      const fallback = await admin
+        .from("planning_sections")
+        .select("id, title, songs_enabled, song_limit")
+        .eq("event_id", eventId)
+        .order("sort_order");
+      if (fallback.error) throw new Error(fallback.error.message);
+      sections = (fallback.data ?? []) as DemoSecRow[];
+    } else if (withPlaylist.error) {
+      throw new Error(withPlaylist.error.message);
+    } else {
+      sections = (withPlaylist.data ?? []) as DemoSecRow[];
+    }
+  }
 
   const placements = assignDemoSongsToSections(
-    (sections ?? []).map((s) => ({
-      id: s.id as string,
-      title: s.title as string,
+    sections.map((s) => ({
+      id: s.id,
+      title: s.title,
       songs_enabled: Boolean(s.songs_enabled),
-      song_limit: (s.song_limit as number | null) ?? null,
+      song_limit: s.song_limit ?? null,
+      is_playlist: Boolean(s.is_playlist),
     })),
     DEMO_SONGS,
   );

@@ -15,6 +15,8 @@ export type DemoSectionForSongs = {
   title: string;
   songs_enabled: boolean;
   song_limit: number | null;
+  /** When set, vibe/open songs prefer these Music-tab playlist moments. */
+  is_playlist?: boolean;
 };
 
 /** Preferred catalog template when an event has no planning_template_id.
@@ -259,6 +261,8 @@ function songMatchesRole(song: DemoSongSeed, role: string): boolean {
 
 /**
  * Place demo songs onto template sections by title. Respects song_limit.
+ * Playlist moments (is_playlist) still match by title; when a section is a
+ * playlist, vibe-role songs (prelude/cocktail/dinner/open) land there first.
  * Returns rows ready for insert (caller adds event_id / is_demo / fresh ids).
  */
 export function assignDemoSongsToSections(
@@ -266,6 +270,11 @@ export function assignDemoSongsToSections(
   catalog: DemoSongSeed[],
 ): { section_id: string; song: DemoSongSeed; sort_order: number }[] {
   const musicSections = sections.filter((s) => s.songs_enabled);
+  // Prefer playlist moments for multi-song vibe roles so Music tab demos look right.
+  const ordered = [
+    ...musicSections.filter((s) => s.is_playlist),
+    ...musicSections.filter((s) => !s.is_playlist),
+  ];
   const usedKeys = new Set<string>();
   const out: { section_id: string; song: DemoSongSeed; sort_order: number }[] = [];
 
@@ -276,7 +285,7 @@ export function assignDemoSongsToSections(
     return picked;
   }
 
-  for (const section of musicSections) {
+  for (const section of ordered) {
     const role = demoSongRoleForSectionTitle(section.title);
     const cap =
       section.song_limit != null && section.song_limit > 0
@@ -288,8 +297,9 @@ export function assignDemoSongsToSections(
             : 3;
     let picked = role ? take(role, cap) : [];
     // Fallback: leftover non-DNP party songs so music sections aren't empty.
+    // Playlist moments get a slightly higher fallback so the Music tab isn't bare.
     if (!picked.length) {
-      picked = take("tl-open", Math.min(cap, 2));
+      picked = take("tl-open", Math.min(cap, section.is_playlist ? 3 : 2));
     }
     if (!picked.length && role !== "dont-play") {
       const any = catalog.filter((s) => !s.do_not_play && !usedKeys.has(s.key)).slice(0, Math.min(cap, 1));

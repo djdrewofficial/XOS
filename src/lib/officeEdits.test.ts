@@ -251,8 +251,9 @@ describe("planner questions and event sections", () => {
     const created = await addEventSection(db, "e1", { title: "Dinner", after_sort_order: 0 });
     assert.equal(created.sort_order, 1);
     assert.equal(tables.planning_sections.find((item) => item.id === "b")?.sort_order, 2);
-    await updateEventSection(db, "e1", "a", { songs_enabled: false, song_limit: 4 });
+    await updateEventSection(db, "e1", "a", { songs_enabled: false, song_limit: 4, is_playlist: true });
     assert.equal(tables.planning_sections.find((item) => item.id === "a")?.song_limit, 4);
+    assert.equal(tables.planning_sections.find((item) => item.id === "a")?.is_playlist, true);
     await addEventQuestion(db, "e1", "a", { prompt: "Entrée", answer_type: "select", options: ["Fish", "Chicken"] });
     assert.equal(tables.planning_questions[0].event_id, "e1");
     await assert.rejects(() => updateEventQuestion(db, "e2", tables.planning_questions[0].id as string, { prompt: "Nope" }), /not on this event/);

@@ -107,6 +107,7 @@ export type FieldStaffEventData = {
   hasPayments: boolean;
   planner: {
     sections: { id: string; title: string; notes: string | null; staffNotes: string | null }[];
+    playlists: { id: string; title: string; songs: { id: string; title: string; artist: string | null }[] }[];
     doNotPlayText: string | null;
     doNotPlaySongs: { id: string; title: string; artist: string | null }[];
   } | null;
@@ -214,12 +215,21 @@ export async function loadFieldStaffEvent(
 
   let planner: FieldStaffEventData["planner"] = null;
   if (want("notes")) {
-    const [{ data: avoid }, { data: songRows }, { data: secs }, { data: staffNotes }] = await Promise.all([
+    const [{ data: avoid }, { data: songRows }, secRes, { data: staffNotes }] = await Promise.all([
       supabase.from("planning_do_not_play_notes").select("body").eq("event_id", id).maybeSingle(),
       supabase.from("planning_songs").select("id, title, artist, do_not_play, section_id").eq("event_id", id).order("sort_order"),
-      supabase.from("planning_sections").select("id, title, section_type, client_notes").eq("event_id", id).order("sort_order"),
+      supabase.from("planning_sections").select("id, title, section_type, client_notes, is_playlist").eq("event_id", id).order("sort_order"),
       supabase.from("planning_section_staff_notes").select("section_id, body").eq("event_id", id),
     ]);
+    let secs = secRes.data;
+    if (secRes.error) {
+      const { data: fallback } = await supabase
+        .from("planning_sections")
+        .select("id, title, section_type, client_notes")
+        .eq("event_id", id)
+        .order("sort_order");
+      secs = (fallback ?? []).map((s) => ({ ...s, is_playlist: false }));
+    }
     const avoidSections = new Set(
       (secs ?? []).filter((s) => isDoNotPlaySectionTitle(String(s.title ?? ""))).map((s) => s.id as string),
     );
@@ -232,6 +242,18 @@ export async function loadFieldStaffEvent(
       seen.add(songId);
       doNotPlaySongs.push({ id: songId, title: (song.title as string) || "Untitled", artist: (song.artist as string | null) ?? null });
     }
+    const songsBySection = new Map<string, { id: string; title: string; artist: string | null }[]>();
+    for (const song of songRows ?? []) {
+      if (Boolean(song.do_not_play)) continue;
+      const sid = song.section_id as string;
+      const list = songsBySection.get(sid) ?? [];
+      list.push({
+        id: song.id as string,
+        title: (song.title as string) || "Untitled",
+        artist: (song.artist as string | null) ?? null,
+      });
+      songsBySection.set(sid, list);
+    }
     const staffById = new Map((staffNotes ?? []).map((r) => [r.section_id as string, (r.body as string | null) ?? null]));
     planner = {
       sections: (secs ?? [])
@@ -241,6 +263,13 @@ export async function loadFieldStaffEvent(
           title: (s.title as string) || "Moment",
           notes: (s.client_notes as string | null) ?? null,
           staffNotes: staffById.get(s.id as string) ?? null,
+        })),
+      playlists: (secs ?? [])
+        .filter((s) => Boolean((s as { is_playlist?: boolean }).is_playlist))
+        .map((s) => ({
+          id: s.id as string,
+          title: (s.title as string) || "Playlist",
+          songs: songsBySection.get(s.id as string) ?? [],
         })),
       doNotPlayText: (avoid?.body as string | null) ?? null,
       doNotPlaySongs,

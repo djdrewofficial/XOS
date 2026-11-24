@@ -1150,7 +1150,8 @@ export const coverageTools: LiveTool[] = [
   },
   {
     name: "planner_event_edit",
-    description: "Edit the planner on an event: add or update a section, or add or update a question. This is the event plan, not the template library.",
+    description:
+      "Edit the planner on an event: add or update a section, or add or update a question. This is the event plan, not the template library. For update_section, settings_json may include is_playlist (boolean) to mark a Music-tab playlist moment.",
     scopes: ["write.planning"],
     confirm: false,
     inputSchema: obj({

@@ -92,6 +92,8 @@ export interface PlanningSection {
   /** Staff-only note. Always null unless the caller is staff — never loaded otherwise. */
   staff_notes: string | null;
   time_enabled: boolean;
+  /** Explicit Music-tab playlist moment (ordered song list). Copied from the template. */
+  is_playlist: boolean;
   on_timeline: boolean | null; // null = auto (on when section_type==='timeline')
   on_music: boolean | null; // null = auto (vibe playlists: songs on + no single-song limit)
   section_cover_url: string | null;
@@ -237,6 +239,7 @@ async function seedFromTemplate(
         questions_enabled: ts.questions_enabled,
         notes_enabled: ts.notes_enabled,
         time_enabled: ts.time_enabled,
+        is_playlist: Boolean(ts.is_playlist),
         on_timeline: null,
         on_music: null,
         ai_picks_enabled: ts.ai_picks_enabled,
@@ -385,6 +388,7 @@ async function seedTemplateSection(
       questions_enabled: ts.questions_enabled,
       notes_enabled: ts.notes_enabled,
       time_enabled: ts.time_enabled,
+      is_playlist: Boolean(ts.is_playlist),
       on_timeline: null,
       on_music: null,
       ai_picks_enabled: ts.ai_picks_enabled,
@@ -645,6 +649,7 @@ export async function loadEventPlanning(
         : null,
       staff_notes: isStaff ? staffNoteBySection.get(sec.id) ?? null : null,
       time_enabled: sec.time_enabled ?? false,
+      is_playlist: Boolean(sec.is_playlist),
       on_timeline: sec.on_timeline ?? null,
       on_music: sec.on_music ?? null,
       section_cover_url: sec.section_cover_url ?? null,

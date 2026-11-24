@@ -93,7 +93,8 @@ Built in, any valid token:
 | events_assign_staff | write.events, write.staff | |
 | events_remove_staff | write.events | yes |
 | events_set_planning_template | write.planning | yes |
-| planning_get | read.planning | |
+| planning_get | read.planning | Sections include `is_playlist` (Music-tab playlist moments) and nested `songs` |
+| planner_event_edit | write.planning | `settings_json` may set `is_playlist` on an event section |
 | clients_list | read.clients | |
 | clients_get | read.clients | |
 | clients_create | write.clients | |

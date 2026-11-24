@@ -69,7 +69,6 @@ export async function deleteTemplate(id: string) {
 
 export async function duplicateTemplate(id: string) {
   await requireModule("settings", "edit", { mode: "throw" });
-  const supabase = await staffClient();
   const admin = createAdminClient();
   const { data: tpl } = await admin.from("planning_templates").select("*").eq("id", id).single();
   if (!tpl) throw new Error("Template not found");
@@ -89,7 +88,8 @@ export async function duplicateTemplate(id: string) {
         title: s.title, icon: s.icon, section_type: s.section_type, intro: s.intro, time_label: s.time_label,
         client_editable: s.client_editable, guest_enabled: s.guest_enabled, client_addable: s.client_addable, song_limit: s.song_limit,
         must_play_limit: s.must_play_limit, songs_enabled: s.songs_enabled, questions_enabled: s.questions_enabled,
-        notes_enabled: s.notes_enabled, time_enabled: s.time_enabled, ai_picks_enabled: s.ai_picks_enabled,
+        notes_enabled: s.notes_enabled, time_enabled: s.time_enabled, is_playlist: Boolean(s.is_playlist),
+        ai_picks_enabled: s.ai_picks_enabled,
         section_cover_url: s.section_cover_url, permissions: s.permissions, sort_order: s.sort_order,
       })
       .select("id")
@@ -123,6 +123,7 @@ type TSectionPatch = {
   notes_enabled?: boolean;
   time_enabled?: boolean;
   ai_picks_enabled?: boolean;
+  is_playlist?: boolean;
   song_limit?: number | null;
   must_play_limit?: number | null;
   module?: string | null;

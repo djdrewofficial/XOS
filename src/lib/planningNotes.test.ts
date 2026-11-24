@@ -162,6 +162,7 @@ describe("mobile routes and staff UI", () => {
     assert.match(planner, /isDoNotPlaySectionTitle\(section\.title\)/);
     assert.match(planner, /<DoNotPlayText/);
     assert.match(eventPage, /<DoNotPlayPanel/);
+    assert.match(eventPage, /<EventPlaylistsPanel/);
     assert.match(eventPage, /<EventSectionNotes/);
     assert.match(planningLib, /isStaff\s*\?\s*supabase\.from\("planning_section_staff_notes"\)/);
     assert.match(planningLib, /role === "guest" \? null :/);
