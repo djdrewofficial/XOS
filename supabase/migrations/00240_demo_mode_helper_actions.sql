@@ -24,7 +24,10 @@
 --       );
 
 -- 1) Guest card: couples/guests need demo_mode for banners.
-create or replace view public.event_guest_card
+-- Column order changed vs 00213 (demo_mode before event_type), so REPLACE is
+-- not enough — Postgres rejects CREATE OR REPLACE when columns shift.
+drop view if exists public.event_guest_card;
+create view public.event_guest_card
   with (security_invoker = off, security_barrier = true) as
   select
     e.id,
@@ -72,7 +75,8 @@ declare
     when 'run_helper' then$i$;
 begin
   src := pg_get_functiondef('public.run_booking_helper(uuid, uuid, jsonb, boolean, jsonb)'::regprocedure);
-  if position($$when 'demo_mode_on' then$$ in src) > 0 then
+  -- Tagged $t$…$t$ (not bare dollar-quotes) so this does not close the outer DO block.
+  if position($t$when 'demo_mode_on' then$t$ in src) > 0 then
     raise notice '00240: demo_mode helper actions already present';
     return;
   end if;
