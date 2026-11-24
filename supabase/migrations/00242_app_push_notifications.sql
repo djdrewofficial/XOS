@@ -242,8 +242,9 @@ on conflict (tag_key) do update
 do $mig$
 declare
   src text := pg_get_functiondef('public.render_merge_tags(uuid,text)'::regprocedure);
-  anchor text := $a$out_text := replace(out_text, '<current_date>', to_char(current_date, 'FMMonth FMDD, YYYY'));$a$;
-  addition text := $a$out_text := replace(out_text, '<current_date>', to_char(current_date, 'FMMonth FMDD, YYYY'));
+  -- Anchor matches post-00229 live body (America/New_York), not the old UTC current_date line.
+  anchor text := $a$out_text := replace(out_text, '<current_date>', to_char((now() at time zone 'America/New_York')::date, 'FMMonth FMDD, YYYY'));$a$;
+  addition text := $a$out_text := replace(out_text, '<current_date>', to_char((now() at time zone 'America/New_York')::date, 'FMMonth FMDD, YYYY'));
   if position('<dj_name>' in out_text) > 0 then
     out_text := replace(out_text, '<dj_name>', xos_html_escape(coalesce((
       select coalesce(nullif(em.stage_name, ''), nullif(trim(em.first_name || ' ' || coalesce(em.last_name, '')), ''), em.first_name)
