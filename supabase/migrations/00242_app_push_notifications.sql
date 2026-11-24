@@ -1,5 +1,5 @@
 -- Couple-app push notifications + in-app popups / custom screens.
--- Migration number: 00241 (open PR #95 claims 00240_demo_mode_helper_actions).
+-- Migration number: 00242 (PR #95 took 00240; PR #96 playlist moments takes 00241).
 --
 -- Staff author templates (schedule / status-change / helper action) with merge
 -- tags and a tap target. Delivery queues into app_notification_log, drains via

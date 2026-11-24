@@ -107,4 +107,4 @@ Optional table `app_notification_prefs` (`push_enabled`, `popup_enabled`). Missi
 
 ## Migration
 
-`00241_app_push_notifications.sql` (PR #95 claims `00240`).
+`00242_app_push_notifications.sql` (PR #95 took `00240`; PR #96 playlist moments takes `00241`).

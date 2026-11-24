@@ -169,7 +169,7 @@ export default async function EditHelperPage({
     supabase.from("journey_types").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
 
-  // Optional until migration 00241 is applied.
+  // Optional until migration 00242 is applied.
   const { data: appNotifTemplates } = await supabase
     .from("app_notification_templates")
     .select("id, name")

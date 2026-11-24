@@ -85,7 +85,7 @@ export async function runAutomations(
     await dispatchNotification(supabase, notifType, { eventId, statusId: opts.statusId });
   }
 
-  // Couple-app notification templates triggered on status change (migration 00241).
+  // Couple-app notification templates triggered on status change (migration 00242).
   const statusIdForApp = opts.statusId ?? (ev.status_id as string | null);
   if (trigger === "status_changed" && statusIdForApp && opts.drain !== "hold") {
     try {

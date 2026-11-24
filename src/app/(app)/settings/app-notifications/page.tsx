@@ -24,7 +24,7 @@ export default async function AppNotificationsSettingsPage() {
       <div className="max-w-3xl">
         <h1 className="page-title mb-2">App Notifications</h1>
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-          One-time setup needed: apply migration <code className="font-mono">00241_app_push_notifications.sql</code> to
+          One-time setup needed: apply migration <code className="font-mono">00242_app_push_notifications.sql</code> to
           create the couple-app notification tables.
         </div>
       </div>

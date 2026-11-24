@@ -71,8 +71,8 @@ describe("appNotificationsLogic", () => {
 });
 
 describe("app push notifications migration + wiring", () => {
-  it("claims migration 00241 (after PR 95's 00240)", () => {
-    const sql = read("supabase/migrations/00241_app_push_notifications.sql");
+  it("claims migration 00242 (after PR 95's 00240 and PR 96's 00241)", () => {
+    const sql = read("supabase/migrations/00242_app_push_notifications.sql");
     assert.match(sql, /create table if not exists app_notification_templates/);
     assert.match(sql, /create table if not exists app_notification_screens/);
     assert.match(sql, /create table if not exists app_notification_log/);

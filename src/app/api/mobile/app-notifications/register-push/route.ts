@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireMobileUser } from "@/lib/mobileCouple";
 
 /* Register (or refresh) an Expo push token for the couple app (xpress-client).
-   Separate from staff device_tokens — see app_device_tokens (migration 00241). */
+   Separate from staff device_tokens — see app_device_tokens (migration 00242). */
 export async function POST(req: Request) {
   const caller = await requireMobileUser(req);
   if (caller instanceof NextResponse) return caller;

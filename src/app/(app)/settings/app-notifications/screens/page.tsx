@@ -23,7 +23,7 @@ export default async function AppNotificationScreensPage({
     return (
       <div className="max-w-3xl">
         <h1 className="page-title mb-2">Custom screens</h1>
-        <p className="text-sm text-amber-800">Apply migration 00241 first.</p>
+        <p className="text-sm text-amber-800">Apply migration 00242 first.</p>
       </div>
     );
   }
