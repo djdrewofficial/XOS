@@ -144,6 +144,9 @@ Built in, any valid token:
 | helpers_preview | helpers.run | |
 | helpers_run | helpers.run, plus comms scopes the helper needs | yes |
 | email_templates_list | read.settings | |
+| app_notifications_list | read.settings | |
+| app_notifications_preview | read.settings | |
+| app_notifications_send | write.events | yes |
 | comms_send_email_template | comms.email, and comms.contract when the template attaches a document | yes |
 | comms_send_sms | comms.sms | yes |
 | comms_drain_outbox | comms.email, comms.sms | yes |

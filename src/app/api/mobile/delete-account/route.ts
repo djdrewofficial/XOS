@@ -54,6 +54,8 @@ export async function POST(req: Request) {
     log: (message) => console.error(message),
     removeAppData: async () => {
       await admin.from("device_tokens").delete().eq("auth_user_id", uid);
+      await admin.from("app_device_tokens").delete().eq("auth_user_id", uid);
+      await admin.from("app_notification_prefs").delete().eq("auth_user_id", uid);
       const { error: memberErr } = await admin.from("event_app_members").delete().eq("auth_user_id", uid);
       if (memberErr && !isMissingRelation(memberErr)) console.error(memberErr.message);
       await admin.from("accounts").delete().eq("auth_user_id", uid);

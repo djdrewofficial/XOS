@@ -1787,6 +1787,86 @@ export const officeTools: LiveTool[] = [
     },
   },
   {
+    name: "app_notifications_list",
+    description:
+      "List couple-app notification templates (push / in-app popup). Read-only. Does not send anything.",
+    scopes: ["read.settings"],
+    confirm: false,
+    inputSchema: obj({
+      active_only: { type: "boolean" },
+    }),
+    async execute(args, ctx) {
+      let q = adminOf(ctx)
+        .from("app_notification_templates")
+        .select(
+          "id, name, title, is_active, trigger_type, audience, schedule_days, schedule_direction, schedule_anchor, tap_action, tap_tab, tap_screen_id, show_as_popup, send_push, allow_demo_mode",
+        )
+        .order("name");
+      if (args.active_only === true) q = q.eq("is_active", true);
+      return { templates: await query(q) };
+    },
+  },
+  {
+    name: "app_notifications_preview",
+    description:
+      "Preview a couple-app notification template for one event with merge tags and the assigned DJ resolved. Read-only — does not queue or send.",
+    scopes: ["read.settings"],
+    confirm: false,
+    inputSchema: obj({ template_id: UUID, event_id: UUID }, ["template_id", "event_id"]),
+    async execute(args, ctx) {
+      const { previewAppNotification } = await import("@/lib/appNotifications");
+      const preview = await previewAppNotification(adminOf(ctx), s(args, "template_id")!, s(args, "event_id")!);
+      return {
+        title: preview.title,
+        body: preview.body,
+        dj: { name: preview.dj.name, booking_url: preview.dj.bookingUrl, employee_id: preview.dj.employeeId },
+        recipients: preview.recipients,
+        gate: preview.gate,
+        screen: preview.screen
+          ? {
+              id: preview.screen.id,
+              heading: preview.screen.heading,
+              has_embed: Boolean(preview.screen.embed_html),
+              // Embed HTML deliberately omitted from MCP preview (staff-only secret surface).
+            }
+          : null,
+      };
+    },
+  },
+  {
+    name: "app_notifications_send",
+    description:
+      "Queue a couple-app notification template for one event (push + optional in-app popup). Confirm required. Respects cancelled/demo gates unless the template allows demo mode. Does not send real Expo pushes until the outbox drain runs.",
+    scopes: ["write.events"],
+    confirm: true,
+    inputSchema: obj({ template_id: UUID, event_id: UUID }, ["template_id", "event_id"]),
+    async preview(args, ctx) {
+      const { previewAppNotification } = await import("@/lib/appNotifications");
+      const preview = await previewAppNotification(adminOf(ctx), s(args, "template_id")!, s(args, "event_id")!);
+      return {
+        template_id: s(args, "template_id"),
+        event_id: s(args, "event_id"),
+        title: preview.title,
+        body: preview.body,
+        recipient_count: preview.recipients.length,
+        gate: preview.gate,
+        would_queue: preview.gate.ok && preview.recipients.length > 0,
+      };
+    },
+    async execute(args, ctx) {
+      const { queueAppNotificationTemplate, processAppNotificationOutbox } = await import("@/lib/appNotifications");
+      const admin = adminOf(ctx);
+      const result = await queueAppNotificationTemplate(admin, s(args, "template_id")!, s(args, "event_id")!, {
+        triggerKey: `mcp:${new Date().toISOString()}`,
+        force: true,
+      });
+      // Drain only marks/sends queued rows; in this agent environment we do not
+      // intentionally target production couple devices — Expo send is best-effort.
+      const drain = await processAppNotificationOutbox(admin);
+      return { ...result, drain };
+    },
+  },
+  {
     name: "comms_send_email_template",
     description:
       "Send one email template for an event. Database merge tags are filled first, then the outbox fills quote, payment-plan, and sign-link tags and may attach a document. E-sign / Booking Agreement attaches need comms.contract. PDF attaches of receipts (or other non-contract docs) only need comms.email.",

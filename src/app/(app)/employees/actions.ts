@@ -117,6 +117,8 @@ export async function updateEmployeeContact(id: string, formData: FormData) {
       phone,
       website: clean(formData.get("website")),
       planning_meeting_url: clean(formData.get("planning_meeting_url")),
+      booking_url: clean(formData.get("booking_url")),
+      booking_embed_html: clean(formData.get("booking_embed_html")),
       address: clean(formData.get("address")),
       emergency_contact: clean(formData.get("emergency_contact")),
       birthday: clean(formData.get("birthday")),

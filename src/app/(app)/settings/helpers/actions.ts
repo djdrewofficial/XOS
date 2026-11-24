@@ -177,6 +177,11 @@ function buildHelperPayload(formData: FormData) {
     });
   }
 
+  const appNotifTemplate = clean(formData.get("action_app_notification_template_id"));
+  if (appNotifTemplate) {
+    actions.push({ type: "send_app_notification", template_id: appNotifTemplate });
+  }
+
   // secondary helper runs last
   const secondary = clean(formData.get("secondary_helper_id"));
   if (secondary) actions.push({ type: "run_helper", helper_id: secondary });
