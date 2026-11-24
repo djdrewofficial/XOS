@@ -12,12 +12,13 @@ import {
   preservedEventFlags,
 } from "./demoModeLogic.ts";
 import {
-  DEMO_DO_NOT_PLAY_NOTES,
-  DEMO_QUESTIONS,
-  DEMO_SECTIONS,
-  DEMO_SONG_IDEAS,
-  DEMO_SONGS,
-} from "./demoModeSeed.ts";
+  assignDemoSongsToSections,
+  demoAnswerForQuestion,
+  demoSongRoleForSectionTitle,
+  PREFERRED_DEMO_TEMPLATE_ID,
+  PREFERRED_DEMO_TEMPLATE_NAME,
+} from "./demoModeAnswers.ts";
+import { DEMO_DO_NOT_PLAY_NOTES, DEMO_SONG_IDEAS, DEMO_SONGS } from "./demoModeSeed.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -30,34 +31,114 @@ const emptyReal = {
   doNotPlayNotes: false,
 };
 
-describe("demo mode seed dataset", () => {
-  it("matches the Apple Review demo shape (8 headlines, 17 moments, 28 questions, ~22 answers, songs, ideas)", () => {
-    const headlines = DEMO_SECTIONS.filter((s) => s.section_type === "headline");
-    const moments = DEMO_SECTIONS.filter((s) => s.section_type !== "headline");
-    const answers = DEMO_QUESTIONS.filter((q) => q.answer != null && String(q.answer).trim() !== "");
-    assert.equal(headlines.length, 8);
-    assert.equal(moments.length, 17);
-    assert.equal(DEMO_QUESTIONS.length, 28);
-    assert.equal(answers.length, 22);
+describe("demo mode music catalog", () => {
+  it("keeps a rich song + idea catalog with unique keys", () => {
     assert.ok(DEMO_SONGS.length >= 27);
     assert.equal(DEMO_SONG_IDEAS.length, 4);
     assert.ok(DEMO_DO_NOT_PLAY_NOTES.length > 10);
-  });
-
-  it("references only known section keys and uses unique keys", () => {
-    const sectionKeys = new Set(DEMO_SECTIONS.map((s) => s.key));
-    assert.equal(sectionKeys.size, DEMO_SECTIONS.length);
-    const qKeys = new Set(DEMO_QUESTIONS.map((q) => q.key));
-    assert.equal(qKeys.size, DEMO_QUESTIONS.length);
     const sKeys = new Set(DEMO_SONGS.map((s) => s.key));
     assert.equal(sKeys.size, DEMO_SONGS.length);
-    for (const q of DEMO_QUESTIONS) assert.ok(sectionKeys.has(q.sectionKey), q.key);
-    for (const s of DEMO_SONGS) assert.ok(sectionKeys.has(s.sectionKey), s.key);
+    const iKeys = new Set(DEMO_SONG_IDEAS.map((s) => s.key));
+    assert.equal(iKeys.size, DEMO_SONG_IDEAS.length);
   });
 
   it("does not embed the hardcoded Apple Review UUIDs", () => {
-    const blob = JSON.stringify({ DEMO_SECTIONS, DEMO_QUESTIONS, DEMO_SONGS, DEMO_SONG_IDEAS });
+    const blob = JSON.stringify({ DEMO_SONGS, DEMO_SONG_IDEAS });
     assert.doesNotMatch(blob, /a0a0a0a0-0000-4000-8000/);
+  });
+
+  it("no longer ships a hardcoded section/question tree", () => {
+    const seed = read("src/lib/demoModeSeed.ts");
+    assert.doesNotMatch(seed, /export const DEMO_SECTIONS/);
+    assert.doesNotMatch(seed, /export const DEMO_QUESTIONS/);
+    assert.doesNotMatch(seed, /Getting Ready Playlist/);
+    assert.doesNotMatch(seed, /Let's get started!/);
+  });
+});
+
+describe("demo answer generation for template questions", () => {
+  it("fills common Wedding 2026-style prompts by type", () => {
+    assert.equal(
+      demoAnswerForQuestion({ prompt: "How many guests are you expecting?", answer_type: "short" }),
+      "120",
+    );
+    assert.equal(
+      demoAnswerForQuestion({ prompt: "What is your wedding color palette or theme?", answer_type: "short" }),
+      "Sage green and gold, garden theme",
+    );
+    assert.equal(
+      demoAnswerForQuestion({ prompt: "On a scale of 1 to 10, how much does your crowd like to party?", answer_type: "scale" }),
+      "8",
+    );
+    assert.equal(
+      demoAnswerForQuestion({ prompt: "Are you having a Father-Daughter Dance?", answer_type: "yesno" }),
+      "yes",
+    );
+    assert.equal(
+      demoAnswerForQuestion({
+        prompt: "How will dinner be served?",
+        answer_type: "select",
+        options: ["Buffet", "Plated", "Family Style"],
+      }),
+      "Plated",
+    );
+    assert.equal(
+      demoAnswerForQuestion({
+        prompt: "Which cocktail hour vibes fit your crowd? Select all that apply.",
+        answer_type: "multiselect",
+        options: ["Classy & Cool", "Acoustic & Chill", "Soulful & Smooth", "Upbeat & Fun Pop"],
+      }),
+      "Classy & Cool|Soulful & Smooth",
+    );
+    assert.equal(
+      demoAnswerForQuestion({
+        prompt: "Would you like the entire song played or a fade out?",
+        answer_type: "select",
+        options: ["Entire song", "Fade out when appropriate", "Custom edit (explain in notes)"],
+      }),
+      "Fade out when appropriate",
+    );
+  });
+
+  it("picks image_select labels from object options", () => {
+    assert.equal(
+      demoAnswerForQuestion({
+        prompt: "Pick a backdrop",
+        answer_type: "image_select",
+        options: [{ label: "Floral Arch", image: "x.jpg" }, { label: "Neon Love" }],
+      }),
+      "Floral Arch",
+    );
+  });
+});
+
+describe("demo song placement onto template sections", () => {
+  it("maps Wedding 2026 section titles to catalog roles", () => {
+    assert.equal(demoSongRoleForSectionTitle("Ceremony Prelude (Guest Arrival)"), "tl-seating");
+    assert.equal(demoSongRoleForSectionTitle("Processional - Bride"), "tl-bridal");
+    assert.equal(demoSongRoleForSectionTitle("First Dance"), "tl-first-dance");
+    assert.equal(demoSongRoleForSectionTitle("Father-Daughter Dance"), "tl-father-daughter");
+    assert.equal(demoSongRoleForSectionTitle("Must Play Songs"), "must-play");
+    assert.equal(demoSongRoleForSectionTitle("Don't Play"), "dont-play");
+    assert.equal(demoSongRoleForSectionTitle("Dance Floor Suggestions"), "tl-open");
+  });
+
+  it("assigns songs into music sections and respects song_limit", () => {
+    const sections = [
+      { id: "s1", title: "First Dance", songs_enabled: true, song_limit: 1 },
+      { id: "s2", title: "Don't Play", songs_enabled: true, song_limit: null },
+      { id: "s3", title: "Let's Plan", songs_enabled: false, song_limit: null },
+      { id: "s4", title: "Must Play Songs", songs_enabled: true, song_limit: 3 },
+    ];
+    const placed = assignDemoSongsToSections(sections, DEMO_SONGS);
+    assert.ok(placed.some((p) => p.section_id === "s1"));
+    assert.equal(placed.filter((p) => p.section_id === "s1").length, 1);
+    assert.ok(placed.filter((p) => p.section_id === "s2").every((p) => p.song.do_not_play));
+    assert.ok(placed.filter((p) => p.section_id === "s4").every((p) => p.song.must_play));
+    assert.ok(!placed.some((p) => p.section_id === "s3"));
+    // No duplicate catalog keys across sections.
+    const keys = placed.map((p) => p.song.key);
+    assert.equal(new Set(keys).size, keys.length);
   });
 });
 
@@ -66,6 +147,13 @@ describe("demo mode enable decisions", () => {
     assert.equal(
       decideEnableDemoMode({ demoMode: true, existingDemoSections: 25, real: emptyReal }),
       "already",
+    );
+  });
+
+  it("force reseeds even when demo mode is already on", () => {
+    assert.equal(
+      decideEnableDemoMode({ demoMode: true, existingDemoSections: 25, real: emptyReal, force: true }),
+      "seed",
     );
   });
 
@@ -204,6 +292,23 @@ describe("demo mode wiring", () => {
     assert.match(planning, /demo_mode_enabled_at:\s*null/);
     assert.match(planning, /clearDemoSongIdeaLists/);
     assert.match(planning, /clearDemoDoNotPlayNotes/);
+    assert.match(planning, /seedPlanningSkeletonFromTemplate/);
+    assert.match(planning, /is_demo:\s*isDemo/);
+  });
+
+  it("seeds from the event planning template with a robust Wedding 2026 fallback", () => {
+    const lib = read("src/lib/demoMode.ts");
+    assert.match(lib, /resolveDemoPlanningTemplateId/);
+    assert.match(lib, /seedPlanningSkeletonFromTemplate/);
+    assert.match(lib, /PREFERRED_DEMO_TEMPLATE_ID|PREFERRED_DEMO_TEMPLATE_NAME/);
+    assert.match(lib, /demoAnswerForQuestion/);
+    assert.match(lib, /assignDemoSongsToSections/);
+    assert.doesNotMatch(lib, /DEMO_SECTIONS|DEMO_QUESTIONS/);
+    assert.equal(PREFERRED_DEMO_TEMPLATE_ID, "a1c50a27-3fd5-4f4f-95b2-b7ee2d1e7dd7");
+    assert.equal(PREFERRED_DEMO_TEMPLATE_NAME, "Xpress Entertainment Wedding 2026");
+    const answers = read("src/lib/demoModeAnswers.ts");
+    assert.match(answers, /PREFERRED_DEMO_TEMPLATE_ID/);
+    assert.match(answers, /PREFERRED_DEMO_TEMPLATE_NAME/);
   });
 
   it("keep_client path uses cascade-safe song idea list cleanup and author ids", () => {
@@ -225,6 +330,7 @@ describe("demo mode wiring", () => {
     assert.match(office, /events_set_demo_mode/);
     assert.match(office, /enableEventDemoMode/);
     assert.match(office, /disableEventDemoMode/);
+    assert.match(office, /planning template/i);
     const toolBlock = office.slice(office.indexOf('name: "events_set_demo_mode"'), office.indexOf('name: "events_archive"'));
     assert.match(toolBlock, /Never sends email or SMS/i);
     assert.doesNotMatch(toolBlock, /processOutbox|processSmsOutbox|sendDirectSms|queueTemplate/);
@@ -256,6 +362,7 @@ describe("demo mode wiring", () => {
     assert.doesNotMatch(actions, /processOutbox|sendAccountInvite|emailAppJoinCode/);
     const ui = read("src/components/EventDemoMode.tsx");
     assert.doesNotMatch(ui, /\u2014/);
+    assert.match(ui, /planning template/i);
   });
 
   it("field staff view column list includes demo_mode", () => {

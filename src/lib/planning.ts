@@ -167,7 +167,11 @@ type Admin = ReturnType<typeof createAdminClient>;
 /** Resolve which template an event should use: explicit assignment first
     (events.planning_template_id — set by a booking helper or staff), then a
     template matching the event type, then the global default. */
-async function pickTemplateId(admin: Admin, eventId: string, eventTypeId: string | null): Promise<string | null> {
+export async function resolvePlanningTemplateId(
+  admin: Admin,
+  eventId: string,
+  eventTypeId: string | null,
+): Promise<string | null> {
   const { data: ev } = await admin.from("events").select("planning_template_id").eq("id", eventId).maybeSingle();
   if (ev?.planning_template_id) return ev.planning_template_id as string;
   if (eventTypeId) {
@@ -190,8 +194,20 @@ async function pickTemplateId(admin: Admin, eventId: string, eventTypeId: string
   return (def?.id as string | undefined) ?? null;
 }
 
-/** Clone a template's sections + questions into an event. */
-async function seedFromTemplate(admin: Admin, eventId: string, templateId: string): Promise<boolean> {
+async function pickTemplateId(admin: Admin, eventId: string, eventTypeId: string | null): Promise<string | null> {
+  return resolvePlanningTemplateId(admin, eventId, eventTypeId);
+}
+
+/** Clone a template's sections + questions into an event.
+    When isDemo=true, every cloned section/question is flagged is_demo so Demo
+    Mode can wipe them without touching later real client data. */
+async function seedFromTemplate(
+  admin: Admin,
+  eventId: string,
+  templateId: string,
+  opts: { isDemo?: boolean } = {},
+): Promise<boolean> {
+  const isDemo = opts.isDemo === true;
   const { data: tSections } = await admin
     .from("planning_template_sections")
     .select("*")
@@ -228,6 +244,7 @@ async function seedFromTemplate(admin: Admin, eventId: string, templateId: strin
         permissions: ts.permissions,
         module: ts.module,
         sort_order: ts.sort_order,
+        is_demo: isDemo,
       })
       .select("id")
       .single();
@@ -253,6 +270,7 @@ async function seedFromTemplate(admin: Admin, eventId: string, templateId: strin
             required: q.required,
             sort_order: q.sort_order,
             condition_values: q.condition_values ?? [],
+            is_demo: isDemo,
             // condition_question_id remapped in a second pass below
           })),
         )
@@ -276,6 +294,16 @@ async function seedFromTemplate(admin: Admin, eventId: string, templateId: strin
       ),
   );
   return true;
+}
+
+/** Public wrapper used by Demo Mode to clone a template skeleton with is_demo. */
+export async function seedPlanningSkeletonFromTemplate(
+  admin: Admin,
+  eventId: string,
+  templateId: string,
+  opts: { isDemo?: boolean } = {},
+): Promise<boolean> {
+  return seedFromTemplate(admin, eventId, templateId, opts);
 }
 
 /** Clone the resolved template into an event's planning if it has none yet.

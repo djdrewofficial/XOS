@@ -50,15 +50,18 @@ export function demoSongIdeaListFate(args: {
   return "delete";
 }
 
-/** Decide enable outcome without hitting the DB. */
+/** Decide enable outcome without hitting the DB.
+    force=true always reseeds (wipes prior demo — including old hardcoded-section
+    rows — and real planning data the staff confirmed replacing). */
 export function decideEnableDemoMode(args: {
   demoMode: boolean;
   existingDemoSections: number;
   real: RealPlanningSnapshot;
   force?: boolean;
 }): "already" | "repair" | "refuse_real_data" | "seed" {
+  if (args.force) return "seed";
   if (args.demoMode) return args.existingDemoSections > 0 ? "already" : "repair";
-  if (hasRealPlanningData(args.real) && !args.force) return "refuse_real_data";
+  if (hasRealPlanningData(args.real)) return "refuse_real_data";
   return "seed";
 }
 
